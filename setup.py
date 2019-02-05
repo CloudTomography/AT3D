@@ -64,7 +64,10 @@ F2PY_SHDOM_FILES = [
 F2PY_CORE_API = [
     'get_mie_table',
     'get_center_wavelen',
-    'write_mie_table'
+    'write_mie_table',
+    'start_mpi',
+    'end_shdom_mpi',
+    'shdom_property_arrays'
 ]
 
 

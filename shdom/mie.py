@@ -23,11 +23,7 @@ import numpy as np
 class Mie(object):
     """
     Mie scattering for a particle size distribution. 
-    Scattering coefficients are averaged over a range of particle radii and wavelengths. 
-    The output is a table where for each effective radius the follwoing is computed:
-      1. Extinction-cross section per 1 unit of mass content [g/m^3](liquid water content for water clouds)  
-      2. Legendre expansion coefficients of the normalized scattering phase function (first coefficient is always 1.0)
-      3. Single scattering albedo, unitless in the range [0, 1].
+    Scattering coefficients are averaged over a range of particle radii and wavelengths.
 
     Parameters
     ----------
@@ -62,6 +58,10 @@ class Mie(object):
     wavelength_resolution: float
         The distance between two wavelength samples in the band. Used only if wavelength_averaging is True.
     
+    Returns
+    -------
+    None
+        
     Notes
     -----
     Aerosol particle type not supported yet.   
@@ -115,6 +115,33 @@ class Mie(object):
                       start_effective_radius,
                       end_effective_radius,
                       max_integration_radius): 
+        """
+        Compute a scattering table where for each effective radius:
+          1. Extinction-cross section per 1 unit of mass content [g/m^3](liquid water content for water clouds)  
+          2. Single scattering albedo, unitless in the range [0, 1].
+          3. Legendre expansion coefficients of the normalized scattering phase function (first coefficient is always 1.0)
+          4. Number of Legendre coefficients for each scattering phase function. 
+    
+        Parameters
+        ----------
+        num_effective_radii: int
+            Number of effective radii for which to compute the table.
+        start_effective_radius: int
+            The starting (lowest) effective radius in the table.
+        end_effective_radius: int
+            The ending (highest) effective radius in the table.
+        max_integration_radius: int
+            The maximum radius for which to integrate over the size-distribution.
+            max_integration_radius > end_effective_radius.
+        
+        Returns
+        -------
+        None
+    
+        Notes
+        -----
+        Running this function may take some time.
+        """
         
         self._nretab = num_effective_radii
         self._sretab = start_effective_radius
@@ -147,6 +174,23 @@ class Mie(object):
         
     
     def write_table(self, file_path): 
+        """
+        Write a pre-computed table to <file_path>. 
+    
+        Parameters
+        ----------
+        file_path: str
+            Path to file.
+      
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        This function must be ran after pre-computing a scattering table with compute_table().
+        """        
+        
         core.write_mie_table(
             mietabfile=file_path,
             wavelen1=self._wavelen1, 
