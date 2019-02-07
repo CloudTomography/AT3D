@@ -1,10 +1,7 @@
 """
-Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer
-
-Here all the necessary functions used for forward rendering of SHDOM are wrapped.
-
+Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer.
+Here all the necessary functions used to solve the RT using SHDOM are wrapped.
 """
-
 
 import core
 import numpy as np

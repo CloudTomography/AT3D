@@ -572,7 +572,7 @@ SUBROUTINE WRITE_MIE_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
   ENDIF
   WRITE (3,'(1X,I3,2(1X,F8.3),A)') NRETAB, SRETAB, ERETAB, &
         '  number, starting, ending effective radius'
-
+  WRITE (3,'(1X,I5,A)') MAXLEG, '  maximum number of legendre coefficients allowed'
   DO I = 1, NRETAB
     WRITE (3,'(1X,F8.4,1X,E12.5,1X,F8.6,1X,I6,A)') &
         REFF(I), EXTINCT(I), SSALB(I), NLEG(I), '  Reff  Ext  Alb  Nleg'
@@ -584,3 +584,40 @@ SUBROUTINE WRITE_MIE_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
   CLOSE (3)
 END SUBROUTINE WRITE_MIE_TABLE
 
+  
+SUBROUTINE READ_MIE_TABLE(MIETABFILE, NRETAB, REFF, EXTINCT, &
+                          SSALB, NLEG, LEGCOEF, MAXLEG) 
+  IMPLICIT NONE
+  CHARACTER(LEN=*), INTENT(IN) :: MIETABFILE
+!f2py intent(in) :: MIETABFILE
+  INTEGER, INTENT(IN) :: NRETAB
+!f2py intent(in) :: NRETAB
+  REAL, INTENT(OUT) :: REFF(NRETAB), EXTINCT(NRETAB), SSALB(NRETAB)
+!  f2py intent(out) :: REFF, EXTINCT, SSALB
+  INTEGER, INTENT(OUT) :: NLEG(NRETAB)
+!  f2py intent(out) ::  NLEG
+  REAL, INTENT(OUT) :: LEGCOEF(0:MAXLEG,NRETAB)
+!  f2py intent(OUT) :: LEGCOEF(0:MAXLEG,NRETAB)
+  INTEGER, INTENT(IN) :: MAXLEG
+!  f2py intent(in) :: MAXLEG
+  INTEGER :: I, J, L, NL
+
+  OPEN (UNIT=1, FILE=MIETABFILE, STATUS='OLD')
+    READ (1,*)
+    READ (1,*)
+    READ (1,*)
+    READ (1,*)
+    READ (1,*)
+    READ (1,*)
+    READ (1,*)
+    DO I = 1, NRETAB
+      READ (1,'(1X,F8.4,1X,E12.5,1X,F8.6,1X,I6,A)') &
+          REFF(I), EXTINCT(I), SSALB(I), NLEG(I)
+      READ (1,'(2X,201(1X,F10.5))') (LEGCOEF(L,I), L=0,MIN(NLEG(I),200))
+      DO J = 200, NLEG(I)-1, 200
+        READ (1,'(2X,200(1X,F10.5))') (LEGCOEF(J+L,I),L=1,MIN(200,NLEG(I)-J))
+      ENDDO
+    ENDDO
+  CLOSE (1)
+END
+  
