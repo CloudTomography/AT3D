@@ -51,6 +51,11 @@ F2PY_MODULE_NAME = 'core'
 F2PY_SRC_PATH = 'src'
 F2PY_SIGN_FILE = '{path}/core.pyf'.format(path=F2PY_SRC_PATH)
 F2PY_SHDOM_FILES = ['shdom90.f90',
+                    'shdomsub1.f',
+                    'shdomsub2.f',
+                    'shdomsub3.f',
+                    'fftpack.f',
+                    'ocean_brdf.f',
                     'make_mie_table.f90',
                     'mieindsub.f']
 if PARALLEL_SUPPORT:
@@ -68,7 +73,10 @@ F2PY_CORE_API = [
     'read_mie_table',
     'start_mpi',
     'end_shdom_mpi',
-    'shdom_property_arrays'
+    'shdom_property_arrays',
+    'check_input_parmeters',
+    'new_grids',
+    'init_cell_structure'
 ]
 
 

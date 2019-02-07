@@ -18,7 +18,8 @@ Description taken from make_mie_table.f90:
 
 import core
 import numpy as np
-
+from scipy.interpolate import RegularGridInterpolator
+from shdom import ScalarField, VectorField
 
 class Mie(object):
     """
@@ -36,14 +37,19 @@ class Mie(object):
         self._deltawave = None
         self._alpha = None
         self._wavelencen = None
+        self._reff = None
+        self._extinct = None
+        self._ssalb = None
+        self._nleg = None
+        self._legcoef = None
     
     def set_parameters(self,
-                           wavelength_band,
-                           particle_type, 
-                           distribution,
-                           alpha, 
-                           wavelength_averaging=False,
-                           wavelength_resolution=0.001):
+                       wavelength_band,
+                       particle_type, 
+                       distribution,
+                       alpha, 
+                       wavelength_averaging=False,
+                       wavelength_resolution=0.001):
         """
         Set the Mie parameters to compute a new scattering table.
         
@@ -190,8 +196,10 @@ class Mie(object):
             partype=self._partype, 
             avgflag=self._avgflag, 
             distflag=self._distflag)
+        
+        self.init_intepolators()
         print('Done.')
-    
+        
     def write_table(self, file_path): 
         """
         Write a pre-computed table to <file_path>. 
@@ -279,8 +287,58 @@ class Mie(object):
             core.read_mie_table(mietabfile=file_path, 
                                 nretab=self._nretab, 
                                 maxleg=self._maxleg)
+        
+        self.init_intepolators()
         print('Done.')
 
+    
+    def init_intepolators(self):
+        assert True not in (self._reff is None, self._extinct is None, self._ssalb is None, self._nleg is None, self._legcoef is None), \
+                       'Mie scattering table was not computed or read from file. Using compute_table() or read_table().'   
+        self._ext_interpolator = RegularGridInterpolator(points=(self.reff,), 
+                                                         values=self.extinct, 
+                                                         bounds_error=False, 
+                                                         fill_value=0.0)
+        self._ssalb_interpolator = RegularGridInterpolator(points=(self.reff,), 
+                                                           values=self.ssalb, 
+                                                           bounds_error=False, 
+                                                           fill_value=0.0) 
+        self._legcoef_interpolator = RegularGridInterpolator(points=(self.reff,), 
+                                                             values=self.legcoeff.T, 
+                                                             bounds_error=False, 
+                                                             fill_value=0.0)          
+     
+    def interpolate_scattering_field(self, lwc, reff):
+        """
+        TODO: documentation
+    
+        Parameters
+        ----------
+        lwc: ScalarField 
+            A ScalarField object containting the liquid water content (g/m^3) on a 3D grid
+        reff: ScalarField 
+            A ScalarField object containting the effective radii (micron) on a 3D grid.
+
+        Returns
+        -------
+        extinction: ScalarField
+            A ScalarField object containting the extinction (1/km) on a 3D grid
+        phase: VectorField
+            A VectorField object containting the phase function legendre coeffiecients on a 3D grid
+        Notes
+        -----
+        Different grids for lwc and reff is not supported.
+        """   
+        assert lwc.grid == reff.grid, 'Different grids for lwc and reff is not supported yet'
+        grid = lwc.grid
+        reff_flat = reff.field.ravel()
+        ext_data = lwc.field * self._ext_interpolator(reff_flat).reshape(grid.nx, grid.ny, grid.nz)
+        phase_data = self._legcoef_interpolator(reff_flat).reshape(grid.nx, grid.ny, grid.nz, self.maxleg + 1)
+        extinction = ScalarField(grid, ext_data)
+        phase = VectorField(grid, phase_data)
+        return extinction, phase
+    
+    
     @property
     def reff(self):
         if hasattr(self, '_reff'):
@@ -315,4 +373,10 @@ class Mie(object):
             return self._legcoef
         else:
             print('Mie table was not computed or loaded')
-    
+            
+    @property
+    def maxleg(self):
+        if hasattr(self, '_maxleg'):
+            return self._maxleg
+        else:
+            print('Mie table was not computed or loaded')            
