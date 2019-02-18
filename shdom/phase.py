@@ -1,4 +1,6 @@
 """
+TODO: sort description
+
 A python wrapper for make_mie_table.f90 by Aviad Levis Technion Inst. of Technology February 2019.
 Source Fortran files were created by Frank Evans University of Colorado May 2003.
 For source code documentation see: http://nit.colorado.edu/shdom/shdomdoc/makemietable.html
@@ -19,8 +21,21 @@ Description taken from make_mie_table.f90:
 import core
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
-from shdom import ScalarField, VectorField
+from shdom import ScalarField, VectorField, BoundingBox, Grid
 
+class TemperatureProfile(object):
+    """TODO"""
+    def __init__(self, z_levels, temperatures):
+        assert len(z_levels) == len(temperatures), 'Number of z_levels doesnt match the number of temperatures specified.'
+        self.units = 'Kelvin'
+        self._z_levels = z_levels
+        self._temperatures = temperatures
+        self._temperature_interpolator = RegularGridInterpolator((z_levels,), temperatures)   
+        
+    def interpolate_temperatures(self, z_levels):
+        return self._temperature_interpolator(z_levels)
+    
+    
 class Mie(object):
     """
     Mie scattering for a particle size distribution. 
@@ -38,6 +53,7 @@ class Mie(object):
         self._alpha = None
         self._wavelencen = None
         self._reff = None
+        self._veff = None
         self._extinct = None
         self._ssalb = None
         self._nleg = None
@@ -78,8 +94,8 @@ class Mie(object):
               v_eff = 1/(alpha+3) - effective variance.
             Log-normal:
               N = sqrt(2*pi)*alpha*a - number concentration. 
-              r_eff = r0*exp(2.5*sigma^2) - effective radius.
-              v_eff = exp(sigma^2)-1  - effective variance.
+              r_eff = r0*exp(2.5*alpha^2) - effective radius.
+              v_eff = exp(alpha^2)-1  - effective variance.
         wavelength_averaging: bool
             True - average scattering properties over the wavelength_band.
             False - scattering properties of the central wavelength. 
@@ -323,6 +339,8 @@ class Mie(object):
         -------
         extinction: ScalarField
             A ScalarField object containting the extinction (1/km) on a 3D grid
+        albedo: ScalarField
+            A ScalarField object containting the single scattering albedo unitless in range [0, 1] on a 3D grid
         phase: VectorField
             A VectorField object containting the phase function legendre coeffiecients on a 3D grid
         Notes
@@ -331,12 +349,15 @@ class Mie(object):
         """   
         assert lwc.grid == reff.grid, 'Different grids for lwc and reff is not supported yet'
         grid = lwc.grid
-        reff_flat = reff.field.ravel()
-        ext_data = lwc.field * self._ext_interpolator(reff_flat).reshape(grid.nx, grid.ny, grid.nz)
-        phase_data = self._legcoef_interpolator(reff_flat).reshape(grid.nx, grid.ny, grid.nz, self.maxleg + 1)
+        reff_flat = reff.data.ravel()
+        ext_data = lwc.data * self._ext_interpolator(reff_flat).reshape(grid.nx, grid.ny, grid.nz)
+        ssalb_data = self._ssalb_interpolator(reff_flat).reshape(grid.nx, grid.ny, grid.nz)
+        maxleg = self.nleg.max()
+        phase_data = self._legcoef_interpolator(reff_flat).reshape(grid.nx, grid.ny, grid.nz, self.maxleg + 1)[..., :maxleg + 1]
         extinction = ScalarField(grid, ext_data)
+        albedo = ScalarField(grid, ssalb_data)
         phase = VectorField(grid, phase_data)
-        return extinction, phase
+        return extinction, albedo, phase
     
     
     @property
@@ -345,6 +366,16 @@ class Mie(object):
             return self._reff
         else:
             print('Mie table was not computed or loaded')    
+
+    @property
+    def veff(self):
+        if hasattr(self, '_alpha'):
+            if self._distflag == 'G':
+                return  1.0/(self._alpha+3.0) 
+            elif self._distflag == 'L':
+                return np.exp(self._alpha**2) - 1.0             
+        else:
+            print('Mie table was not computed or loaded')  
 
     @property
     def extinct(self):
@@ -380,3 +411,98 @@ class Mie(object):
             return self._maxleg
         else:
             print('Mie table was not computed or loaded')            
+            
+    @property
+    def distribution(self):
+        if hasattr(self, '_distflag'):
+            if self._distflag == 'G':
+                return 'Gamma'
+            elif self._distflag == 'L':
+                return 'Lognormal'
+        else:
+            print('Mie table was not computed or loaded')            
+
+         
+class Rayleigh(object):
+    """
+    Rayleigh scattering for temperature profile.
+    
+    Description taken from cloudprp.f:
+     Computes the molecular Rayleigh extinction profile EXTRAYL [/km]
+     from the temperature profile TEMP [K] at ZLEVELS [km].  Assumes
+     a linear lapse rate between levels to compute the pressure at
+     each level.  The Rayleigh extinction is proportional to air
+     density, with the coefficient RAYLCOEF in [K/(mb km)].
+
+    """
+    def __init__(self, wavelength, temperature_profile):
+        self._wavelength = wavelength
+        self._temperature_profile = temperature_profile
+        self._raylcoeff = (2.97e-4) * wavelength**(-4.15 + 0.2 * wavelength)
+        self._ssalb = np.array([1.0], dtype=np.float32)
+        self._phase = np.array([1.0, 0.0, 0.5], dtype=np.float32)
+       
+        
+    def get_scattering_field(self, z_levels):
+        """
+        TODO
+        """
+        temperature_profile = self.temperature_profile.interpolate_temperatures(z_levels)
+        nz = len(z_levels)
+
+        extinction_profile = core.rayleigh_extinct(
+            nzt=nz,
+            zlevels=z_levels,
+            temp=temperature_profile,
+            raylcoef=self.rayleigh_coefficient
+        )
+        
+        bounding_box = BoundingBox(-np.inf, -np.inf, z_levels[0], np.inf, np.inf, z_levels[-1])
+        grid = Grid(bounding_box, 1, 1, nz, z_levels)   
+        extinction = ScalarField(grid, extinction_profile.reshape(1,1,-1))
+        albedo = ScalarField(grid, np.tile(self.ssalb, (1, 1, nz)))
+        phase = VectorField(grid, np.tile(self.phase, (1, 1, nz, 1)))            
+      
+        return extinction, albedo, phase
+        
+        
+    @property
+    def extinction_profile(self):
+        if hasattr(self, '_extinction_profile'):
+            return self._extinction_profile
+        else:
+            print('scattering profile was not computed') 
+    
+    @property
+    def ssalb_profile(self):
+        if hasattr(self, '_ssalb_profile'):
+            return self._ssalb_profile
+        else:
+            print('scattering profile was not computed')      
+
+    @property
+    def phase_profile(self):
+        if hasattr(self, '_phase_profile'):
+            return self._phase_profile
+        else:
+            print('scattering profile was not computed')    
+        
+    @property
+    def temperature_profile(self):
+        return self._temperature_profile 
+    
+    @property
+    def wavelength(self):
+        return self._wavelength    
+    
+    @property
+    def rayleigh_coefficient(self):
+        return self._raylcoeff 
+    
+    @property
+    def ssalb(self):
+        return self._ssalb      
+    
+    @property
+    def phase(self):
+        return self._phase      

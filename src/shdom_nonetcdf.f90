@@ -31,7 +31,7 @@ contains
     real             :: zLevels(:)
     real             :: MAXASYM
     real             :: TEMPP(:), EXTINCTP(:), ALBEDOP(:), LEGENP(:)
-    INTEGER*2        :: IPHASEP(:)
+    INTEGER        :: IPHASEP(:)
 
     print *, 'Cannot read the netcdf property file because SHDOM was compiled without the netcdf library.'
     stop

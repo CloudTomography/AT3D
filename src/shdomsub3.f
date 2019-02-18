@@ -266,7 +266,8 @@ C     phase function formats, only the header is read, while for the
 C     standard format, the whole file must be read to determine MAXLEG.
       INTEGER NPX, NPY, NPZ
 Cf2py intent(out) NPX, NPY, NPZ
-      INTEGER NUMPHASE, NLEG, MAXLEG, MAXPGL
+      INTEGER NUMPHASE
+      INTEGER NLEG, MAXLEG, MAXPGL
 Cf2py intent(out) NUMPHASE, MAXLEG, MAXPGL
       REAL    DELX, DELY
 Cf2py intent(out) DELX, DELY
@@ -524,7 +525,8 @@ C       above 1, asymmetry parameter below -1 or above 1, or IPHASE
 C       out of range (of tabulated phase functions).  
 C       Warning if Chi1=1, for people specifying Chi0.
 C       Warning if optical depth across a grid cell exceeds 2.
-      INTEGER NPX, NPY, NPZ, NLEG, NUMPHASE
+      INTEGER NPX, NPY, NPZ, NLEG
+      INTEGER NUMPHASE
 Cf2py intent(in) :: NPX, NPY, NPZ, NLEG, NUMPHASE
       INTEGER*2 IPHASEP(NPX*NPY*NPZ)
 Cf2py intent(in) :: IPHASEP
@@ -568,7 +570,7 @@ C           Warn about temperatures outside of Earth atmosphere temperatures
       ENDDO
       IF (TMIN .LT. 150.0 .OR. TMAX .GT. 350.0) THEN
         WRITE (*,*) 'CHECK_PROPERTY_INPUT: Warning - ',
-     .        'temperature min and max (Kelvin): ', TMIN, TMAX
+     .   'temperature min and max (Kelvin): ', I, TEMPP(I), TMIN, TMAX
         WRITE (*,*)
       ENDIF
       DO I = 1, N
@@ -1296,11 +1298,13 @@ C     medium properties.
 C     See the overall program documentation for output parameters.
 
       INTEGER NX, NY, NZ, NBPTS, NPTS, NCELLS, NSH
-      INTEGER ML, MM, NLM, NLEG, NUMPHASE, NMU, NPHI, NANG, NG
+      INTEGER ML, MM, NLM, NLEG, NMU, NPHI, NANG, NG
+      INTEGER NUMPHASE
       INTEGER BCFLAG, IPFLAG
       INTEGER MAXITER, TOTITER, IRAD, NSHOUT
       INTEGER TREEPTR(2,NCELLS), GRIDPTR(8,NCELLS)
-      INTEGER*2 CELLFLAGS(NCELLS), IPHASE(NPTS)
+      INTEGER*2 CELLFLAGS(NCELLS)
+      INTEGER IPHASE(NPTS)
       LOGICAL DELTAM
       REAL    SOLARFLUX, SOLARMU, SOLARAZ
       REAL    GNDTEMP, GNDALBEDO, SKYRAD

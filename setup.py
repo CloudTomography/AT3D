@@ -54,6 +54,7 @@ F2PY_SHDOM_FILES = ['shdom90.f90',
                     'shdomsub1.f',
                     'shdomsub2.f',
                     'shdomsub3.f',
+                    'shdomsub4.f',
                     'fftpack.f',
                     'ocean_brdf.f',
                     'make_mie_table.f90',
@@ -63,6 +64,7 @@ if PARALLEL_SUPPORT:
 else:
     F2PY_SHDOM_FILES += ['shdom_nompi.f']
 F2PY_SHDOM_FILES = [
+    
             '{path}/{file_name}'.format(path=F2PY_SRC_PATH, file_name=file_name) for file_name in F2PY_SHDOM_FILES
 ]
 
@@ -71,12 +73,15 @@ F2PY_CORE_API = [
     'get_center_wavelen',
     'write_mie_table',
     'read_mie_table',
+    'rayleigh_extinct',
     'start_mpi',
     'end_shdom_mpi',
     'shdom_property_arrays',
     'check_input_parmeters',
     'new_grids',
-    'init_cell_structure'
+    'init_cell_structure',
+    'solve_rte',
+    'render'
 ]
 
 

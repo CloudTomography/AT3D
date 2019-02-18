@@ -8,44 +8,50 @@ from enum import Enum
 import warnings
 from shdom import Grid, BoundingBox, ScalarField
 
-
-class Phase(object):
-    """
-    TODO: add documentation
-
-    Parameters
-    ----------
-    
-    Notes
-    -----
-    """
-    def __init__(self):
-        pass
     
 
 class Medium(object):
     """
-    TODO: add documentation
+    The Medium object encapsulates an atmospheric optical medium. 
+    This means specifying extinction, single scattering albedo and 
+    phase function at every point in the domain.
+
 
     Parameters
     ----------
     extinction: ScalarField
+    albedo: ScalarField
     phase: VectorField
+    
     
     Notes
     -----
-    Different grids for phase and extinction is not supported.
+    Different grids for extinction and albedo is not supported.
     """
-    def __init__(self, extinction, phase):
+    def __init__(self, extinction, albedo, phase):
         self._ext = extinction
+        self._ssalb = albedo
         self._phase = phase
         
-        assert extinction.grid == phase.grid, 'Different grids for phase and extinction is not supported.'
+        assert extinction.grid == albedo.grid == phase.grid, \
+               'Different grids for phase, albedo and extinction is not supported.'
         self._grid = extinction.grid
+        self._bounding_box = self._grid.bounding_box
+
+    def __add__(self, other):
+        extinction = self.extinction + other.extinction
+        scat = self.albedo*self.extinction + other.albedo*other.extinction
+        albedo = scat / extinction
+        phase = (self.albedo*self.extinction*self.phase + other.albedo*other.extinction*other.phase) / scat
+        return Medium(extinction, albedo, phase)
         
     @property
     def extinction(self):
         return self._ext
+    
+    @property
+    def albedo(self):
+        return self._ssalb    
     
     @property
     def phase(self):
@@ -55,6 +61,11 @@ class Medium(object):
     def grid(self):
         return self._grid
     
+    @property
+    def bounding_box(self):
+        return self._bounding_box    
+    
+
 
 def load_les_from_csv(path_to_csv):
     """ 

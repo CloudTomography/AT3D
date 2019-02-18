@@ -45,7 +45,8 @@ Cf2py intent(in, out) :: NPTS, NCELLS
 Cf2py intent(in, out) :: RSHPTR, SHPTR, OSHPTR
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
 Cf2py intent(in, out) :: GRIDPTR, NEIGHPTR, TREEPTR
-      INTEGER*2 CELLFLAGS(*), IPHASE(*)
+      INTEGER*2 CELLFLAGS(*)
+      INTEGER  IPHASE(*)
 Cf2py intent(in, out) :: CELLFLAGS, IPHASE
       INTEGER WORK1(*)
 Cf2py intent(in) :: WORK1
@@ -105,12 +106,13 @@ C           Check array sizes
       IF (NLM .GT. MAXNLM)   STOP 'SOLVE_RTE: MAXNLM exceeded'
       IF (NMU .GT. MAXNMU)   STOP 'SOLVE_RTE: MAXNMU exceeded'
       IF (NPHI .GT. MAXNPHI) STOP 'SOLVE_RTE: MAXNPHI exceeded'
-
+      
 C       Set up some things before solution loop
 
 C           Transfer the medium properties to the internal grid and add gas abs
       CALL INTERP_GRID (NPTS, NLEG, GRIDPOS,
      .                  TEMP, EXTINCT, ALBEDO, LEGEN, IPHASE)
+ 
  
 C         If Delta-M then scale the extinction, albedo, and Legendre terms.
 C         Put the Planck blackbody source in PLANCK.
@@ -119,7 +121,6 @@ C         Put the Planck blackbody source in PLANCK.
      .                   EXTINCT, ALBEDO, LEGEN, TEMP, PLANCK, IPHASE)
 C       Get the maximum single scattering albedo over all processors
       CALL TOTAL_ALBEDO_MAX (ALBMAX)
-
 C           Compute the solar transmission in DIRFLUX. 
 C           Precompute Ylm's for solar direction
       IF (SRCTYPE .NE. 'T') THEN
@@ -134,7 +135,6 @@ C           Precompute Ylm's for solar direction
         CALL YLMALL (SOLARMU, SOLARAZ, ML, MM, NCS, YLMSUN)
       ENDIF
 
-
 C           Make the discrete ordinates (angles) 
 C             (set 2 is reduced gaussian, 3 is reduced double gauss)
       ORDINATESET = 2
@@ -146,7 +146,6 @@ C           Make the Ylm transform coefficients
       CALL MAKE_SH_DO_COEF (ML, MM, NLM, NMU, NPHI0, NCS, 
      .         NPHI0MAX, MU, PHI, WTMU, WTDO, FFTFLAG,
      .         CMU1, CMU2, CPHI1, CPHI2, WPHISAVE)
-
 
       FIXSH = .FALSE.
       IF (.NOT. INRADFLAG) THEN
@@ -170,7 +169,6 @@ C           Initialize the source function from the radiance field
      .           RSHPTR, RADIANCE, SHPTR, SOURCE, OSHPTR, DELSOURCE, 
      .           .TRUE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM)
       ENDIF
-
       IF (ACCELFLAG) THEN
         DO I = 1, NPTS+1
           OSHPTR(I) = SHPTR(I)
@@ -377,11 +375,12 @@ C     two extra calculations of the source function.
 C       Computes the sum of squares of the new source function for calculation
 C     of the solution criterion (SOLCRIT, the RMS difference in succesive 
 C     source function fields normalized by the RMS of the field).
-      INTEGER NPTS, ML, MM, NCS, NLM, NLEG, NUMPHASE, MAXIV
+      INTEGER NPTS, ML, MM, NCS, NLM, NLEG, MAXIV
 Cf2py intent(in) :: NPTS, ML, MM, NCS, NLM, NLEG, MAXIV
+      INTEGER NUMPHASE
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)
 Cf2py intent(in) :: RSHPTR, SHPTR, OSHPTR
-      INTEGER*2 IPHASE(*)
+      INTEGER IPHASE(*)
 Cf2py intent(in) :: IPHASE
       LOGICAL FIXSH, FIRST, ACCELFLAG
 Cf2py intent(in) :: FIXSH, FIRST, ACCELFLAG
@@ -621,12 +620,13 @@ C     the source function truncation may grow (since initialized with
 C     a low order truncation).  The minimum radiance truncation is 
 C     L=1 so that the mean radiance and net flux terms may be computed,
 C     unless HIGHORDERRAD is on, in which case all terms are kept.
-      INTEGER NPTS, ML, MM, NCS, NLEG, NUMPHASE, MAXIR
+      INTEGER NPTS, ML, MM, NCS, NLEG, MAXIR
 Cf2py intent(in) :: NPTS, ML, MM, NCS, NLEG, MAXIR
+      INTEGER NUMPHASE
       INTEGER SHPTR(*), RSHPTR(*)
 Cf2py intent(in) ::SHPTR
 Cf2py intent(in,out) :: RSHPTR
-      INTEGER*2 IPHASE(*)
+      INTEGER IPHASE(*)
 Cf2py intent(in) :: IPHASE
       LOGICAL HIGHORDERRAD, FIXSH
 Cf2py intent(in) ::  HIGHORDERRAD, FIXSH
@@ -848,10 +848,11 @@ Cf2py intent(in,out) :: BCRAD
       REAL    DIRFLUX(*), FLUXES(2,*), EXTINCT(*)
 Cf2py intent(in,out) :: DIRFLUX, FLUXES
 Cf2py intent(in) :: EXTINCT
-      REAL    GRIDRAD(*), WORK(NPHI0MAX,NPTS)
+      REAL    GRIDRAD(*), WORK(NPHI0MAX,NPTS), RADIANCE(*)
 Cf2py intent(in) ::  GRIDRAD, WORK
-      REAL    SOURCE(*), RADIANCE(*)
-Cf2py intent(in,out) :: SOURCE, RADIANCE
+Cf2py intent(in,out) :: RADIANCE
+      REAL    SOURCE(*)
+Cf2py intent(in,out) :: SOURCE
       CHARACTER SRCTYPE*1, UNITS*1, SFCTYPE*2
 Cf2py intent(in) :: SRCTYPE, UNITS, SFCTYPE
  
@@ -917,22 +918,20 @@ C         Zero the output spherical harmonic radiance
 C          Loop over the zenith angles (downwelling angles must be first)
       IANG = 1
       DO IMU = 1, NMU
-
         IF (IMU .EQ. NMU/2+1) THEN
 C           For the first upwelling angle, make the bottom boundary radiances
 C             for the Lambertian surfaces.  Compute the upwelling bottom 
 C             radiances using the downwelling fluxes.
           IF (SFCTYPE .EQ. 'FL') THEN
             CALL FIXED_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
-     .             DIRFLUX, FLUXES, SRCTYPE, GNDTEMP, GNDALBEDO, 
-     .             WAVENO, WAVELEN, UNITS,   BCRAD(1+NTOPPTS))
+     .           DIRFLUX, FLUXES, SRCTYPE, GNDTEMP, GNDALBEDO, 
+     .           WAVENO, WAVELEN, UNITS, BCRAD(1+NTOPPTS))
           ELSE IF (SFCTYPE .EQ. 'VL') THEN
             CALL VARIABLE_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
-     .             DIRFLUX, FLUXES, SRCTYPE, NSFCPAR, SFCGRIDPARMS,
-     .             BCRAD(1+NTOPPTS))
+     .           DIRFLUX, FLUXES, SRCTYPE, NSFCPAR, SFCGRIDPARMS,
+     .           BCRAD(1+NTOPPTS))
           ENDIF
         ENDIF
-
 C           Transform the source to discrete ordinates for this zenith angle
         CALL SH_TO_DO (NPTS, ML,MM,NLM, NMU,NPHI0MAX,NPHI0(IMU), NCS,
      .         IMU, FFTFLAG, CMU1, CPHI1, WSAVE, SHPTR, SOURCE, WORK)
@@ -946,7 +945,6 @@ C           Enforce the discrete ordinate source function to be non-negative
 
 C           Loop over the azimuthal angles
         DO IPHI = 1, NPHI0(IMU)
-
           IF (MU(IMU) .LT. 0.0) THEN
 C               For downward ordinates, initialize the top boundary radiances
             IUPDOWN = 1
@@ -1789,7 +1787,7 @@ C         Sweep through all the grid points
         IPCELL = ISHFT(SWEEPORD(IORDER,JOCT),-3)
         ICORNER = IBITS(SWEEPORD(IORDER,JOCT),0,3)+1
         IPT = GRIDPTR(ICORNER,IPCELL)
-
+        
         IF (BTEST(BCFLAG,2) .OR. BTEST(BCFLAG,3)) THEN
 C           For multiple processors get the subdomain boundary radiances
 C           for each Z slab
@@ -1804,7 +1802,6 @@ C           for each Z slab
      .                        KANG, GRIDRAD)
           ENDIF
         ENDIF
-
         IF (GRIDRAD(IPT) .GE. 0.0)  GOTO 500
 
 C           Start off at the grid point
@@ -2026,7 +2023,6 @@ C             to stop the tracing and add in the interpolated face radiance.
         ENDDO
 
         GRIDRAD(IPT) = RAD
-
 500     CONTINUE
       ENDDO
 
@@ -2716,14 +2712,16 @@ C     by MAXIG, MAXIC, MAXIV, MAXIDO) then the OUTOFMEM flag is returned true.
 Cf2py intent(in) :: MAXIG, MAXIC, MAXIV, MAXIDO, NPHI0MAX
       INTEGER NPTS, NCELLS, BCFLAG, IPFLAG
 Cf2py intent(in,out) :: NPTS, NCELLS, BCFLAG, IPFLAG
-      INTEGER NX, NY, ML, MM, NLM, NCS, NLEG, NUMPHASE
+      INTEGER NX, NY, ML, MM, NLM, NCS, NLEG
+      INTEGER NUMPHASE
 Cf2py intent(in) :: NX, NY, ML, MM, NLM, NCS, NLEG, NUMPHASE
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
 Cf2py intent(in,out) :: GRIDPTR, NEIGHPTR, TREEPTR
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*), ADAPTIND(*)
 Cf2py intent(in,out) :: RSHPTR, SHPTR, OSHPTR
 Cf2py intent(in,out) :: ADAPTIND
-      INTEGER*2 CELLFLAGS(*), IPHASE(*)
+      INTEGER*2 CELLFLAGS(*)
+      INTEGER IPHASE(*)
 Cf2py intent(in,out) :: CELLFLAGS, IPHASE
       LOGICAL DELTAM, ACCELFLAG, DOSPLIT, OUTOFMEM
 Cf2py intent(in) :: DELTAM, ACCELFLAG, DOSPLIT 
@@ -2902,9 +2900,10 @@ C     recomputed (rather than interpolated).  The radiance is averaged
 C     from the two parent grid points, and used to compute the source
 C     function for the new points.
       INTEGER NEWPOINTS(3,4), NPTS
-      INTEGER ML, MM, NCS, NLEG, NUMPHASE, BCFLAG, IPFLAG
+      INTEGER ML, MM, NCS, NLEG, BCFLAG, IPFLAG
+      INTEGER NUMPHASE
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)
-      INTEGER*2 IPHASE(NPTS)
+      INTEGER IPHASE(NPTS)
       LOGICAL DELTAM, ACCELFLAG
       REAL    SOLARFLUX, SOLARMU, SOLARAZ, YLMSUN(*)
       REAL    WAVENO(2), WAVELEN
@@ -2969,13 +2968,11 @@ C             Do the Delta-M scaling for this point
             EXTINCT(IP) = (1.0-ALBEDO(IP)*F)*EXTINCT(IP)
             ALBEDO(IP) = (1.0-F)*ALBEDO(IP)/(1.0-ALBEDO(IP)*F)
           ENDIF
-
 C             Compute the new Planck source function (if needed)
           IF (SRCTYPE .NE. 'S') THEN
             CALL PLANCK_FUNCTION (TEMP(IP), UNITS,WAVENO,WAVELEN,BB)
             PLANCK(IP) = (1.0-ALBEDO(IP))*BB
           ENDIF
-
 C             Compute the new direct beam flux (if needed)
           IF (SRCTYPE .NE. 'T') THEN
             IF (BTEST(BCFLAG,2) .OR. BTEST(BCFLAG,3)) THEN
@@ -3664,5 +3661,4 @@ C                 deciding to split it (no point in dividing clear sky).
 
       RETURN
       END
-
-
+      

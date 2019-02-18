@@ -38,19 +38,87 @@ class ScalarField(object):
     Notes
     -----
     """
-    def __init__(self, grid, field):
+    def __init__(self, grid, data):
         self._grid = grid
-        self._field = field
+        self._data = data
+        
+        points = []
+        if grid.nx > 1:
+            points.append(grid.x_grid)          
+        if grid.ny > 1:
+            points.append(grid.y_grid)        
+        points.append(grid.z_levels)
+            
+        self._data_interpolator = RegularGridInterpolator(points,
+                                                          values=np.squeeze(data), 
+                                                          bounds_error=False, 
+                                                          fill_value=0.0)
+  
+    def resample(self, new_grid):
+        """TODO"""
+        
+        points = []
+        if self.grid.nx > 1:
+            points.append(new_grid.x_grid)          
+        if self.grid.ny > 1:
+            points.append(new_grid.y_grid)
+        points.append(new_grid.z_levels)
+        data = self._data_interpolator(np.stack(np.meshgrid(*points, indexing='ij'), axis=-1))
+        
+        if (self.grid.ny == 1) or (new_grid.ny == 1):
+            data = data[np.newaxis,...] 
+        if (self.grid.nx == 1) or (new_grid.nx == 1):
+            data = data[np.newaxis,...] 
+        
+        return data
+
+        
+    def __add__(self, other):
+        grid = self.grid + other.grid
+        data = self.resample(grid) + other.resample(grid)
+        return ScalarField(grid, data)
+    
+    
+    def __mul__(self, other):  
+        grid = self.grid + other.grid
+
+        if other.__class__ is VectorField:
+            data = self.resample(grid)[..., np.newaxis] * other.resample(grid)
+            return VectorField(grid, data)
+        
+        elif other.__class__ is ScalarField:
+            data = self.resample(grid) * other.resample(grid)
+            return ScalarField(grid, data)
+        else:
+            print('Error multiplying {} * {}'.format(self.__class__, other.__class__))        
+
+
+    def __div__(self, other):
+        grid = self.grid + other.grid
+        
+        if other.__class__ is VectorField:
+            data = self.resample(grid)[..., np.newaxis] / other.resample(grid)
+            return VectorField(grid, data)
+        elif other.__class__ is ScalarField:
+            data = self.resample(grid) / other.resample(grid)
+            return ScalarField(grid, data)        
+        else:
+            print('Error dividing {} / {}'.format(self.__class__, other.__class__))
+    
     
     @property
     def grid(self):
         return self._grid
     
     @property
-    def field(self):
-        return self._field
+    def data(self):
+        return self._data
     
-    
+    @property
+    def shape(self):
+        return self._data.shape
+        
+        
 class VectorField(ScalarField):
     """
     TODO: add documentation
@@ -62,14 +130,50 @@ class VectorField(ScalarField):
     Notes
     -----
     """
-    def __init__(self, grid, field):
-        super(VectorField, self).__init__(grid, field)
-        self._depth = field.shape[3] 
+    def __init__(self, grid, data):
+        super(VectorField, self).__init__(grid, data)
+        self._depth = data.shape[3] - 1
+
+    
+    def __add__(self, other):
+        grid = self.grid + other.grid
+        self_data = self.resample(grid)
+        other_data = other.resample(grid)
+        depth_diff = self.depth - other.depth
+        if depth_diff > 0:
+            self_data = self_data
+            other_data = np.pad(other_data, ((0, 0), (0, 0), (0, 0), (0, depth_diff)), 'constant')
+        elif depth_diff < 0:
+            self_data = np.pad(self_data, ((0, 0), (0, 0), (0, 0), (0, -depth_diff)), 'constant')
+            other_data = other_data
+
+        return VectorField(grid, self_data +  other_data)
+
+    
+    def __mul__(self, other): 
+        grid = self.grid + other.grid
+        other_data = other.resample(grid)
+        if other.__class__ is ScalarField:
+            other_data = other_data[..., np.newaxis]
+        elif other.__class__ is not VectorField:
+            print('Error multiplying {} * {}'.format(self.__class__, other.__class__))        
+        data = self.resample(grid) * other_data
+        return VectorField(grid, data)
+    
+    def __div__(self, other):  
+        grid = self.grid + other.grid
+        other_data = other.resample(grid)        
+        if other.__class__ is ScalarField:
+            other_data = other_data[..., np.newaxis]
+        elif other.__class__ is not VectorField:
+            print('Error dividing {} / {}'.format(self.__class__, other.__class__))        
+        data = self.resample(grid) / other_data
+        return VectorField(grid, data)
     
     @property
     def depth(self):
-        return self._depth    
-    
+        return self._depth 
+
 class Grid(object):
     """ 
     An grid objects. x and y must have even spacings.
@@ -77,6 +181,8 @@ class Grid(object):
     
     Parameters
     ----------
+    bounding_box: BoundingBox.
+        A BoundingBox object. Cloud be unbound in x and y.
     nx: integer
         Number of grid point in x axis.
     ny: integer
@@ -93,11 +199,86 @@ class Grid(object):
         self._nx = nx
         self._ny = ny
         self._nz = nz
+        self._num_grid_points = self.nx * self.ny *self.nz
         if z_levels is None:
             self._z_levels = np.linspace(bounding_box.zmin, bounding_box.zmax, nz) 
         else:
             self._z_levels = z_levels
+        self._dx = (self.bounding_box.xmax - self.bounding_box.xmin) / self.nx
+        self._dy = (self.bounding_box.ymax - self.bounding_box.ymin) / self.ny
+        self._dz = (self.bounding_box.zmax - self.bounding_box.zmin) / self.nz
+        self._x_grid = np.linspace(self.bounding_box.xmin, self.bounding_box.xmax, self.nx) 
+        self._y_grid = np.linspace(self.bounding_box.ymin, self.bounding_box.ymax, self.ny) 
+            
+
+    def __add__(self, other):
+        """ TODO: keeps dx, dy constant"""
+    
+        bounding_box = self.bounding_box + other.bounding_box
+    
+        x_size = bounding_box.xmax - bounding_box.xmin
+        y_size = bounding_box.ymax - bounding_box.ymin
+        dx = min(self.dx, other.dx)
+        dy = min(self.dy, other.dy)
+    
+        if np.isfinite(x_size):
+            nx = int(x_size / dx)
+        else:
+            nx = 1
+    
+        if np.isfinite(y_size):
+            ny = int(y_size / dy)
+        else:
+            ny = 1 
+    
+        # Bottom part of the atmosphere (no grid intersection)
+        if self.z_levels[0] < other.z_levels[0]:
+            z_bottom = self.z_levels[self.z_levels < other.z_levels[0]]
+        else:
+            z_bottom = other.z_levels[other.z_levels < self.z_levels[0]]
+    
+        # Top part of the atmosphere (no grid intersection)
+        if self.z_levels[-1] < other.z_levels[-1]:
+            z_top = other.z_levels[other.z_levels > self.z_levels[-1]]
+        else:
+            z_top = self.z_levels[self.z_levels > other.z_levels[-1]]
+    
+        # Middle part of the atmosphere (grids intersect)
+        z_middle_self = self.z_levels
+        z_middle_other = other.z_levels
+        if z_bottom.any():
+            z_middle_self = self.z_levels[self.z_levels > z_bottom[-1]]
+            z_middle_other = other.z_levels[other.z_levels > z_bottom[-1]]
+        if z_top.any():
+            z_middle_self = self.z_levels[self.z_levels < z_top[0]]
+            z_middle_other = other.z_levels[other.z_levels < z_top[0]]
+    
+        z_middle = z_middle_self if len(z_middle_self) > len(z_middle_other) else z_middle_other
+    
+        # Check if an extra point is necessary at the bottom 
+        if z_bottom.any() & len(z_middle)>2:
+            extra_zlevel = 2*z_middle[0] - z_middle[1]
+            if extra_zlevel > z_bottom[-1]:
+                z_middle = np.append(extra_zlevel, z_middle)
+    
+        # Check if an extra point is necessary at the top 
+        if z_top.any() & len(z_middle)>2:
+            extra_zlevel = 2*z_middle[-1] - z_middle[-2]
+            if extra_zlevel < z_top[0]:
+                z_middle = np.append(z_middle, extra_zlevel)
+    
+        z_levels = np.concatenate((z_bottom, z_middle, z_top))
+        nz = len(z_levels)
         
+        return Grid(bounding_box, nx, ny, nz, z_levels)        
+
+    def __eq__(self, other) : 
+        for item1, item2 in zip(self.__dict__.itervalues(), other.__dict__.itervalues()):
+            if not np.array_equal(np.nan_to_num(item1), np.nan_to_num(item2)):
+                return False
+        return True
+    
+    
     @property 
     def nx(self):
         return self._nx
@@ -111,6 +292,10 @@ class Grid(object):
         return self._nz
     
     @property 
+    def num_grid_points(self):
+        return self._num_grid_points
+    
+    @property 
     def z_levels(self):
         return self._z_levels
     
@@ -120,23 +305,24 @@ class Grid(object):
     
     @property 
     def dx(self):
-        if hasattr(self, '_dx') is False:
-            self._dx = (self._bb.xmax - self._bb.xmin) / self._nx
         return self._dx  
     
     @property 
     def dy(self):
-        if hasattr(self, '_dy') is False:
-            self._dy = (self._bb.ymax - self._bb.ymin) / self._ny
         return self._dy    
 
     @property 
-    def dz(self):
-        if hasattr(self, '_dz') is False:
-            self._dz = (self._bb.zmax - self._bb.zmin) / self._nz  
+    def dz(self):  
         return self._dz 
     
-            
+    @property 
+    def x_grid(self):
+        return self._x_grid   
+    
+    @property 
+    def y_grid(self):
+        return self._y_grid      
+
 class BoundingBox(object):
     """ 
     A bounding box object.
@@ -162,16 +348,68 @@ class BoundingBox(object):
     All values are in [km] units
     """ 
     def __init__(self, xmin, ymin, zmin, xmax, ymax, zmax):
+        assert xmin < xmax, 'Zero area bounding_box along x axis.'  
+        assert ymin < ymax, 'Zero area bounding_box along y axis.' 
+        assert zmin < zmax, 'Zero area bounding_box along z axis.'       
         self.xmin = xmin
         self.ymin = ymin
         self.zmin = zmin
         self.xmax = xmax
         self.ymax = ymax
-        self.ymin = zmax
+        self.zmax = zmax
         
+    def __eq__(self, other) : 
+        return self.__dict__ == other.__dict__    
+    
+    
+    def __add__(self, other):
         
+        xmin = self.xmin
+        if np.isfinite(other.xmin):
+            if np.isfinite(xmin):
+                xmin = min(xmin, other.xmin)
+            else:
+                xmin = other.xmin
+            
+        ymin = self.ymin
+        if np.isfinite(other.ymin):
+            if np.isfinite(ymin):
+                ymin = min(ymin, other.ymin)
+            else:
+                ymin = other.ymin
+                
+        zmin = self.zmin
+        if np.isfinite(other.zmin):
+            if np.isfinite(zmin):
+                zmin = min(zmin, other.zmin)
+            else:
+                zmin = other.zmin
         
+        xmax = self.xmax
+        if np.isfinite(other.xmax):
+            if np.isfinite(xmax):
+                xmax = max(xmax, other.xmax)
+            else:
+                xmax = other.xmax
+            
+        ymax = self.ymax
+        if np.isfinite(other.ymax):
+            if np.isfinite(ymax):
+                ymax = max(ymax, other.ymax)
+            else:
+                ymax = other.ymax
+                
+        zmax = self.zmax
+        if np.isfinite(other.zmax):
+            if np.isfinite(zmax):
+                zmax = min(zmax, other.zmax)
+            else:
+                zmax = other.zmax
+                
+        return BoundingBox(xmin, ymin, zmin, xmax, ymax, zmax)
 
-from mie import *
+ 
+from phase import *
 from medium import *
-from rte_solver import *    
+from sensor import *
+from rte_solver import *
