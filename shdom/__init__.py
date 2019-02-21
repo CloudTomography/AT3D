@@ -25,101 +25,9 @@ distribution functions (BRDF) for the surface are implemented, and more may be a
 SHDOM may be run on a single processor or on multiple processors (e.g. an SMP machine or a
 cluster) using the Message Passing Interface (MPI).
 """
+from scipy.interpolate import interp1d, RegularGridInterpolator
 
-
-class ScalarField(object):
-    """
-    TODO: add documentation
-
-    Parameters
-    ----------
-    grid: Grid 
-    
-    Notes
-    -----
-    """
-    def __init__(self, grid, data):
-        self._grid = grid
-        self._data = data
-        
-        points = []
-        if grid.nx > 1:
-            points.append(grid.x_grid)          
-        if grid.ny > 1:
-            points.append(grid.y_grid)        
-        points.append(grid.z_levels)
-            
-        self._data_interpolator = RegularGridInterpolator(points,
-                                                          values=np.squeeze(data), 
-                                                          bounds_error=False, 
-                                                          fill_value=0.0)
-  
-    def resample(self, new_grid):
-        """TODO"""
-        
-        points = []
-        if self.grid.nx > 1:
-            points.append(new_grid.x_grid)          
-        if self.grid.ny > 1:
-            points.append(new_grid.y_grid)
-        points.append(new_grid.z_levels)
-        data = self._data_interpolator(np.stack(np.meshgrid(*points, indexing='ij'), axis=-1))
-        
-        if (self.grid.ny == 1) or (new_grid.ny == 1):
-            data = data[np.newaxis,...] 
-        if (self.grid.nx == 1) or (new_grid.nx == 1):
-            data = data[np.newaxis,...] 
-        
-        return data
-
-        
-    def __add__(self, other):
-        grid = self.grid + other.grid
-        data = self.resample(grid) + other.resample(grid)
-        return ScalarField(grid, data)
-    
-    
-    def __mul__(self, other):  
-        grid = self.grid + other.grid
-
-        if other.__class__ is VectorField:
-            data = self.resample(grid)[..., np.newaxis] * other.resample(grid)
-            return VectorField(grid, data)
-        
-        elif other.__class__ is ScalarField:
-            data = self.resample(grid) * other.resample(grid)
-            return ScalarField(grid, data)
-        else:
-            print('Error multiplying {} * {}'.format(self.__class__, other.__class__))        
-
-
-    def __div__(self, other):
-        grid = self.grid + other.grid
-        
-        if other.__class__ is VectorField:
-            data = self.resample(grid)[..., np.newaxis] / other.resample(grid)
-            return VectorField(grid, data)
-        elif other.__class__ is ScalarField:
-            data = self.resample(grid) / other.resample(grid)
-            return ScalarField(grid, data)        
-        else:
-            print('Error dividing {} / {}'.format(self.__class__, other.__class__))
-    
-    
-    @property
-    def grid(self):
-        return self._grid
-    
-    @property
-    def data(self):
-        return self._data
-    
-    @property
-    def shape(self):
-        return self._data.shape
-        
-        
-class VectorField(ScalarField):
+class VectorField(object):
     """
     TODO: add documentation
 
@@ -174,84 +82,131 @@ class VectorField(ScalarField):
     def depth(self):
         return self._depth 
 
+
 class Grid(object):
     """ 
-    An grid objects. x and y must have even spacings.
-    z can have uneven spacing by specifying the z_levels parameter.
+    TODO 
     
     Parameters
     ----------
+    data: TODO
     bounding_box: BoundingBox.
         A BoundingBox object. Cloud be unbound in x and y.
     nx: integer
         Number of grid point in x axis.
     ny: integer
         Number of grid point in z axis.
-    nz: integer
-        Number of grid point in z axis.
-    z_levels: np.array(dtype=float, shape=(nz,)), optional
+    z: np.array(dtype=float, shape=(nz,)), optional
         grid along z axis
-    Notes
-    -----
-    """
-    def __init__(self, bounding_box, nx, ny, nz, z_levels=None):
-        self._bb = bounding_box
-        self._nx = nx
-        self._ny = ny
-        self._nz = nz
-        self._num_grid_points = self.nx * self.ny *self.nz
-        if z_levels is None:
-            self._z_levels = np.linspace(bounding_box.zmin, bounding_box.zmax, nz) 
-        else:
-            self._z_levels = z_levels
-        self._dx = (self.bounding_box.xmax - self.bounding_box.xmin) / self.nx
-        self._dy = (self.bounding_box.ymax - self.bounding_box.ymin) / self.ny
-        self._dz = (self.bounding_box.zmax - self.bounding_box.zmin) / self.nz
-        self._x_grid = np.linspace(self.bounding_box.xmin, self.bounding_box.xmax, self.nx) 
-        self._y_grid = np.linspace(self.bounding_box.ymin, self.bounding_box.ymax, self.ny) 
+    """    
+    def __init__(self, **kwargs):
+        
+        # 3D grid with grids
+        if kwargs.has_key('x') and kwargs.has_key('y') and kwargs.has_key('z'):
+            self._type = '3D'
+            self.x = kwargs['x']
+            self.y = kwargs['y']
+            self.z = kwargs['z']
+            self._bounding_box = BoundingBox(self.xmin, self.ymin, self.zmin, self.xmax, self.ymax, self.zmax)
             
+        # 3D grid with bounding box
+        elif kwargs.has_key('bounding_box') and kwargs.has_key('nx') and kwargs.has_key('ny'):
+            self._type = '3D'
+            bb = kwargs['bounding_box']
+            self._bounding_box = bb
+            nx, ny = kwargs['nx'], kwargs['ny']
+            self.x = np.linspace(bb.xmin, bb.xmax, nx)
+            self.y = np.linspace(bb.ymin, bb.ymax, ny)
+            if kwargs.has_key('z'):
+                self.z = kwargs['z']
+            elif kwargs.has_key('nz'):
+                nz = kwargs['nx']
+                self.z = np.linspace(bb.zmin, bb.zmax, nz)
+            else:
+                raise AttributeError('z or nz are missing')
+            
+        # 1D grid 
+        elif kwargs.has_key('z'):
+            self._type = '1D'
+            self.z = kwargs['z']
+            self._nx = self._ny = 1
+            self._x = self._y = self._bounding_box = None
+         
+        else:
+            raise AttributeError('kwargs in Grid initialization are not defined')
+    
+    def get_common_x_grid(self, other):
+        """
+        TODO
+        """
+        if self.type == '1D' and other.type == '1D':
+            return None       
+        if self.type == '3D' and other.type == '1D':
+            return self.x
+        if self.type == '1D' and other.type == '3D':
+            return other.x
+        
+        if np.allclose(self.x, other.x):
+            return self.x
 
-    def __add__(self, other):
-        """ TODO: keeps dx, dy constant"""
-    
-        bounding_box = self.bounding_box + other.bounding_box
-    
-        x_size = bounding_box.xmax - bounding_box.xmin
-        y_size = bounding_box.ymax - bounding_box.ymin
+        xmax = max(self.xmax, other.xmax)
+        xmin = min(self.xmin, other.xmin) 
+        x_size = xmax - xmin      
         dx = min(self.dx, other.dx)
+        nx = int(y_size / dx)        
+        return np.linspace(xmin, xmax, nx, dtype=np.float32)  
+    
+    
+    def get_common_y_grid(self, other):
+        """
+        TODO
+        """
+        if self.type == '1D' and other.type == '1D':
+            return None       
+        if self.type == '3D' and other.type == '1D':
+            return self.y
+        if self.type == '1D' and other.type == '3D':
+            return other.y
+        
+        if np.allclose(self.y, other.y):
+            return self.y
+        
+        ymax = max(self.ymax, other.ymax)
+        ymin = min(self.ymin, other.ymin) 
+        y_size = ymax - ymin      
         dy = min(self.dy, other.dy)
-    
-        if np.isfinite(x_size):
-            nx = int(x_size / dx)
-        else:
-            nx = 1
-    
-        if np.isfinite(y_size):
-            ny = int(y_size / dy)
-        else:
-            ny = 1 
-    
+        ny = int(y_size / dy)        
+        return np.linspace(ymin, ymax, ny, dtype=np.float32)              
+       
+        
+    def get_common_z_grid(self, other):
+
+        """TODO"""
+        
+        if np.allclose(self.z, other.z):
+            return self.z
+        
         # Bottom part of the atmosphere (no grid intersection)
-        if self.z_levels[0] < other.z_levels[0]:
-            z_bottom = self.z_levels[self.z_levels < other.z_levels[0]]
+        if self.zmin < other.zmin:
+            z_bottom = self.z[self.z < other.zmin]
         else:
-            z_bottom = other.z_levels[other.z_levels < self.z_levels[0]]
+            z_bottom = other.z[other.z < self.zmin]
     
         # Top part of the atmosphere (no grid intersection)
-        if self.z_levels[-1] < other.z_levels[-1]:
-            z_top = other.z_levels[other.z_levels > self.z_levels[-1]]
+        if self.zmax < other.zmax:
+            z_top = other.z[other.z > self.zmax]
         else:
-            z_top = self.z_levels[self.z_levels > other.z_levels[-1]]
+            z_top = self.z[self.z > other.zmax]
     
         # Middle part of the atmosphere (grids intersect)
-        z_middle_self = self.z_levels
-        z_middle_other = other.z_levels
+        z_middle_self = self.z
+        z_middle_other = other.z
         if z_bottom.any():
-            z_middle_self = self.z_levels[self.z_levels > z_bottom[-1]]
-            z_middle_other = other.z_levels[other.z_levels > z_bottom[-1]]
+            z_middle_self = self.z[self.z > z_bottom[-1]]
+            z_middle_other = other.z[other.z > z_bottom[-1]]
         if z_top.any():
-            z_middle_self = self.z_levels[self.z_levels < z_top[0]]
-            z_middle_other = other.z_levels[other.z_levels < z_top[0]]
+            z_middle_self = self.z[self.z < z_top[0]]
+            z_middle_other = other.z[other.z < z_top[0]]
     
         z_middle = z_middle_self if len(z_middle_self) > len(z_middle_other) else z_middle_other
     
@@ -267,18 +222,69 @@ class Grid(object):
             if extra_zlevel < z_top[0]:
                 z_middle = np.append(z_middle, extra_zlevel)
     
-        z_levels = np.concatenate((z_bottom, z_middle, z_top))
-        nz = len(z_levels)
-        
-        return Grid(bounding_box, nx, ny, nz, z_levels)        
+        return np.concatenate((z_bottom, z_middle, z_top))      
 
+    def __add__(self, other):
+        """ TODO: keeps dx, dy constant"""
+        x_grid = self.get_common_x_grid(other)
+        y_grid = self.get_common_y_grid(other)
+        z_grid = self.get_common_z_grid(other)
+        if x_grid is not None and y_grid is not None:
+            grid = Grid(x=x_grid, y=y_grid, z=z_grid)
+        else:
+            grid = Grid(z=z_grid)
+        return grid
+    
+    
     def __eq__(self, other) : 
         for item1, item2 in zip(self.__dict__.itervalues(), other.__dict__.itervalues()):
             if not np.array_equal(np.nan_to_num(item1), np.nan_to_num(item2)):
                 return False
-        return True
+        return True      
+
+    @property
+    def type(self):
+        return self._type
+
+    @property
+    def x(self):
+        return self._x
     
+    @x.setter
+    def x(self, val):
+        val = np.array(val, dtype=np.float32)
+        spacing = np.diff(val)
+        assert np.all(np.isclose(spacing, spacing[0])), 'x grid supoprt equally spacing only'
+        self._x = val
+        self._dx = spacing[0]  
+        self._nx = len(val)
+        self._xmin, self._xmax = val[0], val[-1]
     
+    @property
+    def y(self):
+        return self._y
+    
+    @y.setter
+    def y(self, val):
+        val = np.array(val, dtype=np.float32)
+        spacing = np.diff(val)
+        assert np.all(np.isclose(spacing, spacing[0])), 'y grid supoprt equally spacing only'
+        self._y = val
+        self._dy = spacing[0] 
+        self._ny = len(val)
+        self._ymin, self._ymax = val[0], val[-1]
+
+    @property
+    def z(self):
+        return self._z                 
+    
+    @z.setter
+    def z(self, val):
+        val = np.array(val, dtype=np.float32)
+        self._z = val
+        self._nz = len(val)
+        self._zmin, self._zmax = val[0], val[-1]
+
     @property 
     def nx(self):
         return self._nx
@@ -286,42 +292,157 @@ class Grid(object):
     @property 
     def ny(self):
         return self._ny
-    
+
     @property 
     def nz(self):
-        return self._nz
+        return self._nz    
+
+    @property
+    def shape(self):
+        if self.type == '1D':
+            return (self.nz,)
+        else:
+            return (self.nx, self.ny, self.nz)
     
-    @property 
-    def num_grid_points(self):
-        return self._num_grid_points
-    
-    @property 
-    def z_levels(self):
-        return self._z_levels
-    
-    @property 
-    def bounding_box(self):
-        return self._bb
+    @property
+    def num_points(self):
+        return self.nx * self.ny * self.nz
     
     @property 
     def dx(self):
-        return self._dx  
+        return self._dx
     
     @property 
     def dy(self):
         return self._dy    
+    
+    @property 
+    def xmin(self):
+        return self._xmin
+    
+    @property 
+    def ymin(self):
+        return self._ymin
 
     @property 
-    def dz(self):  
-        return self._dz 
+    def zmin(self):
+        return self._zmin
     
     @property 
-    def x_grid(self):
-        return self._x_grid   
+    def xmax(self):
+        return self._xmax
     
     @property 
-    def y_grid(self):
-        return self._y_grid      
+    def ymax(self):
+        return self._ymax    
+
+    @property 
+    def zmax(self):
+        return self._zmax    
+
+    @property
+    def bounding_box(self):
+        return self._bounding_box
+    
+    
+class GridData(object):
+    """ 
+    TODO 
+    
+    Parameters
+    ----------
+    data: TODO
+    bounding_box: BoundingBox.
+        A BoundingBox object. Cloud be unbound in x and y.
+    nx: integer
+        Number of grid point in x axis.
+    ny: integer
+        Number of grid point in z axis.
+    z_levels: np.array(dtype=float, shape=(nz,)), optional
+        grid along z axis
+    """    
+    def __init__(self, grid, data):
+        self._type = grid.type
+        self._grid = grid
+        self._data = data
+        self._shape = self._data.shape[:3]
+        self._ndim = self._data.ndim        
+        if self.type == '1D' and self.ndim is not 1:
+            raise AttributeError('Grid is 1D but data dimension is:{}'.format(self.ndim))
+        if self.type == '3D' and self.ndim < 3:
+            raise AttributeError('Grid is 3D but data dimension is:{}'.format(self.ndim))
+        
+        assert self.shape == grid.shape, 'Data shape is {}, grid shape is {}'.format(self.shape, grid.shape)
+
+        self._linear_interpolator1d = interp1d(grid.z, self.data, assume_sorted=True, copy=False, bounds_error=False, fill_value=0.0) 
+        self._nearest_interpolator1d = interp1d(grid.z, self.data, assume_sorted=True, kind='nearest', copy=False, bounds_error=False, fill_value=0)
+        if self.type == '3D':
+            self._linear_interpolator3d = RegularGridInterpolator((grid.x, grid.y, grid.z), self.data, bounds_error=False, fill_value=0.0)
+            self._nearest_interpolator3d = RegularGridInterpolator((grid.x, grid.y, grid.z), self.data, method='nearest', bounds_error=False, fill_value=0)
+    
+    
+    def __add__(self, other):
+        """ TODO: keeps dx, dy constant"""
+        grid = self.grid + other.grid
+        data = self.resample(grid) + other.resample(grid)
+        return GridData(grid, data)
+    
+    
+    def __sub__(self, other):
+        """ TODO: keeps dx, dy constant"""
+        grid = self.grid + other.grid
+        data = self.resample(grid) - other.resample(grid)
+        return GridData(grid, data)       
+    
+    
+    def __mul__(self, other):
+        """ TODO: keeps dx, dy constant"""
+        grid = self.grid + other.grid
+        data = self.resample(grid) * other.resample(grid)
+        return GridData(grid, data)    
+    
+    
+    def __div__(self, other):
+        """ TODO: keeps dx, dy constant"""
+        grid = self.grid + other.grid
+        data = self.resample(grid) / other.resample(grid)
+        return GridData(grid, data) 
+    
+    
+    def resample(self, grid, method='linear'):
+        """TODO"""
+        if self.type == '1D' or (np.allclose(self.grid.x, grid.x) and np.allclose(self.grid.y, grid.y)):
+            if method == 'linear':
+                data = self._linear_interpolator1d(grid.z)
+            elif method == 'nearest':
+                data = self._nearest_interpolator1d(grid.z)
+        else:
+            if method == 'linear':
+                data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1))
+            elif method == 'nearest':
+                data = self._nearest_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1)) 
+        return data
+    
+    @property
+    def grid(self):
+        return self._grid
+    
+    @property
+    def data(self):
+        return self._data
+    
+    @property
+    def shape(self):
+        return self._shape
+    
+    @property
+    def ndim(self):
+        return self._ndim      
+    
+    @property
+    def type(self):
+        return self._type    
+
 
 class BoundingBox(object):
     """ 
@@ -363,7 +484,6 @@ class BoundingBox(object):
     
     
     def __add__(self, other):
-        
         xmin = self.xmin
         if np.isfinite(other.xmin):
             if np.isfinite(xmin):

@@ -6,22 +6,20 @@ import core
 import numpy as np
 from enum import Enum
 import warnings
-from shdom import Grid, BoundingBox, ScalarField
+from shdom import Grid, GridData, BoundingBox, Rayleigh
 
-    
 
 class Medium(object):
     """
     The Medium object encapsulates an atmospheric optical medium. 
-    This means specifying extinction, single scattering albedo and 
-    phase function at every point in the domain.
-
+    This means specifying extinction, single scattering albedo and phase function at every point in the domain.
+    TODO: phase type and sum of phases
 
     Parameters
     ----------
-    extinction: ScalarField
-    albedo: ScalarField
-    phase: VectorField
+    extinction: GridData
+    albedo: GridData
+    phase: Phase
     
     
     Notes
@@ -29,6 +27,7 @@ class Medium(object):
     Different grids for extinction and albedo is not supported.
     """
     def __init__(self, extinction, albedo, phase):
+        self._type = 'Medium'
         self._ext = extinction
         self._ssalb = albedo
         self._phase = phase
@@ -36,13 +35,20 @@ class Medium(object):
         assert extinction.grid == albedo.grid == phase.grid, \
                'Different grids for phase, albedo and extinction is not supported.'
         self._grid = extinction.grid
-        self._bounding_box = self._grid.bounding_box
-
+        self._bounding_box = self.grid.bounding_box
+           
     def __add__(self, other):
         extinction = self.extinction + other.extinction
         scat = self.albedo*self.extinction + other.albedo*other.extinction
         albedo = scat / extinction
-        phase = (self.albedo*self.extinction*self.phase + other.albedo*other.extinction*other.phase) / scat
+        if other.type == 'Air':
+            if self.phase.type == other.phase.type == 'Tabulated':
+                phase = self.phase.exclusive_add(other.phase)  
+            else:
+                raise NotImplementedError('Grid phase addition is not implemented.')
+        else:
+            raise NotImplementedError('Two medium addition is not implemented.')
+        
         return Medium(extinction, albedo, phase)
         
     @property
@@ -62,11 +68,39 @@ class Medium(object):
         return self._grid
     
     @property
-    def bounding_box(self):
-        return self._bounding_box    
+    def type(self):
+        return self._type
     
-
-
+    @property
+    def bounding_box(self):
+        return self._bounding_box
+    
+class Air(Medium):
+    """TODO"""
+    def __init__(self, **kwargs):
+        if kwargs.has_key('temperature_profile') and kwargs.has_key('wavelength'):
+            rayleigh = Rayleigh(kwargs['wavelength'], kwargs['temperature_profile'])
+            extinction, albedo, phase = rayleigh.get_scattering_field(grid=kwargs['temperature_profile'].grid)
+        elif kwargs.has_key('extinction') and kwargs.has_key('albedo') and kwargs.has_key('phase'):
+            extinction, albedo, phase = kwargs['extinction'], kwargs['albedo'], kwargs['phase']
+        else:
+            raise AttributeError('Wrong input attributes for object of type Air')
+        super(Air, self).__init__(extinction, albedo, phase)
+        self._type = 'Air'
+        
+        
+    def __add__(self, other):
+        if other.type == 'Air':
+            extinction = self.extinction + other.extinction
+            albedo = (self.albedo*self.extinction + other.albedo*other.extinction) / extinction
+            medium = Air(extinction, albedo, self.phase)
+        elif other.type == medium:
+            medium = other + self
+        else:
+            raise NotImplementedError
+        return medium
+    
+    
 def load_les_from_csv(path_to_csv):
     """ 
     A utility function to load Large Eddy Simulated clouds.
@@ -78,10 +112,10 @@ def load_les_from_csv(path_to_csv):
 
     Returns
     -------
-    lwc: ScalarField
-         a ScalarField object contatining the liquid water content of the LES cloud.
-    reff: ScalarField
-          a ScalarField object contatining the effective radius of the LES cloud.
+    lwc: GridData
+         a GridData object contatining the liquid water content of the LES cloud.
+    reff: GridData
+          a GridData object contatining the effective radius of the LES cloud.
     
     Notes
     -----
@@ -101,23 +135,18 @@ def load_les_from_csv(path_to_csv):
     
     nx, ny, nz = np.genfromtxt(path_to_csv, max_rows=1, dtype=int) 
     dx, dy = np.genfromtxt(path_to_csv, max_rows=1, usecols=(0, 1), dtype=float, skip_header=4)
-    z_levels = np.genfromtxt(path_to_csv, max_rows=1, usecols=range(2, 2 + nz), dtype=float, skip_header=4)
+    z_grid = np.genfromtxt(path_to_csv, max_rows=1, usecols=range(2, 2 + nz), dtype=float, skip_header=4)
     grid_index = np.genfromtxt(path_to_csv, usecols=(0, 1, 2), dtype=int, skip_header=5)
     lwc = np.genfromtxt(path_to_csv, usecols=3, dtype=float, skip_header=5)
     reff = np.genfromtxt(path_to_csv, usecols=4, dtype=float, skip_header=5)
     
     particle_levels = np.array([z in grid_index[:, 2] for z in range(nz)], dtype=int)
-    lwc_3d  = np.zeros(shape=(nx, ny, nz), dtype=np.float32)
-    reff_3d = np.zeros(shape=(nx, ny, nz), dtype=np.float32)
-    lwc_3d[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]]  = lwc
-    reff_3d[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]] = reff
+    lwc_data  = np.zeros(shape=(nx, ny, nz), dtype=np.float32)
+    reff_data = np.zeros(shape=(nx, ny, nz), dtype=np.float32)
+    lwc_data[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]]  = lwc
+    reff_data[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]] = reff
     
-    bounding_box = BoundingBox(xmin=0.0, 
-                               ymin=0.0, 
-                               zmin=z_levels.min(), 
-                               xmax=(nx - 1) * dx, 
-                               ymax=(ny - 1) * dy, 
-                               zmax=z_levels.max())
-    
-    grid = Grid(bounding_box, nx, ny, nz, z_levels)
-    return ScalarField(grid, lwc_3d), ScalarField(grid, reff_3d)
+    x_grid = np.linspace(0.0, (nx - 1)*dx, nx, dtype=np.float32)
+    y_grid = np.linspace(0.0, (ny - 1)*dy, ny, dtype=np.float32)
+    grid = Grid(x=x_grid, y=y_grid, z=z_grid)
+    return GridData(grid, lwc_data), GridData(grid, reff_data)

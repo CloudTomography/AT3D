@@ -7,7 +7,7 @@ import core
 import numpy as np
 from enum import Enum
 import warnings
-import sys
+import sys, os
 
 
 class BoundaryCondition(Enum):
@@ -15,12 +15,6 @@ class BoundaryCondition(Enum):
     periodic = 2   # periodic boundary conditions mean that exiting radiance returns from the opposite side.
     
 
-class PhaseFunctionType(Enum):
-    # TODO: Add documentation
-    tabulated = 1 
-    grid = 2
-    
-    
 class SolarSource(object):
     """ 
     Solar source object.
@@ -59,15 +53,25 @@ class SolarSource(object):
         assert 90.0 < val <= 180.0, 'Solar zenith:{} is not in range (90, 180] (photon direction in degrees)'.format(val)
         self._zenith = val
 
-
+    @property 
+    def info(self):
+        return '{}, flux: {}, azimuth: {}deg, zenith: {}deg'.format(self.type, 
+                                                                    self.flux, 
+                                                                    self.azimuth, 
+                                                                    self.zenith)  
+        
 class Surface(object):
     """ 
     An abstract sufrace class to be inhirted by different surface types.
     """
     def __init__(self):
         self.type = 'AbstractSurfaceClass'
-       
-        
+    
+    @property 
+    def info(self):
+        return '{}'.format(self.type)
+
+
 class LambertianSurface(Surface):
     """
     A Lambertian surface, defined by a single parameter.
@@ -82,22 +86,49 @@ class LambertianSurface(Surface):
     Parameter: ground_temperature, is used for Thermal source and is not supported. 
     """
     def __init__(self, albedo):
+        super(LambertianSurface, self).__init__()
         self.type = 'Lambertian'
         self.albedo = albedo
         self.ground_temperature = 298.15
+    
+    @property 
+    def info(self):
+        return super(LambertianSurface, self).info + ', albedo: {}'.format(self.albedo)
+    
         
 class NumericalParameters(object):
     """
-    TODO: add description
-
-    Parameters
+    This object bundles up together all the numerical parameters requiered by the RteSolver object.
+    An instantitation will have all parameters intialized to their default values defined below.
+    Below is the description for each parameter as taken from the SHDOM documentation (http://nit.colorado.edu/shdom/shdomdoc/)
+    In capitals is the parameter name in the source fortran code.
+    
+    Properties
     ----------
+    num_mu_bins(NMU): number of discrete ordinates covering -1 < mu < 1.
+    num_phi_bins(NPHI): number of discrete ordinates covering 0 < phi < 2pi
+    split_accuracy(SPLITACC): cell splitting accuracy; grid cells that have the adaptive splitting criterion above this value are split. 
+                              This is an absolute measure, but cannot be easily associated with the resulting radiometric accuracy. 
+                              Set to zero or negative for no adaptive cell splitting.
+    deltam(DELTAM): True for delta-M scaling of medium and Nakajima and Tanaka method of computing radiances.
+    spherical_harmonics_accuracy(SHACC): adaptive spherical harmonic truncation accuracy; the spherical harmonic source function series is truncated after 
+                                         the terms are below this level. Truncation can still happens if SHACC=0 (for 0 source terms). 
+                                         This is also an absolute measure, and is approximately the level of accuracy.
+    acceleration_flag(ACCELFLAG): True to do the sequence acceleration. 
+                                  An acceleration extrapolation of the source function is done every other iteration.
+    solution_accuracy(SOLACC): solution accuracy - tolerance for solution criterion.
+    max_total_mb(MAX_TOTAL_MB): approximate maximum memory to use (MB for 4 byte reals)
+    adapt_grid_factor(ADAPT_GRID_FACTOR): ratio of total grid points to base grid points
+    num_sh_term_factor(NUM_SH_TERM_FACTOR): ratio of average number of spherical harmonic terms to total possible (NLM)
+    cell_to_point_ratio(CELL_TO_POINT_RATIO): ratio of number of grid cells to grid points
+    high_order_radiance: True to keep the high order radiance field in memory.
+    info: prints out all the properties.
+    
+    Notes
+    -----
+    deltam is a crucial parameter that should be set to True used with highly peaked (mie) phase function.
     """    
     def __init__(self):
-        self.maxnewphase = 2000
-        self.phase_function_type = PhaseFunctionType.grid
-        self.asymetric_tolerance = 0.0
-        self.frational_phase_tolerance = 0.0
         self.num_mu_bins = 8
         self.num_phi_bins = 16
         self.split_accuracy = 0.1
@@ -111,35 +142,62 @@ class NumericalParameters(object):
         self.cell_to_point_ratio = 1.3
         self.high_order_radiance = True
 
+    @property 
+    def info(self):
+        info = 'Numerical Parameters: {}'.format(os.linesep)        
+        for item in self.__dict__.iteritems():
+            info += '   {}: {}{}'.format(item[0], item[1], os.linesep)
+        return info     
 
 class SceneParameters(object):
     """
-    TODO: add description
-
-    Parameters
+    This object bundles up together all the scene related parameters requiered by the RteSolver object.
+    An instantitation will have all parameters intialized to their default values defined below.
+    
+    Properties
     ----------
-    """    
+    wavelength: wavelength in microns for 'R' units; WAVELEN not needed for solar sources.
+    surface: A Surface object.
+    source: A Source object.
+    boundary_conditions: a dictionary with BoundaryCondition.open/periodic for 'x' and 'y'.
+    info: prints out all the properties as a string.
+    
+    Notes
+    -----
+    Currently supports LambertianSurface, SolarSource.
+    """  
     def __init__(self): 
         self.wavelength = 0.670
         self.surface = LambertianSurface(albedo=0.05)
         self.source = SolarSource(flux=1.0, azimuth=0.0, zenith=180.0)
         self.boundary_conditions = {'x': BoundaryCondition.open, 
                                     'y': BoundaryCondition.open}
-        
+    
+    @property
     def info(self):
-        """TODO"""
-        return ['Wavelength: {}micron \n'.format(self.wavelength)]
+        return 'Scene Parameters: {}'.format(os.linesep) + \
+               '   Wavelength: [{} micron]{}'.format(self.wavelength, os.linesep) + \
+               '   Surface: [{}]{}'.format(self.surface.info, os.linesep) + \
+               '   Source: [{}]{}'.format(self.source.info, os.linesep) + \
+               '   Boundary Conditions: [x:{}, y:{}]{}'.format(self.boundary_conditions['x'].name, 
+                                                               self.boundary_conditions['y'].name, 
+                                                               os.linesep)
         
 
         
 class RteSolver(object):
     """
-    TODO: add documentation
-
+    Radiative Trasnfer solver object. 
+    This object contains the interface to SHDOM internal structures and methods.
+    To solve the RTE:
+      1. Attach the solver to a medium object RteSolver.init_medium(Medium)
+      2. Run solution iterations with RteSolver.solve(maxiter)
+      
     Parameters
     ----------
     scene_params: SceneParameters
     numerical_params: NumericalParameters
+    info: info of the SceneParameters and NumericalParameters
     
     Notes
     -----
@@ -155,9 +213,11 @@ class RteSolver(object):
         self._pa = core.shdom_property_arrays
 
         # Assign scene parameters to shdom internal parameters.
+        self._scene_parameters = scene_params
         self.set_scene_parameters(scene_params)
         
         # Assign numerical parameters to shdom internal parameters.
+        self._numerical_parameters = numerical_params
         self.set_numerical_parameters(numerical_params)
         
         # Zero itertions so far
@@ -263,10 +323,6 @@ class RteSolver(object):
         -----
         Curently not delta-m is not suppoted.
         """ 
-        self._maxnewphase         = numerical_params.maxnewphase
-        self._proptype            = numerical_params.phase_function_type
-        self._asymtol             = numerical_params.asymetric_tolerance   
-        self._fracphasetol        = numerical_params.frational_phase_tolerance
         self._nmu                 = max(2, 2 * int((numerical_params.num_mu_bins + 1) / 2))
         self._nphi                = max(1, numerical_params.num_phi_bins)
         self._deltam              = numerical_params.deltam
@@ -309,34 +365,31 @@ class RteSolver(object):
         self._pa.npx = grid.nx
         self._pa.npy = grid.ny    
         self._pa.npz = grid.nz
-        self._pa.xstart = grid.bounding_box.xmin
-        self._pa.ystart = grid.bounding_box.ymin
+        self._pa.xstart = grid.xmin
+        self._pa.ystart = grid.ymin
         self._pa.delx = grid.dx
         self._pa.dely = grid.dy
-        self._pa.zlevels = grid.z_levels
+        self._pa.zlevels = grid.z
         
-        #TODO: fix this 
-        self._pa.tempp = np.zeros(shape=(grid.num_grid_points,), dtype=np.float32)
+        # TODO: need this?
+        self._pa.tempp = np.zeros(shape=(grid.num_points,), dtype=np.float32)
         
         # Setup property array optical properties
         self._pa.albedop = medium.albedo.data.ravel()
         self._pa.extinctp = medium.extinction.data.ravel()
         
-        # Setup phase function according to phase_function_type
-        if self._proptype == PhaseFunctionType.grid:
-            self._maxleg = medium.phase.depth
-            self._nleg = medium.phase.depth
-            self._pa.iphasep = np.arange(1, grid.num_grid_points+1, dtype=np.int32)
-            self._pa.numphase = grid.num_grid_points
-            # Legenp is without the zero order term which is 1.0 for normalized phase function
-            self._pa.legenp = medium.phase.data[...,1:].transpose([3, 0, 1, 2]).ravel(order='F')
-            # Asymetry parameter is proportional to the legendre series first coefficeint 
-            self._maxasym = medium.phase.data[...,1].max() / 3.0
-            self._maxpgl  = self._maxleg * self._pa.numphase     
+        # Setup phase function
         
-        elif self._proptype == PhaseFunctionType.tabulated:
-            raise NotImplementedError('Tabulated phase function type not supported yet')
-
+        self._maxleg = medium.phase.maxleg 
+        self._nleg = medium.phase.maxleg
+        self._pa.iphasep = medium.phase.iphasep.ravel()
+        self._pa.numphase = medium.phase.numphase
+        
+        # Legenp is without the zero order term which is 1.0 for normalized phase function
+        self._pa.legenp = medium.phase.legenp
+        self._maxasym = medium.phase.maxasym
+        self._maxpgl = self._maxleg * grid.num_points
+        
         
         # Initialize shdom internal grid sizes to property array grid
         self._nx = int(self._pa.npx)
@@ -515,9 +568,9 @@ class RteSolver(object):
 
         Notes
         -----
-
+        inradflag=True not supported.
         """
-        #TODO
+        
         inradflag=False
         
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, self._sfcgridparms, self._solcrit, \
@@ -604,9 +657,12 @@ class RteSolver(object):
                 maxig=self._maxig
             )        
     
-        
-        
     @property
     def num_iterations(self):
         return self._iters
+    
+    @property
+    def info(self):
+        return self._scene_parameters.info + os.linesep + self._numerical_parameters.info
+    
     

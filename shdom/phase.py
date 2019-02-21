@@ -1,46 +1,139 @@
 """
-TODO: sort description
+This is a python wrapper to handle phase function related computations. 
 
-A python wrapper for make_mie_table.f90 by Aviad Levis Technion Inst. of Technology February 2019.
+It includes a wrapper for mie and rayleigh computations. 
+The python code was created by Aviad Levis Technion Inst. of Technology February 2019.
+
 Source Fortran files were created by Frank Evans University of Colorado May 2003.
-For source code documentation see: http://nit.colorado.edu/shdom/shdomdoc/makemietable.html
-
-Description taken from make_mie_table.f90:
-! Does Mie computations to create a scattering table as a function of
-! effective radius for gamma or lognormal size distributions of spherical
-! particles.  The particles may be water or ice (in which case the 
-! program provides the index of refraction depending on wavelength) or
-! "aerosols" (in which case the index of refraction is user specified).
-! For water or ice particles the scattering properties may be averaged 
-! over the desired spectral range with Planck function weighting.  
-! The phase functions in the output scattering table are represented 
-! with Legendre series.   The effective radii in the table may be evenly
-! or logarithmically spaced.
 """
 
 import core
 import numpy as np
-from scipy.interpolate import RegularGridInterpolator
-from shdom import ScalarField, VectorField, BoundingBox, Grid
+from scipy.interpolate import interp1d
+from shdom import Grid, GridData, VectorField, BoundingBox
 
-class TemperatureProfile(object):
-    """TODO"""
-    def __init__(self, z_levels, temperatures):
-        assert len(z_levels) == len(temperatures), 'Number of z_levels doesnt match the number of temperatures specified.'
-        self.units = 'Kelvin'
-        self._z_levels = z_levels
-        self._temperatures = temperatures
-        self._temperature_interpolator = RegularGridInterpolator((z_levels,), temperatures)   
+
+class Phase(object):
+    """
+    TODO
+    """
+    def __init__(self):
+        self._type = 'AbstractPhaseObject'
+        self._maxleg = None
+        self._iphasep = None
+        self._numphase = None
+        self._legenp = None
+        self._maxasym = None
+
+    @property
+    def type(self):
+        return self._type
+    
+    @property 
+    def maxleg(self):
+        return self._maxleg
+    
+    @property 
+    def numphase(self):
+        return self._numphase  
+    
+    @property
+    def iphasep(self):
+        return self._iphasep
+    
+    @property
+    def legenp(self):
+        return self._legenp
+    
+    @property
+    def maxasym(self):
+        return self._maxasym    
+    
+    
+class TabulatedPhase(Phase):
+    """
+    TODO
+    
+    Parameters
+    ----------
+    """
+    def __init__(self, legendre_table, index):
+        self._type = 'Tabulated'
+        self._legendre_table = np.array(legendre_table, dtype=np.float32)
+        self._index = index
+        self._grid = index.grid
+
+        self._numphase = legendre_table.shape[1]
+        self._iphasep = index.data
         
-    def interpolate_temperatures(self, z_levels):
-        return self._temperature_interpolator(z_levels)
+        # Legenp is without the zero order term which is 1.0 for normalized phase function
+        self._legenp = legendre_table[1:].ravel(order='F')        
+        self._maxleg = legendre_table.shape[0] - 1
+        
+        # Asymetry parameter is proportional to the legendre series first coefficeint 
+        self._maxasym = legendre_table[1].max() / 3.0
+
+        
+    def exclusive_add(self, other):
+        """ TODO """
+        
+        # Join the two tables
+        self_legendre_table = self.legendre_table
+        other_legendre_table = other.legendre_table
+        if self.maxleg > other.maxleg:
+            other_legendre_table = np.pad(other_legendre_table, ((0, self.maxleg - other.maxleg), (0, 0)), 'constant')
+        elif other.maxleg > self.maxleg:
+            self_legendre_table = np.pad(self_legendre_table, ((0, other.maxleg - self.maxleg), (0, 0)), 'constant')
+        legendre_table = np.concatenate((other_legendre_table, self_legendre_table), axis=1)        
+        
+        # Join the indices
+        grid = self.grid + other.grid 
+        self_index = self.index.resample(grid, method='nearest')
+        other_index = other.index.resample(grid, method='nearest')
+        self_index[self_index>0] += other_index.max()
+        self_index[self_index==0] = (self_index + other_index)[self_index==0]
+        index = GridData(grid, self_index.astype(np.int32))
+        return TabulatedPhase(legendre_table, index)
+      
+      
+    @property
+    def legendre_table(self):
+        return self._legendre_table
+    
+    @property
+    def index(self):
+        return self._index
+    
+    @property
+    def grid(self):
+        return self._grid
     
     
 class Mie(object):
     """
     Mie scattering for a particle size distribution. 
-    Scattering coefficients are averaged over a range of particle radii and wavelengths.
-    """
+    Scattering coefficients are averaged over a range of particle radii and wavelengths. 
+    A Mie scattering table can be computed by using:
+      1. Mie.set_parameters(...)
+      2. Mie.compute_talbe(...)
+    Alternatively a pre-computed scattering table can be loaded using:
+    Mie.read_table(table_path)
+    See: /notebooks/Make Mie Table.ipynb for usage examples. 
+    Once a scattering table is computed/loaded, Mie.interpolate_scattering_field(lwc, reff) can be used
+    to compute the extinction, singe scattering albedo and phase function on a grid. 
+    
+    Description taken from make_mie_table.f90:
+      Does Mie computations to create a scattering table as a function of
+      effective radius for gamma or lognormal size distributions of spherical
+      particles.  The particles may be water or ice (in which case the 
+      program provides the index of refraction depending on wavelength) or
+      "aerosols" (in which case the index of refraction is user specified).
+      For water or ice particles the scattering properties may be averaged 
+      over the desired spectral range with Planck function weighting.  
+      The phase functions in the output scattering table are represented 
+      with Legendre series.   The effective radii in the table may be evenly
+      or logarithmically spaced.
+   """
     def __init__(self):
         self._partype = None
         self._rindex = None
@@ -169,9 +262,6 @@ class Mie(object):
             The maximum radius for which to integrate over the size-distribution.
             max_integration_radius > end_effective_radius.
         
-        Returns
-        -------
-        None
     
         Notes
         -----
@@ -309,54 +399,64 @@ class Mie(object):
 
     
     def init_intepolators(self):
+        """
+        Initialize interpolators for the extinction, single scattering albedo and phase function.
+    
+        Notes
+        -----
+        This function is ran after pre-computing/loading a scattering tables.
+        """        
         assert True not in (self._reff is None, self._extinct is None, self._ssalb is None, self._nleg is None, self._legcoef is None), \
                        'Mie scattering table was not computed or read from file. Using compute_table() or read_table().'   
-        self._ext_interpolator = RegularGridInterpolator(points=(self.reff,), 
-                                                         values=self.extinct, 
-                                                         bounds_error=False, 
-                                                         fill_value=0.0)
-        self._ssalb_interpolator = RegularGridInterpolator(points=(self.reff,), 
-                                                           values=self.ssalb, 
-                                                           bounds_error=False, 
-                                                           fill_value=0.0) 
-        self._legcoef_interpolator = RegularGridInterpolator(points=(self.reff,), 
-                                                             values=self.legcoeff.T, 
-                                                             bounds_error=False, 
-                                                             fill_value=0.0)          
+        self._ext_interpolator = interp1d(self.reff, self.extinct, assume_sorted=True, bounds_error=False, fill_value=0.0)
+        self._ssalb_interpolator = interp1d(self.reff, self.ssalb, assume_sorted=True, bounds_error=False, fill_value=1.0) 
+        self._legcoef_interpolator = interp1d(self.reff, self.legcoeff, assume_sorted=True, bounds_error=False, fill_value=0.0)          
+        self._legen_index_interpolator = interp1d(self.reff, range(1, len(self.reff)+1), assume_sorted=True, kind='nearest', copy=False, bounds_error=False, fill_value=0)
      
-    def interpolate_scattering_field(self, lwc, reff):
+     
+    def interpolate_scattering_field(self, lwc, reff, phase_type='Tabulated'):
         """
-        TODO: documentation
+        Interpolate the optical quantities (extinction, ssa, phase function) over a grid.
+        All optical quantities are a function of the effective radius. The optical extinction also scales
+        with the liquid water content.
     
         Parameters
         ----------
-        lwc: ScalarField 
-            A ScalarField object containting the liquid water content (g/m^3) on a 3D grid
-        reff: ScalarField 
-            A ScalarField object containting the effective radii (micron) on a 3D grid.
-
+        lwc: GridData
+            A GridData object containting the liquid water content (g/m^3) on a 3D grid
+        reff: GridData 
+            A GridData object containting the effective radii (micron) on a 3D grid.
+        phase_type: 'Tabulated' or 'Grid'
+            TODO
+            
         Returns
         -------
-        extinction: ScalarField
-            A ScalarField object containting the extinction (1/km) on a 3D grid
-        albedo: ScalarField
-            A ScalarField object containting the single scattering albedo unitless in range [0, 1] on a 3D grid
-        phase: VectorField
-            A VectorField object containting the phase function legendre coeffiecients on a 3D grid
-        Notes
-        -----
-        Different grids for lwc and reff is not supported.
+        extinction: GridData
+            A GridData3D object containting the extinction (1/km) on a 3D grid
+        albedo: GridData
+            A GridData object containting the single scattering albedo unitless in range [0, 1] on a 3D grid
+        phase: Phase
+            A Phase object containting the phase function legendre coeffiecients on a 3D grid
+        
         """   
-        assert lwc.grid == reff.grid, 'Different grids for lwc and reff is not supported yet'
-        grid = lwc.grid
         reff_flat = reff.data.ravel()
-        ext_data = lwc.data * self._ext_interpolator(reff_flat).reshape(grid.nx, grid.ny, grid.nz)
-        ssalb_data = self._ssalb_interpolator(reff_flat).reshape(grid.nx, grid.ny, grid.nz)
+        grid = reff.grid
+        ext_data = self._ext_interpolator(reff.data)
+        ssalb_data = self._ssalb_interpolator(reff.data)
+        extinction = lwc * GridData(grid, ext_data)
+        albedo = GridData(grid, ssalb_data)
+        
         maxleg = self.nleg.max()
-        phase_data = self._legcoef_interpolator(reff_flat).reshape(grid.nx, grid.ny, grid.nz, self.maxleg + 1)[..., :maxleg + 1]
-        extinction = ScalarField(grid, ext_data)
-        albedo = ScalarField(grid, ssalb_data)
-        phase = VectorField(grid, phase_data)
+        if phase_type == 'Tabulated':
+            phase_table = self.legcoeff[:maxleg, :]
+            index_data = self._legen_index_interpolator(reff.data).astype(np.int32)
+            index = GridData(grid, index_data)
+            phase = TabulatedPhase(phase_table, index)
+        elif phase_type == 'Grid':
+            raise NotImplementedError('Grid phase type not implemented.')
+        else:
+            raise AttributeError('Phase type not reckognized')
+        
         return extinction, albedo, phase
     
     
@@ -433,7 +533,17 @@ class Rayleigh(object):
      a linear lapse rate between levels to compute the pressure at
      each level.  The Rayleigh extinction is proportional to air
      density, with the coefficient RAYLCOEF in [K/(mb km)].
-
+     
+    Parameters
+    ----------
+    wavelength: float 
+        The wavelength in [microns].
+    temperature_profile: TemperatureProfile 
+        A TemperatureProfile object containing temperatures and altitudes on a 1D grid.
+        
+    Notes
+    -----
+    The ssa of air is 1.0 and the phase function legendre coefficients are [1.0, 0.0, 0.5].
     """
     def __init__(self, wavelength, temperature_profile):
         self._wavelength = wavelength
@@ -443,25 +553,45 @@ class Rayleigh(object):
         self._phase = np.array([1.0, 0.0, 0.5], dtype=np.float32)
        
         
-    def get_scattering_field(self, z_levels):
+    def get_scattering_field(self, grid, phase_type='Tabulated'):
         """
-        TODO
+        Interpolate the rayleigh extinction over a given 1D grid (altitude).
+         
+        Parameters
+        ----------
+        grid: Grid  
+            a Grid object containing the altitude grid points in [km].
+        phase_type: 'Tabulated' or 'Grid'
+            TODO
+            
+        Returns
+        -------
+        extinction: GridData
+            A GridData object containting the extinction (1/km) on a 1D grid
+        albedo: GridData
+            A GridData object containting the single scattering albedo unitless in range [0, 1] on a 3D grid
+        phase: Phase 
+            A Phase object containting the phase function legendre table and index grid.
         """
-        temperature_profile = self.temperature_profile.interpolate_temperatures(z_levels)
-        nz = len(z_levels)
+        temperature_profile = self.temperature_profile.resample(grid)
 
         extinction_profile = core.rayleigh_extinct(
-            nzt=nz,
-            zlevels=z_levels,
+            nzt=grid.nz,
+            zlevels=grid.z,
             temp=temperature_profile,
             raylcoef=self.rayleigh_coefficient
         )
-        
-        bounding_box = BoundingBox(-np.inf, -np.inf, z_levels[0], np.inf, np.inf, z_levels[-1])
-        grid = Grid(bounding_box, 1, 1, nz, z_levels)   
-        extinction = ScalarField(grid, extinction_profile.reshape(1,1,-1))
-        albedo = ScalarField(grid, np.tile(self.ssalb, (1, 1, nz)))
-        phase = VectorField(grid, np.tile(self.phase, (1, 1, nz, 1)))            
+         
+        extinction = GridData(grid, extinction_profile)
+        albedo = GridData(grid, np.full(shape=(grid.nz,), fill_value=self.ssalb, dtype=np.float32))
+        if phase_type == 'Tabulated':
+            phase_indices = GridData(grid, np.ones(shape=(grid.nz,), dtype=np.int32))
+            phase = TabulatedPhase(self.phase[:, np.newaxis], phase_indices)
+        elif phase_type == 'Grid':
+            #TODO
+            raise NotImplementedError('Grid phase type not implemented.')
+        else:
+            raise AttributeError('Phase type not reckognized')
       
         return extinction, albedo, phase
         
@@ -473,20 +603,6 @@ class Rayleigh(object):
         else:
             print('scattering profile was not computed') 
     
-    @property
-    def ssalb_profile(self):
-        if hasattr(self, '_ssalb_profile'):
-            return self._ssalb_profile
-        else:
-            print('scattering profile was not computed')      
-
-    @property
-    def phase_profile(self):
-        if hasattr(self, '_phase_profile'):
-            return self._phase_profile
-        else:
-            print('scattering profile was not computed')    
-        
     @property
     def temperature_profile(self):
         return self._temperature_profile 
