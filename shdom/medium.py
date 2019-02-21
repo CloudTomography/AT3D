@@ -21,43 +21,42 @@ class Medium(object):
     albedo: GridData
     phase: Phase
     
-    
     Notes
     -----
     Different grids for extinction and albedo is not supported.
     """
+    
     def __init__(self, extinction, albedo, phase):
-        self._type = 'Medium'
-        self._ext = extinction
-        self._ssalb = albedo
-        self._phase = phase
-        
         assert extinction.grid == albedo.grid == phase.grid, \
-               'Different grids for phase, albedo and extinction is not supported.'
-        self._grid = extinction.grid
-        self._bounding_box = self.grid.bounding_box
-           
+               'Different grids for phase, albedo and extinction is not supported.'        
+        self.extinction = extinction
+        self._albedo = albedo
+        self._phase = phase
+        self._type = 'Medium'
+        
+ 
     def __add__(self, other):
         extinction = self.extinction + other.extinction
         scat = self.albedo*self.extinction + other.albedo*other.extinction
-        albedo = scat / extinction
-        if other.type == 'Air':
-            if self.phase.type == other.phase.type == 'Tabulated':
-                phase = self.phase.exclusive_add(other.phase)  
-            else:
-                raise NotImplementedError('Grid phase addition is not implemented.')
-        else:
-            raise NotImplementedError('Two medium addition is not implemented.')
-        
+        albedo = scat / extinction        
+        if other.type == 'Medium':
+            phase = (self.albedo*self.extinction*self.phase + other.albedo*other.extinction*other.phase) / scat
+        if other.type == 'AmbientMedium':
+            phase = self.phase.add_ambient(other.phase)  
         return Medium(extinction, albedo, phase)
         
     @property
     def extinction(self):
         return self._ext
     
+    @extinction.setter
+    def extinction(self, val):
+        self._ext = val
+        self.grid = self.extinction.grid
+    
     @property
     def albedo(self):
-        return self._ssalb    
+        return self._albedo    
     
     @property
     def phase(self):
@@ -67,33 +66,35 @@ class Medium(object):
     def grid(self):
         return self._grid
     
-    @property
-    def type(self):
-        return self._type
+    @grid.setter
+    def grid(self, val):
+        self._grid = val
+        self._bounding_box = self.grid.bounding_box
     
     @property
     def bounding_box(self):
         return self._bounding_box
     
-class Air(Medium):
+    @property
+    def type(self):
+        return self._type
+    
+    
+    
+    
+class AmbientMedium(Medium):
     """TODO"""
-    def __init__(self, **kwargs):
-        if kwargs.has_key('temperature_profile') and kwargs.has_key('wavelength'):
-            rayleigh = Rayleigh(kwargs['wavelength'], kwargs['temperature_profile'])
-            extinction, albedo, phase = rayleigh.get_scattering_field(grid=kwargs['temperature_profile'].grid)
-        elif kwargs.has_key('extinction') and kwargs.has_key('albedo') and kwargs.has_key('phase'):
-            extinction, albedo, phase = kwargs['extinction'], kwargs['albedo'], kwargs['phase']
-        else:
-            raise AttributeError('Wrong input attributes for object of type Air')
-        super(Air, self).__init__(extinction, albedo, phase)
-        self._type = 'Air'
+    def __init__(self, extinction, albedo, phase):
+
+        super(AmbientMedium, self).__init__(extinction, albedo, phase)
+        self._type = 'AmbientMedium'
         
         
     def __add__(self, other):
-        if other.type == 'Air':
+        if other.type == 'AmbientMedium':
             extinction = self.extinction + other.extinction
             albedo = (self.albedo*self.extinction + other.albedo*other.extinction) / extinction
-            medium = Air(extinction, albedo, self.phase)
+            medium = AmbientMedium(extinction, albedo, self.phase)
         elif other.type == medium:
             medium = other + self
         else:

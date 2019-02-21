@@ -9,8 +9,8 @@ Source Fortran files were created by Frank Evans University of Colorado May 2003
 
 import core
 import numpy as np
-from scipy.interpolate import interp1d
-from shdom import Grid, GridData, VectorField, BoundingBox
+from scipy.interpolate import interp1d, RegularGridInterpolator
+from shdom import Grid, GridData, BoundingBox
 
 
 class Phase(object):
@@ -24,7 +24,8 @@ class Phase(object):
         self._numphase = None
         self._legenp = None
         self._maxasym = None
-
+        self._grid = None
+        
     @property
     def type(self):
         return self._type
@@ -49,6 +50,79 @@ class Phase(object):
     def maxasym(self):
         return self._maxasym    
     
+    @property
+    def grid(self):
+        return self._grid
+    
+    
+class GridPhase(Phase):
+    """
+    TODO
+    
+    Parameters
+    ----------
+    """
+    def __init__(self, grid, data):
+        self._type = 'Grid'
+        self._data = data
+        self._grid = grid 
+        self._linear_interpolator1d = interp1d(grid.z, self.data, assume_sorted=True, copy=False, bounds_error=False, fill_value=0.0) 
+        if grid.type == '3D':
+            self._linear_interpolator3d = RegularGridInterpolator((grid.x, grid.y, grid.z), self.data.transpose([1, 2, 3, 0]), bounds_error=False, fill_value=0.0)
+    
+        self._numphase = grid.num_points
+        self._iphasep = np.arange(1, grid.num_points+1, dtype=np.int32)
+        
+        # Legenp is without the zero order term which is 1.0 for normalized phase function
+        self._legenp = data[1:].ravel(order='F')       
+        self._maxleg = data.shape[0] - 1
+        
+        # Asymetry parameter is proportional to the legendre series first coefficient 
+        self._maxasym = data[1,...].max() / 3.0
+
+
+    def __add__(self, other):
+        assert other.__class__ is GridPhase, 'Only GridPhase can be added to GridPhase object'
+        grid = self.grid + other.grid
+        self_data = self.resample(grid)
+        other_data = other.resample(grid)
+        depth_diff = self.maxleg - other.maxleg
+        if depth_diff > 0:
+            data = self_data + np.pad(other_data, ((0, depth_diff), (0, 0), (0, 0), (0, 0)), 'constant')
+        elif depth_diff < 0:
+            data = other_data + np.pad(self_data, ((0, -depth_diff), (0, 0), (0, 0), (0, 0)), 'constant')
+        return GridPhase(grid, data)
+
+    
+    def __mul__(self, other): 
+        assert other.__class__ is GridData, 'Only scalar field (GridData) can multiply a GridPhase object'
+        grid = self.grid + other.grid
+        other_data = other.resample(grid)
+        data = self.resample(grid) * other_data[np.newaxis,...]  
+        return GridPhase(grid, data)
+    
+    
+    def __div__(self, other):  
+        assert other.__class__ is GridData, 'Only scalar field (GridData) can divide a GridPhase object'
+        grid = self.grid + other.grid
+        other_data = other.resample(grid)        
+        data = self.resample(grid) / other_data[np.newaxis,...] 
+        return GridPhase(grid, data)    
+    
+    
+    def resample(self, grid):
+        """TODO"""
+        if self.grid.type == '1D' or (np.allclose(self.grid.x, grid.x) and np.allclose(self.grid.y, grid.y)):
+            data = self._linear_interpolator1d(grid.z)
+        else:
+            data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1))
+        return data
+    
+    
+    @property
+    def data(self):
+        return self._data
+
     
 class TabulatedPhase(Phase):
     """
@@ -70,13 +144,12 @@ class TabulatedPhase(Phase):
         self._legenp = legendre_table[1:].ravel(order='F')        
         self._maxleg = legendre_table.shape[0] - 1
         
-        # Asymetry parameter is proportional to the legendre series first coefficeint 
+        # Asymetry parameter is proportional to the legendre series first coefficient 
         self._maxasym = legendre_table[1].max() / 3.0
 
-        
-    def exclusive_add(self, other):
+    
+    def add_ambient(self, other):
         """ TODO """
-        
         # Join the two tables
         self_legendre_table = self.legendre_table
         other_legendre_table = other.legendre_table
@@ -103,10 +176,6 @@ class TabulatedPhase(Phase):
     @property
     def index(self):
         return self._index
-    
-    @property
-    def grid(self):
-        return self._grid
     
     
 class Mie(object):
@@ -435,7 +504,7 @@ class Mie(object):
             A GridData3D object containting the extinction (1/km) on a 3D grid
         albedo: GridData
             A GridData object containting the single scattering albedo unitless in range [0, 1] on a 3D grid
-        phase: Phase
+        phase: Phase TODO
             A Phase object containting the phase function legendre coeffiecients on a 3D grid
         
         """   
@@ -453,9 +522,10 @@ class Mie(object):
             index = GridData(grid, index_data)
             phase = TabulatedPhase(phase_table, index)
         elif phase_type == 'Grid':
-            raise NotImplementedError('Grid phase type not implemented.')
+            phase_data = self._legcoef_interpolator(reff_flat).reshape(self.maxleg + 1, grid.nx, grid.ny, grid.nz)[:maxleg + 1,...]
+            phase = GridPhase(grid, phase_data)
         else:
-            raise AttributeError('Phase type not reckognized')
+            raise AttributeError('Phase type not recognized')
         
         return extinction, albedo, phase
     
@@ -588,10 +658,9 @@ class Rayleigh(object):
             phase_indices = GridData(grid, np.ones(shape=(grid.nz,), dtype=np.int32))
             phase = TabulatedPhase(self.phase[:, np.newaxis], phase_indices)
         elif phase_type == 'Grid':
-            #TODO
-            raise NotImplementedError('Grid phase type not implemented.')
+            phase = GridPhase(grid, np.tile(self.phase[:, np.newaxis, np.newaxis, np.newaxis], (1, 1, 1, grid.nz))) 
         else:
-            raise AttributeError('Phase type not reckognized')
+            raise AttributeError('Phase type not recognized')
       
         return extinction, albedo, phase
         

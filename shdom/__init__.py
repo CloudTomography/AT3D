@@ -27,61 +27,6 @@ cluster) using the Message Passing Interface (MPI).
 """
 from scipy.interpolate import interp1d, RegularGridInterpolator
 
-class VectorField(object):
-    """
-    TODO: add documentation
-
-    Parameters
-    ----------
-    grid: Grid 
-    
-    Notes
-    -----
-    """
-    def __init__(self, grid, data):
-        super(VectorField, self).__init__(grid, data)
-        self._depth = data.shape[3] - 1
-
-    
-    def __add__(self, other):
-        grid = self.grid + other.grid
-        self_data = self.resample(grid)
-        other_data = other.resample(grid)
-        depth_diff = self.depth - other.depth
-        if depth_diff > 0:
-            self_data = self_data
-            other_data = np.pad(other_data, ((0, 0), (0, 0), (0, 0), (0, depth_diff)), 'constant')
-        elif depth_diff < 0:
-            self_data = np.pad(self_data, ((0, 0), (0, 0), (0, 0), (0, -depth_diff)), 'constant')
-            other_data = other_data
-
-        return VectorField(grid, self_data +  other_data)
-
-    
-    def __mul__(self, other): 
-        grid = self.grid + other.grid
-        other_data = other.resample(grid)
-        if other.__class__ is ScalarField:
-            other_data = other_data[..., np.newaxis]
-        elif other.__class__ is not VectorField:
-            print('Error multiplying {} * {}'.format(self.__class__, other.__class__))        
-        data = self.resample(grid) * other_data
-        return VectorField(grid, data)
-    
-    def __div__(self, other):  
-        grid = self.grid + other.grid
-        other_data = other.resample(grid)        
-        if other.__class__ is ScalarField:
-            other_data = other_data[..., np.newaxis]
-        elif other.__class__ is not VectorField:
-            print('Error dividing {} / {}'.format(self.__class__, other.__class__))        
-        data = self.resample(grid) / other_data
-        return VectorField(grid, data)
-    
-    @property
-    def depth(self):
-        return self._depth 
-
 
 class Grid(object):
     """ 
@@ -397,16 +342,24 @@ class GridData(object):
     
     def __mul__(self, other):
         """ TODO: keeps dx, dy constant"""
-        grid = self.grid + other.grid
-        data = self.resample(grid) * other.resample(grid)
-        return GridData(grid, data)    
+        if other.__class__ is GridPhase:
+            result = other * self
+        else:
+            grid = self.grid + other.grid
+            data = self.resample(grid) * other.resample(grid)
+            result = GridData(grid, data)  
+        return result
     
     
     def __div__(self, other):
         """ TODO: keeps dx, dy constant"""
-        grid = self.grid + other.grid
-        data = self.resample(grid) / other.resample(grid)
-        return GridData(grid, data) 
+        if other.__class__ is GridPhase:
+            result = other * self
+        else:
+            grid = self.grid + other.grid
+            data = self.resample(grid) / other.resample(grid)
+            result = GridData(grid, data) 
+        return result
     
     
     def resample(self, grid, method='linear'):
