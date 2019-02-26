@@ -8,6 +8,7 @@ import numpy as np
 from enum import Enum
 import warnings
 import sys, os
+import dill as pickle
 
 
 class BoundaryCondition(Enum):
@@ -190,21 +191,16 @@ class RteSolver(object):
     Radiative Trasnfer solver object. 
     This object contains the interface to SHDOM internal structures and methods.
     To solve the RTE:
-      1. Attach the solver to a medium object RteSolver.init_medium(Medium)
-      2. Run solution iterations with RteSolver.solve(maxiter)
-      
-    Parameters
-    ----------
-    scene_params: SceneParameters
-    numerical_params: NumericalParameters
-    info: info of the SceneParameters and NumericalParameters
+      1. Set the solver parameters with RteSolver.set_parameters(scene_parameters, numerical_parameters)
+      2. Attach the solver to a medium object RteSolver.init_medium(Medium)
+      3. Run solution iterations with RteSolver.solve(maxiter)
     
     Notes
     -----
     k-distribution not supported.
     """
     
-    def __init__(self, scene_params, numerical_params):
+    def __init__(self):
 
         # Start mpi (if available).
         self._masterproc = core.start_mpi()
@@ -212,6 +208,21 @@ class RteSolver(object):
         # Link to the properties array module.
         self._pa = core.shdom_property_arrays
 
+        # Zero itertions so far
+        self._iters = 0
+        
+        
+    def set_params(self, scene_params, numerical_params):
+        """
+        Set the parameters required to solve the RTE. 
+        
+        Parameters
+        ----------
+        scene_params: SceneParameters,
+           An object which encapsulate scene parameters such as solar and surface parameters. 
+        numerical_params: NumericalParameters     
+           An object which encapsulate numerical parameters such as number of azimuthal and zenith bins. 
+        """
         # Assign scene parameters to shdom internal parameters.
         self._scene_parameters = scene_params
         self.set_scene_parameters(scene_params)
@@ -220,11 +231,40 @@ class RteSolver(object):
         self._numerical_parameters = numerical_params
         self.set_numerical_parameters(numerical_params)
         
-        # Zero itertions so far
-        self._iters = 0
+    
+    def save_params(self, path):
+        """
+        Save RteSolver parameters from file.
+    
+        Parameters
+        ----------
+        path: str,
+            Full path to file. 
+        """
+        param_dict = {'scene_params': self._scene_parameters,
+                      'numerical_params': self._numerical_parameters}
+        file = open(path,'w')
+        file.write(pickle.dumps(param_dict, -1))
+        file.close()    
+        
+
+    def load_params(self, path):
+        """
+        Load RteSolver parameters from file.
+
+        Parameters
+        ----------
+        path: str,
+            Full path to file. 
+        """        
+        file = open(path, 'r')
+        data = file.read()
+        file.close()
+        params = pickle.loads(data)
+        self.set_params(**params)
+        
         
     def __del__(self):
-        
         try:
             core.end_shdom_mpi(
                 gridpos=self._gridpos,
@@ -551,7 +591,7 @@ class RteSolver(object):
         )
         self._nbcells = self._ncells
         
-    def solve(self, maxiter):
+    def solve(self, maxiter, verbose=True):
         """
         Main solver routine.
 
@@ -654,7 +694,8 @@ class RteSolver(object):
                 fluxes=self._fluxes,
                 dirflux=self._dirflux,
                 nleg=self._nleg,
-                maxig=self._maxig
+                maxig=self._maxig,
+                verbose=verbose
             )        
     
     @property

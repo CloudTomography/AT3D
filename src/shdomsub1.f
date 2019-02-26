@@ -16,7 +16,8 @@
      .               CMU1, CMU2, CPHI1, CPHI2,  NPTS, GRIDPOS, 
      .               NCELLS, GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .               RSHPTR, SHPTR, OSHPTR, WORK, WORK1, WORK2,
-     .               SOURCE, DELSOURCE, RADIANCE, FLUXES, DIRFLUX)
+     .               SOURCE, DELSOURCE, RADIANCE, FLUXES, DIRFLUX, 
+     .               VERBOSE)
 
 C       Performs the SHDOM solution procedure.
 C      Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -86,7 +87,8 @@ Cf2py intent(in, out) :: SOURCE, DELSOURCE, RADIANCE
 Cf2py intent(in) :: WORK, WORK2
       CHARACTER SRCTYPE*1, UNITS*1, SFCTYPE*2
 Cf2py intent(in) :: SRCTYPE, UNITS, SFCTYPE
-
+      LOGICAL VERBOSE
+Cf2py intent(in) :: VERBOSE
       INTEGER MAXNLM, MAXNMU, MAXNPHI
       PARAMETER (MAXNLM=16384, MAXNMU=64, MAXNPHI=128)
       INTEGER NPHI0MAX, I, ORDINATESET, NBPTS, NBCELLS
@@ -225,7 +227,9 @@ C         as long as SPLITTESTING is true.
       AVGSOLCRIT = SOLCRIT
       SPLITCRIT = 0.0
 
-      WRITE (6,*) '! Iter Log(Sol)  SplitCrit  Npoints  Nsh(avg)'
+      IF (VERBOSE) THEN
+        WRITE (6,*) '! Iter Log(Sol)  SplitCrit  Npoints  Nsh(avg)'
+      ENDIF
  
 C         Main solution loop
 C           Iterate until the iterations exceed the limit, or the desired
@@ -317,17 +321,21 @@ C           Accelerate the convergence of the source function vector
 
 C           If it is a not scattering medium then do only one iteration
         IF (ALBMAX .LT. SOLACC)  SOLCRIT = SOLACC
-
+        
+        IF (VERBOSE) THEN
 C           Print out the log solution criterion, number of points, 
 C             and average SH truncation.
-        WRITE (6,'(2X,I4,F8.3,1X,E10.3,1X,I8,1X,F8.2,1X,F6.3)') 
-     .        ITER, LOG10(MAX(SOLCRIT,1.0E-20)), SPLITCRIT,
-     .        NPTS, FLOAT(SHPTR(NPTS+1))/NPTS, 
-     .        FLOAT(SHPTR(NPTS+1))/(NPTS*NLM)
+          WRITE (6,'(2X,I4,F8.3,1X,E10.3,1X,I8,1X,F8.2,1X,F6.3)') 
+     .          ITER, LOG10(MAX(SOLCRIT,1.0E-20)), SPLITCRIT,
+     .          NPTS, FLOAT(SHPTR(NPTS+1))/NPTS, 
+     .          FLOAT(SHPTR(NPTS+1))/(NPTS*NLM)
+        ENDIF
       ENDDO
-
-      WRITE (6,'(1X,A,I6,A,F9.6)') '! Iterations: ', ITER,
+      
+      IF (VERBOSE) THEN
+        WRITE (6,'(1X,A,I6,A,F9.6)') '! Iterations: ', ITER,
      .                   '     Final Criterion: ', SOLCRIT
+      ENDIF
 
 C          Comment in for GLE graphics output of cell structure (see routine)
 c      CALL VISUALIZE_CELLS ('cellfinal.gle', YGRID(1), 1, IPFLAG,

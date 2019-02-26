@@ -81,7 +81,8 @@ F2PY_CORE_API = [
     'new_grids',
     'init_cell_structure',
     'solve_rte',
-    'render'
+    'render',
+    'compute_gradient'
 ]
 
 

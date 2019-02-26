@@ -91,7 +91,7 @@ class Grid(object):
         if self.type == '1D' and other.type == '3D':
             return other.x
         
-        if np.allclose(self.x, other.x):
+        if np.array_equiv(self.x, other.x):
             return self.x
 
         xmax = max(self.xmax, other.xmax)
@@ -113,7 +113,7 @@ class Grid(object):
         if self.type == '1D' and other.type == '3D':
             return other.y
         
-        if np.allclose(self.y, other.y):
+        if np.array_equiv(self.y, other.y):
             return self.y
         
         ymax = max(self.ymax, other.ymax)
@@ -128,7 +128,7 @@ class Grid(object):
 
         """TODO"""
         
-        if np.allclose(self.z, other.z):
+        if np.array_equiv(self.z, other.z):
             return self.z
         
         # Bottom part of the atmosphere (no grid intersection)
@@ -183,7 +183,7 @@ class Grid(object):
     
     def __eq__(self, other) : 
         for item1, item2 in zip(self.__dict__.itervalues(), other.__dict__.itervalues()):
-            if not np.array_equal(np.nan_to_num(item1), np.nan_to_num(item2)):
+            if not np.array_equiv(np.nan_to_num(item1), np.nan_to_num(item2)):
                 return False
         return True      
 
@@ -229,6 +229,10 @@ class Grid(object):
         self._z = val
         self._nz = len(val)
         self._zmin, self._zmax = val[0], val[-1]
+
+    @property 
+    def z_grid(self):
+        return Grid(z=self.z)
 
     @property 
     def nx(self):
@@ -364,12 +368,16 @@ class GridData(object):
     
     def resample(self, grid, method='linear'):
         """TODO"""
-        if self.type == '1D' or (np.allclose(self.grid.x, grid.x) and np.allclose(self.grid.y, grid.y)):
+        if self.type == '1D':
+            if np.array_equiv(self.grid.z, grid.z):
+                return self.data
             if method == 'linear':
                 data = self._linear_interpolator1d(grid.z)
             elif method == 'nearest':
                 data = self._nearest_interpolator1d(grid.z)
         else:
+            if self.grid == grid:
+                return self.data
             if method == 'linear':
                 data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1))
             elif method == 'nearest':
@@ -391,6 +399,14 @@ class GridData(object):
     @property
     def ndim(self):
         return self._ndim      
+    
+    @property
+    def max_value(self):
+        return self.data.max()
+    
+    @property
+    def min_value(self):
+        return self.data.min()    
     
     @property
     def type(self):
@@ -486,3 +502,4 @@ from phase import *
 from medium import *
 from sensor import *
 from rte_solver import *
+from optimizer import *

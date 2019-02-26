@@ -112,10 +112,14 @@ class GridPhase(Phase):
     
     def resample(self, grid):
         """TODO"""
-        if self.grid.type == '1D' or (np.allclose(self.grid.x, grid.x) and np.allclose(self.grid.y, grid.y)):
+        if self.grid.type == '1D':
+            if np.array_equiv(self.grid.z, grid.z):
+                return self.data
             data = self._linear_interpolator1d(grid.z)
         else:
-            data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1))
+            if self.grid == grid:
+                return self.data
+            data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1)).transpose([3, 0, 1, 2])
         return data
     
     
@@ -481,6 +485,7 @@ class Mie(object):
         self._ssalb_interpolator = interp1d(self.reff, self.ssalb, assume_sorted=True, bounds_error=False, fill_value=1.0) 
         self._legcoef_interpolator = interp1d(self.reff, self.legcoeff, assume_sorted=True, bounds_error=False, fill_value=0.0)          
         self._legen_index_interpolator = interp1d(self.reff, range(1, len(self.reff)+1), assume_sorted=True, kind='nearest', copy=False, bounds_error=False, fill_value=0)
+        self._nleg_interpolator = interp1d(self.reff, self.nleg, assume_sorted=True, kind='nearest', copy=False, bounds_error=False, fill_value=0)
      
      
     def interpolate_scattering_field(self, lwc, reff, phase_type='Tabulated'):
@@ -508,28 +513,49 @@ class Mie(object):
             A Phase object containting the phase function legendre coeffiecients on a 3D grid
         
         """   
-        reff_flat = reff.data.ravel()
+        
         grid = reff.grid
         ext_data = self._ext_interpolator(reff.data)
         ssalb_data = self._ssalb_interpolator(reff.data)
         extinction = lwc * GridData(grid, ext_data)
         albedo = GridData(grid, ssalb_data)
         
-        maxleg = self.nleg.max()
         if phase_type == 'Tabulated':
+            maxleg = self.nleg.max()
             phase_table = self.legcoeff[:maxleg, :]
             index_data = self._legen_index_interpolator(reff.data).astype(np.int32)
             index = GridData(grid, index_data)
             phase = TabulatedPhase(phase_table, index)
+            
         elif phase_type == 'Grid':
-            phase_data = self._legcoef_interpolator(reff_flat).reshape(self.maxleg + 1, grid.nx, grid.ny, grid.nz)[:maxleg + 1,...]
-            phase = GridPhase(grid, phase_data)
+            phase = self.get_grid_phase(reff)
+            
         else:
             raise AttributeError('Phase type not recognized')
         
         return extinction, albedo, phase
     
     
+    def get_grid_phase(self, reff):
+            """
+            Interpolate the phase function for an effective radius grid.
+        
+            Parameters
+            ----------
+            reff: float
+                The effective radius for which to retrieve the phase function.
+                
+            Returns
+            -------
+            phase: GridPhase
+                A Phase object containting the phase function legendre coeffiecients on a 3D grid
+            """   
+            maxleg = self._nleg_interpolator(reff.data).max().astype(np.int)
+            phase_data = self._legcoef_interpolator(reff.data)[:maxleg + 1,...]
+            phase = GridPhase(reff.grid, phase_data) 
+            return phase
+
+
     @property
     def reff(self):
         if hasattr(self, '_reff'):

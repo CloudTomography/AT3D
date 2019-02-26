@@ -6,6 +6,7 @@ import core
 import numpy as np
 from shdom import BoundingBox
 import itertools
+import dill as pickle
 
 norm = lambda x: x / np.linalg.norm(x, axis=0)
 
@@ -25,7 +26,35 @@ class Sensor(object):
         self._resolution = None
         self.type = 'AbstractSensor'
         
-        
+    def save(self, path):
+        """
+        Save Sensor to file.
+    
+        Parameters
+        ----------
+        path: str,
+            Full path to file. 
+        """
+        file = open(path,'w')
+        file.write(pickle.dumps(self.__dict__, -1))
+        file.close()
+    
+
+    def load(self, path):
+        """
+        Load Sensor from file.
+
+        Parameters
+        ----------
+        path: str,
+            Full path to file. 
+        """        
+        file = open(path, 'r')
+        data = file.read()
+        file.close()
+        self.__dict__ = pickle.loads(data)     
+
+
     def project(self, projection_matrix, point_array):
         """TODO"""
         homogenic_point_array = np.pad(point_array,((0,1),(0,0)),'constant', constant_values=1)
@@ -86,7 +115,7 @@ class Sensor(object):
             bcrad=rte_solver._bcrad,
             extinct=rte_solver._extinct,
             albedo=rte_solver._albedo,
-            legen=rte_solver._legen,            
+            legen=rte_solver._legen.reshape(rte_solver._nleg+1, -1),            
             dirflux=rte_solver._dirflux,
             fluxes=rte_solver._fluxes,
             source=rte_solver._source,          

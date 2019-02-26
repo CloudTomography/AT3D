@@ -7,6 +7,7 @@ import numpy as np
 from enum import Enum
 import warnings
 from shdom import Grid, GridData, BoundingBox, Rayleigh
+import dill as pickle
 
 
 class Medium(object):
@@ -14,25 +15,33 @@ class Medium(object):
     The Medium object encapsulates an atmospheric optical medium. 
     This means specifying extinction, single scattering albedo and phase function at every point in the domain.
     TODO: phase type and sum of phases
-
-    Parameters
-    ----------
-    extinction: GridData
-    albedo: GridData
-    phase: Phase
-    
-    Notes
-    -----
-    Different grids for extinction and albedo is not supported.
     """
+    def __init__(self):
+        self._type = 'Medium'
+        self._extinction = None
+        self._albedo = None
+        self._phase = None        
+        
+        
+    def set_optical_properties(self, extinction, albedo, phase):
+        """
+        Set Mediu's optical properties: extinction, single scattering albedo and phase function at every point in the domain.
     
-    def __init__(self, extinction, albedo, phase):
+        Parameters
+        ----------
+        extinction: GridData
+        albedo: GridData
+        phase: Phase
+        
+        Notes
+        -----
+        Different grids for extinction and albedo and phase is not supported.
+        """        
         assert extinction.grid == albedo.grid == phase.grid, \
                'Different grids for phase, albedo and extinction is not supported.'        
         self.extinction = extinction
-        self._albedo = albedo
+        self.albedo = albedo
         self._phase = phase
-        self._type = 'Medium'
         
  
     def __add__(self, other):
@@ -40,11 +49,47 @@ class Medium(object):
         scat = self.albedo*self.extinction + other.albedo*other.extinction
         albedo = scat / extinction        
         if other.type == 'Medium':
+            if self.phase.type == 'Tabulated' or other.phase.type == 'Tabulated':
+                raise NotImplementedError('Medium adding of tabulated phases not implemented.')
             phase = (self.albedo*self.extinction*self.phase + other.albedo*other.extinction*other.phase) / scat
         if other.type == 'AmbientMedium':
-            phase = self.phase.add_ambient(other.phase)  
-        return Medium(extinction, albedo, phase)
+            if self.phase.type == 'Grid' or other.phase.type == 'Grid':
+                raise NotImplementedError('AmbientMedium adding of grid phases not implemented.')
+            phase = self.phase.add_ambient(other.phase)
+        medium = Medium()
+        medium.set_optical_properties(extinction, albedo, phase)
+        return medium
         
+      
+    def save(self, path):
+        """
+        Save Medium to file.
+        
+        Parameters
+        ----------
+        path: str,
+            Full path to file. 
+        """
+        file = open(path,'w')
+        file.write(pickle.dumps(self.__dict__, -1))
+        file.close()
+        
+    
+    def load(self, path):
+        """
+        Load Medium from file.
+        
+        Parameters
+        ----------
+        path: str,
+            Full path to file. 
+        """        
+        file = open(path, 'r')
+        data = file.read()
+        file.close()
+        self.__dict__ = pickle.loads(data)    
+
+
     @property
     def extinction(self):
         return self._ext
@@ -58,6 +103,11 @@ class Medium(object):
     def albedo(self):
         return self._albedo    
     
+    @albedo.setter
+    def albedo(self, val):
+        assert (val.max_value <= 1.0 and  val.min_value >= 0.0), 'Single scattering albedo should be in the range [0, 1]'
+        self._albedo = val
+        
     @property
     def phase(self):
         return self._phase    
@@ -84,9 +134,8 @@ class Medium(object):
     
 class AmbientMedium(Medium):
     """TODO"""
-    def __init__(self, extinction, albedo, phase):
-
-        super(AmbientMedium, self).__init__(extinction, albedo, phase)
+    def __init__(self):
+        super(AmbientMedium, self).__init__()
         self._type = 'AmbientMedium'
         
         
@@ -94,7 +143,8 @@ class AmbientMedium(Medium):
         if other.type == 'AmbientMedium':
             extinction = self.extinction + other.extinction
             albedo = (self.albedo*self.extinction + other.albedo*other.extinction) / extinction
-            medium = AmbientMedium(extinction, albedo, self.phase)
+            medium = AmbientMedium()
+            medium.set_optical_properties(extinction, albedo, self.phase)
         elif other.type == medium:
             medium = other + self
         else:
