@@ -15,7 +15,6 @@ class Optimizer(object):
     def set_measurements(self, measurements):
         self._measurements = np.array(measurements, dtype=np.float32).ravel()
         
-        
     def set_rte_solver(self, rte_solver):
         self._rte_solver = rte_solver
         
@@ -41,7 +40,6 @@ class Optimizer(object):
         ext = np.zeros((3,3,3), dtype=np.float32)
         ext[1,1,1] = x
         self.rte_solver._pa.extinctp = ext.ravel()
-        self.rte_solver.solve(maxiter=100, verbose=False)        
         gradient, cost = core.compute_gradient(
             nx=self.rte_solver._nx,
             ny=self.rte_solver._ny,
@@ -110,27 +108,31 @@ class Optimizer(object):
         return gradout, cost
     
     
-    def minimize(self, method='L-BFGS-B'):
+    def cost(self, x):
+        ext = np.zeros((3,3,3), dtype=np.float32)
+        ext[1,1,1] = x
+        self.rte_solver._pa.extinctp = ext.ravel()        
+        self.rte_solver.solve(maxiter=100, verbose=False)  
+        return self.compute_gradient_cost(x)[1]
+        
+        
+    def minimize(self, init, options, method='L-BFGS-B'):
         """
         TODO
         """
+        
+        # Initialize the rte_solver to the initial medium
+        self.rte_solver.init_medium(init)
         
         if method != 'L-BFGS-B':
             raise NotImplementedError('Optimization method not implemented')
 
         gradient = lambda x: self.compute_gradient_cost(x)[0]
-        cost = lambda x: self.compute_gradient_cost(x)[1]
-        options = {
-            'maxiter': 100,
-            'maxls': 100,
-            'disp': True,
-            'gtol': 1e-12,
-            'ftol': 1e-12                   
-        }
-        x0 = np.array(0.1, dtype=np.float64)
+        
+        x0 = np.array(0.01, dtype=np.float64)
         bounds = [(0.0, None)]
         
-        result = minimize(fun=cost, 
+        result = minimize(fun=self.cost, 
                           x0=x0, 
                           method=method, 
                           jac=gradient,

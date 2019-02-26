@@ -351,6 +351,7 @@ class Mie(object):
         self._eretab = end_effective_radius
         self._maxradius = max_integration_radius
         
+        
         # Calculate the maximum size parameter and the max number of Legendre terms
         if self._avgflag == 'A':
             xmax = 2 * np.pi * max_integration_radius / self._wavelen1
@@ -376,7 +377,17 @@ class Mie(object):
             avgflag=self._avgflag, 
             distflag=self._distflag)
         
+        # A simple hack: duplicate the table for two grid points (effectinve radii). 
+        # This is because two or more grid points are requiered for interpolation. 
+        if self._nretab == 1:
+            self._reff = np.tile(self._reff, 2)
+            self._extinct = np.tile(self._extinct, 2)
+            self._ssalb = np.tile(self._ssalb, 2)
+            self._nleg = np.tile(self._nleg, 2)
+            self._legcoef = np.tile(self._legcoef, 2)
+            
         self.init_intepolators()
+        
         print('Done.')
         
     def write_table(self, file_path): 
@@ -543,7 +554,7 @@ class Mie(object):
             Parameters
             ----------
             reff: float
-                The effective radius for which to retrieve the phase function.
+                The effective radius for which to retrieve the phase function [microns].
                 
             Returns
             -------

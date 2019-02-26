@@ -36,7 +36,7 @@ class SolarSource(object):
     -----
     Paramters: skyrad, units, wavenumber, are used for Thermal source and are not supported. 
     """
-    def __init__(self, flux, azimuth, zenith):
+    def __init__(self, azimuth, zenith, flux=1.0):
         self.type = 'Solar'
         self.flux = flux
         self.azimuth = azimuth
@@ -56,6 +56,9 @@ class SolarSource(object):
 
     @property 
     def info(self):
+        """
+        Print out all the source parameters.        
+        """        
         return '{}, flux: {}, azimuth: {}deg, zenith: {}deg'.format(self.type, 
                                                                     self.flux, 
                                                                     self.azimuth, 
@@ -82,7 +85,7 @@ class LambertianSurface(Surface):
     albedo: float, optional
         Bottom surface Lambertian albedo the range [0, 1] where 0 means completly absorbing.
         
-    Notes
+    Nnumericalotes
     -----
     Parameter: ground_temperature, is used for Thermal source and is not supported. 
     """
@@ -94,6 +97,9 @@ class LambertianSurface(Surface):
     
     @property 
     def info(self):
+        """
+        Print out all the surface parameters.        
+        """        
         return super(LambertianSurface, self).info + ', albedo: {}'.format(self.albedo)
     
         
@@ -123,28 +129,43 @@ class NumericalParameters(object):
     num_sh_term_factor(NUM_SH_TERM_FACTOR): ratio of average number of spherical harmonic terms to total possible (NLM)
     cell_to_point_ratio(CELL_TO_POINT_RATIO): ratio of number of grid cells to grid points
     high_order_radiance: True to keep the high order radiance field in memory.
-    info: prints out all the properties.
     
     Notes
     -----
     deltam is a crucial parameter that should be set to True used with highly peaked (mie) phase function.
     """    
-    def __init__(self):
-        self.num_mu_bins = 8
-        self.num_phi_bins = 16
-        self.split_accuracy = 0.1
-        self.deltam = True
-        self.spherical_harmonics_accuracy = 0.003
-        self.solution_accuracy = 0.0001
-        self.acceleration_flag = True
-        self.max_total_mb = 100000.0
-        self.adapt_grid_factor = 10
-        self.num_sh_term_factor = 9
-        self.cell_to_point_ratio = 1.3
-        self.high_order_radiance = True
-
+    def __init__(self,
+                 num_mu_bins=8,
+                 num_phi_bins=16,
+                 split_accuracy=0.1,
+                 deltam=True, 
+                 spherical_harmonics_accuracy=0.003,
+                 solution_accuracy=0.0001,
+                 acceleration_flag=True,
+                 max_total_mb=100000.0,
+                 adapt_grid_factor=10,
+                 num_sh_term_factor=9,
+                 cell_to_point_ratio=1.5,
+                 high_order_radiance=True):
+        
+        self.num_mu_bins = num_mu_bins
+        self.num_phi_bins = num_phi_bins
+        self.split_accuracy = split_accuracy
+        self.deltam = deltam
+        self.spherical_harmonics_accuracy = spherical_harmonics_accuracy
+        self.solution_accuracy = solution_accuracy
+        self.acceleration_flag = acceleration_flag
+        self.max_total_mb = max_total_mb
+        self.adapt_grid_factor = adapt_grid_factor
+        self.num_sh_term_factor = num_sh_term_factor
+        self.cell_to_point_ratio = cell_to_point_ratio
+        self.high_order_radiance = high_order_radiance
+        
     @property 
     def info(self):
+        """
+        Print out all the numerical parameters.        
+        """
         info = 'Numerical Parameters: {}'.format(os.linesep)        
         for item in self.__dict__.iteritems():
             info += '   {}: {}{}'.format(item[0], item[1], os.linesep)
@@ -167,12 +188,17 @@ class SceneParameters(object):
     -----
     Currently supports LambertianSurface, SolarSource.
     """  
-    def __init__(self): 
-        self.wavelength = 0.670
-        self.surface = LambertianSurface(albedo=0.05)
-        self.source = SolarSource(flux=1.0, azimuth=0.0, zenith=180.0)
-        self.boundary_conditions = {'x': BoundaryCondition.open, 
-                                    'y': BoundaryCondition.open}
+    def __init__(self, 
+                 wavelength=0.672, 
+                 surface=LambertianSurface(albedo=0.05), 
+                 source=SolarSource(azimuth=0.0, zenith=180.0),
+                 boundary_conditions={'x': BoundaryCondition.open,
+                                      'y': BoundaryCondition.open}
+                 ): 
+        self.wavelength = wavelength
+        self.surface = surface
+        self.source = source
+        self.boundary_conditions = boundary_conditions
     
     @property
     def info(self):
