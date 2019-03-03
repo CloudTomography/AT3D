@@ -1,5 +1,5 @@
 # pyshdom
 
 Requirements (python 2.7):
- numpy, dill
+ numpy, dill, joblib
 

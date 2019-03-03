@@ -503,3 +503,31 @@ from medium import *
 from sensor import *
 from rte_solver import *
 from optimizer import *
+
+
+def save_forward_model(directory, medium, solver, measurements):
+    """
+    Save the forward model parameters for reconstruction.
+    
+    Parameters
+    ----------
+    directory: str
+        Directory path where the forward modeling parameters are saved. 
+        If the folder doesnt exist it will be created.
+    medium: shdom.Medium object
+        The atmospheric medium. This ground-truth medium will be used to 
+    solver: shdom.RteSolver object
+        The solver and the parameters used. This includes the scene parameters (such as solar and surface parameters)
+        and the numerical parameters.
+    measurements: shdom.Measurements
+        Contains the sensor used to image the mediu and the radiance measurements. 
+        
+    Notes
+    -----
+    The ground-truth atmosphere is later used for evaulation of the recovery.
+    """  
+    if not os.path.isdir(directory):
+        os.makedirs(directory)  
+    measurements.save(os.path.join(directory, 'measurements'))
+    medium.save(os.path.join(directory, 'ground_truth_medium'))
+    solver.save_params(os.path.join(directory, 'solver_parameters'))   

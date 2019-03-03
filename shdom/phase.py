@@ -492,11 +492,19 @@ class Mie(object):
         """        
         assert True not in (self._reff is None, self._extinct is None, self._ssalb is None, self._nleg is None, self._legcoef is None), \
                        'Mie scattering table was not computed or read from file. Using compute_table() or read_table().'   
-        self._ext_interpolator = interp1d(self.reff, self.extinct, assume_sorted=True, bounds_error=False, fill_value=0.0)
-        self._ssalb_interpolator = interp1d(self.reff, self.ssalb, assume_sorted=True, bounds_error=False, fill_value=1.0) 
-        self._legcoef_interpolator = interp1d(self.reff, self.legcoeff, assume_sorted=True, bounds_error=False, fill_value=0.0)          
-        self._legen_index_interpolator = interp1d(self.reff, range(1, len(self.reff)+1), assume_sorted=True, kind='nearest', copy=False, bounds_error=False, fill_value=0)
-        self._nleg_interpolator = interp1d(self.reff, self.nleg, assume_sorted=True, kind='nearest', copy=False, bounds_error=False, fill_value=0)
+        
+        if self._nretab == 1:
+            kind = 'nearest'
+        elif self._nretab > 1:
+            kind = 'linear'
+        else:
+            raise AttributeError
+        
+        self._ext_interpolator = interp1d(self.reff, self.extinct, kind=kind, assume_sorted=True, bounds_error=False, fill_value=0.0)
+        self._ssalb_interpolator = interp1d(self.reff, self.ssalb, kind=kind, assume_sorted=True, bounds_error=False, fill_value=1.0) 
+        self._legcoef_interpolator = interp1d(self.reff, self.legcoeff, kind=kind, assume_sorted=True, bounds_error=False, fill_value=0.0)          
+        self._legen_index_interpolator = interp1d(self.reff, range(1, len(self.reff)+1), kind='nearest', assume_sorted=True, copy=False, bounds_error=False, fill_value=0)
+        self._nleg_interpolator = interp1d(self.reff, self.nleg, kind='nearest', assume_sorted=True, copy=False, bounds_error=False, fill_value=0)
      
      
     def interpolate_scattering_field(self, lwc, reff, phase_type='Tabulated'):

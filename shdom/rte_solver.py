@@ -226,7 +226,7 @@ class RteSolver(object):
     k-distribution not supported.
     """
     
-    def __init__(self):
+    def __init__(self, scene_params=None, numerical_params=None):
 
         # Start mpi (if available).
         self._masterproc = core.start_mpi()
@@ -237,26 +237,11 @@ class RteSolver(object):
         # Zero itertions so far
         self._iters = 0
         
-        
-    def set_params(self, scene_params, numerical_params):
-        """
-        Set the parameters required to solve the RTE. 
-        
-        Parameters
-        ----------
-        scene_params: SceneParameters,
-           An object which encapsulate scene parameters such as solar and surface parameters. 
-        numerical_params: NumericalParameters     
-           An object which encapsulate numerical parameters such as number of azimuthal and zenith bins. 
-        """
-        # Assign scene parameters to shdom internal parameters.
-        self._scene_parameters = scene_params
-        self.set_scene_parameters(scene_params)
-        
-        # Assign numerical parameters to shdom internal parameters.
-        self._numerical_parameters = numerical_params
-        self.set_numerical_parameters(numerical_params)
-        
+        if scene_params:
+            self.set_scene(scene_params)
+        if numerical_params:
+            self.set_numerics(numerical_params)
+    
     
     def save_params(self, path):
         """
@@ -306,7 +291,8 @@ class RteSolver(object):
         except Exception as e:
             warnings.warn(repr(e))
 
-    def set_scene_parameters(self, scene_params):
+
+    def set_scene(self, scene_params):
         """
         Set the scene related parameters: 
           wavelength, source, surface, boundary conditions, k-distribution 
@@ -314,15 +300,14 @@ class RteSolver(object):
         Parameters
         ----------
         scene_params : SceneParameters
-        
-        Returns
-        -------
-        None
+             An object which encapsulate scene parameters such as solar and surface parameters.
     
         Notes
         -----
         k-distribution not supported. Only solar source supported.
         """  
+        
+        self._scene_parameters = scene_params
         
         # Wavelength
         self._wavelen = scene_params.wavelength
@@ -373,22 +358,20 @@ class RteSolver(object):
         self._baseout = False
 
 
-    def set_numerical_parameters(self, numerical_params):
+    def set_numerics(self, numerical_params):
         """
         Set the numerical parameters of the SHDOM forward solver.
     
         Parameters
         ----------
         numerical_params : NumericalParameters
-
-        Returns
-        -------
-        None
+            An object which encapsulate numerical parameters such as number of azimuthal and zenith bins. 
     
         Notes
         -----
         Curently not delta-m is not suppoted.
         """ 
+        self._numerical_parameters = numerical_params
         self._nmu                 = max(2, 2 * int((numerical_params.num_mu_bins + 1) / 2))
         self._nphi                = max(1, numerical_params.num_phi_bins)
         self._deltam              = numerical_params.deltam
@@ -643,7 +626,7 @@ class RteSolver(object):
             self._iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
             self._ntoppts, self._nbotpts, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
             self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr,\
-            self._source, self._delsource, self._radiance, self._fluxes, self._dirflux = \
+            self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun = \
             core.solve_rte(
                 nx=self._nx,
                 ny=self._ny,

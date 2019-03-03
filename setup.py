@@ -82,7 +82,14 @@ F2PY_CORE_API = [
     'init_cell_structure',
     'solve_rte',
     'render',
+    'par_render',
+    'precompute_phase',
+    'ylmall',
+    'compute_top_radiances',
+    'fixed_lambertian_boundary',
+    'variable_lambertian_boundary'
     'compute_gradient'
+    
 ]
 
 

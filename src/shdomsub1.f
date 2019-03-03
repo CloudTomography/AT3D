@@ -17,7 +17,7 @@
      .               NCELLS, GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .               RSHPTR, SHPTR, OSHPTR, WORK, WORK1, WORK2,
      .               SOURCE, DELSOURCE, RADIANCE, FLUXES, DIRFLUX, 
-     .               VERBOSE)
+     .               YLMSUN, VERBOSE)
 
 C       Performs the SHDOM solution procedure.
 C      Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -91,6 +91,8 @@ Cf2py intent(in) :: SRCTYPE, UNITS, SFCTYPE
 Cf2py intent(in) :: VERBOSE
       INTEGER MAXNLM, MAXNMU, MAXNPHI
       PARAMETER (MAXNLM=16384, MAXNMU=64, MAXNPHI=128)
+      REAL    YLMSUN(MAXNLM)
+Cf2py intent(out) :: YLMSUN
       INTEGER NPHI0MAX, I, ORDINATESET, NBPTS, NBCELLS
       INTEGER MAXNANGBND, NANGBND(4,2)
       LOGICAL FIXSH, SPLITTESTING, DOSPLIT, OUTOFMEM, LAMBERTIAN
@@ -99,7 +101,7 @@ Cf2py intent(in) :: VERBOSE
       REAL    STARTADAPTSOL, ENDADAPTSOL, ADAPTRANGE, SPLITCRIT
       REAL    STARTSPLITACC, CURSPLITACC, AVGSOLCRIT, BETA
       REAL    DELJDOT, DELJOLD, DELJNEW, JNORM, ACCELPAR
-      REAL    YLMSUN(MAXNLM)
+      
       REAL    WTMU(MAXNMU)
       REAL    WPHISAVE(MAXNMU*(3*MAXNPHI+15))
 
@@ -1153,9 +1155,13 @@ C       Returns the beginning of the BCRAD array with the downwelling
 C     radiance for the NTOPPTS top boundary points.  Currently all
 C     points have the same isotropic radiance.
       INTEGER NTOPPTS
+Cf2py intent(in) :: NTOPPTS
       REAL    SKYRAD, WAVENO(2), WAVELEN
+Cf2py intent(in) :: SKYRAD, WAVENO, WAVELEN
       REAL    BCRAD(*)
+Cf2py intent(in, out) :: BCRAD
       CHARACTER  SRCTYPE*1, UNITS*1
+Cf2py intent(in) :: SRCTYPE, UNITS
       INTEGER IBC
       REAL    SKYRAD2
 
@@ -1185,10 +1191,15 @@ C     bottom points is gotten (from FLUXES). There may also be thermal
 C     emission (depending on temperature and emissivity) or reflected 
 C     collimated solar radiation (DIRFLUX).
       INTEGER NBOTPTS, BCPTR(*)
+Cf2py intent(in) :: NBOTPTS, BCPTR
       REAL    DIRFLUX(*), FLUXES(2,*)
+Cf2py intent(in) :: DIRFLUX, FLUXES
       REAL    GNDTEMP, GNDALBEDO, WAVENO(2), WAVELEN
+Cf2py intent(in) ::  GNDTEMP, GNDALBEDO, WAVENO, WAVELEN
       REAL    BCRAD(*)
+Cf2py intent(in, out) :: BCRAD
       CHARACTER  SRCTYPE*1, UNITS*1
+Cf2py intent(in) :: SRCTYPE, UNITS
       INTEGER I, IBC
       REAL    ALB, GNDRAD
 
@@ -1228,10 +1239,15 @@ C     flux (in FLUXES).  There may also be thermal emission (depending on
 C     temperature and emissivity) or reflected collimated solar radiation 
 C     (from DIRFLUX).
       INTEGER NBOTPTS, BCPTR(*), NSFCPAR
+Cf2py intent(in) :: NBOTPTS, BCPTR, NSFCPAR
       REAL    DIRFLUX(*), FLUXES(2,*)
+Cf2py intent(in) :: DIRFLUX, FLUXES
       REAL    SFCGRIDPARMS(NSFCPAR,NBOTPTS)
+Cf2py intent(in) :: SFCGRIDPARMS
       REAL    BCRAD(*)
+Cf2py intent(in, out) :: BCRAD
       CHARACTER  SRCTYPE*1
+Cf2py intent(in) :: SRCTYPE
       INTEGER I, IBC
       REAL    OPI, ALB, GNDRAD
 

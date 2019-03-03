@@ -7,9 +7,47 @@ import numpy as np
 from shdom import BoundingBox
 import itertools
 import dill as pickle
+from joblib import Parallel, delayed
 
 norm = lambda x: x / np.linalg.norm(x, axis=0)
 
+class Measurements(object):
+    """TODO"""
+    def __init__(self, sensor=None, measurement=None):
+        self._sensor = sensor
+        self._measurement = measurement
+        
+    def save(self, path):
+        """
+        Save Measurements to file.
+    
+        Parameters
+        ----------
+        path: str,
+            Full path to file. 
+        """
+        file = open(path,'w')
+        file.write(pickle.dumps(self.__dict__, -1))
+        file.close()
+    
+    def load(self, path):
+        """
+        Load Measurements from file.
+
+        Parameters
+        ----------
+        path: str,
+            Full path to file. 
+        """        
+        file = open(path, 'r')
+        data = file.read()
+        file.close()
+        self.__dict__ = pickle.loads(data)     
+    
+    def add_noise(self):
+        raise NotImplemented
+    
+    
 class Sensor(object):
     """
     TODO: add description.
@@ -23,44 +61,9 @@ class Sensor(object):
         self._mu = None
         self._phi = None
         self._npix = None
-        self._resolution = None
         self.type = 'AbstractSensor'
-        
-    def save(self, path):
-        """
-        Save Sensor to file.
-    
-        Parameters
-        ----------
-        path: str,
-            Full path to file. 
-        """
-        file = open(path,'w')
-        file.write(pickle.dumps(self.__dict__, -1))
-        file.close()
-    
-
-    def load(self, path):
-        """
-        Load Sensor from file.
-
-        Parameters
-        ----------
-        path: str,
-            Full path to file. 
-        """        
-        file = open(path, 'r')
-        data = file.read()
-        file.close()
-        self.__dict__ = pickle.loads(data)     
-
-
-    def project(self, projection_matrix, point_array):
-        """TODO"""
-        homogenic_point_array = np.pad(point_array,((0,1),(0,0)),'constant', constant_values=1)
-        return np.dot(projection_matrix, homogenic_point_array)    
-
-
+     
+     
     def render(self, rte_solver):
         """TODO"""
         visout = core.render(
@@ -123,8 +126,152 @@ class Sensor(object):
             sfctype=rte_solver._sfctype,
             units=rte_solver._units
         )
-        return visout.reshape(self.resolution, order='F')      
+        return visout
 
+
+    def par_render(self, rte_solver, n_jobs=30, verbose=0):
+        """
+        TODO
+        
+        Notes
+        -----
+        For a small domain, or small amout of pixels, par_render is slower than render.
+        """
+        maxnlm=16384
+        maxleg=2000
+        maxphase=500000
+        maxscatang=361
+        nscatangle = max(36, min(maxscatang, 2*rte_solver._nleg))
+        assert ((rte_solver._ml+1)**2-(2-rte_solver._ncs)*(rte_solver._ml*(rte_solver._ml+1))/2 < maxnlm), '[par_visualize1] assert: maxnlm exceeded'        
+        assert (rte_solver._nleg < maxleg), '[par_render] assert: maxleg exceeded' 
+        assert (rte_solver._pa.numphase < maxphase), '[par_render] assert: maxphase exceeded' 
+        
+        if rte_solver._srctype is not 'T':
+            rte_solver._ylmsun = core.ylmall(
+                mu=rte_solver._solarmu,
+                phi=rte_solver._solaraz,
+                ml=rte_solver._ml,
+                mm=rte_solver._mm,
+                ncs=rte_solver._ncs,
+                p=rte_solver._ylmsun
+            )
+            
+            if rte_solver._deltam and rte_solver._pa.numphase > 0:
+                rte_solver._phasetab = core.precompute_phase(
+                    maxphase=maxphase,
+                    nscatangle=nscatangle,
+                    numphase=rte_solver._pa.numphase,
+                    ml=rte_solver._ml,
+                    nleg=rte_solver._nleg,
+                    legen=rte_solver._legen.reshape(rte_solver._nleg+1, -1)
+                )  
+            
+        # Make the isotropic radiances for the top boundary
+        rte_solver._bcrad = core.compute_top_radiances(
+            srctype=rte_solver._srctype,
+            skyrad=rte_solver._skyrad,
+            waveno=rte_solver._waveno,
+            wavelen=rte_solver._wavelen,
+            units=rte_solver._units,
+            ntoppts=rte_solver._ntoppts,
+            bcrad=rte_solver._bcrad
+        )
+        
+        # Make the bottom boundary radiances for the Lambertian surfaces.  
+        # Compute the upwelling bottom radiances using the downwelling fluxes.        
+        if rte_solver._sfctype == 'FL':
+            rte_solver._bcrad = core.fixed_lambertian_boundary(
+                nbotpts=rte_solver._nbotpts,
+                bcptr=rte_solver._bcptr,
+                dirflux=rte_solver._dirflux,
+                fluxes=rte_solver._fluxes,
+                srctype=rte_solver._srctype,
+                gndtemp=rte_solver._gndtemp,
+                gndalbedo=rte_solver._gndalbedo,
+                waveno=rte_solver._waveno,
+                wavelen=rte_solver._wavelen,
+                units=rte_solver._units,
+                bcrad=rte_solver._bcrad
+            )
+            
+        elif rte_solver._sfctype == 'VL':
+            raise NotImplementedError('Variable surface not implemented.')       
+        
+        x_split = np.array_split(self.x, n_jobs) 
+        y_split = np.array_split(self.y, n_jobs) 
+        z_split = np.array_split(self.z, n_jobs) 
+        mu_split = np.array_split(self.mu, n_jobs) 
+        phi_split = np.array_split(self.phi, n_jobs)        
+        npix_split = map(lambda x: len(x), x_split)
+        
+        visout = Parallel(n_jobs=n_jobs, backend="threading", verbose=verbose)(
+            delayed(core.par_render, check_pickle=False)(
+                nx=rte_solver._nx,
+                ny=rte_solver._ny,
+                nz=rte_solver._nz,
+                bcflag=rte_solver._bcflag,
+                ipflag=rte_solver._ipflag,   
+                npts=rte_solver._npts,
+                ncells=rte_solver._ncells,
+                ml=rte_solver._ml,
+                mm=rte_solver._mm,
+                ncs=rte_solver._ncs,
+                nlm=rte_solver._nlm,
+                numphase=rte_solver._pa.numphase,
+                nmu=rte_solver._nmu,
+                nphi0max=rte_solver._nphi0max,
+                nphi0=rte_solver._nphi0,
+                maxnbc=rte_solver._maxnbc,
+                ntoppts=rte_solver._ntoppts,
+                nbotpts=rte_solver._nbotpts,
+                nsfcpar=rte_solver._nsfcpar,
+                gridptr=rte_solver._gridptr,
+                neighptr=rte_solver._neighptr,
+                treeptr=rte_solver._treeptr,             
+                shptr=rte_solver._shptr,
+                bcptr=rte_solver._bcptr,
+                cellflags=rte_solver._cellflags,
+                iphase=rte_solver._iphase,
+                deltam=rte_solver._deltam,
+                solarmu=rte_solver._solarmu,
+                solaraz=rte_solver._solaraz,
+                gndtemp=rte_solver._gndtemp,
+                gndalbedo=rte_solver._gndalbedo,
+                skyrad=rte_solver._skyrad,
+                waveno=rte_solver._waveno,
+                wavelen=rte_solver._wavelen,
+                mu=rte_solver._mu,
+                phi=rte_solver._phi.reshape(rte_solver._nmu, -1),
+                wtdo=rte_solver._wtdo.reshape(rte_solver._nmu, -1),
+                xgrid=rte_solver._xgrid,
+                ygrid=rte_solver._ygrid,
+                zgrid=rte_solver._zgrid,
+                gridpos=rte_solver._gridpos,
+                sfcgridparms=rte_solver._sfcgridparms,
+                bcrad=rte_solver._bcrad,
+                extinct=rte_solver._extinct,
+                albedo=rte_solver._albedo,
+                legen=rte_solver._legen.reshape(rte_solver._nleg+1, -1),            
+                dirflux=rte_solver._dirflux,
+                fluxes=rte_solver._fluxes,
+                source=rte_solver._source, 
+                camx=x,
+                camy=y,
+                camz=z,
+                cammu=mu,
+                camphi=phi, 
+                npix=npix,
+                srctype=rte_solver._srctype,
+                sfctype=rte_solver._sfctype,
+                units=rte_solver._units,
+                phasetab=rte_solver._phasetab,
+                ylmsun=rte_solver._ylmsun,
+                nscatangle=nscatangle
+            ) for x, y, z, mu, phi, npix in zip(x_split, y_split, z_split, mu_split, phi_split, npix_split))   
+        
+        return np.concatenate(visout)
+    
+    
     @property
     def x(self):
         return self._x
@@ -154,15 +301,109 @@ class Sensor(object):
         return np.rad2deg(self.phi)
     
     @property 
-    def resolution(self):
-        return self._resolution
-    
-    @property 
     def npix(self):
         return self._npix    
     
+
+class ProjectiveSensor(Sensor):
+    """TODO"""
+    def __init__(self):
+        super(ProjectiveSensor, self).__init__()
+        self._type = 'ProjectiveSensor'
+        self._resolution = None
     
-class OrthographicSensor(Sensor):
+    def project(self, projection_matrix, point_array):
+        """TODO"""
+        homogenic_point_array = np.pad(point_array,((0,1),(0,0)),'constant', constant_values=1)
+        return np.dot(projection_matrix, homogenic_point_array) 
+        
+    def render(self, rte_solver):
+        """TODO"""
+        visout = super(ProjectiveSensor, self).render(rte_solver)
+        return visout.reshape(self.resolution, order='F')
+    
+    def par_render(self, rte_solver, n_jobs=30, verbose=0):
+        """TODO"""
+        visout = super(ProjectiveSensor, self).render(rte_solver, n_jobs, verbose)
+        return np.array(visout).reshape(self.resolution, order='F')
+    
+    @property
+    def resolution(self):
+        return self._resolution
+    
+    
+class SensorArray(Sensor):
+    """TODO"""
+    
+    def __init__(self, sensor_list=None):
+        super(SensorArray, self).__init__()
+        self._num_sensors = 0
+        self._sensor_list = []
+        if sensor_list:
+            for sensor in sensor_list:
+                self.add_sensor(sensor)
+    
+    
+    def add_sensor(self, sensor, id=None):
+        """TODO"""
+        
+        attributes = ['x', 'y', 'z', 'mu', 'phi']
+        
+        if self.num_sensors is 0:
+            for attr in attributes:
+                self.__setattr__('_' + attr, sensor.__getattribute__(attr))
+            self._npix = [sensor.npix]
+            self._resolution = [sensor.resolution]
+            self._type = [sensor.type]
+            self._ids = ['sensor0' if id is None else id]
+        else:
+            for attr in attributes:
+                self.__setattr__('_' + attr, np.concatenate((self.__getattribute__(attr), 
+                                                             sensor.__getattribute__(attr))))
+            self._npix.append(sensor.npix)
+            self._resolution.append(sensor.resolution)
+            self._type.append(sensor.type)
+            self._ids.append('sensor'+str(self.num_sensors) if id is None else id)  
+        
+        self._sensor_list.append(sensor)
+        self._num_sensors += 1
+    
+    
+    def render(self, rte_solver):
+        """TODO"""
+        split_measurements = [sensor.render(rte_solver) for sensor in self.sensor_list]
+        visout = []
+        for sensor, meas in zip(self.sensor_list, split_measurements):
+            meas = np.array(meas)
+            if hasattr(sensor, 'resolution'):
+                meas = meas.reshape(sensor.resolution, order='F')
+            visout.append(meas)            
+        return visout     
+
+    def par_render(self, rte_solver, n_jobs=30, verbose=0):
+        """TODO"""
+        visout = super(SensorArray, self).par_render(rte_solver, n_jobs, verbose)
+        
+        split_measurements = np.split(visout, np.cumsum(self.npix[:-1]))
+        visout = []
+        for sensor, meas in zip(self.sensor_list, split_measurements):
+            meas = np.array(meas)
+            if hasattr(sensor, 'resolution'):
+                meas = meas.reshape(sensor.resolution, order='F')
+            visout.append(meas)
+        return visout    
+
+
+    @property
+    def sensor_list(self):
+        return self._sensor_list
+    
+    @property
+    def num_sensors(self):
+        return self._num_sensors    
+    
+    
+class OrthographicSensor(ProjectiveSensor):
     """
     TODO: parallel rays description 
     """
@@ -212,7 +453,6 @@ class OrthographicSensor(Sensor):
         self._npix = self.x.size
         self._resolution = [x.size, y.size]
 
-    
     @property 
     def altitude(self):
         return self._altitude
@@ -227,7 +467,7 @@ class OrthographicSensor(Sensor):
     
     
 
-class ProjectiveSensor(Sensor):
+class PerspectiveSensor(ProjectiveSensor):
     """
     TODO: description 
     
@@ -237,8 +477,8 @@ class ProjectiveSensor(Sensor):
     """
     
     def __init__(self, fov, nx, ny, x, y, z):
-        super(ProjectiveSensor, self).__init__()
-        self.type = 'ProjectiveSensor'
+        super(PerspectiveSensor, self).__init__()
+        self.type = 'PerspectiveSensor'
 
         self._resolution = [nx, ny]
         self._npix = nx*ny

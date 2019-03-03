@@ -92,11 +92,11 @@ class Medium(object):
 
     @property
     def extinction(self):
-        return self._ext
+        return self._extinction
     
     @extinction.setter
     def extinction(self, val):
-        self._ext = val
+        self._extinction = val
         self.grid = self.extinction.grid
     
     @property
