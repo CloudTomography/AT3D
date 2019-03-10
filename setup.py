@@ -40,7 +40,6 @@ classifiers =  ['Development Status :: 3 - Alpha',
 # Set this to True for compiling the parallel
 # version of the SHDOM algorithm.
 #
-
 PARALLEL_SUPPORT = False
 
 #
@@ -88,9 +87,7 @@ F2PY_CORE_API = [
     'compute_top_radiances',
     'fixed_lambertian_boundary',
     'variable_lambertian_boundary',
-    'ext_gradient',
-    'base_grid_projection'
-    
+    'ext_gradient'
 ]
 
 

@@ -110,7 +110,6 @@ def phase(grid, args):
     phase: GridPhase object
          The phase function specified for the unknown voxel on a 3D grid.
     """
-    print(os.getcwd())
     mie = shdom.Mie()
     if args.mie_table_path:
         mie.read_table(args.mie_table_path)

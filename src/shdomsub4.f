@@ -265,7 +265,7 @@ Cf2py intent(in) :: NPIX
       REAL   MEASUREMENTS(*)
 Cf2py intent(in) :: MEASUREMENTS
       REAL VISOUT
-      DOUBLE PRECISION  GRADOUT(NPTS), COST
+      DOUBLE PRECISION  GRAD(NPTS), GRADOUT(NBPTS), COST
 Cf2py intent(out) :: GRADOUT, COST
       CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
 Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
@@ -284,7 +284,7 @@ Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
       REAL   PHASETAB(MAXPHASE,MAXSCATANG), SINGSCAT(MAXPHASE)
       DOUBLE PRECISION SUNDIRLEG(0:MAXLEG)
 
-      GRADOUT = 0.0
+      GRAD = 0.0
       IF ((ML+1)**2-(2-NCS)*(ML*(ML+1))/2 .GT. MAXNLM)
      .    STOP 'VISUALIZE_RADIANCE: MAXNLM exceeded'
       IF (NLEG .GT. MAXLEG)  STOP 'COMPUTE_ONE_SOURCE: MAXLEG exceeded'
@@ -379,9 +379,14 @@ C             Extrapolate ray to domain top if above
 900     CONTINUE
         
         PIXEL_ERROR = (VISOUT - MEASUREMENTS(N))
-        GRADOUT = GRADOUT + PIXEL_ERROR*RAYGRAD
+        GRAD = GRAD + PIXEL_ERROR*RAYGRAD
         COST = COST + 0.5*PIXEL_ERROR**2
       ENDDO
+      
+      
+      CALL BASE_GRID_PROJECTION(NBCELLS, NCELLS, NBPTS, 
+     .              GRIDPOS, GRIDPTR, TREEPTR, GRAD, GRADOUT)
+      
       
       RETURN
       END

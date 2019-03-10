@@ -7,8 +7,8 @@ import numpy as np
 import core 
 from scipy.optimize import minimize
 from shdom import GridData
-
-
+        
+        
 class Optimizer(object):
     """
     TODO
@@ -23,7 +23,11 @@ class Optimizer(object):
         self._num_parameters = 0
         self._extinction_dependency = False
         self._albedo_dependency = False
-        self._phase_dependency = False        
+        self._phase_dependency = False 
+        self._writer = None
+        self._iteration = 0
+        self._loss = None
+        
         
     def set_measurements(self, measurements):
         """TODO"""
@@ -41,6 +45,11 @@ class Optimizer(object):
         """TODO"""
         self._known_medium = medium
 
+    def set_writer(self, writer):
+        """TODO"""
+        self._writer = writer
+        
+        
     def add_parameter(self, parameter):
         """TODO"""
         if parameter.__class__ is not shdom.parameters.Extinction:
@@ -55,7 +64,6 @@ class Optimizer(object):
         """
         TODO
         """ 
-        
         param_data = np.split(state, np.cumsum(self.num_parameters[:-1]))
         
         for i, param in enumerate(self.parameters):
@@ -148,16 +156,17 @@ class Optimizer(object):
             measurements=self.radiances,
             rshptr=self.rte_solver._rshptr,
             radiance=self.rte_solver._radiance
-        )  
-        gradout = self.basegrid_projection(gradient)       
-        return gradout, cost
+        )   
+        return gradient, cost
     
     
     def objective_fun(self, state):
         """TODO"""
+        self._iteration += 1
         self.update_rte_solver(state)     
         self.rte_solver.solve(maxiter=100, verbose=False)  
-        return self.extinction_gradient_cost()[1]
+        self._loss = self.extinction_gradient_cost()[1]
+        return self.loss
         
         
     def gradient(self, state):
@@ -167,6 +176,11 @@ class Optimizer(object):
         state_gradient = np.concatenate(map(lambda grad: grad[self.gradient_mask].ravel(), parameter_gradient))
         return state_gradient
     
+    
+    def callback(self, state):
+        """TODO"""
+        self.writer.add_scalar('loss', self.loss, self.iteration)
+        
     
     def minimize(self, options, method='L-BFGS-B'):
         """
@@ -190,13 +204,21 @@ class Optimizer(object):
                 grid = self.known_medium.grid + self.cloud_mask.grid
                 self._gradient_mask = np.array(self.cloud_mask.resample(grid, method='nearest'), dtype=np.bool).ravel()
             
+        # Define the callback function 
+        
+        if self.writer is None:
+            callback = None
+        else:
+            callback = self.callback
+            
         initial_state = self.parameters_to_state()
         result = minimize(fun=self.objective_fun, 
                           x0=initial_state, 
                           method=method, 
                           jac=self.gradient,
                           bounds=self.get_bounds(),
-                          options=options)
+                          options=options,
+                          callback=callback)
         return result
     
     
@@ -218,47 +240,6 @@ class Optimizer(object):
         return state    
 
 
-    def basegrid_projection(self, field):
-        """TODO: Check against fortran subroutine"""
-        for icell in range(self.rte_solver._nbcells, self.rte_solver._ncells):
-            # Find base cell for icell
-            base_cell = icell
-            while (self.rte_solver._treeptr[0, base_cell] > 0):
-                base_cell = self.rte_solver._treeptr[0, base_cell] - 1
-    
-            # The two most distant points of the 8 define the interpolation
-            base_point0 = self.rte_solver._gridptr[0, base_cell] - 1
-            base_point7 = self.rte_solver._gridptr[7, base_cell] - 1
-            bx0, by0, bz0 = self.rte_solver._gridpos[:, base_point0]
-            bx7, by7, bz7 = self.rte_solver._gridpos[:, base_point7]
-            dx, dy, dz = bx7-bx0, by7-by0, bz7-bz0
-    
-            # loop over gridpoints belonging to icell and trilin interpolate
-            for gridpoint in self.rte_solver._gridptr[:, icell]-1:
-                if (field[gridpoint] != 0) & (gridpoint >= self.rte_solver._nbpts):
-                    u, v, w = 0, 0, 0
-                    if dx>0.0:
-                        u = (bx7 - self.rte_solver._gridpos[0, gridpoint])/dx
-                    if dy>0.0:
-                        v = (by7 - self.rte_solver._gridpos[1, gridpoint])/dy
-                    if dz>0.0:
-                        w = (bz7 - self.rte_solver._gridpos[2, gridpoint])/dz
-    
-                    f = np.empty(8)
-                    f[7] = (1-u)*(1-v)*(1-w)
-                    f[6] =   u  *(1-v)*(1-w)
-                    f[5] = (1-u)*  v  *(1-w)
-                    f[4] =   u  *  v  *(1-w)
-                    f[3] = (1-u)*(1-v)*  w
-                    f[2] =   u  *(1-v)*  w
-                    f[1] = (1-u)*  v  *  w
-                    f[0] =   u  *  v  *  w
-    
-                    for bgridpoint, _f in zip(self.rte_solver._gridptr[:,base_cell]-1, f):
-                        field[bgridpoint] += _f*field[gridpoint]
-                        field[gridpoint]   = 0
-        return field[:self.rte_solver._nbpts] 
-        
     @property
     def rte_solver(self):
         return self._rte_solver
@@ -301,4 +282,16 @@ class Optimizer(object):
     
     @property
     def known_medium(self):
-        return self._known_medium      
+        return self._known_medium 
+
+    @property
+    def writer(self):
+        return self._writer      
+    
+    @property
+    def iteration(self):
+        return self._iteration
+    
+    @property
+    def loss(self):
+        return self._loss        

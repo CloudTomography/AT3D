@@ -1,7 +1,7 @@
 # pyshdom
 
 Requirements (python 2.7):
- numpy, dill, joblib, tensorboardx 
+ (requiered) numpy, matplotlib, dill, joblib
+ (optional - summary and display) tensorflow, tensorboard, tensorboardx
  
-conda install -c conda-forge tensorboardx 
 

@@ -86,7 +86,7 @@ subparser.add_argument('--generator')
 subparser.add_argument('--add_rayleigh', action='store_true')
 parser.add_argument('--generator', 
                     help='Name of the generator used to generate the atmosphere. \
-                          or additional generator arguments: python forward.py --generator=GENERATOR -h. \
+                          or additional generator arguments: python scripts/render/radiace_toa.py --generator GENERATOR -h. \
                           A generator should have the following methods to generate the medium: \
                           update_parser, grid, extinction, albedo, phase. \
                           See scripts/generate/__init__.py for more documentation.')
