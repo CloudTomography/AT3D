@@ -212,7 +212,7 @@ C         Use layer mean temperature to compute fractional pressure change.
       
       
       SUBROUTINE EXT_GRADIENT (NX, NY, NZ, NPTS, NBPTS, NCELLS,
-     .             ML, MM, NCS, NLM, NLEG, NUMPHASE, 
+     .             NBCELLS, ML, MM, NCS, NLM, NLEG, NUMPHASE, 
      .             NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .             BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, SOLARAZ,
      .             SFCTYPE, NSFCPAR, SFCGRIDPARMS, 
@@ -226,8 +226,9 @@ C         Use layer mean temperature to compute fractional pressure change.
      .             RADIANCE)
 
       IMPLICIT NONE
-      INTEGER NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NBPTS, NCELLS
-Cf2py intent(in) :: NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NBPTS, NCELLS
+      INTEGER NX, NY, NZ, BCFLAG, IPFLAG, NPTS
+      INTEGER NBPTS, NCELLS, NBCELLS
+Cf2py intent(in) :: NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NBPTS, NCELLS, NBCELLS
       INTEGER ML, MM, NCS, NLM, NLEG
       INTEGER NUMPHASE
 Cf2py intent(in) :: ML, MM, NCS, NLM, NLEG, NUMPHASE
@@ -382,12 +383,10 @@ C             Extrapolate ray to domain top if above
         GRAD = GRAD + PIXEL_ERROR*RAYGRAD
         COST = COST + 0.5*PIXEL_ERROR**2
       ENDDO
-      
-      
+    
       CALL BASE_GRID_PROJECTION(NBCELLS, NCELLS, NBPTS, 
      .              GRIDPOS, GRIDPTR, TREEPTR, GRAD, GRADOUT)
-      
-      
+   
       RETURN
       END
       
@@ -1089,14 +1088,14 @@ Cf2py intent(out) :: BGARRAY
       
       DOUBLE PRECISION U, V, W, F(8), DELX, DELY, DELZ
       DOUBLE PRECISION INVDELX, INVDELY, INVDELZ
-      INTEGER ICELL, BCELL, I, GPOINT, J
+      INTEGER ICELL, BCELL, I, GPOINT, J, BGPOINT
       
-      BGARRAY = ARRAY(:NBPTS)
-      DO ICELL = NBCELLS, NCELLS
+      BGARRAY = ARRAY(1:NBPTS)
+      DO ICELL = NBCELLS+1, NCELLS
 C       Find base cell for icell
         BCELL = ICELL
         
-        DO WHILE (BCELL .GT. 0)
+        DO WHILE (TREEPTR(1, BCELL) .GT. 0)
           BCELL = TREEPTR(1, BCELL)
         ENDDO
         
@@ -1107,7 +1106,7 @@ C       Find base cell for icell
 C       loop over gridpoints belonging to icell and trilin interpolate
         DO I = 1,8
           GPOINT = GRIDPTR(I, ICELL)
-          IF ((ARRAY(GPOINT) .NE. 0) .AND. (GPOINT .GE. NBPTS)) THEN
+          IF ((ARRAY(GPOINT) .NE. 0) .AND. (GPOINT .GT. NBPTS)) THEN
             U = 0.0
             V = 0.0
             W = 0.0
@@ -1130,8 +1129,9 @@ C       loop over gridpoints belonging to icell and trilin interpolate
             F(1) =    U  *    V  * W
             
             DO J = 1,8 
-               BGARRAY(GRIDPTR(J, BCELL)) = BGARRAY(GRIDPTR(J, BCELL)) + 
-     .                                              F(J)*ARRAY(GPOINT)
+               BGPOINT = GRIDPTR(J, BCELL)
+               BGARRAY(BGPOINT) = BGARRAY(BGPOINT)+F(J)*ARRAY(GPOINT)
+               ARRAY(GPOINT) = 0
             ENDDO
           ENDIF
         ENDDO

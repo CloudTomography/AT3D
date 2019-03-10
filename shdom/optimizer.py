@@ -102,6 +102,7 @@ class Optimizer(object):
             npts=self.rte_solver._npts,
             nbpts=self._rte_solver._nbpts,
             ncells=self.rte_solver._ncells,
+            nbcells=self.rte_solver._nbcells,
             ml=self.rte_solver._ml,
             mm=self.rte_solver._mm,
             ncs=self.rte_solver._ncs,
@@ -156,10 +157,10 @@ class Optimizer(object):
             measurements=self.radiances,
             rshptr=self.rte_solver._rshptr,
             radiance=self.rte_solver._radiance
-        )   
+        )
         return gradient, cost
     
-    
+   
     def objective_fun(self, state):
         """TODO"""
         self._iteration += 1
