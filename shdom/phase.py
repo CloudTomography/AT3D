@@ -15,7 +15,11 @@ from shdom import Grid, GridData, BoundingBox
 
 class Phase(object):
     """
-    TODO
+    An abstract Phase object that is inherited by two types of Phase functions:
+      1. GridPhase: The phase function is specified at every point on the grid.
+      2. TabulatedPhase: A table of phase functions is saved with a pointer at every point on the grid.
+    
+    The TabulatedPhase is more efficient in memory and runtime.
     """
     def __init__(self):
         self._type = 'AbstractPhaseObject'
@@ -57,10 +61,15 @@ class Phase(object):
     
 class GridPhase(Phase):
     """
-    TODO
+    A GridPhase object spefies the phase function at every point in the grid. 
+    This is the equivalent of the GridData object for the phase function.
     
     Parameters
     ----------
+    grid: Grid object
+        A Grid object of type '1D' or '3D'.
+    data: np.array
+        data contains the vector field (legendre coefficients).
     """
     def __init__(self, grid, data):
         self._type = 'Grid'
@@ -82,6 +91,7 @@ class GridPhase(Phase):
 
 
     def __add__(self, other):
+        """Adding two GridPhase objects by resampling to a common grid and padding with zeros to the larger legendre series."""
         assert other.__class__ is GridPhase, 'Only GridPhase can be added to GridPhase object'
         grid = self.grid + other.grid
         self_data = self.resample(grid)
@@ -94,7 +104,8 @@ class GridPhase(Phase):
         return GridPhase(grid, data)
 
     
-    def __mul__(self, other): 
+    def __mul__(self, other):
+        """Multiplying a GridPhase objects by a GridData object."""
         assert other.__class__ is GridData, 'Only scalar field (GridData) can multiply a GridPhase object'
         grid = self.grid + other.grid
         other_data = other.resample(grid)
@@ -103,6 +114,7 @@ class GridPhase(Phase):
     
     
     def __div__(self, other):  
+        """Dividing a GridPhase objects by a GridData object."""
         assert other.__class__ is GridData, 'Only scalar field (GridData) can divide a GridPhase object'
         grid = self.grid + other.grid
         other_data = other.resample(grid)        
@@ -111,7 +123,7 @@ class GridPhase(Phase):
     
     
     def resample(self, grid):
-        """TODO"""
+        """Resample data to a new Grid."""
         if self.grid.type == '1D':
             if np.array_equiv(self.grid.z, grid.z):
                 return self.data
@@ -130,10 +142,15 @@ class GridPhase(Phase):
     
 class TabulatedPhase(Phase):
     """
-    TODO
+    The TabulatedPhase internally keeps a phase function table and a pointer array for each grid point.
+    This could potentially be more efficient than GridPhase in memory and computation if the number of table entery is much smaller than number of grid points.
     
     Parameters
     ----------
+    legendre_table: np.array(shape=(nleg, numphase), dtype=np.float32)
+       The Legendre table.
+    index: GridData object
+       A GridData object with dtype=int. This is a pointer to the enteries in the legendre_table.
     """
     def __init__(self, legendre_table, index):
         self._type = 'Tabulated'
@@ -153,7 +170,10 @@ class TabulatedPhase(Phase):
 
     
     def add_ambient(self, other):
-        """ TODO """
+        """
+        Adding an ambient medium means that the AmientMedium will only `fill the holes`. 
+        This is an approximation which speeds up computations.
+        """
         # Join the two tables
         self_legendre_table = self.legendre_table
         other_legendre_table = other.legendre_table
@@ -170,9 +190,8 @@ class TabulatedPhase(Phase):
         self_index[self_index>0] += other_index.max()
         self_index[self_index==0] = (self_index + other_index)[self_index==0]
         index = GridData(grid, self_index.astype(np.int32))
-        return TabulatedPhase(legendre_table, index)
-      
-      
+        return TabulatedPhase(legendre_table, index)  
+
     @property
     def legendre_table(self):
         return self._legendre_table
@@ -520,17 +539,16 @@ class Mie(object):
         reff: GridData 
             A GridData object containting the effective radii (micron) on a 3D grid.
         phase_type: 'Tabulated' or 'Grid'
-            TODO
+            Return either a TabulatedPhase or GridPhase object.
             
         Returns
         -------
-        extinction: GridData
+        extinction: GridData object
             A GridData3D object containting the extinction (1/km) on a 3D grid
-        albedo: GridData
+        albedo: GridData object
             A GridData object containting the single scattering albedo unitless in range [0, 1] on a 3D grid
-        phase: Phase TODO
-            A Phase object containting the phase function legendre coeffiecients on a 3D grid
-        
+        phase: Phase object
+            A Phase object containting the phase function legendre coeffiecients on a grid.
         """   
         
         grid = reff.grid
@@ -677,7 +695,7 @@ class Rayleigh(object):
         grid: Grid  
             a Grid object containing the altitude grid points in [km].
         phase_type: 'Tabulated' or 'Grid'
-            TODO
+            Return either a TabulatedPhase or GridPhase object.
             
         Returns
         -------

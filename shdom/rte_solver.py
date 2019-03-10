@@ -85,7 +85,7 @@ class LambertianSurface(Surface):
     albedo: float, optional
         Bottom surface Lambertian albedo the range [0, 1] where 0 means completly absorbing.
         
-    Nnumericalotes
+    Notes
     -----
     Parameter: ground_temperature, is used for Thermal source and is not supported. 
     """
@@ -272,7 +272,8 @@ class RteSolver(object):
         data = file.read()
         file.close()
         params = pickle.loads(data)
-        self.set_params(**params)
+        self.set_numerics(params['numerical_params'])
+        self.set_scene(params['scene_params'])
         
         
     def __del__(self):
@@ -347,10 +348,10 @@ class RteSolver(object):
         if scene_params.boundary_conditions['y'] == BoundaryCondition.open:
             self._bcflag += 2
         
-        # TODO: Independent pixel not supported yet
+        # Independent pixel not supported yet
         self._ipflag = 0
         
-        # TODO: k-distribution not supported yet
+        # k-distribution not supported yet
         self._kdist = False
         self._ng = 1
         self._delg = np.ones(1, order='F')
@@ -385,31 +386,63 @@ class RteSolver(object):
         self._solacc              = numerical_params.solution_accuracy
         self._highorderrad        = numerical_params.high_order_radiance
     
-        
+    
     def init_medium(self, medium):
         """
         Initilize SHDOM internal grid structures according to the Medium.
     
         Parameters
         ----------
-        medium: Medium
+        medium: sdhom.Medium
+            Initilize the RTE solver to a Medium object.
 
-        Returns
-        -------
-        None
-    
-        Notes
-        -----
         """
-   
+        
+        self.set_grid(medium.grid)
+        self.set_extinction(medium.extinction)
+        self.set_albedo(medium.albedo)
+        self.set_phase(medium.phase)
+        
+        # Temperature is used for thermal radiation. Not supported yet.
+        self._pa.tempp = np.zeros(shape=(self._maxpg,), dtype=np.float32)
+        
+
+    def set_phase(self, phase):
+        """TODO"""
+        self._pa.iphasep = phase.iphasep.ravel()
+        self._pa.numphase = phase.numphase          
+        self._maxleg = phase.maxleg 
+        self._nleg = phase.maxleg
+        
+        # Legenp is without the zero order term which is 1.0 for normalized phase function
+        self._pa.legenp = phase.legenp
+        self._maxasym = phase.maxasym
+        self._maxpgl = phase.grid.num_points * phase.maxleg         
+
+        if phase.numphase > 0:
+            self._maxigl = phase.numphase*(phase.maxleg + 1)
+        else:
+            self._maxigl = self._maxig*(phase.maxleg + 1)
+    
+        self._iphase = np.empty(shape=(self._maxig,), dtype=np.int32, order='F')
+        self._legen = np.empty(shape=(self._maxigl,), dtype=np.float32, order='F')        
+
+    def set_albedo(self, albedo):
+        """TODO"""
+        self._pa.albedop = np.array(albedo.data.ravel(), dtype=np.float32)
+        
+    def set_extinction(self, extinction):
+        """TODO"""
+        self._pa.extinctp = np.array(extinction.data.ravel(), dtype=np.float32)
+    
+    def set_grid(self, grid):
+        """TODO"""
         
         def ibits(val, bit, ret_val):
             if val & 2**bit:
                 return ret_val
-            return 0 
-        
-        grid = medium.grid
-        
+            return 0         
+
         # Set shdom property array
         self._pa.npx = grid.nx
         self._pa.npy = grid.ny    
@@ -418,35 +451,14 @@ class RteSolver(object):
         self._pa.ystart = grid.ymin
         self._pa.delx = grid.dx
         self._pa.dely = grid.dy
-        self._pa.zlevels = grid.z
-        
-        # TODO: need this?
-        self._pa.tempp = np.zeros(shape=(grid.num_points,), dtype=np.float32)
-        
-        # Setup property array optical properties
-        self._pa.albedop = medium.albedo.data.ravel()
-        self._pa.extinctp = medium.extinction.data.ravel()
-        
-        # Setup phase function
-        
-        self._maxleg = medium.phase.maxleg 
-        self._nleg = medium.phase.maxleg
-        self._pa.iphasep = medium.phase.iphasep.ravel()
-        self._pa.numphase = medium.phase.numphase
-        
-        # Legenp is without the zero order term which is 1.0 for normalized phase function
-        self._pa.legenp = medium.phase.legenp
-        self._maxasym = medium.phase.maxasym
-        self._maxpgl = self._maxleg * grid.num_points
-        
+        self._pa.zlevels = grid.z        
         
         # Initialize shdom internal grid sizes to property array grid
-        self._nx = int(self._pa.npx)
-        self._ny = int(self._pa.npy)
-        self._nz = int(self._pa.npz)
-        self._maxpg  = self._nx * self._ny * self._nz
-        self._maxnz = self._pa.npz
-        
+        self._nx = grid.nx
+        self._ny = grid.ny
+        self._nz = grid.nz
+        self._maxpg  = grid.num_points
+        self._maxnz = grid.nz
         
         # Set the full domain grid sizes (variables end in t)
         self._nxt, self._nyt, self._npxt, self._npyt = self._nx, self._ny, self._pa.npx, self._pa.npy
@@ -467,6 +479,47 @@ class RteSolver(object):
         self._nbcells = (self._nz - 1) * (self._nx + ibits(self._bcflag, 0, 1) - \
                         ibits(self._bcflag, 2, 1)) * (self._ny + ibits(self._bcflag, 1, 1) - ibits(self._bcflag, 3, 1))
         
+        self._xgrid, self._ygrid, self._zgrid = core.new_grids(
+            bcflag=self._bcflag,
+            gridtype=self._gridtype,
+            npx=self._pa.npx,
+            npy=self._pa.npy,
+            nx=self._nx,
+            ny=self._ny,
+            nz=self._nz,
+            xstart=self._pa.xstart,
+            ystart=self._pa.ystart,
+            delxp=self._pa.delx,
+            delyp=self._pa.dely,
+            zlevels=self._pa.zlevels
+        )        
+        
+        self.init_memory()
+        
+        self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
+            self._treeptr, self._cellflags = core.init_cell_structure(
+                bcflag=self._bcflag,
+                ipflag=self._ipflag,
+                nx=self._nx,
+                ny=self._ny,
+                nz=self._nz,
+                nx1=self._nx1,
+                ny1=self._ny1,
+                xgrid=self._xgrid,
+                ygrid=self._ygrid,
+                zgrid=self._zgrid,
+                gridpos=self._gridpos,
+                gridptr=self._gridptr,
+                neighptr=self._neighptr,
+                treeptr=self._treeptr,
+                cellflags=self._cellflags
+            )
+        self._nbcells = self._ncells       
+
+
+    def init_memory(self):
+        """TODO"""
+        
         # Make ml and mm from nmu and nphi
         # ML is the maximum meridional mode, MM is the maximum azimuthal mode,
         # and NCS is the azimuthal mode flag (|NCS|=1 for cosine only, |NCS|=2 for 
@@ -478,7 +531,7 @@ class RteSolver(object):
         self._ml = self._nmu - 1
         self._mm = max(0, int(self._nphi / 2) - 1)
         self._nlm = (2 * self._mm + 1) * (self._ml + 1) - self._mm * (self._mm + 1)
-        
+    
         self._nphi0max = self._nphi
         self._memword = self._nmu*(2 + 2 * self._nphi + 2 * self._nlm + 2 * 33 *32)
     
@@ -512,11 +565,6 @@ class RteSolver(object):
         self._maxiv = int(self._num_sh_term_factor*self._nlm*self._maxig)
         self._maxido = self._maxig*self._nphi0max
     
-        if self._pa.numphase > 0:
-            self._maxigl = self._pa.numphase*(self._maxleg+1)
-        else:
-            self._maxigl = self._maxig*(self._maxleg+1)
-    
         assert 4.0*(self._maxiv+self._maxig) < sys.maxsize, 'size of big sh arrays (maxiv) probably exceeds max integer number of bytes: %d' % self._maxiv
         assert 4.0*8.0*self._maxic <= sys.maxsize, 'size of gridptr array (8*maxic) probably exceeds max integer number of bytes: %d' % 8*self._maxic
     
@@ -526,12 +574,14 @@ class RteSolver(object):
             self._maxbcrad = 2*self._maxnbc
         else:
             self._maxbcrad = int((2+self._nmu*self._nphi0max/2)*self._maxnbc)
-        
+    
         self._sfcgridparms = np.empty(self._maxsfcpars*self._maxnbc,dtype=np.float32)               
         self._bcptr = np.empty(shape=(self._maxnbc, 2), dtype=np.int32, order='F')
         self._bcrad = np.empty(shape=(self._maxbcrad,), dtype=np.float32, order='F')
-        
+    
         # Array allocation
+        self._extinct = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
+        self._albedo = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
         self._mu = np.empty(shape=(self._nmu,), dtype=np.float32, order='F')
         self._wtdo = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
         self._phi = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
@@ -542,10 +592,6 @@ class RteSolver(object):
         self._cphi2 = np.empty(shape=(33*32*self._nmu,), dtype=np.float32, order='F')
         self._temp = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
         self._planck = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
-        self._extinct = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
-        self._albedo = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
-        self._iphase = np.empty(shape=(self._maxig,), dtype=np.int32, order='F')
-        self._legen = np.empty(shape=(self._maxigl,), dtype=np.float32, order='F')
         self._gridptr = np.empty(shape=(8, self._maxic), dtype=np.int32, order='F')
         self._neighptr = np.empty(shape=(6, self._maxic), dtype=np.int32, order='F')
         self._treeptr = np.empty(shape=(2, self._maxic), dtype=np.int32, order='F')
@@ -565,41 +611,7 @@ class RteSolver(object):
         self._work1 = np.empty(shape=(8*self._maxig,), dtype=np.int32, order='F')
         self._work2 = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')        
         
-        self._xgrid, self._ygrid, self._zgrid = core.new_grids(
-            bcflag=self._bcflag,
-            gridtype=self._gridtype,
-            npx=self._pa.npx,
-            npy=self._pa.npy,
-            nx=self._nx,
-            ny=self._ny,
-            nz=self._nz,
-            xstart=self._pa.xstart,
-            ystart=self._pa.ystart,
-            delxp=self._pa.delx,
-            delyp=self._pa.dely,
-            zlevels=self._pa.zlevels
-        )        
-
-        self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
-        self._treeptr, self._cellflags = core.init_cell_structure(
-            bcflag=self._bcflag,
-            ipflag=self._ipflag,
-            nx=self._nx,
-            ny=self._ny,
-            nz=self._nz,
-            nx1=self._nx1,
-            ny1=self._ny1,
-            xgrid=self._xgrid,
-            ygrid=self._ygrid,
-            zgrid=self._zgrid,
-            gridpos=self._gridpos,
-            gridptr=self._gridptr,
-            neighptr=self._neighptr,
-            treeptr=self._treeptr,
-            cellflags=self._cellflags
-        )
-        self._nbcells = self._ncells
-        
+           
     def solve(self, maxiter, verbose=True):
         """
         Main solver routine.

@@ -1,7 +1,12 @@
+"""
+TODO
+"""
+
 import shdom
 import numpy as np
 import core 
 from scipy.optimize import minimize
+from shdom import GridData
 
 
 class Optimizer(object):
@@ -9,27 +14,70 @@ class Optimizer(object):
     TODO
     """
     def __init__(self):
-        pass
-    
-    
+        self._parameters = []
+        self._known_medium = None
+        self._rte_solver = None
+        self._measurements = None
+        self._cloud_mask = None
+        self._gradient_mask = None
+        self._num_parameters = 0
+        self._extinction_dependency = False
+        self._albedo_dependency = False
+        self._phase_dependency = False        
+        
     def set_measurements(self, measurements):
-        self._measurements = np.array(measurements, dtype=np.float32).ravel()
+        """TODO"""
+        self._measurements = measurements
         
     def set_rte_solver(self, rte_solver):
+        """TODO"""
         self._rte_solver = rte_solver
-        
-        
-    def set_sensor(self, sensor):
-        self._sensor = sensor
 
+    def set_cloud_mask(self, cloud_mask):
+        """TODO"""
+        self._cloud_mask = cloud_mask  
+    
+    def set_known_medium(self, medium):
+        """TODO"""
+        self._known_medium = medium
 
-  
-    def compute_gradient_cost(self, x):
+    def add_parameter(self, parameter):
+        """TODO"""
+        if parameter.__class__ is not shdom.parameters.Extinction:
+            raise NotImplementedError('Only Extinction optimization is supported.')
+        
+        self._parameters.append(parameter)
+        self._extinction_dependency = self.extinction_dependency or parameter.extinction_dependency
+        self._albedo_dependency = self.albedo_dependency or parameter.albedo_dependency
+        self._phase_dependency = self.phase_dependency or parameter.phase_dependency
+        
+    def update_rte_solver(self, state):
+        """
+        TODO
+        """ 
+        
+        param_data = np.split(state, np.cumsum(self.num_parameters[:-1]))
+        
+        for i, param in enumerate(self.parameters):
+            param.set_data(param_data[i])
+            
+            if param.extinction_dependency:
+                extinction = param.get_extinction()
+                if self.known_medium:
+                    extinction += self.known_medium.extinction
+                self.rte_solver.set_extinction(extinction)
+            
+            if param.albedo_dependency:
+                raise NotImplementedError                
+            
+            if param.phase_dependency:
+                raise NotImplementedError
+            
+            
+    def extinction_gradient_cost(self):
         """
         Gradient and cost computation by ray tracing the domain (see shdomsub4.f)
         
-        Parameters
-        ----------
         
         Returns
         -------
@@ -37,10 +85,7 @@ class Optimizer(object):
         Notes
         -----
         """ 
-        ext = np.zeros((3,3,3), dtype=np.float32)
-        ext[1,1,1] = x
-        self.rte_solver._pa.extinctp = ext.ravel()
-        gradient, cost = core.compute_gradient(
+        gradient, cost = core.ext_gradient(
             nx=self.rte_solver._nx,
             ny=self.rte_solver._ny,
             nz=self.rte_solver._nz,
@@ -91,57 +136,90 @@ class Optimizer(object):
             dirflux=self.rte_solver._dirflux,
             fluxes=self.rte_solver._fluxes,
             source=self.rte_solver._source,
-            camx=self.sensor.x,
-            camy=self.sensor.y,
-            camz=self.sensor.z,
-            cammu=self.sensor.mu,
-            camphi=self.sensor.phi,
-            npix=self.sensor.npix,          
+            camx=self.sensors.x,
+            camy=self.sensors.y,
+            camz=self.sensors.z,
+            cammu=self.sensors.mu,
+            camphi=self.sensors.phi,
+            npix=self.sensors.npix,          
             srctype=self.rte_solver._srctype,
             sfctype=self.rte_solver._sfctype,
             units=self.rte_solver._units,
-            measurements=self.measurements,
+            measurements=self.radiances,
             rshptr=self.rte_solver._rshptr,
             radiance=self.rte_solver._radiance
         )  
-        gradout = np.array(self.basegrid_projection(gradient).reshape(3,3,3)[1,1,1])
+        gradout = self.basegrid_projection(gradient)       
         return gradout, cost
     
     
-    def cost(self, x):
-        ext = np.zeros((3,3,3), dtype=np.float32)
-        ext[1,1,1] = x
-        self.rte_solver._pa.extinctp = ext.ravel()        
+    def objective_fun(self, state):
+        """TODO"""
+        self.update_rte_solver(state)     
         self.rte_solver.solve(maxiter=100, verbose=False)  
-        return self.compute_gradient_cost(x)[1]
+        return self.extinction_gradient_cost()[1]
         
         
-    def minimize(self, init, options, method='L-BFGS-B'):
+    def gradient(self, state):
+        """TODO"""
+        self.update_rte_solver(state)
+        parameter_gradient = [self.extinction_gradient_cost()[0]]
+        state_gradient = np.concatenate(map(lambda grad: grad[self.gradient_mask].ravel(), parameter_gradient))
+        return state_gradient
+    
+    
+    def minimize(self, options, method='L-BFGS-B'):
         """
         TODO
         """
         
-        # Initialize the rte_solver to the initial medium
-        self.rte_solver.init_medium(init)
-        
         if method != 'L-BFGS-B':
             raise NotImplementedError('Optimization method not implemented')
-
-        gradient = lambda x: self.compute_gradient_cost(x)[0]
         
-        x0 = np.array(0.01, dtype=np.float64)
-        bounds = [(0.0, None)]
-        
-        result = minimize(fun=self.cost, 
-                          x0=x0, 
+        # Init masks for parameters
+        self._num_parameters = []
+        for param in self.parameters:
+            if self.cloud_mask:
+                param.set_mask(self.cloud_mask)
+                self._num_parameters.append(param.num_parameters)
+                
+        # Init mask for gradient 
+        if self.cloud_mask:
+            self._gradient_mask = self.cloud_mask.data.ravel()
+            if self.known_medium:
+                grid = self.known_medium.grid + self.cloud_mask.grid
+                self._gradient_mask = np.array(self.cloud_mask.resample(grid, method='nearest'), dtype=np.bool).ravel()
+            
+        initial_state = self.parameters_to_state()
+        result = minimize(fun=self.objective_fun, 
+                          x0=initial_state, 
                           method=method, 
-                          jac=gradient,
-                          bounds=bounds,
+                          jac=self.gradient,
+                          bounds=self.get_bounds(),
                           options=options)
         return result
     
     
+    def parameters_to_state(self):
+        """TODO"""
+        state = np.concatenate(map(lambda param: param.data[param.mask].ravel(), self.parameters))
+        return state
+    
+    
+    def get_bounds(self):
+        """TODO"""
+        bounds = map(lambda param: param.bounds, self.parameters)
+        return bounds
+
+
+    def set_state(self, state):
+        """TODO"""
+        state = np.concatenate(map(lambda param: param.data, self.parameters))
+        return state    
+
+
     def basegrid_projection(self, field):
+        """TODO: Check against fortran subroutine"""
         for icell in range(self.rte_solver._nbcells, self.rte_solver._ncells):
             # Find base cell for icell
             base_cell = icell
@@ -186,9 +264,41 @@ class Optimizer(object):
         return self._rte_solver
     
     @property
-    def measurements(self):
-        return self._measurements
+    def radiances(self):
+        return self._measurements.radiances
     
     @property
-    def sensor(self):
-        return self._sensor
+    def sensors(self):
+        return self._measurements.sensors
+    
+    @property
+    def parameters(self):
+        return self._parameters
+    
+    @property
+    def cloud_mask(self):
+        return self._cloud_mask    
+    
+    @property
+    def gradient_mask(self):
+        return self._gradient_mask  
+    
+    @property
+    def num_parameters(self):
+        return self._num_parameters       
+    
+    @property
+    def extinction_dependency(self):
+        return self._extinction_dependency    
+    
+    @property
+    def albedo_dependency(self):
+        return self._albedo_dependency    
+
+    @property
+    def phase_dependency(self):
+        return self._phase_dependency   
+    
+    @property
+    def known_medium(self):
+        return self._known_medium      

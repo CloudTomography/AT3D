@@ -1,4 +1,6 @@
-C     TODO: Write description for this file 
+C     This file containts subroutines that were modified from their original purpose 
+C     The original subroutines were written by Frank Evans for the Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer.
+C     The modified subroutines were written by Aviad Levis, Technion Institute of Technology, 2019
 
       SUBROUTINE RENDER (NX, NY, NZ, NPTS, NCELLS,
      .                   ML, MM, NCS, NLM, NLEG, NUMPHASE, 
@@ -209,7 +211,7 @@ C         Use layer mean temperature to compute fractional pressure change.
       END
       
       
-      SUBROUTINE COMPUTE_GRADIENT (NX, NY, NZ, NPTS, NBPTS, NCELLS,
+      SUBROUTINE EXT_GRADIENT (NX, NY, NZ, NPTS, NBPTS, NCELLS,
      .             ML, MM, NCS, NLM, NLEG, NUMPHASE, 
      .             NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .             BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, SOLARAZ,
@@ -220,7 +222,8 @@ C         Use layer mean temperature to compute fractional pressure change.
      .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, FLUXES,
      .             SHPTR, SOURCE, CAMX, CAMY, CAMZ, CAMMU, CAMPHI, 
-     .             NPIX, GRADOUT, COST, MEASUREMENTS, RSHPTR, RADIANCE)
+     .             NPIX, GRADOUT, COST, MEASUREMENTS, RSHPTR, 
+     .             RADIANCE)
 
       IMPLICIT NONE
       INTEGER NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NBPTS, NCELLS
@@ -266,7 +269,7 @@ Cf2py intent(in) :: MEASUREMENTS
 Cf2py intent(out) :: GRADOUT, COST
       CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
 Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
- 
+
       INTEGER NSCATANGLE, I, J, L, K
       INTEGER N  
       DOUBLE PRECISION PIXEL_ERROR, RAYGRAD(NPTS)
@@ -359,7 +362,7 @@ C             Extrapolate ray to domain top if above
         ENDIF
         
         RAYGRAD = 0.0
-        CALL GRADIENT_INTEGRATE_1RAY (BCFLAG, IPFLAG, 
+        CALL EXTGRAD_INTEGRATE_1RAY (BCFLAG, IPFLAG, 
      .                       NX, NY, NZ, NPTS, NCELLS, 
      .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                       XGRID, YGRID, ZGRID, GRIDPOS,
@@ -383,7 +386,7 @@ C             Extrapolate ray to domain top if above
       RETURN
       END
       
-      SUBROUTINE GRADIENT_INTEGRATE_1RAY (BCFLAG, IPFLAG, 
+      SUBROUTINE EXTGRAD_INTEGRATE_1RAY (BCFLAG, IPFLAG, 
      .                        NX, NY, NZ, NPTS, NCELLS, 
      .                        GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                        XGRID, YGRID, ZGRID, GRIDPOS,
@@ -627,7 +630,7 @@ C		Compute the gradient field in direction  (MU2,PHI2)
         OUTOFDOMAIN = (BTEST(INT(CELLFLAGS(ICELL)),0).OR.
      .                 BTEST(INT(CELLFLAGS(ICELL)),1))
         IF (.NOT.OUTOFDOMAIN) THEN
-           CALL COMPUTE_GRADFIELD_1CELL (ICELL, GRIDPTR, 
+           CALL EXT_GRADFIELD_1CELL (ICELL, GRIDPTR, 
      .             ML, MM, NCS, NLM, NLEG, NUMPHASE,
      .             NPTS, DELTAM, SRCTYPE, SOLARMU, 
      .             ALBEDO, LEGEN, IPHASE, DIRFLUX, 
@@ -810,7 +813,7 @@ C             boundary then prepare for next cell
       END
       
       
-        SUBROUTINE COMPUTE_GRADFIELD_1CELL (ICELL, GRIDPTR,
+        SUBROUTINE EXT_GRADFIELD_1CELL (ICELL, GRIDPTR,
      .             ML, MM, NCS, NLM, NLEG, NUMPHASE,
      .             NPTS, DELTAM, SRCTYPE, SOLARMU, ALBEDO,
      .             LEGEN, IPHASE, DIRFLUX, YLMDIR, YLMSUN,
@@ -1058,6 +1061,75 @@ C           Extrapolate ray to domain top if above
      .                       MURAY, PHIRAY, MU2, PHI2, X0, Y0, Z0, 
      .                       VISOUT(N))
   900   CONTINUE
+      ENDDO
+  
+      RETURN
+      END
+      
+      
+      SUBROUTINE BASE_GRID_PROJECTION (NBCELLS, NCELLS, NBPTS, 
+     .                 GRIDPOS, GRIDPTR, TREEPTR, ARRAY, BGARRAY)
+
+      IMPLICIT NONE
+      INTEGER NBCELLS, NCELLS, NBPTS
+Cf2py intent(in) :: NBCELLS, NCELLS, NBPTS
+      REAL    GRIDPOS(3,*)
+Cf2py intent(in) :: GRIDPOS
+      INTEGER GRIDPTR(8,*), TREEPTR(2,*)
+Cf2py intent(in) :: GRIDPTR, TREEPTR
+      DOUBLE PRECISION  ARRAY(*)
+Cf2py intent(in) :: ARRAY
+      DOUBLE PRECISION BGARRAY(NBPTS)
+Cf2py intent(out) :: BGARRAY
+      
+      DOUBLE PRECISION U, V, W, F(8), DELX, DELY, DELZ
+      DOUBLE PRECISION INVDELX, INVDELY, INVDELZ
+      INTEGER ICELL, BCELL, I, GPOINT, J
+      
+      BGARRAY = ARRAY(:NBPTS)
+      DO ICELL = NBCELLS, NCELLS
+C       Find base cell for icell
+        BCELL = ICELL
+        
+        DO WHILE (BCELL .GT. 0)
+          BCELL = TREEPTR(1, BCELL)
+        ENDDO
+        
+        DELX = GRIDPOS(1,GRIDPTR(8,BCELL))-GRIDPOS(1,GRIDPTR(1,BCELL))
+        DELY = GRIDPOS(2,GRIDPTR(8,BCELL))-GRIDPOS(2,GRIDPTR(1,BCELL))
+        DELZ = GRIDPOS(3,GRIDPTR(8,BCELL))-GRIDPOS(3,GRIDPTR(1,BCELL))
+      
+C       loop over gridpoints belonging to icell and trilin interpolate
+        DO I = 1,8
+          GPOINT = GRIDPTR(I, ICELL)
+          IF ((ARRAY(GPOINT) .NE. 0) .AND. (GPOINT .GE. NBPTS)) THEN
+            U = 0.0
+            V = 0.0
+            W = 0.0
+            IF (DELX .GT. 0.0) THEN 
+              U = (GRIDPOS(1,GRIDPTR(8, BCELL))-GRIDPOS(1,GPOINT))/DELX
+            ENDIF
+            IF (DELY .GT. 0.0) THEN 
+              V = (GRIDPOS(2,GRIDPTR(8, BCELL))-GRIDPOS(2,GPOINT))/DELY
+            ENDIF
+            IF (DELY .GT. 0.0) THEN 
+              W = (GRIDPOS(3,GRIDPTR(8, BCELL))-GRIDPOS(3,GPOINT))/DELZ
+            ENDIF
+            F(8) = (1-U) * (1-V) * (1-W)
+            F(7) =    U  * (1-V) * (1-W)
+            F(6) = (1-U) *    V  * (1-W)
+            F(5) =    U  *    V  * (1-W)
+            F(4) = (1-U) * (1-V) * W
+            F(3) =    U  * (1-V) * W
+            F(2) = (1-U) *    V  * W
+            F(1) =    U  *    V  * W
+            
+            DO J = 1,8 
+               BGARRAY(GRIDPTR(J, BCELL)) = BGARRAY(GRIDPTR(J, BCELL)) + 
+     .                                              F(J)*ARRAY(GPOINT)
+            ENDDO
+          ENDIF
+        ENDDO
       ENDDO
   
       RETURN

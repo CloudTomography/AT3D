@@ -25,25 +25,38 @@ distribution functions (BRDF) for the surface are implemented, and more may be a
 SHDOM may be run on a single processor or on multiple processors (e.g. an SMP machine or a
 cluster) using the Message Passing Interface (MPI).
 """
+
 from scipy.interpolate import interp1d, RegularGridInterpolator
 
 
 class Grid(object):
     """ 
-    TODO 
+    A Grid object defining the 3D or 1D grid of the atmopshere. 
+    
+    A 3D Grid can be defined with:
+      1. x, y, z grids.
+      2. A BoundingBox and grid resolution (nx, ny, nz).
+    
+    A 1D grid is defined with a z grid.
     
     Parameters
     ----------
-    data: TODO
-    bounding_box: BoundingBox.
-        A BoundingBox object. Cloud be unbound in x and y.
-    nx: integer
-        Number of grid point in x axis.
-    ny: integer
-        Number of grid point in z axis.
+    bounding_box: BoundingBox, optional
+        A BoundingBox object for 3D grid. If specified nx, ny and nz must be specified as well.
+    nx: integer, optional
+        Number of grid point in x axis. Must be specified with a BoundingBox object.
+    ny: integer, optional
+        Number of grid point in y axis. Must be specified with a BoundingBox object.
+    nz: integer, optional
+        Number of grid point in z axis. Must be specified with a BoundingBox object.
+    x: np.array(dtype=float, shape=(nx,)), optional
+        Grid along x axis. Must be specified with y,z grids.
+    y: np.array(dtype=float, shape=(ny,)), optional
+        Grid along y axis. Must be specified with x,z grids. 
     z: np.array(dtype=float, shape=(nz,)), optional
-        grid along z axis
+        Grid along z axis. Either specified with x,y grids (3D grid) or by itself (1D grid).
     """    
+    
     def __init__(self, **kwargs):
         
         # 3D grid with grids
@@ -80,9 +93,20 @@ class Grid(object):
         else:
             raise AttributeError('kwargs in Grid initialization are not defined')
     
+    
     def get_common_x_grid(self, other):
         """
-        TODO
+        Find the common x grid which maintains a the minimum dx (distance between two grid points).
+        
+        Parameters
+        ----------
+        other: Grid object
+           The other grid for which to find a common x grid.
+           
+        Returns
+        -------
+        x: np.array(dtype=np.float32)
+            The common x Grid.
         """
         if self.type == '1D' and other.type == '1D':
             return None       
@@ -104,7 +128,17 @@ class Grid(object):
     
     def get_common_y_grid(self, other):
         """
-        TODO
+        Find the common y grid which maintains a the minimum dy (distance between two grid points).
+        
+        Parameters
+        ----------
+        other: Grid object
+           The other grid for which to find a common y grid.
+           
+        Returns
+        -------
+        y: np.array(dtype=np.float32)
+            The common y Grid.
         """
         if self.type == '1D' and other.type == '1D':
             return None       
@@ -125,8 +159,19 @@ class Grid(object):
        
         
     def get_common_z_grid(self, other):
-
-        """TODO"""
+        """
+        Find the common z grid which maintains a the high resolution z grid.
+        
+        Parameters
+        ----------
+        other: Grid object
+           The other grid for which to find a common y grid.
+           
+        Returns
+        -------
+        z: np.array(dtype=np.float32)
+            The common z Grid.
+        """        
         
         if np.array_equiv(self.z, other.z):
             return self.z
@@ -170,7 +215,9 @@ class Grid(object):
         return np.concatenate((z_bottom, z_middle, z_top))      
 
     def __add__(self, other):
-        """ TODO: keeps dx, dy constant"""
+        """
+        Add two grids by finding the common grid which maintains the higher resolution grid.
+        """
         x_grid = self.get_common_x_grid(other)
         y_grid = self.get_common_y_grid(other)
         z_grid = self.get_common_z_grid(other)
@@ -229,10 +276,6 @@ class Grid(object):
         self._z = val
         self._nz = len(val)
         self._zmin, self._zmax = val[0], val[-1]
-
-    @property 
-    def z_grid(self):
-        return Grid(z=self.z)
 
     @property 
     def nx(self):
@@ -296,19 +339,14 @@ class Grid(object):
     
 class GridData(object):
     """ 
-    TODO 
+    A container for scalar fields which are defined on a Grid. 
     
     Parameters
     ----------
-    data: TODO
-    bounding_box: BoundingBox.
-        A BoundingBox object. Cloud be unbound in x and y.
-    nx: integer
-        Number of grid point in x axis.
-    ny: integer
-        Number of grid point in z axis.
-    z_levels: np.array(dtype=float, shape=(nz,)), optional
-        grid along z axis
+    grid: Grid object
+        A Grid object of type '1D' or '3D'.
+    data: np.array
+        data contains the scalar field.
     """    
     def __init__(self, grid, data):
         self._type = grid.type
@@ -331,21 +369,25 @@ class GridData(object):
     
     
     def __add__(self, other):
-        """ TODO: keeps dx, dy constant"""
+        """Add two GridData objects by resampling to a common grid."""
         grid = self.grid + other.grid
         data = self.resample(grid) + other.resample(grid)
         return GridData(grid, data)
     
     
     def __sub__(self, other):
-        """ TODO: keeps dx, dy constant"""
+        """Subtract two GridData objects by resampling to a common grid."""
         grid = self.grid + other.grid
         data = self.resample(grid) - other.resample(grid)
         return GridData(grid, data)       
     
     
     def __mul__(self, other):
-        """ TODO: keeps dx, dy constant"""
+        """ 
+        Two multiplication options:
+          1. Multiply two GridData objects by resampling to a common grid. 
+          2. Multiply a GridData object by a GridPhase object.
+        """
         if other.__class__ is GridPhase:
             result = other * self
         else:
@@ -356,18 +398,15 @@ class GridData(object):
     
     
     def __div__(self, other):
-        """ TODO: keeps dx, dy constant"""
-        if other.__class__ is GridPhase:
-            result = other * self
-        else:
-            grid = self.grid + other.grid
-            data = self.resample(grid) / other.resample(grid)
-            result = GridData(grid, data) 
+        """Divide two GridData objects by resampling to a common grid."""
+        grid = self.grid + other.grid
+        data = self.resample(grid) / other.resample(grid)
+        result = GridData(grid, data) 
         return result
     
     
     def resample(self, grid, method='linear'):
-        """TODO"""
+        """Resample data to a new Grid."""
         if self.type == '1D':
             if np.array_equiv(self.grid.z, grid.z):
                 return self.data
@@ -503,6 +542,7 @@ from medium import *
 from sensor import *
 from rte_solver import *
 from optimizer import *
+import parameters
 
 
 def save_forward_model(directory, medium, solver, measurements):
@@ -524,10 +564,60 @@ def save_forward_model(directory, medium, solver, measurements):
         
     Notes
     -----
-    The ground-truth atmosphere is later used for evaulation of the recovery.
+    The ground-truth medium is later used for evaulation of the recovery.
     """  
     if not os.path.isdir(directory):
         os.makedirs(directory)  
     measurements.save(os.path.join(directory, 'measurements'))
     medium.save(os.path.join(directory, 'ground_truth_medium'))
     solver.save_params(os.path.join(directory, 'solver_parameters'))   
+
+
+def load_forward_model(directory):
+    """
+    Save the forward model parameters for reconstruction.
+    
+    Parameters
+    ----------
+    directory: str
+        Directory path where the forward modeling parameters are saved. 
+    
+    Returns
+    -------
+    medium: shdom.Medium object
+        The atmospheric medium. This ground-truth medium will be used to 
+    solver: shdom.RteSolver object
+        The solver and the parameters used. This includes the scene parameters (such as solar and surface parameters)
+        and the numerical parameters.
+    measurements: shdom.Measurements
+        Contains the sensor used to image the mediu and the radiance measurements. 
+        
+    Notes
+    -----
+    The ground-truth medium is used for evaulation of the recovery.
+    """  
+    
+    # Load the ground truth medium for error analysis and ground-truth known phase and albedo
+    medium_path = os.path.join(directory, 'ground_truth_medium')
+    if os.path.exists(medium_path):
+        medium = shdom.Medium()
+        medium.load(path=medium_path)   
+    else: 
+        medium = None
+        
+    # Load shdom.Measurements object (sensor geometry and radiances)
+    measurements = shdom.Measurements()
+    measurements_path = os.path.join(directory, 'measurements')
+    assert os.path.exists(measurements_path), 'No measurements file in directory: {}'.format(directory)
+    measurements.load(path=measurements_path)
+    
+    # Load RteSolver according to numerical and scene parameters
+    solver_path = os.path.join(directory, 'solver_parameters')
+    solver = shdom.RteSolver()
+    if os.path.exists(solver_path):
+        solver.load_params(path=os.path.join(directory, 'solver_parameters'))   
+    else:
+        numerical_params = shdom.NumericalParameters()
+        solver.set_numerics(numerical_params)
+
+    return medium, solver, measurements

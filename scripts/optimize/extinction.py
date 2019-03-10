@@ -1,25 +1,27 @@
 """ 
-Inverse: optimize extinction (simulation)
------------------------------------------
-Optimize for the extinction coefficient with a homogeneous field initialization. 
-Measurements should be generated using a forward script (e.g. scripts/forward_single_voxel).
+Optimize: Extinction
+--------------------
+
+Optimize for the extinction coefficient based on radiance measurements.
+Measurements are either:
+  1. Simulated measurements using a forward rendering script (e.g. in scripts/render).
+  2. Real radiance measurements (e.g. AirMSPI multi-view)
+
 The phase function, albedo and rayleigh scattering are assumed known.
 
 Example usage:
   TODO
   
 For information about the command line flags see:
-  python render.py --help
-
-For a tutorial overview of how to operate the forward rendering model see the following notebooks:
- - notebooks/Make Mie Table.ipynb
- - notebooks/Forward Rendering.ipynb
+  python scripts/optimize/extinction.py --help
 """
 
 import os 
 import numpy as np
 import argparse
 import shdom
+from shdom import parameters
+import scripts.generate.air as generate_air
 
 parser = argparse.ArgumentParser()
 
@@ -28,7 +30,7 @@ parser.add_argument('--input_dir',
                           This directory will be used to save the optimization results and progress.')
 
 parser.add_argument('--initial_value', 
-                    default=1e-6,
+                    default=0.1,
                     type=np.float32, 
                     help='(default value: %(default)s) Initial value for a homogeneous extinction field [km^-1]. \
                           Note: initial_extinction=0.0 is an unstable value.')
@@ -38,71 +40,81 @@ parser.add_argument('--use_forward_grid',
                     help='Use the same grid for the reconstruction. This is a sort of inverse crime which is \
                           usefull for debugging/development.')
 
+parser.add_argument('--gt_cloud_mask',
+                    action='store_true',
+                    help='Use the ground-truth cloud masks for reconstruction. This is an inverse crime which is \
+                          usefull for debugging/development.')
+
+# Additional arguments to the parser
+subparser = argparse.ArgumentParser(add_help=False)
+subparser.add_argument('--add_rayleigh', action='store_true')
+parser.add_argument('--add_rayleigh',
+                    action='store_true',
+                    help='Overlay the atmosphere with (known) Rayleigh scattering due to air molecules. \
+                          Temperature profile is taken from AFGL measurements of summer mid-lat.')
+
+add_rayleigh = subparser.parse_known_args()[0].add_rayleigh 
+
+if add_rayleigh:
+    parser = generate_air.update_parser(parser)
+
 args = parser.parse_args()
 
 
-def load_forward_model(directory):
-    """
-    Save the forward model parameters for reconstruction.
-    
-    Parameters
-    ----------
-    directory: str
-        Directory path where the forward modeling parameters are saved. 
-        If the folder doesnt exist it will be created.
-    
-    Notes
-    -----
-    medium: shdom.Medium object
-        The atmospheric medium. This ground-truth medium will be used to 
-    sensor: shdom.Sensor object
-        The sensor used to image the medium.
-    solver: shdom.RteSolver object
-        The solver and the parameters used. This includes the scene parameters (such as solar and surface parameters)
-        and the numerical parameters.
-    
-    Notes
-    -----
-    The ground-truth atmosphere is used for evaulation of the recovery.
-    """  
-    
-    # Load the ground truth atmosphere for error analysis and ground-truth known phase and albedo
-    medium = shdom.Medium()
-    medium.load(path=os.path.join(directory, 'ground_truth_medium'))   
-    
-    # Load Sensor according to it's parameters
-    sensor = shdom.Sensor()
-    sensor.load(path=os.path.join(directory, 'sensor'))
-    
-    # Load RteSolver according to numerical and scene parameters
-    solver = shdom.RteSolver()
-    solver.load_params(path=os.path.join(directory, 'solver_params'))   
-
-    # Load measurements for reconstruction
-    measurements = np.load(os.path.join(directory, 'measurements.npy')) 
-    
-    return medium, sensor, solver, measurements
-    
 if __name__ == "__main__":
     
-    medium_gt, sensor, rte_solver, measurements = load_forward_model(directory)
+    medium_gt, rte_solver, measurements = shdom.load_forward_model(args.input_dir)
     
-    # Define the grid for recovery
+    # Multi-band optimization is not supported
+    if measurements.sensors.type == 'SensorArray':
+        wavelengths = map(lambda x: x.wavelength, measurements.sensors.sensor_list)
+        assert np.all(np.isclose(np.diff(wavelengths), 0.0)), 'Multi-band optimization is not supported. S'
+        args.wavelength = wavelengths[0]
+    else:
+        args.wavelength = measurements.sensors.wavelength
+
+    # Define medium grid for recovery
     if args.use_forward_grid:
-        grid = ground_truth_atmosphere.grid
+        grid = medium_gt.grid
     else:
         raise NotImplementedError #TODO
-        
-    # Define the optical fields: extinction, albedo, phase
-    extinction_init = shdom.GridData(grid, np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=args.initial_value))
+    
+    
+    # Define cloud mask for recovery
+    if args.gt_cloud_mask:
+        cloud_mask = medium_gt.get_cloud_mask()
+    else:
+        raise NotImplementedError #TODO
+    
+    
+    # Define the unknown extinction field 
+    extinction = parameters.Extinction()
+    ext_data = np.zeros(shape=(grid.nx, grid.ny, grid.nz))
+    ext_data[cloud_mask.data] = args.initial_value
+    extinction_init = shdom.GridData(grid, ext_data)
+    extinction.initialize(extinction_init, min_bound=0.0)
+    
+    
+    # Initilize the RTE solver to the medium to ground-truth albedo and phase
     medium_init = shdom.Medium()
-    medium_init.set_optical_properties(extinction_init, medium_gt.albedo, medium_gt.phase)    
+    medium_init.set_optical_properties(extinction, medium_gt.albedo, medium_gt.phase) 
 
+    if args.add_rayleigh:
+        air = generate_air.summer_mid_lat(args)
+        medium_init = medium_init + air
+    rte_solver.init_medium(medium_init)
+    
+    
     # Setup an optimizer object
     optimizer = shdom.Optimizer()
     optimizer.set_measurements(measurements)
-    optimizer.set_sensor(sensor)
     optimizer.set_rte_solver(rte_solver)
+    optimizer.set_cloud_mask(cloud_mask)
+    optimizer.add_parameter(extinction)
+    
+    if add_rayleigh:
+        optimizer.set_known_medium(air)
+    
     
     # Define L-BFGS-B options
     options = {
@@ -113,11 +125,10 @@ if __name__ == "__main__":
         'ftol': 1e-12 
     }
     
-    # Start optimization 
-    medium_rec, optimizer_result = optimizer.minimize(init=medium_init, 
-                                                      options=options, 
-                                                      method='L-BFGS-B')
     
+    # Start optimization 
+    optimizer_result = optimizer.minimize(options=options)
+    print(optimizer_result)
     
     
 

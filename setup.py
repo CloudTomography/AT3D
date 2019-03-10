@@ -87,8 +87,9 @@ F2PY_CORE_API = [
     'ylmall',
     'compute_top_radiances',
     'fixed_lambertian_boundary',
-    'variable_lambertian_boundary'
-    'compute_gradient'
+    'variable_lambertian_boundary',
+    'ext_gradient',
+    'base_grid_projection'
     
 ]
 

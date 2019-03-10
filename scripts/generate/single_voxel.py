@@ -1,13 +1,32 @@
 """
-TODO
+Generate: Single Voxel
+----------------------
+
+This script defines a Medium with a single voxel in center of the grid. 
+It is useful for developing and debugging of derivatives and gradients and sensitivity analysis.
 """
+
 import os 
 import numpy as np
 import argparse
 import shdom
 
 
-def update_parser(parser):   
+def update_parser(parser): 
+    """
+    Update the argument parser with parameters relavent to this generation script. 
+    
+    Parameters
+    ----------
+    parser: argparse.ArgumentParser()
+        The main parser to update.
+
+    Returns
+    -------
+    parser: argparse.ArgumentParser()
+        The updated parser.
+
+    """    
     parser.add_argument('--nx', 
                         default=3,
                         type=int, 
@@ -23,6 +42,11 @@ def update_parser(parser):
                         type=int, 
                         help='(default value: %(default)s) Number of grid cell in z (Up) direction')
     
+    parser.add_argument('--domain_size', 
+                        default=1.0,
+                        type=float, 
+                        help='(default value: %(default)s) Cubic domain size [km]')
+    
     parser.add_argument('--extinction', 
                         default=10.0,
                         type=np.float32, 
@@ -37,12 +61,6 @@ def update_parser(parser):
                         default=10.0,
                         type=np.float32, 
                         help='(default value: %(default)s) Effective radius of the center voxel [micron]')
-    
-    parser.add_argument('--wavelength', 
-                        default=0.672,
-                        type=np.float32, 
-                        help='(default value: %(default)s) Wavelength [micron]. It is used to compute a Mie table if one \
-                              is not specified and to compute rayleigh scattering if --add_rayleigh flag is specified')
     
     parser.add_argument('--mie_table_path', 
                         help='Path to a precomputed Mie scattering table. \
@@ -63,8 +81,10 @@ def grid(args):
         The number of grid points in y (East)
     args.nz, int
         The number of grid points in z (Up)
+    args.domain_size, float
+       The length of the cubic domain along one axis [km].
     """
-    bb = shdom.BoundingBox(-0.5, -0.5, 0.0, 0.5, 0.5, 1.0)
+    bb = shdom.BoundingBox(0.0, 0.0, 0.0, args.domain_size, args.domain_size, args.domain_size)
     grid = shdom.Grid(bounding_box=bb, nx=args.nx, ny=args.ny, nz=args.nz)
     return grid
 
@@ -76,7 +96,7 @@ def phase(grid, args):
     
     Parameters
     ----------
-    args.grid: shdom.Grid object
+    grid: shdom.Grid object
         A shdom.Grid object specifing the atmospheric grid.
     args.mie_table_path: str
         Path to a precomputed Mie scattering table. See notebooks/Make Mie Table.ipynb for more details.
@@ -142,3 +162,4 @@ def albedo(grid, args):
     alb_data[grid.nx/2, grid.ny/2, grid.nz/2] = args.albedo
     albedo = shdom.GridData(grid, alb_data)
     return albedo
+

@@ -1,5 +1,6 @@
 """
-TODO: description
+Sensor and Sensor related objects used for atmospheric rendering.
+The Sensor object defines the projection geometry.
 """
 
 import core
@@ -11,11 +12,24 @@ from joblib import Parallel, delayed
 
 norm = lambda x: x / np.linalg.norm(x, axis=0)
 
+
 class Measurements(object):
-    """TODO"""
-    def __init__(self, sensor=None, measurement=None):
-        self._sensor = sensor
-        self._measurement = measurement
+    """
+    A Measurements object bundles together the Sensor geometry and radiance measurents for later optimization.
+    TODO
+    """
+    def __init__(self, sensors=None, **kwargs):
+        self._sensors = sensors
+        
+        if kwargs.has_key('images'):
+            self._images = kwargs['images']
+            if type(self.images) is list:
+                self._radiances = np.concatenate(map(lambda img: img.ravel(order='F'), self.images))
+            elif type(self.images) is np.ndarray:
+                self._radiances = self.images.ravel(order='F')
+        
+        if kwargs.has_key('radiances'):
+            self._radiances = kwargs['radiances']
         
     def save(self, path):
         """
@@ -29,6 +43,7 @@ class Measurements(object):
         file = open(path,'w')
         file.write(pickle.dumps(self.__dict__, -1))
         file.close()
+    
     
     def load(self, path):
         """
@@ -44,15 +59,34 @@ class Measurements(object):
         file.close()
         self.__dict__ = pickle.loads(data)     
     
+    
     def add_noise(self):
+        """TODO"""
         raise NotImplemented
+    
+    
+    @property
+    def sensors(self):
+        return self._sensors
+    
+    @property
+    def radiances(self):
+        return self._radiances
+    
+    @property
+    def images(self):
+        return self._images
+    
+    @property
+    def wavelength(self):
+        return self._wavelength
     
     
 class Sensor(object):
     """
-    TODO: add description.
     Abstract Sensor class to be inherited by the different types of sensors.
     Each sensor internally defines an arrays of pixel locations (x,y,z) in km and directions (phi, mu).
+    TODO
     """
     def __init__(self):
         self._x = None
@@ -62,11 +96,26 @@ class Sensor(object):
         self._phi = None
         self._npix = None
         self.type = 'AbstractSensor'
+        self._wavelength = None
      
      
     def render(self, rte_solver):
-        """TODO"""
-        visout = core.render(
+        """
+        The render method integrates a pre-computed in-scatter field (source function) J over the sensor gemoetry.
+        The source code for this function is in shdomsub4.f. 
+        It is a modified version of the original SHDOM visualize_radiance subroutine in shdomsub2.f.
+        
+        Parameters
+        ----------
+        rte_solver: shdom.RteSolver object
+            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
+        
+        Returns
+        -------
+        radiance: np.array(shape=(sensor.npix,), dtype=np.float)
+            The rendered radiances.
+        """
+        radiance = core.render(
             camx=self.x,
             camy=self.y,
             camz=self.z,
@@ -126,12 +175,29 @@ class Sensor(object):
             sfctype=rte_solver._sfctype,
             units=rte_solver._units
         )
-        return visout
+        return radiance
 
 
     def par_render(self, rte_solver, n_jobs=30, verbose=0):
         """
-        TODO
+        The par_render method integrates a pre-computed in-scatter field (source function) J over the sensor gemoetry.
+        The source code for this function is in shdomsub4.f. 
+        It is a modified version of the original SHDOM visualize_radiance subroutine in shdomsub2.f.
+        This method is a parallel version of the render method.
+        
+        Parameters
+        ----------
+        rte_solver: shdom.RteSolver object
+            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
+        n_jobs: int, default=30
+            The number of jobs to divide the rendering into.
+        verbose: int, default=0
+            How much verbosity in the parallel rendering proccess.
+            
+        Returns
+        -------
+        radiance: np.array(shape=(sensor.npix,), dtype=np.float)
+            The rendered radiances.
         
         Notes
         -----
@@ -204,7 +270,7 @@ class Sensor(object):
         phi_split = np.array_split(self.phi, n_jobs)        
         npix_split = map(lambda x: len(x), x_split)
         
-        visout = Parallel(n_jobs=n_jobs, backend="threading", verbose=verbose)(
+        radiance = Parallel(n_jobs=n_jobs, backend="threading", verbose=verbose)(
             delayed(core.par_render, check_pickle=False)(
                 nx=rte_solver._nx,
                 ny=rte_solver._ny,
@@ -269,7 +335,7 @@ class Sensor(object):
                 nscatangle=nscatangle
             ) for x, y, z, mu, phi, npix in zip(x_split, y_split, z_split, mu_split, phi_split, npix_split))   
         
-        return np.concatenate(visout)
+        return np.concatenate(radiance)
     
     
     @property
@@ -304,28 +370,84 @@ class Sensor(object):
     def npix(self):
         return self._npix    
     
-
-class ProjectiveSensor(Sensor):
-    """TODO"""
-    def __init__(self):
-        super(ProjectiveSensor, self).__init__()
-        self._type = 'ProjectiveSensor'
+    @property
+    def wavelength(self):
+        return self._wavelength
+    
+    
+class ProjectiveMonochromeSensor(Sensor):
+    """
+    A ProjectiveMonochromeSensor has a projective tansformation that relates 3D coordinate to pixels.
+    When rendering, this sensor will produce 2D images.
+    TODO
+    """
+    def __init__(self, wavelength):
+        super(ProjectiveMonochromeSensor, self).__init__()
+        self._type = 'ProjectiveMonochromeSensor'
         self._resolution = None
+        self._wavelength = wavelength
     
     def project(self, projection_matrix, point_array):
-        """TODO"""
+        """
+        Project 3D coordinates according to the sensor projection matrix
+        
+        Parameters
+        ----------
+        projection matrix: np.array(shape=(3,4), dtype=float)
+            The sensor projection matrix K.
+        point_array: np.array(shape=(3, num_points), dtype=float)
+            An array of num_points 3D points (x,y,z) [km]
+        """
         homogenic_point_array = np.pad(point_array,((0,1),(0,0)),'constant', constant_values=1)
         return np.dot(projection_matrix, homogenic_point_array) 
         
     def render(self, rte_solver):
-        """TODO"""
-        visout = super(ProjectiveSensor, self).render(rte_solver)
+        """
+        The render method integrates a pre-computed in-scatter field (source function) J over the sensor gemoetry.
+        The source code for this function is in shdomsub4.f. 
+        It is a modified version of the original SHDOM visualize_radiance subroutine in shdomsub2.f.
+        
+        Parameters
+        ----------
+        rte_solver: shdom.RteSolver object
+            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
+        
+        Returns
+        -------
+        radiance: np.array(shape=(sensor.resolution), dtype=np.float)
+            The rendered radiances.
+        """
+        visout = super(ProjectiveMonochromeSensor, self).render(rte_solver)
         return visout.reshape(self.resolution, order='F')
     
     def par_render(self, rte_solver, n_jobs=30, verbose=0):
-        """TODO"""
-        visout = super(ProjectiveSensor, self).render(rte_solver, n_jobs, verbose)
+        """
+        The par_render method integrates a pre-computed in-scatter field (source function) J over the sensor gemoetry.
+        The source code for this function is in shdomsub4.f. 
+        It is a modified version of the original SHDOM visualize_radiance subroutine in shdomsub2.f.
+        This method is a parallel version of the render method.
+        
+        Parameters
+        ----------
+        rte_solver: shdom.RteSolver object
+            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
+        n_jobs: int, default=30
+            The number of jobs to divide the rendering into.
+        verbose: int, default=0
+            How much verbosity in the parallel rendering proccess.
+            
+        Returns
+        -------
+        radiance: np.array(shape=(sensor.resolution), dtype=np.float)
+            The rendered radiances.
+        
+        Notes
+        -----
+        For a small domain, or small amout of pixels, par_render is slower than render.
+        """        
+        visout = super(ProjectiveMonochromeSensor, self).render(rte_solver, n_jobs, verbose)
         return np.array(visout).reshape(self.resolution, order='F')
+    
     
     @property
     def resolution(self):
@@ -333,10 +455,18 @@ class ProjectiveSensor(Sensor):
     
     
 class SensorArray(Sensor):
-    """TODO"""
+    """
+    A SensorArray object encapsulate several sensors e.g. for multi-view imaging of a domain.
+    
+    Parameters
+    ----------
+    sensor_list: list, optional
+        A list of Sensor objects
+    """
     
     def __init__(self, sensor_list=None):
         super(SensorArray, self).__init__()
+        self.type = 'SensorArray'
         self._num_sensors = 0
         self._sensor_list = []
         if sensor_list:
@@ -345,8 +475,16 @@ class SensorArray(Sensor):
     
     
     def add_sensor(self, sensor, id=None):
-        """TODO"""
+        """
+        Add a sensor to the SensorArray
         
+        Parameters
+        ----------
+        sensor: Sensor object
+            A Sensor object to add to the SensorArray
+        id: str, optional
+            An ID for the sensor. 
+        """
         attributes = ['x', 'y', 'z', 'mu', 'phi']
         
         if self.num_sensors is 0:
@@ -370,28 +508,53 @@ class SensorArray(Sensor):
     
     
     def render(self, rte_solver):
-        """TODO"""
+        """
+        Serial rendering of each sensor.
+        
+        Parameters
+        ----------
+        rte_solver: shdom.RteSolver object
+            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
+        
+        Returns
+        -------
+        radiance: list
+            A list of the rendered radiances per sensor.
+        """
         split_measurements = [sensor.render(rte_solver) for sensor in self.sensor_list]
-        visout = []
+        radiance = []
         for sensor, meas in zip(self.sensor_list, split_measurements):
             meas = np.array(meas)
             if hasattr(sensor, 'resolution'):
                 meas = meas.reshape(sensor.resolution, order='F')
-            visout.append(meas)            
-        return visout     
+            radiance.append(meas)            
+        return radiance     
+
 
     def par_render(self, rte_solver, n_jobs=30, verbose=0):
-        """TODO"""
-        visout = super(SensorArray, self).par_render(rte_solver, n_jobs, verbose)
+        """
+        Parallel rendering of all sensors.
         
-        split_measurements = np.split(visout, np.cumsum(self.npix[:-1]))
-        visout = []
+        Parameters
+        ----------
+        rte_solver: shdom.RteSolver object
+            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
+        
+        Returns
+        -------
+        radiance: list
+            A list of the rendered radiances per sensor.
+        """
+        radiance = super(SensorArray, self).par_render(rte_solver, n_jobs, verbose)
+        
+        split_measurements = np.split(radiance, np.cumsum(self.npix[:-1]))
+        radiance = []
         for sensor, meas in zip(self.sensor_list, split_measurements):
             meas = np.array(meas)
             if hasattr(sensor, 'resolution'):
                 meas = meas.reshape(sensor.resolution, order='F')
-            visout.append(meas)
-        return visout    
+            radiance.append(meas)
+        return radiance    
 
 
     @property
@@ -403,14 +566,32 @@ class SensorArray(Sensor):
         return self._num_sensors    
     
     
-class OrthographicSensor(ProjectiveSensor):
+class OrthographicMonochromeSensor(ProjectiveMonochromeSensor):
     """
-    TODO: parallel rays description 
+    A parallel ray projection Sensor measures radiance along rays. 
+    
+    Parameters
+    ----------
+    wavelength: float
+        Monochromatic wavelength [Micron]
+    bounding_box: shdom.BoundingBox object
+        The bounding box is used to compute a projection that will make the entire bounding box visible.
+    x_resolution: float
+        Pixel resolution [km] in x axis (North)
+    y_resolution: float
+        Pixel resolution [km] in y axis (East)
+    azimuth: float
+        Azimuth angle [deg] of the radiance measurements (direciton of the photons)
+    zenith: float
+        Zenith angle [deg] of the radiance measurements (direciton of the photons)
+    altitude: float or 'TOA' (default)
+       1. 'TOA': measurements of exiting radiace at the top of the atmosphere.
+       2. float: Altitude of the radiance measurements.    
     """
     
-    def __init__(self, bounding_box, x_resolution, y_resolution, azimuth, zenith, altitude='TOA'):
-        super(OrthographicSensor, self).__init__()
-        self.type = 'OrthographicSensor'
+    def __init__(self, wavelength, bounding_box, x_resolution, y_resolution, azimuth, zenith, altitude='TOA'):
+        super(OrthographicMonochromeSensor, self).__init__(wavelength)
+        self.type = 'OrthographicMonochromeSensor'
         
         self._x_resolution = x_resolution
         self._y_resolution = y_resolution
@@ -467,18 +648,30 @@ class OrthographicSensor(ProjectiveSensor):
     
     
 
-class PerspectiveSensor(ProjectiveSensor):
+class PerspectiveMonochromeSensor(ProjectiveMonochromeSensor):
     """
-    TODO: description 
+    A Monochromatic Sensor with a Perspective trasnormation 
+    (a pinhole camera).
     
-    notes:
-    -----
-    pinhole model
+    wavelength: float
+        Monochromatic wavelength [Micron]
+    fov: float
+        Field of view [deg]
+    nx: int
+        Number of pixels in camera x axis
+    ny: int
+        Number of pixels in camera y axis
+    x: float
+        Location in global x coordinates [km] (North)
+    y: float
+        Location in global y coordinates [km] (East)
+    z: float
+        Location in global z coordinates [km] (Up)
     """
     
-    def __init__(self, fov, nx, ny, x, y, z):
-        super(PerspectiveSensor, self).__init__()
-        self.type = 'PerspectiveSensor'
+    def __init__(self, wavelength, fov, nx, ny, x, y, z):
+        super(PerspectiveMonochromeSensor, self).__init__(wavelength)
+        self.type = 'PerspectiveMonochromeSensor'
 
         self._resolution = [nx, ny]
         self._npix = nx*ny
@@ -496,7 +689,9 @@ class PerspectiveSensor(ProjectiveSensor):
         
         
     def update_global_coordinates(self):
-        """TODO"""
+        """
+        This is an internal method which is called upon when a rotation matrix is computed to update the global camera coordinates.
+        """
         x_c, y_c, z_c = norm(np.matmul(
             self._rotation_matrix, np.matmul(self._inv_k, self._homogeneous_coordinates)))
 
@@ -508,7 +703,16 @@ class PerspectiveSensor(ProjectiveSensor):
     
     
     def look_at_transform(self, point, up):
-        """TODO"""
+        """
+        A look at transform is defined with a point and an up vector.
+        
+        Parameters
+        ----------
+        point: np.array(shape=(3,), dtype=float)
+            A point in 3D space (x,y,z) coordinates in [km]
+        up: np.array(shape=(3,), dtype=float)
+            The up vector determines the roll of the camera.
+        """
         up = np.array(up)
         direction = np.array(point) - self.position
         zaxis = norm(direction)
@@ -519,7 +723,20 @@ class PerspectiveSensor(ProjectiveSensor):
         
         
     def rotate_transform(self, axis, angle):
-        """TODO"""
+        """
+        Rotate the camera with respect to one of it's (local) axis
+        
+        Parameters
+        ----------
+        axis: 'x', 'y' or 'z'
+            The rotation axis
+        angle: float
+            The angle of rotation [deg]
+            
+        Notes
+        -----
+        The axis are in the camera coordinates
+        """
         
         assert axis in ['x', 'y', 'z'], 'axis parameter can only recieve "x", "y" or "z"'
         angle = np.deg2rad(angle)

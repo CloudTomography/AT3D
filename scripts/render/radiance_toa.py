@@ -1,20 +1,20 @@
 """ 
-Render: Radiance at top-of-atmosphere
--------------------------------------
+Render: Single wavelength radiance at Top of the Atmosphere (TOA)
+-----------------------------------------------------------------
 
-python scripts/render/render_radiance_toa.py --generator generate_single_voxel --mie_table_path mie_tables/Water_672nm.scat experiments/single_voxel/ --add_rayleigh --air_max_altitude 1.0 --air_num_grid_points 5
+Forward rendering of an atmospheric medium with an orthographic sensor measuring exitting radiance at the top of the the domain.
+This sensor is an (somewhat crude) approximation for far observing satellites where the rays are parallel. 
 
-TODO
-
-Define and render an atmospheric volume of 1x1x1 km^3 with a single cloudy voxel (Mie scattering) in the center. 
-All parameters are saved for later recovery and analysis. 
+As with all `render` scripts a `generator` needs to be specified using the generator flag (--generator). 
+The Generator defines the medium parameters: Grid, Extinction, Single Scattering Albedo and Phase function with it's own set of command-line flags.
 
 Example usage:
-  python scripts/render/.py --extinction=15.0 --albedo=0.8 --reff=14 --solar_zenith=170 \
-                           --mie_table_path='mie_tables/Water_672nm.scat' --output_dir=experiments/single_voxel
-  
+  python scripts/render/radiance_toa.py --output_dir experiments/single_voxel/ --wavelength 0.672 \
+          --generator single_voxel --extinction 10.0 --reff 10.0 --domain_size 1.0 --x_res 0.1 --y_res=0.1 \
+          --mie_table_path mie_tables/Water_672nm.scat 
+
 For information about the command line flags see:
-  python render.py --help
+  python scripts/render/render_radiance_toa.py --help
   
 For a tutorial overview of how to operate the forward rendering model see the following notebooks:
  - notebooks/Make Mie Table.ipynb
@@ -26,7 +26,7 @@ import numpy as np
 import argparse
 import shdom
 import importlib
-from generate import generate_air
+import scripts.generate.air as generate_air
 
 
 parser = argparse.ArgumentParser()
@@ -44,6 +44,12 @@ parser.add_argument('--solar_azimuth',
                     default=0.0,
                     type=np.float32, 
                     help='(default value: %(default)s) Solar azimuth [deg]. This is the direction of the photons')
+
+parser.add_argument('--wavelength', 
+                    default=0.672,
+                    type=np.float32, 
+                    help='(default value: %(default)s) Wavelength [micron]. It is used to compute a Mie table if one \
+                          is not specified and to compute rayleigh scattering if --add_rayleigh flag is specified')
 
 parser.add_argument('--x_res',
                     default=0.01,
@@ -74,7 +80,7 @@ parser.add_argument('--n_jobs',
                     type=int,
                     help='Number of jobs for parallel rendering. n_jobs=1 uses no parallelization')
 
-# Additional arguments of the generator
+# Additional arguments to the parser
 subparser = argparse.ArgumentParser(add_help=False)
 subparser.add_argument('--generator')
 subparser.add_argument('--add_rayleigh', action='store_true')
@@ -92,7 +98,7 @@ parser.add_argument('--add_rayleigh',
 generator = subparser.parse_known_args()[0].generator 
 add_rayleigh = subparser.parse_known_args()[0].add_rayleigh 
 if generator:
-    generator = importlib.import_module('generate.' + generator)
+    generator = importlib.import_module('scripts.generate.' + generator)
     parser = generator.update_parser(parser)
 
 if add_rayleigh:
@@ -116,13 +122,9 @@ if __name__ == "__main__":
     
     
     # Rayleigh scattering for air molecules
+    atmosphere = cloud
     if args.add_rayleigh:
-        air = shdom.Medium()
-        extinction_a, albedo_a, phase_a = generate_air.summer_mid_lat(args)
-        air.set_optical_properties(extinction_a, albedo_a, phase_a) 
-        atmosphere = cloud + air
-    else:
-        atmosphere = cloud
+        atmosphere += generate_air.summer_mid_lat(args)
         
     # Define an RteSolver object and solve the Radiative Transfer for the domain
     scene_params = shdom.SceneParameters(source=shdom.SolarSource(args.solar_azimuth, args.solar_zenith))
@@ -134,13 +136,15 @@ if __name__ == "__main__":
     
     # Define a sensor and render an image of the domain.
     sensors = [
-        shdom.OrthographicSensor(bounding_box=cloud.bounding_box, 
-                                 x_resolution=args.x_res, 
-                                 y_resolution=args.y_res, 
-                                 azimuth=azimuth, 
-                                 zenith=zenith,
-                                 altitude='TOA') 
-        for azimuth, zenith in zip(args.azimuth, args.zenith)
+        shdom.OrthographicMonochromeSensor(
+            wavelength=args.wavelength,
+            bounding_box=cloud.bounding_box, 
+            x_resolution=args.x_res, 
+            y_resolution=args.y_res, 
+            azimuth=azimuth, 
+            zenith=zenith,
+            altitude='TOA'
+        ) for azimuth, zenith in zip(args.azimuth, args.zenith) 
     ]
     
     if len(sensors) > 1:
@@ -149,16 +153,16 @@ if __name__ == "__main__":
         sensors = sensors[0]
     
     if args.n_jobs == 1:
-        radiances = sensors.render(rte_solver)
+        images = sensors.render(rte_solver)
     elif args.n_jobs > 1:
-        radiances = sensors.par_render(rte_solver, n_jobs=args.n_jobs)
+        images = sensors.par_render(rte_solver, n_jobs=args.n_jobs)
     else:
         raise AssertionError('[assert] Number of jobs is less than 1.')
     
-    measurements = shdom.Measurements(sensors, radiances)
+    measurements = shdom.Measurements(sensors, images=images)
     
-    # Save measurements, groud-truth medium and rte solver parameters
-    shdom.save_forward_model(args.output_dir, atmosphere, rte_solver, measurements)
+    # Save measurements, groud-truth (cloud) medium and solver parameters
+    shdom.save_forward_model(args.output_dir, cloud, rte_solver, measurements)
     
     
     

@@ -1,5 +1,8 @@
 """
-A medium object used for atmospheric rendering and inversion.
+Medium and Medium related objects used for atmospheric rendering.
+A Medium objects is defined by its optical properties: extinction, albedo and phase function.
+Two Medium objects can be added to create a combined Medium. 
+This will result in a unified grid with a summation of the optical extinction and a weighted average of the albedo and phase function.
 """
 
 import core
@@ -14,7 +17,6 @@ class Medium(object):
     """
     The Medium object encapsulates an atmospheric optical medium. 
     This means specifying extinction, single scattering albedo and phase function at every point in the domain.
-    TODO: phase type and sum of phases
     """
     def __init__(self):
         self._type = 'Medium'
@@ -25,13 +27,13 @@ class Medium(object):
         
     def set_optical_properties(self, extinction, albedo, phase):
         """
-        Set Mediu's optical properties: extinction, single scattering albedo and phase function at every point in the domain.
+        Set Medium optical properties: extinction, single scattering albedo and phase function at every point in the domain.
     
         Parameters
         ----------
         extinction: GridData
         albedo: GridData
-        phase: Phase
+        phase: Phase (TabulatedPhase or GridPhase)
         
         Notes
         -----
@@ -45,6 +47,7 @@ class Medium(object):
         
  
     def __add__(self, other):
+        """Adding two Medium objects or a Medium and AmbientMedium."""
         extinction = self.extinction + other.extinction
         scat = self.albedo*self.extinction + other.albedo*other.extinction
         albedo = scat / extinction        
@@ -59,7 +62,7 @@ class Medium(object):
         medium = Medium()
         medium.set_optical_properties(extinction, albedo, phase)
         return medium
-        
+    
       
     def save(self, path):
         """
@@ -90,6 +93,12 @@ class Medium(object):
         self.__dict__ = pickle.loads(data)    
 
 
+    def get_cloud_mask(self, threshold=1e-3):
+        """TODO"""
+        data = self.extinction.data > threshold
+        return GridData(self.grid, data)
+    
+    
     @property
     def extinction(self):
         return self._extinction
@@ -133,7 +142,12 @@ class Medium(object):
     
     
 class AmbientMedium(Medium):
-    """TODO"""
+    """
+    An AmbientMedium is defined in the same way a Medium is defined
+    by its optical properties: extinction, albedo and phase function. 
+    When it is added to a Medium it only `fills in the holes` where there is no medium density. 
+    This approximation gives efficiency in memory and computations.
+    """
     def __init__(self):
         super(AmbientMedium, self).__init__()
         self._type = 'AmbientMedium'
