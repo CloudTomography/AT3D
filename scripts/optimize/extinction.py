@@ -16,7 +16,7 @@ For information about the command line flags see:
   python scripts/optimize/extinction.py --help
 """
 
-import os 
+import os, time
 import numpy as np
 import argparse
 import shdom
@@ -30,7 +30,7 @@ parser.add_argument('--input_dir',
                     help='Path to an input directory where the forward modeling parameters are be saved. \
                           This directory will be used to save the optimization results and progress.')
 
-parser.add_argument('--summary',
+parser.add_argument('--log',
                     help='Write intermediate TensorBoardX results. \
                           The provided string is added as a comment to the specific run.')
 
@@ -101,7 +101,6 @@ if __name__ == "__main__":
     else:
         grid = init.grid(args)
     
-    
     # Define a cloud mask 
     if args.cloud_mask is None:
         cloud_mask = None
@@ -110,12 +109,10 @@ if __name__ == "__main__":
     elif args.cloud_mask == 'spacecarve':
         raise NotImplementedError
     
-    
     # Define the unknown extinction field 
     extinction = parameters.Extinction()
     extinction_init = init.extinction(grid, args, cloud_mask) 
     extinction.initialize(extinction_init, min_bound=0.0)
-    
     
     # Define the known albedo field (cloud be ground-truth or specified, but it is not optimized)
     if args.use_forward_albedo:
@@ -123,13 +120,11 @@ if __name__ == "__main__":
     else:
         albedo = init.albedo(grid, args, cloud_mask)
     
-    
     # Define the known phase field (cloud be ground-truth or specified, but it is not optimized)
     if args.use_forward_phase:
         phase = medium_gt.phase
     else:
         phase = init.phase(grid, args, cloud_mask)   
-        
     
     # Initilize the Medium and RTE solver    
     medium = shdom.Medium()
@@ -150,26 +145,26 @@ if __name__ == "__main__":
     if add_rayleigh:
         optimizer.set_known_medium(air)
     
-    if args.summary is not None:
+    if args.log is not None:
         from tensorboardX import SummaryWriter
-        log_dir = os.path.join(args.input_dir, 'log')
-        writer = SummaryWriter(log_dir, comment=args.summary)      
+        timestr = time.strftime("%Y%m%d-%H%M%S")
+        log_dir = os.path.join(args.input_dir, 'logs', args.log + timestr)
+        writer = SummaryWriter(log_dir)      
         optimizer.set_writer(writer)
-        
         
     # Define L-BFGS-B options
     options = {
-        'maxiter': 100,
+        'maxiter': 1000,
         'maxls': 100,
-        'disp': False,
-        'gtol': 1e-10,
-        'ftol': 1e-10 
+        'disp': True,
+        'gtol': 1e-12,
+        'ftol': 1e-12 
     }
     
-    
-    # Start optimization
-    optimizer_result = optimizer.minimize(options=options)
+    # Optimization
+    optimizer_result = optimizer.minimize(ckpt_period=1*60*60, options=options)
     print(optimizer_result)
+    optimizer.save(os.path.join(writer.log_dir, 'final.ckpt'))
     
     
 

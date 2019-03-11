@@ -4,10 +4,10 @@ TODO
 
 import shdom
 import numpy as np
-import core 
+import core, time
 from scipy.optimize import minimize
 from shdom import GridData
-        
+import dill as pickle
         
 class Optimizer(object):
     """
@@ -16,6 +16,7 @@ class Optimizer(object):
     def __init__(self):
         self._parameters = []
         self._known_medium = None
+        self._ground_truth_medium = None
         self._rte_solver = None
         self._measurements = None
         self._cloud_mask = None
@@ -25,7 +26,10 @@ class Optimizer(object):
         self._albedo_dependency = False
         self._phase_dependency = False 
         self._writer = None
+        self._images = None
         self._iteration = 0
+        self._ckpt_time = time.time()
+        self._ckpt_period = None
         self._loss = None
         
         
@@ -45,10 +49,13 @@ class Optimizer(object):
         """TODO"""
         self._known_medium = medium
 
+    def set_ground_truth_medium(self, medium):
+        """TODO"""
+        self._ground_truth_medium = medium
+        
     def set_writer(self, writer):
         """TODO"""
         self._writer = writer
-        
         
     def add_parameter(self, parameter):
         """TODO"""
@@ -85,7 +92,6 @@ class Optimizer(object):
     def extinction_gradient_cost(self):
         """
         Gradient and cost computation by ray tracing the domain (see shdomsub4.f)
-        
         
         Returns
         -------
@@ -158,12 +164,11 @@ class Optimizer(object):
             rshptr=self.rte_solver._rshptr,
             radiance=self.rte_solver._radiance
         )
-        return gradient, cost
+        return 100*gradient, 100*cost
     
    
     def objective_fun(self, state):
         """TODO"""
-        self._iteration += 1
         self.update_rte_solver(state)     
         self.rte_solver.solve(maxiter=100, verbose=False)  
         self._loss = self.extinction_gradient_cost()[1]
@@ -178,26 +183,39 @@ class Optimizer(object):
         return state_gradient
     
     
+    def ckpt(self):
+        """TODO"""
+        time_passed = time.time() - self._ckpt_time
+        if (self.ckpt_period is not None) and (time_passed > self.ckpt_period):
+            self._ckpt_time = time.time()
+            timestr = time.strftime("%H%M%S")
+            path = os.path.join(self.writer.log_dir,  timestr + '.ckpt')
+            self.save(path)  
+            
+            
     def callback(self, state):
         """TODO"""
+        self._iteration += 1
         self.writer.add_scalar('loss', self.loss, self.iteration)
+        if self.ground_truth_medium is not None:
+            pass
+            # TODO
+            # delta = self.ground_truth_medium - 
+            # eps = 
+            # self.writer.add_scalar('total mass error (delta)', )
+        self.ckpt()
         
-    
-    def minimize(self, options, method='L-BFGS-B'):
-        """
-        TODO
-        """
         
-        if method != 'L-BFGS-B':
-            raise NotImplementedError('Optimization method not implemented')
         
+    def init_minimization(self):
+        """TODO"""
         # Init masks for parameters
         self._num_parameters = []
         for param in self.parameters:
             if self.cloud_mask:
                 param.set_mask(self.cloud_mask)
                 self._num_parameters.append(param.num_parameters)
-                
+    
         # Init mask for gradient 
         if self.cloud_mask:
             self._gradient_mask = self.cloud_mask.data.ravel()
@@ -205,13 +223,26 @@ class Optimizer(object):
                 grid = self.known_medium.grid + self.cloud_mask.grid
                 self._gradient_mask = np.array(self.cloud_mask.resample(grid, method='nearest'), dtype=np.bool).ravel()
             
-        # Define the callback function 
+
+    def minimize(self, options, ckpt_period=None, method='L-BFGS-B'):
+        """
+        TODO
+        """
         
+        self._ckpt_period = ckpt_period
+        
+        if method != 'L-BFGS-B':
+            raise NotImplementedError('Optimization method not implemented')
+        
+        if self.iteration == 0:
+            self.init_minimization()
+            
+        # Define the callback function 
         if self.writer is None:
             callback = None
         else:
-            callback = self.callback
-            
+            callback = self.callback        
+
         initial_state = self.parameters_to_state()
         result = minimize(fun=self.objective_fun, 
                           x0=initial_state, 
@@ -231,7 +262,9 @@ class Optimizer(object):
     
     def get_bounds(self):
         """TODO"""
-        bounds = map(lambda param: param.bounds, self.parameters)
+        bounds = []
+        for param in self.parameters:
+            bounds.extend(param.bounds)
         return bounds
 
 
@@ -240,7 +273,45 @@ class Optimizer(object):
         state = np.concatenate(map(lambda param: param.data, self.parameters))
         return state    
 
+    def save(self, path):
+        """
+        Save Optimizer to file.
+        
+        Parameters
+        ----------
+        path: str,
+            Full path to file. 
+        """
+        params = self.__dict__.copy()
+        rte_solver = params.pop('_rte_solver')
+        params['scene_params'] = rte_solver._scene_parameters
+        params['numerical_params'] = rte_solver._numerical_parameters
+        file = open(path, 'w')
+        file.write(pickle.dumps(params, -1))
+        file.close()
 
+
+    def load(self, path):
+        """
+        Load Optimizer from file.
+        
+        Parameters
+        ----------
+        path: str,
+            Full path to file. 
+        """
+        file = open(path, 'r')
+        data = file.read()
+        file.close()        
+        params = pickle.loads(data)
+        
+        # Create an RTE solver object
+        rte_solver = shdom.RteSolver(params.pop('scene_params'), 
+                                     params.pop('numerical_params'))
+        self.set_rte_solver(rte_solver)
+        self.__dict__ = params
+        
+        
     @property
     def rte_solver(self):
         return self._rte_solver
@@ -283,7 +354,11 @@ class Optimizer(object):
     
     @property
     def known_medium(self):
-        return self._known_medium 
+        return self._known_medium
+    
+    @property
+    def ground_truth_medium(self):
+        return self._ground_truth_medium 
 
     @property
     def writer(self):
@@ -292,6 +367,10 @@ class Optimizer(object):
     @property
     def iteration(self):
         return self._iteration
+    
+    @property
+    def ckpt_period(self):
+        return self._ckpt_period
     
     @property
     def loss(self):

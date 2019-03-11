@@ -36,9 +36,9 @@ class Parameter(GridData):
     
     def set_data(self, data):
         if self.mask is None:
-            self.data = data
+            self._data = data
         else:
-            self.data[self.mask] = data
+            self._data[self.mask] = data
                     
     @property
     def type(self):
@@ -67,7 +67,7 @@ class Parameter(GridData):
     
     @property 
     def bounds(self):
-        return (self.min_bound, self.max_bound)
+        return [(self.min_bound, self.max_bound)] * self.num_parameters
     
     @property
     def mask(self):
