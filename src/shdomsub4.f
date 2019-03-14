@@ -380,6 +380,10 @@ C             Extrapolate ray to domain top if above
 900     CONTINUE
         
         PIXEL_ERROR = (VISOUT - MEASUREMENTS(N))
+        
+C        WRITE(*,*) N, VISOUT, MEASUREMENTS(N), PIXEL_ERROR, 
+C     .              MINVAL(RAYGRAD), MAXVAL(RAYGRAM)
+
         GRAD = GRAD + PIXEL_ERROR*RAYGRAD
         COST = COST + 0.5*PIXEL_ERROR**2
       ENDDO

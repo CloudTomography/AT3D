@@ -99,6 +99,9 @@ class Optimizer(object):
         Notes
         -----
         """ 
+        
+        self.rte_solver.solve(maxiter=100, verbose=False)   
+    
         gradient, cost = core.ext_gradient(
             nx=self.rte_solver._nx,
             ny=self.rte_solver._ny,
@@ -164,13 +167,12 @@ class Optimizer(object):
             rshptr=self.rte_solver._rshptr,
             radiance=self.rte_solver._radiance
         )
-        return 100*gradient, 100*cost
+        return gradient, cost
     
    
     def objective_fun(self, state):
         """TODO"""
-        self.update_rte_solver(state)     
-        self.rte_solver.solve(maxiter=100, verbose=False)  
+        self.update_rte_solver(state)
         self._loss = self.extinction_gradient_cost()[1]
         return self.loss
         

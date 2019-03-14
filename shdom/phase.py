@@ -526,6 +526,68 @@ class Mie(object):
         self._nleg_interpolator = interp1d(self.reff, self.nleg, kind='nearest', assume_sorted=True, copy=False, bounds_error=False, fill_value=0)
      
      
+    def interpolate_extinction(self, lwc, reff):
+        """
+        Interpolate the extinciton coefficient function over a grid.
+        
+        Parameters
+        ----------
+        extinction: GridData object
+            A GridData3D object containting the extinction (1/km) on a 3D grid
+        
+        Returns
+        -------
+        extinction: GridData object
+            A GridData3D object containting the extinction (1/km) on a 3D grid
+        """
+        data = self._ext_interpolator(reff.data)
+        extinction = lwc * GridData(reff.grid, data)     
+        return extinction     
+
+        
+    def interpolate_albedo(self, reff):
+        """
+        Interpolate the single scattering albedo over a grid.
+        
+        Parameters
+        ----------
+        reff: GridData 
+            A GridData object containting the effective radii (micron) on a 3D grid.
+        
+        Returns
+        -------
+        albedo: GridData object
+            A GridData object containting the single scattering albedo unitless in range [0, 1] on a 3D grid
+        """
+        data = self._ssalb_interpolator(reff.data)
+        albedo = GridData(reff.grid, data)
+        return albedo
+
+
+    def interpolate_phase(self, reff, phase_type):
+        """
+        Interpolate the phase function over a grid.
+        
+        Parameters
+        ----------
+        reff: GridData 
+            A GridData object containting the effective radii (micron) on a 3D grid.
+        phase_type: 'Tabulated' or 'Grid'
+            Return either a TabulatedPhase or GridPhase object.
+        
+        Returns
+        -------
+        phase: Phase object
+            A Phase object containting the phase function legendre coeffiecients on a grid.
+        """
+        if phase_type == 'Tabulated':
+            phase = self.get_tabulated_phase(reff)
+        elif phase_type == 'Grid':
+            phase = self.get_grid_phase(reff)
+        else:
+            raise AttributeError('Phase type not recognized')        
+        return phase
+
     def interpolate_scattering_field(self, lwc, reff, phase_type='Tabulated'):
         """
         Interpolate the optical quantities (extinction, ssa, phase function) over a grid.
@@ -550,47 +612,51 @@ class Mie(object):
         phase: Phase object
             A Phase object containting the phase function legendre coeffiecients on a grid.
         """   
-        
-        grid = reff.grid
-        ext_data = self._ext_interpolator(reff.data)
-        ssalb_data = self._ssalb_interpolator(reff.data)
-        extinction = lwc * GridData(grid, ext_data)
-        albedo = GridData(grid, ssalb_data)
-        
-        if phase_type == 'Tabulated':
-            maxleg = self.nleg.max()
-            phase_table = self.legcoeff[:maxleg, :]
-            index_data = self._legen_index_interpolator(reff.data).astype(np.int32)
-            index = GridData(grid, index_data)
-            phase = TabulatedPhase(phase_table, index)
-            
-        elif phase_type == 'Grid':
-            phase = self.get_grid_phase(reff)
-            
-        else:
-            raise AttributeError('Phase type not recognized')
-        
+        extinction = self.interpolate_extinction(lwc, reff)
+        albedo = self.interpolate_albedo(reff)
+        phase = self.interpolate_phase(reff, phase_type)
         return extinction, albedo, phase
     
     
+    def get_tabulated_phase(self, reff):
+        """
+        Interpolate the phase function for an effective radius grid.
+    
+        Parameters
+        ----------
+        reff: float
+            The effective radius for which to retrieve the phase function [microns].
+            
+        Returns
+        -------
+        phase: TabulatedPhase
+            A Phase object containting the phase function legendre coeffiecients as a table.
+        """   
+        maxleg = self.nleg.max()
+        phase_table = self.legcoeff[:maxleg, :]
+        index_data = self._legen_index_interpolator(reff.data).astype(np.int32)
+        index = GridData(reff.grid, index_data)
+        phase = TabulatedPhase(phase_table, index)        
+        return phase    
+
     def get_grid_phase(self, reff):
-            """
-            Interpolate the phase function for an effective radius grid.
-        
-            Parameters
-            ----------
-            reff: float
-                The effective radius for which to retrieve the phase function [microns].
-                
-            Returns
-            -------
-            phase: GridPhase
-                A Phase object containting the phase function legendre coeffiecients on a 3D grid
-            """   
-            maxleg = self._nleg_interpolator(reff.data).max().astype(np.int)
-            phase_data = self._legcoef_interpolator(reff.data)[:maxleg + 1,...]
-            phase = GridPhase(reff.grid, phase_data) 
-            return phase
+        """
+        Interpolate the phase function for an effective radius grid.
+    
+        Parameters
+        ----------
+        reff: float
+            The effective radius for which to retrieve the phase function [microns].
+            
+        Returns
+        -------
+        phase: GridPhase
+            A Phase object containting the phase function legendre coeffiecients on a 3D grid
+        """   
+        maxleg = self._nleg_interpolator(reff.data).max().astype(np.int)
+        phase_data = self._legcoef_interpolator(reff.data)[:maxleg + 1,...]
+        phase = GridPhase(reff.grid, phase_data) 
+        return phase
 
 
     @property

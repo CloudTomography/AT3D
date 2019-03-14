@@ -43,7 +43,7 @@ class Medium(object):
                'Different grids for phase, albedo and extinction is not supported.'        
         self.extinction = extinction
         self.albedo = albedo
-        self._phase = phase
+        self.phase = phase
         
  
     def __add__(self, other):
@@ -93,11 +93,22 @@ class Medium(object):
         self.__dict__ = pickle.loads(data)    
 
 
-    def get_cloud_mask(self, threshold=1e-3):
+    def get_mask(self, threshold):
         """TODO"""
         data = self.extinction.data > threshold
         return GridData(self.grid, data)
     
+    
+    def apply_mask(self, mask):
+        """TODO"""
+        mask_data = np.array(mask.resample(self.grid, method='nearest'), dtype=np.float)
+        mask = GridData(self.grid, mask_data)
+        self.extinction *= mask
+        self.albedo *= mask
+        if self.phase.type == 'Tabulated':
+            self.phase._index *= mask
+        elif self.phase.type == 'Grid':
+            self.phase * mask
     
     @property
     def extinction(self):
@@ -120,6 +131,10 @@ class Medium(object):
     @property
     def phase(self):
         return self._phase    
+      
+    @phase.setter
+    def phase(self, val):
+        self._phase = val
         
     @property
     def grid(self):
@@ -165,53 +180,103 @@ class AmbientMedium(Medium):
             raise NotImplementedError
         return medium
     
+ 
+class MicrophysicalMedium(object):
+    """TODO"""
+    def __init__(self, veff=0.1):
+        self._lwc = None
+        self._reff = None
+        self._veff = None
+        self._grid = None
     
-def load_les_from_csv(path_to_csv):
-    """ 
-    A utility function to load Large Eddy Simulated clouds.
+    def get_grid(self, path):
+        """
+        A utility function to load Large Eddy Simulated clouds.
+        
+        Parameters
+        ----------
+        path: str
+             Path to file.
+             
+        Returns
+        -------
+        grid: Grid object
+            The 3D grid of the LES generated data.
+            
+        Notes
+        -----
+        CSV format should be as follows:
+        
+        #name=name of les file
+        #original_cloud_data=path to original 
+        #resampled_cloud_data_grid_size=grid resolution in meters
+        nx ny nz
+        dz dy dz     z_levels[0]     z_levels[1] ...  z_levels[nz-1]
+        ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
+        .
+        .
+        .
+        ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
+        """
+        nx, ny, nz = np.genfromtxt(path, max_rows=1, dtype=int) 
+        dx, dy = np.genfromtxt(path, max_rows=1, usecols=(0, 1), dtype=float, skip_header=4)        
+        z_grid = np.genfromtxt(path, max_rows=1, usecols=range(2, 2 + nz), dtype=float, skip_header=4)
+        x_grid = np.linspace(0.0, (nx - 1)*dx, nx, dtype=np.float32)
+        y_grid = np.linspace(0.0, (ny - 1)*dy, ny, dtype=np.float32)    
+        grid = Grid(x=x_grid, y=y_grid, z=z_grid)
+        return grid
+        
+        
+    def load_from_csv(self, path):
+        """ 
+        A utility function to load Large Eddy Simulated clouds.
+        
+        Parameters
+        ----------
+        path: str
+             Path to file. 
     
-    Parameters
-    ----------
-    path_to_csv: str
-         Path to file. 
+        Notes
+        -----
+        CSV format should be as follows:
+        
+        #name=name of les file
+        #original_cloud_data=path to original 
+        #resampled_cloud_data_grid_size=grid resolution in meters
+        nx ny nz
+        dz dy dz     z_levels[0]     z_levels[1] ...  z_levels[nz-1]
+        ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
+        .
+        .
+        .
+        ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
+        """ 
+        
+        self._grid = self.get_grid(path)
+        grid_index = np.genfromtxt(path, usecols=(0, 1, 2), dtype=int, skip_header=5)
+        lwc = np.genfromtxt(path, usecols=3, dtype=float, skip_header=5)
+        reff = np.genfromtxt(path, usecols=4, dtype=float, skip_header=5)
+        
+        particle_levels = np.array([z in grid_index[:, 2] for z in range(self.grid.nz)], dtype=int)
+        lwc_data  = np.zeros(shape=(self.grid.nx, self.grid.ny, self.grid.nz), dtype=np.float32)
+        reff_data = np.zeros(shape=(self.grid.nx, self.grid.ny, self.grid.nz), dtype=np.float32)
+        lwc_data[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]]  = lwc
+        reff_data[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]] = reff
+        self._lwc = GridData(self.grid, lwc_data)
+        self._reff = GridData(self.grid, reff_data)
 
-    Returns
-    -------
-    lwc: GridData
-         a GridData object contatining the liquid water content of the LES cloud.
-    reff: GridData
-          a GridData object contatining the effective radius of the LES cloud.
+    @property
+    def grid(self):
+        return self._grid
     
-    Notes
-    -----
-    CSV format should be as follows:
+    @property
+    def reff(self):
+        return self._reff
     
-    #name=name of les file
-    #original_cloud_data=path to original 
-    #resampled_cloud_data_grid_size=grid resolution in meters
-    nx ny nz
-    dz dy dz     z_levels[0]     z_levels[1] ...  z_levels[nz-1]
-    ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
-    .
-    .
-    .
-    ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
-    """ 
+    @property
+    def veff(self):
+        return self._veff
     
-    nx, ny, nz = np.genfromtxt(path_to_csv, max_rows=1, dtype=int) 
-    dx, dy = np.genfromtxt(path_to_csv, max_rows=1, usecols=(0, 1), dtype=float, skip_header=4)
-    z_grid = np.genfromtxt(path_to_csv, max_rows=1, usecols=range(2, 2 + nz), dtype=float, skip_header=4)
-    grid_index = np.genfromtxt(path_to_csv, usecols=(0, 1, 2), dtype=int, skip_header=5)
-    lwc = np.genfromtxt(path_to_csv, usecols=3, dtype=float, skip_header=5)
-    reff = np.genfromtxt(path_to_csv, usecols=4, dtype=float, skip_header=5)
-    
-    particle_levels = np.array([z in grid_index[:, 2] for z in range(nz)], dtype=int)
-    lwc_data  = np.zeros(shape=(nx, ny, nz), dtype=np.float32)
-    reff_data = np.zeros(shape=(nx, ny, nz), dtype=np.float32)
-    lwc_data[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]]  = lwc
-    reff_data[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]] = reff
-    
-    x_grid = np.linspace(0.0, (nx - 1)*dx, nx, dtype=np.float32)
-    y_grid = np.linspace(0.0, (ny - 1)*dy, ny, dtype=np.float32)
-    grid = Grid(x=x_grid, y=y_grid, z=z_grid)
-    return GridData(grid, lwc_data), GridData(grid, reff_data)
+    @property
+    def lwc(self):
+        return self._lwc
