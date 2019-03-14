@@ -1,9 +1,9 @@
 # pyshdom
 
-SHDOM: Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer
-
 This is a python wrapper for SHDOM created by Aviad Levis and Amit Aides, Technion Inst. of Technology.
 The purpose of this wrapper is to develop 3D remote sensing metoglogies. 
+
+SHDOM: Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer
 
 The documentation of the source Fortran code by Frank Evans can be found at
 http://nit.colorado.edu/shdom/shdomdoc
@@ -26,21 +26,23 @@ distribution functions (BRDF) for the surface are implemented, and more may be a
 SHDOM may be run on a single processor or on multiple processors (e.g. an SMP machine or a
 cluster) using the Message Passing Interface (MPI).
 
----
 
-Requirements (python 2.7):
- (requiered) numpy, matplotlib, dill, joblib
- (optional - summary and display) tensorflow, tensorboard, tensorboardx
----
+## Requirements (python 2.7):
+(requiered) numpy, matplotlib, dill, joblib
 
-To install run
+(optional - summary and display) tensorflow, tensorboard, tensorboardx
+
+## Installation
 python setup.py install
 
+## Basic usage
 For basic usage follow the jupyter notebook tutorials
  - notebooks/Make Mie Table.ipynb
  - notebooks/Forward Rendering.ipynb
- 
+
+## Main scripts
 For rendering and optimization scripts see
- -scripts/render/
- -scripts/optimization/
-"""
+
+scripts/render/
+
+scripts/optimization/
