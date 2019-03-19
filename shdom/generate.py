@@ -1,6 +1,5 @@
 """
-Generation scripts generate the atmospheric optical properties and grid. 
-They can be subsequently input into a rendering script for forward modeling using SHDOM. 
+Generation objects generate the atmospheric optical properties and grid. 
 """
 
 import os 

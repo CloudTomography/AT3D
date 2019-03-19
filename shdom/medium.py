@@ -94,13 +94,32 @@ class Medium(object):
 
 
     def get_mask(self, threshold):
-        """TODO"""
+        """
+        Get a cloud mask based on the optical extinction.
+        
+        Parameters
+        ----------
+        threshold: float
+            A threshold which above this value it is considered a cloudy voxel.
+        
+        Returns
+        -------
+        mask: shdom.GridData object
+            A boolean mask with True making cloudy voxels and False marking non-cloud region.
+        """
         data = self.extinction.data > threshold
         return GridData(self.grid, data)
     
     
     def apply_mask(self, mask):
-        """TODO"""
+        """
+        Zero down the medium properties where the cloud mask is False.
+        
+        Parameters
+        ----------
+        mask: shdom.GridData object
+            A boolean mask with True making cloudy voxels and False marking non-cloud region.    
+        """
         mask_data = np.array(mask.resample(self.grid, method='nearest'), dtype=np.float)
         mask = GridData(self.grid, mask_data)
         self.extinction *= mask
@@ -182,7 +201,13 @@ class AmbientMedium(Medium):
     
  
 class MicrophysicalMedium(object):
-    """TODO"""
+    """
+    A MicrophysicalMedium encapsulates microphysical properties on a grid
+    
+    Notes
+    -----
+    Currently effective variance is a scalar (homogeneous veff).
+    """
     def __init__(self, veff=0.1):
         self._lwc = None
         self._reff = None

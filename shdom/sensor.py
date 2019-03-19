@@ -16,18 +16,18 @@ norm = lambda x: x / np.linalg.norm(x, axis=0)
 class Measurements(object):
     """
     A Measurements object bundles together the Sensor geometry and radiance measurents for later optimization.
-    TODO
+    It can be initilized with sensors and images or radiances or alternatively is can be loaded from file.
+    When images exist, radiances are simply a flattened version of them.
     """
     def __init__(self, sensors=None, **kwargs):
         self._sensors = sensors
         
         if kwargs.has_key('images'):
             self._images = kwargs['images']
-            if type(self.images) is list:
-                self._radiances = np.concatenate(map(lambda img: img.ravel(order='F'), self.images))
-            elif type(self.images) is np.ndarray:
-                self._radiances = self.images.ravel(order='F')
-        
+            if type(self.images) is not list:
+                self._images = [self._images]
+            self._radiances = np.concatenate(map(lambda img: img.ravel(order='F'), self.images))
+
         if kwargs.has_key('radiances'):
             self._radiances = kwargs['radiances']
         
@@ -61,7 +61,7 @@ class Measurements(object):
     
     
     def add_noise(self):
-        """TODO"""
+        """Add sensor modeled noise to the radiances"""
         raise NotImplemented
     
     
@@ -86,7 +86,6 @@ class Sensor(object):
     """
     Abstract Sensor class to be inherited by the different types of sensors.
     Each sensor internally defines an arrays of pixel locations (x,y,z) in km and directions (phi, mu).
-    TODO
     """
     def __init__(self):
         self._x = None
@@ -98,7 +97,18 @@ class Sensor(object):
         self.type = 'AbstractSensor'
         self._wavelength = None
      
-     
+    def __getitem__(self, val):
+        sensor = Sensor()
+        sensor._x = np.array(self._x[val])
+        sensor._y = np.array(self._y[val])
+        sensor._z = np.array(self._z[val])
+        sensor._mu = np.array(self._mu[val])
+        sensor._phi = np.array(self._phi[val])
+        sensor._npix = sensor.x.size
+        sensor._wavelength = self._wavelength
+        return sensor
+   
+        
     def render(self, rte_solver):
         """
         The render method integrates a pre-computed in-scatter field (source function) J over the sensor gemoetry.
@@ -121,7 +131,7 @@ class Sensor(object):
             camz=self.z,
             cammu=self.mu,
             camphi=self.phi,
-            npix=self._npix,             
+            npix=self.npix,             
             nx=rte_solver._nx,
             ny=rte_solver._ny,
             nz=rte_solver._nz,
@@ -379,7 +389,6 @@ class ProjectiveMonochromeSensor(Sensor):
     """
     A ProjectiveMonochromeSensor has a projective tansformation that relates 3D coordinate to pixels.
     When rendering, this sensor will produce 2D images.
-    TODO
     """
     def __init__(self, wavelength):
         super(ProjectiveMonochromeSensor, self).__init__()
@@ -472,7 +481,7 @@ class SensorArray(Sensor):
         if sensor_list:
             for sensor in sensor_list:
                 self.add_sensor(sensor)
-    
+
     
     def add_sensor(self, sensor, id=None):
         """

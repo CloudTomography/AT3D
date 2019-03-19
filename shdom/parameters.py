@@ -1,3 +1,9 @@
+"""
+Parameters are used by the Optimizer to minimize the loss function.
+These are the parameters we seek to recover. To recover a parameter is has to depends on (at least one):
+Extinction, Single Scattering Albedo or Phase Function.
+"""
+
 from shdom import GridData
 import numpy as np
 

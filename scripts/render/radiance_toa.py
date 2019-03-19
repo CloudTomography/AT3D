@@ -145,6 +145,7 @@ def generate_atmosphere(args, CloudGenerator, AirGenerator):
     
     return cloud, atmosphere
 
+
 def solve_rte(args, atmosphere):
     """
     Define an RteSolver object and solve the Radiative Transfer for the domain.
@@ -167,6 +168,7 @@ def solve_rte(args, atmosphere):
     rte_solver.init_medium(atmosphere)
     rte_solver.solve(maxiter=100) 
     return rte_solver
+    
     
 def render(args, bounding_box, rte_solver):
     """

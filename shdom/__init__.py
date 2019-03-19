@@ -541,7 +541,7 @@ from phase import *
 from medium import *
 from sensor import *
 from rte_solver import *
-from optimizer import *
+from optimize import *
 import generate as Generate
 import parameters as Parameters
 

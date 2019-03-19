@@ -28,7 +28,7 @@ cluster) using the Message Passing Interface (MPI).
 
 
 ## Requirements (python 2.7):
-(requiered) numpy, matplotlib, dill, joblib
+(requiered) numpy, matplotlib, dill, joblib, cv2
 
 (optional - summary and display) tensorflow, tensorboard, tensorboardx
 

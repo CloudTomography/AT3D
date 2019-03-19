@@ -10,7 +10,7 @@ Measurements are either:
 The phase function, albedo and rayleigh scattering are assumed known.
 
 Example usage:
-  python scripts/optimize/extinction.py --input_dir DIRECTORY --log LOGDIR --use_forward_grid --use_forward_albedo --use_forward_phase --init Homogeneous --extinction 0.0 --add_rayleigh --mie_table_path TABLE_PATH
+  python scripts/optimize/extinction.py --input_dir DIRECTORY --log LOGDIR --use_forward_grid --use_forward_albedo --use_forward_phase --init Homogeneous --extinction 0.01 --add_rayleigh --mie_table_path TABLE_PATH
   
 For information about the command line flags see:
   python scripts/optimize/extinction.py --help
@@ -20,6 +20,7 @@ import os, time
 import numpy as np
 import argparse
 import shdom
+
 
 def argument_parsing():
     """
@@ -87,6 +88,7 @@ def argument_parsing():
     
     return args, CloudGenerator, AirGenerator
 
+
 def init_atmosphere(args, CloudGenerator, AirGenerator):
     """
     Load forward modeling setup parameters.
@@ -99,13 +101,13 @@ def init_atmosphere(args, CloudGenerator, AirGenerator):
         Creates the cloudy medium.
     AirGenerator: a shdom.Air class object
         Creates the scattering due to air molecules
+    measurements: shdom.Measurements object
+        Used for space-carving out a mask if args.use_forward_mask is False
         
     Returns
     -------
-    measurments: shdom.Measurements object
-        Encapsulates the radiances and the sensor geometry for later optimization
-    rte_solver: shdom.RteSolver
-        A solver initialized to the initial medium
+    medium: shdom.Medium
+        The medium initialization.
     mask: shdom.GridData
         A mask of cloudy voxels, either by space-carving or from ground-truth
     extinction: shdom.Parameters.Extinction object
@@ -113,17 +115,7 @@ def init_atmosphere(args, CloudGenerator, AirGenerator):
     air: shdom.Medium
         A known medium of air which overlays the atmosphere.
     """
-    medium_gt, rte_solver, measurements = shdom.load_forward_model(args.input_dir)
     
-    # Multi-band optimization currently not supported
-    if measurements.sensors.type == 'SensorArray':
-        wavelengths = map(lambda x: x.wavelength, measurements.sensors.sensor_list)
-        assert np.all(np.isclose(np.diff(wavelengths), 0.0)), 'Multi-band optimization currently not supported.'
-        args.wavelength = wavelengths[0]
-    else:
-        args.wavelength = measurements.sensors.wavelength
-    
-        
     cloud_generator = CloudGenerator(args)
 
     # Define the grid for reconstruction
@@ -160,7 +152,8 @@ def init_atmosphere(args, CloudGenerator, AirGenerator):
     if args.use_forward_mask:
         mask = medium_gt.get_mask(threshold=1.0)
     else:
-        raise NotImplementedError 
+        carver = shdom.SpaceCarver(measurements)
+        mask = carver.carve(medium.grid)
     medium.apply_mask(mask)
     
     air = None
@@ -168,35 +161,41 @@ def init_atmosphere(args, CloudGenerator, AirGenerator):
         air_generator = AirGenerator(args)
         air = air_generator.get_medium(phase_type=medium.phase.type)   
         medium += air
-    rte_solver.init_medium(medium)    
+       
     
-    return measurements, rte_solver, mask, extinction, air
+    return medium, mask, extinction, air
 
 
-def optimize(measurements, rte_solver, mask, extinction, air):
-    """
-    Optimize over the unknown extinction.
+if __name__ == "__main__":
     
-    Parameters
-    ----------
-    measurments: shdom.Measurements object
-        Encapsulates the radiances and the sensor geometry for later optimization
-    rte_solver: shdom.RteSolver
-        A solver initialized to the initial medium
-    mask: shdom.GridData
-        A mask of cloudy voxels, either by space-carving or from ground-truth
-    extinction: shdom.Parameters.Extinction object
-        The unknown parameters to recover
-    air: shdom.Medium
-        A known medium of air which overlays the atmosphere
+    args, CloudGenerator, AirGenerator = argument_parsing()
+    
+    # Load forward model
+    medium_gt, rte_solver, measurements = shdom.load_forward_model(args.input_dir)
+    
+    # Multi-band optimization currently not supported
+    if measurements.sensors.type == 'SensorArray':
+        wavelengths = map(lambda x: x.wavelength, measurements.sensors.sensor_list)
+        assert np.all(np.isclose(np.diff(wavelengths), 0.0)), 'Multi-band optimization currently not supported.'
+        args.wavelength = wavelengths[0]
+    else:
+        args.wavelength = measurements.sensors.wavelength
         
-    Returns
-    -------
-    optimizer: shdom.Optimizer object
-        The optimizer after the termination of the optimization process
-    """
-    optimizer = shdom.Optimizer()
+    # Init medium and solver
+    medium, mask, extinction, air = init_atmosphere(args, CloudGenerator, AirGenerator)
+    rte_solver.init_medium(medium)
     
+    # Define a summary writer
+    writer = None
+    if args.log is not None:
+        log_dir = os.path.join(args.input_dir, 'logs', args.log + time.strftime("%Y%m%d-%H%M%S"))
+        writer = shdom.SummaryWriter(log_dir)
+        writer.monitor_loss()
+        writer.monitor_images(acquired_images=measurements.images)
+        writer.monitor_parameter_error(ground_truth_params=[medium_gt.extinction])
+        
+    optimizer = shdom.Optimizer()
+        
     # Define L-BFGS-B options
     options = {
         'maxiter': 1000,
@@ -211,28 +210,16 @@ def optimize(measurements, rte_solver, mask, extinction, air):
     optimizer.set_cloud_mask(mask)
     optimizer.add_parameter(extinction)
     optimizer.set_known_medium(air) 
-    
-    if args.log is not None:
-        from tensorboardX import SummaryWriter
-        timestr = time.strftime("%Y%m%d-%H%M%S")
-        log_dir = os.path.join(args.input_dir, 'logs', args.log + timestr)
-        writer = SummaryWriter(log_dir)      
-        optimizer.set_writer(writer)    
+    optimizer.set_writer(writer)
 
-    # Start optimization process
-    result = optimizer.minimize(ckpt_period=1*60*60, options=options)
+    # Optimization process
+    result = optimizer.minimize(ckpt_period=30*60, options=options)
     print('\n------------------ Optimization Finished ------------------\n')
-    print('Status: {}'.format(result.status))
+    print('Success: {}'.format(result.success))
     print('Message: {}'.format(result.message))
     print('Final loss: {}'.format(result.fun))
-    print('Number iterations: {}'.format(result.nit))
-    return optimizer
+    print('Number iterations: {}'.format(result.nit))    
 
-if __name__ == "__main__":
-    
-    args, CloudGenerator, AirGenerator = argument_parsing()
-    measurements, rte_solver, mask, extinction, air = init_atmosphere(args, CloudGenerator, AirGenerator)
-    optimizer = optimize(measurements, rte_solver, mask, extinction, air)
-    optimizer.save(os.path.join(writer.log_dir, 'final.ckpt'))
+    optimizer.save(os.path.join(args.input_dir, 'optimizer'))
 
 

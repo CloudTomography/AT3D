@@ -393,7 +393,7 @@ class RteSolver(object):
     
         Parameters
         ----------
-        medium: sdhom.Medium
+        medium: shdom.Medium
             Initilize the RTE solver to a Medium object.
 
         """
@@ -408,7 +408,15 @@ class RteSolver(object):
         
 
     def set_phase(self, phase):
-        """TODO"""
+        """
+        set the phase function internal SHDOM parameters
+        
+        Parameters
+        ----------
+        phase: shdom.Phase
+          TabulatedPhase or GridPhase object.
+            
+        """
         self._pa.iphasep = phase.iphasep.ravel()
         self._pa.numphase = phase.numphase          
         self._maxleg = phase.maxleg 
@@ -427,16 +435,40 @@ class RteSolver(object):
         self._iphase = np.empty(shape=(self._maxig,), dtype=np.int32, order='F')
         self._legen = np.empty(shape=(self._maxigl,), dtype=np.float32, order='F')        
 
+
     def set_albedo(self, albedo):
-        """TODO"""
+        """
+        set the single scattering albedo
+        
+        Parameters
+        ----------
+        albedo: shdom.GridData
+            The single scattering albedo on a grid. 
+        """
         self._pa.albedop = np.array(albedo.data.ravel(), dtype=np.float32)
         
+        
     def set_extinction(self, extinction):
-        """TODO"""
+        """
+        set the optical extinction.
+        
+        Parameters
+        ----------
+        extinction: shdom.GridData
+            The optical extinction on a grid. 
+        """
         self._pa.extinctp = np.array(extinction.data.ravel(), dtype=np.float32)
     
+    
     def set_grid(self, grid):
-        """TODO"""
+        """
+        set the base grid for SHDOM.
+        
+        Parameters
+        ----------
+        grid: shdom.Grid
+            The grid.
+        """
         
         def ibits(val, bit, ret_val):
             if val & 2**bit:
@@ -518,7 +550,7 @@ class RteSolver(object):
 
 
     def init_memory(self):
-        """TODO"""
+        """A utility function to initialize internal memory structures and parameters."""
         
         # Make ml and mm from nmu and nphi
         # ML is the maximum meridional mode, MM is the maximum azimuthal mode,
