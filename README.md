@@ -28,21 +28,45 @@ cluster) using the Message Passing Interface (MPI).
 
 
 ## Requirements (python 2.7):
-(requiered) numpy, matplotlib, dill, joblib, cv2
+(required) numpy, scipy, matplotlib, dill, joblib, opencv
 
-(optional - summary and display) tensorflow, tensorboard, tensorboardx
+(optional - summary and display) tensorflow, tensorboard, tensorboardX
 
-## Installation
+## Installation (using anaconda package management)
+
+Start a clean virtual enviroment
+```
+conda create -n pyshdom
+source activate pyshdom
+```
+
+Install required packages
+```
+conda install numpy scipy matplotlib dill joblib opencv
+```
+
+Install jupyter notebook and extentions
+```
+conda install jupyter
+```
+
+Install optional packages
+```
+conda install tensorflow tensorboard
+pip install tensorboardX
+```
+
+Install pyshdom distribution with (either install or develop flag)
+```
 python setup.py install
+```
 
 ## Basic usage
 For basic usage follow the jupyter notebook tutorials
  - notebooks/Make Mie Table.ipynb
- - notebooks/Forward Rendering.ipynb
+ - notebooks/Forward Rendering.ipynb 
 
 ## Main scripts
 For rendering and optimization scripts see
-
-scripts/render/
-
-scripts/optimization/
+  - scripts/render_radiance_toa.py
+  - scripts/optimize_extinction.py
