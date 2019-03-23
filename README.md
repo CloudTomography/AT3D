@@ -30,7 +30,7 @@ cluster) using the Message Passing Interface (MPI).
 ## Requirements (python 2.7):
 (required) numpy, scipy, matplotlib, dill, joblib, opencv
 
-(optional - summary and display) tensorflow, tensorboard, tensorboardX
+(optional - summary and display) pillow, tensorflow, tensorboard, tensorboardX
 
 ## Installation (using anaconda package management)
 
@@ -52,7 +52,7 @@ conda install jupyter
 
 Install optional packages
 ```
-conda install tensorflow tensorboard
+conda install tensorflow tensorboard pillow
 pip install tensorboardX
 ```
 

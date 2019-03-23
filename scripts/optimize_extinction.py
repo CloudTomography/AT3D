@@ -10,7 +10,9 @@ Measurements are either:
 The phase function, albedo and rayleigh scattering are assumed known.
 
 Example usage:
-  python scripts/optimize/extinction.py --input_dir DIRECTORY --log LOGDIR --use_forward_grid --use_forward_albedo --use_forward_phase --init Homogeneous --extinction 0.01 --add_rayleigh --mie_table_path TABLE_PATH
+  python scripts/optimize_extinction.py --input_dir DIRECTORY --mie_table_path TABLE_PATH \
+         --use_forward_grid --use_forward_albedo --use_forward_phase \
+         --init Homogeneous --extinction 0.01 --add_rayleigh --log LOGDIR
   
 For information about the command line flags see:
   python scripts/optimize/extinction.py --help

@@ -9,10 +9,10 @@ As with all `render` scripts a `generator` needs to be specified using the gener
 The Generator defines the medium parameters: Grid, Extinction, Single Scattering Albedo and Phase function with it's own set of command-line flags.
 
 Example usage:
-  python scripts/render/radiance_toa.py --output_dir experiments/single_voxel/ --wavelength 0.672 \
-          --generator single_voxel --extinction 10.0 --reff 10.0 --domain_size 1.0 --x_res 0.1 --y_res=0.1 \
-          --mie_table_path mie_tables/Water_672nm.scat \
-          --azimuth 90 90 90 90 0 -90 -90 -90 -90 --zenith 70.5 60 45.6 26.1 0.0 26.1 45.6 60 70.5
+  python scripts/render_radiance_toa.py experiments/single_voxel  --add_rayleigh\
+          --generator SingleVoxel --extinction 10.0 --reff 10.0 --domain_size 1.0 \
+           --x_res 0.1 --y_res 0.1 --wavelength 0.672 --mie_table_path mie_tables/Water_672nm.scat \
+          --azimuth 90 90 90 90 0 -90 -90 -90 -90 --zenith 70.5 60 45.6 26.1 0.0 26.1 45.6 60 70.5 
 
 For information about the command line flags see:
   python scripts/render/render_radiance_toa.py --help

@@ -42,11 +42,13 @@ class SummaryWriter(object):
         ckpt_period: float
            time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
         """
-        self._img_ckpt_period = ckpt_period
+        self._image_ckpt_period = ckpt_period
         self._image_ckpt_time = time.time()
+        self._image_vmax = []
         for i, image in enumerate(acquired_images):
+            self._image_vmax.append(image.max() * 1.25)
             self.tf_writer.add_image(tag='Acquiered Image{}'.format(i), 
-                                     img_tensor=image,
+                                     img_tensor=(image / self._image_vmax[i]),
                                      dataformats='HW')        
         self._callback_fns.append(self.images)
     
@@ -54,11 +56,11 @@ class SummaryWriter(object):
     def images(self):
         """Callback function the is called every optimizer iteration image monitoring is set."""
         time_passed = time.time() - self._image_ckpt_time 
-        if time_passed > self._img_ckpt_period:
+        if time_passed > self._image_ckpt_period:
             self._image_ckpt_time  = time.time()
             for i, image in enumerate(self.optimizer.images):
                 self.tf_writer.add_image(tag='Retrieval Image{}'.format(i), 
-                                         img_tensor=image, 
+                                         img_tensor=(image / self._image_vmax[i]), 
                                          global_step=self.optimizer.iteration,
                                          dataformats='HW')
         
@@ -151,7 +153,7 @@ class SpaceCarver(object):
         Returns
         -------
         mask: shdom.GridData object
-            A boolean mask with True making cloudy voxels and False marking non-cloud region.
+            A boolean mask with True marking cloudy voxels and False marking non-cloud region.
         """
            
         self._rte_solver.set_grid(grid)
@@ -159,10 +161,10 @@ class SpaceCarver(object):
         
         for sensor, image in zip(self._sensors, self._images):
             uint8 = np.uint8(255*image/image.max())
-            threshold = cv2.threshold(uint8, 0, 1, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]           
+            threshold = cv2.threshold(uint8, 0, 1, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]           
 
             radiance = image.ravel(order='F')
-            sensor = sensor[threshold.ravel(order='F') != 1]
+            sensor = sensor[threshold.ravel(order='F') == 1]
             
             carved_volume = core.space_carve(
                 nx=grid.nx,
