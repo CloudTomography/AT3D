@@ -4,7 +4,7 @@ Optimization and related objects to monitor and log the optimization proccess.
 
 import shdom
 import numpy as np
-import core, time
+import core, time, os
 from scipy.optimize import minimize
 from shdom import GridData
 import dill as pickle
@@ -462,8 +462,8 @@ class Optimizer(object):
         """Save a checkpoint of the Optimizer"""
         self._ckpt_time = time.time()
         timestr = time.strftime("%H%M%S")
-        path = os.path.join(self.writer.log_dir,  timestr + '.ckpt')
-        self.save(path)  
+        path = os.path.join(self.writer._tf_writer.log_dir,  timestr + '.ckpt')
+        self.save(path)
             
             
     def callback(self, state):
