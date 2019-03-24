@@ -1,7 +1,7 @@
 # pyshdom
 
-This is a python wrapper for SHDOM created by Aviad Levis and Amit Aides, Technion Inst. of Technology.
-The purpose of this wrapper is to develop 3D remote sensing metoglogies. 
+This is a python wrapper for SHDOM created by Aviad Levis and Amit Aides, Technion - Israel Institute of Technology.
+The purpose of this wrapper is to develop 3D remote sensing methodologies.
 
 SHDOM: Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer
 
