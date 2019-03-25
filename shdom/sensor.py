@@ -370,7 +370,7 @@ class Sensor(object):
     
     @property
     def zenith(self):
-        return np.rad2deg(np.arccos(mu))
+        return np.rad2deg(np.arccos(self.mu))
  
     @property
     def azimuth(self):
