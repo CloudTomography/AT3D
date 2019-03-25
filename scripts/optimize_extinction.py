@@ -147,7 +147,7 @@ def init_atmosphere(args, CloudGenerator, AirGenerator):
     # Initilize the Medium and RTE solver    
     medium = shdom.Medium()
     medium.set_optical_properties(extinction, 
-                                  cloud_generator.albedo, 
+                                  cloud_generator.albedo,
                                   cloud_generator.phase)
     
     # Apply a cloud mask for non-cloudy voxels 
@@ -155,7 +155,7 @@ def init_atmosphere(args, CloudGenerator, AirGenerator):
         mask = medium_gt.get_mask(threshold=1.0)
     else:
         carver = shdom.SpaceCarver(measurements)
-        mask = carver.carve(medium.grid)
+        mask = carver.carve(medium.grid, agreement=0.7)
     medium.apply_mask(mask)
     
     air = None
@@ -211,7 +211,7 @@ if __name__ == "__main__":
     optimizer.set_rte_solver(rte_solver)
     optimizer.set_cloud_mask(mask)
     optimizer.add_parameter(extinction)
-    optimizer.set_known_medium(air) 
+    optimizer.set_known_medium(air)
     optimizer.set_writer(writer)
 
     # Optimization process

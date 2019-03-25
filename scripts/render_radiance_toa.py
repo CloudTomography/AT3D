@@ -162,7 +162,9 @@ def solve_rte(args, atmosphere):
     rte_solver: shdom.RteSolver object
         A solver with the solution for the RTE
     """
-    scene_params = shdom.SceneParameters(source=shdom.SolarSource(args.solar_azimuth, args.solar_zenith))
+    scene_params = shdom.SceneParameters(source=shdom.SolarSource(azimuth=args.solar_azimuth, 
+                                                                  zenith=args.solar_zenith,
+                                                                  flux=3.14))
     numerical_params = shdom.NumericalParameters()
     rte_solver = shdom.RteSolver(scene_params, numerical_params)
     rte_solver.init_medium(atmosphere)

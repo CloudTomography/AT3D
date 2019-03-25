@@ -140,7 +140,7 @@ class SpaceCarver(object):
         self._images = measurements.images
         
         
-    def carve(self, grid):
+    def carve(self, grid, agreement=0.75):
         """
         Carves out the cloud geometry on the grid. 
         A threshold on the radiances is found by a cv2 adaptive image threshold.
@@ -149,7 +149,8 @@ class SpaceCarver(object):
         ----------
         grid: shdom.Grid
             A grid object.
-            
+        agreement: the precentage of pixels that should agree on a cloudy voxels to set it to True in the mask
+        
         Returns
         -------
         mask: shdom.GridData object
@@ -157,7 +158,7 @@ class SpaceCarver(object):
         """
            
         self._rte_solver.set_grid(grid)
-        volume = np.ones((grid.nx, grid.ny, grid.nz))
+        volume = np.zeros((grid.nx, grid.ny, grid.nz))
         
         for sensor, image in zip(self._sensors, self._images):
             uint8 = np.uint8(255*image/image.max())
@@ -189,9 +190,11 @@ class SpaceCarver(object):
                 camphi=sensor.phi,
                 npix=sensor.npix,
             )
-            volume *= carved_volume.reshape(grid.nx, grid.ny, grid.nz)
+            volume += carved_volume.reshape(grid.nx, grid.ny, grid.nz)
         
-        return GridData(grid, volume.astype(np.bool))
+        volume = volume * 1.0 / len(self._images)
+        mask = GridData(grid, volume > agreement) 
+        return mask
     
     
     @property
@@ -360,8 +363,7 @@ class Optimizer(object):
         """ 
         
         self.rte_solver.solve(maxiter=100, verbose=False)   
-    
-        gradient, cost, radiance = core.ext_gradient(
+        gradient, cost, images = core.ext_gradient(
             nx=self.rte_solver._nx,
             ny=self.rte_solver._ny,
             nz=self.rte_solver._nz,
@@ -427,12 +429,12 @@ class Optimizer(object):
             radiance=self.rte_solver._radiance
         )
         
-        # Split radiances into different sensor images
+        # Split images into different sensor images
         if self.sensors.type == 'SensorArray':
-            image_list = np.split(radiance, np.cumsum(self.sensors.npix[:-1]))
+            image_list = np.split(images, np.cumsum(self.sensors.npix[:-1]))
             sensor_list = self.sensors.sensor_list
         else:
-            image_list = [radiance]
+            image_list = [images]
             sensor_list = [self.sensors]
             
         for i in range(len(image_list)):
@@ -454,7 +456,7 @@ class Optimizer(object):
         """The gradient at the current state"""
         self.update_rte_solver(state)
         parameter_gradient = [self.extinction_gradient_cost()[0]]
-        state_gradient = np.concatenate(map(lambda grad: grad[self.gradient_mask].ravel(), parameter_gradient))
+        state_gradient = np.concatenate(map(lambda grad: grad[self.gradient_mask], parameter_gradient))
         return state_gradient
     
     
@@ -496,10 +498,11 @@ class Optimizer(object):
     
         # Init mask for gradient 
         if self.cloud_mask:
-            self._gradient_mask = self.cloud_mask.data.ravel()
             if self.known_medium:
                 grid = self.known_medium.grid + self.cloud_mask.grid
                 self._gradient_mask = np.array(self.cloud_mask.resample(grid, method='nearest'), dtype=np.bool).ravel()
+            else:
+                self._gradient_mask = self.cloud_mask.data.ravel()
             
 
     def minimize(self, options, ckpt_period=None, method='L-BFGS-B'):
