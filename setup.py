@@ -42,6 +42,13 @@ classifiers =  ['Development Status :: 3 - Alpha',
 #
 PARALLEL_SUPPORT = False
 
+
+#
+# Set this to True for compiling the polarized 
+# version of the SHDOM algorithm.
+#
+POLARIZED_SHDOM = True
+
 #
 # f2py stuff
 #
@@ -49,6 +56,8 @@ F2PY_CMD = 'f2py'
 F2PY_MODULE_NAME = 'core'
 F2PY_SRC_PATH = 'src'
 F2PY_SIGN_FILE = '{path}/core.pyf'.format(path=F2PY_SRC_PATH)
+
+
 F2PY_SHDOM_FILES = ['shdom90.f90',
                     'shdomsub1.f',
                     'shdomsub2.f',
@@ -56,17 +65,17 @@ F2PY_SHDOM_FILES = ['shdom90.f90',
                     'shdomsub4.f',
                     'fftpack.f',
                     'ocean_brdf.f',
-                    'make_mie_table.f90',
+                    'make_mie_table_pol.f90',
                     'mieindsub.f']
+
 if PARALLEL_SUPPORT:
     F2PY_SHDOM_FILES += ['shdom_mpi.f'] 
 else:
     F2PY_SHDOM_FILES += ['shdom_nompi.f']
 F2PY_SHDOM_FILES = [
-    
             '{path}/{file_name}'.format(path=F2PY_SRC_PATH, file_name=file_name) for file_name in F2PY_SHDOM_FILES
 ]
-
+  
 F2PY_CORE_API = [
     'get_mie_table',
     'get_center_wavelen',
