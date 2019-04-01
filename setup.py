@@ -36,12 +36,6 @@ classifiers =  ['Development Status :: 3 - Alpha',
                 'Topic :: Scientific/Engineering :: Mathematics',
                 'Operating System :: OS Independent']
 
-#
-# Set this to True for compiling the parallel
-# version of the SHDOM algorithm.
-#
-PARALLEL_SUPPORT = False
-
 
 #
 # Set this to True for compiling the polarized 
@@ -57,21 +51,26 @@ F2PY_MODULE_NAME = 'core'
 F2PY_SRC_PATH = 'src'
 F2PY_SIGN_FILE = '{path}/core.pyf'.format(path=F2PY_SRC_PATH)
 
+F2PY_SHDOM_FILES = ['fftpack.f', 'ocean_brdf.f', 'shdom_nompi.f']
 
-F2PY_SHDOM_FILES = ['shdom90.f90',
-                    'shdomsub1.f',
-                    'shdomsub2.f',
-                    'shdomsub3.f',
-                    'shdomsub4.f',
-                    'fftpack.f',
-                    'ocean_brdf.f',
-                    'make_mie_table_pol.f90',
-                    'mieindsub.f']
-
-if PARALLEL_SUPPORT:
-    F2PY_SHDOM_FILES += ['shdom_mpi.f'] 
+if POLARIZED_SHDOM:
+    F2PY_SHDOM_FILES.extend(['polarized/shdom90.f90',
+                             'polarized/shdomsub1.f',
+                             'polarized/shdomsub2.f',
+                             'polarized/shdomsub3.f',
+                             'polarized/make_mie_table.f90', 
+                             'polarized/miewig.f',
+                             'polarized/indexwatice.f'])
+    
 else:
-    F2PY_SHDOM_FILES += ['shdom_nompi.f']
+    F2PY_SHDOM_FILES.extend(['unpolarized/shdom90.f90',
+                             'unpolarized/shdomsub1.f',
+                             'unpolarized/shdomsub2.f',
+                             'unpolarized/shdomsub3.f',
+                             'unpolarized/shdomsub4.f',
+                             'unpolarized/make_mie_table.f90', 
+                             'unpolarized/mieindsub.f'])
+
 F2PY_SHDOM_FILES = [
             '{path}/{file_name}'.format(path=F2PY_SRC_PATH, file_name=file_name) for file_name in F2PY_SHDOM_FILES
 ]
@@ -99,6 +98,9 @@ F2PY_CORE_API = [
     'ext_gradient',
     'space_carve'
 ]
+
+if POLARIZED_SHDOM:
+    F2PY_CORE_API.append('transform_wignerd_to_phase')
 
 
 def uniq_arr(arr):
@@ -244,40 +246,12 @@ def configuration(parent_package='',top_path=None):
         long_description = LONG_DESCRIPTION
     )
 
+    config.add_extension(
+        name=F2PY_MODULE_NAME,
+        sources=[F2PY_SIGN_FILE] + F2PY_SHDOM_FILES,
+        f2py_options=[]
+    )
 
-    if PARALLEL_SUPPORT:
-        mpi_flags = get_mpi_flags()
-        mpi_flags['inc_dirs'].append(numpy.get_include())
-    
-    
-        # setting some extra compile flags for 64 bit architectures, utilizing
-        # distutils.sysconfig to check which compiler to use
-        if os.name == 'posix' and os.uname()[4] == 'x86_64':
-            #Extra flags for 64 bit architectures
-            extra_compile_args = ['-fPIC']
-        else:
-            extra_compile_args = None
-
-
-        config.add_extension(
-            name=F2PY_MODULE_NAME,
-            sources=[F2PY_SIGN_FILE] + F2PY_SHDOM_FILES,
-            include_dirs=mpi_flags['inc_dirs'],
-            library_dirs=mpi_flags['lib_dirs'],
-            libraries=mpi_flags['libs'],
-            define_macros=mpi_flags['def_macros'],
-            undef_macros=mpi_flags['undef_macros'],
-            extra_compile_args=extra_compile_args,
-            f2py_options=[]#'--debug-capi']            
-        )
-    else:
-        config.add_extension(
-            name=F2PY_MODULE_NAME,
-            sources=[F2PY_SIGN_FILE] + F2PY_SHDOM_FILES,
-            f2py_options=[]#s'--debug-capi']
-        )
-
-        
     return config
 
 
@@ -291,6 +265,7 @@ if __name__ == "__main__":
     from numpy.distutils.core import setup
     
     createSignatureFile()
+    
     setup(
         configuration = configuration,
         packages = setuptools.find_packages(),

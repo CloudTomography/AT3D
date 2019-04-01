@@ -200,7 +200,10 @@ class TabulatedPhase(Phase):
     def index(self):
         return self._index
     
-    
+
+
+            
+            
 class Mie(object):
     """
     Mie scattering for a particle size distribution. 
@@ -243,6 +246,7 @@ class Mie(object):
         self._ssalb = None
         self._nleg = None
         self._legcoef = None
+        self._logre = None
     
     def set_parameters(self,
                        wavelength_band,
@@ -334,7 +338,8 @@ class Mie(object):
                       num_effective_radii,
                       start_effective_radius,
                       end_effective_radius,
-                      max_integration_radius): 
+                      max_integration_radius,
+                      log_space_reff): 
         """
         Compute a scattering table where for each effective radius:
           1. Extinction-cross section per 1 unit of mass content [g/m^3](liquid water content for water clouds)  
@@ -353,6 +358,8 @@ class Mie(object):
         max_integration_radius: int
             The maximum radius for which to integrate over the size-distribution.
             max_integration_radius > end_effective_radius.
+        log_space_reff: bool
+            True to use logarithmic spacing for the effective radius and False to use linear spacing.
         
     
         Notes
@@ -369,7 +376,7 @@ class Mie(object):
         self._sretab = start_effective_radius
         self._eretab = end_effective_radius
         self._maxradius = max_integration_radius
-        
+        self._logre = log_space_reff
         
         # Calculate the maximum size parameter and the max number of Legendre terms
         if self._avgflag == 'A':
@@ -394,7 +401,9 @@ class Mie(object):
             rindex=self._rindex, 
             partype=self._partype, 
             avgflag=self._avgflag, 
-            distflag=self._distflag)
+            distflag=self._distflag,
+            logre=self._logre
+        )
         
         # A simple hack: duplicate the table for two grid points (effectinve radii). 
         # This is because two or more grid points are requiered for interpolation. 
@@ -509,7 +518,7 @@ class Mie(object):
         -----
         This function is ran after pre-computing/loading a scattering tables.
         """        
-        assert True not in (self._reff is None, self._extinct is None, self._ssalb is None, self._nleg is None, self._legcoef is None), \
+        assert True not in (self.reff is None, self.extinct is None, self.ssalb is None, self.nleg is None, self.legcoef is None), \
                        'Mie scattering table was not computed or read from file. Using compute_table() or read_table().'   
         
         if self._nretab == 1:
@@ -521,7 +530,7 @@ class Mie(object):
         
         self._ext_interpolator = interp1d(self.reff, self.extinct, kind=kind, assume_sorted=True, bounds_error=False, fill_value=0.0)
         self._ssalb_interpolator = interp1d(self.reff, self.ssalb, kind=kind, assume_sorted=True, bounds_error=False, fill_value=1.0) 
-        self._legcoef_interpolator = interp1d(self.reff, self.legcoeff, kind=kind, assume_sorted=True, bounds_error=False, fill_value=0.0)          
+        self._legcoef_interpolator = interp1d(self.reff, self.legcoef, kind=kind, assume_sorted=True, bounds_error=False, fill_value=0.0)          
         self._legen_index_interpolator = interp1d(self.reff, range(1, len(self.reff)+1), kind='nearest', assume_sorted=True, copy=False, bounds_error=False, fill_value=0)
         self._nleg_interpolator = interp1d(self.reff, self.nleg, kind='nearest', assume_sorted=True, copy=False, bounds_error=False, fill_value=0)
      
@@ -633,7 +642,7 @@ class Mie(object):
             A Phase object containting the phase function legendre coeffiecients as a table.
         """   
         maxleg = self.nleg.max()
-        phase_table = self.legcoeff[:maxleg, :]
+        phase_table = self.legcoef[:maxleg, :]
         index_data = self._legen_index_interpolator(reff.data).astype(np.int32)
         index = GridData(reff.grid, index_data)
         phase = TabulatedPhase(phase_table, index)        
@@ -698,7 +707,7 @@ class Mie(object):
             print('Mie table was not computed or loaded') 
             
     @property
-    def legcoeff(self):
+    def legcoef(self):
         if hasattr(self, '_legcoef'):
             return self._legcoef
         else:
@@ -721,7 +730,237 @@ class Mie(object):
         else:
             print('Mie table was not computed or loaded')            
 
-         
+  
+  
+class MiePolarized(Mie):
+    """
+    
+    Notes
+    -----
+    Modified Gamma distribution not supported currently
+    """
+    def __init__(self):
+        super(MiePolarized, self).__init__()
+        self._gamma = 0.0
+        self._nrank = None
+        self._wigcoef = None
+
+
+    def transform_wignerd_to_phase(self, reff_ind, phase_element, angles):
+        """TODO"""
+        phase = core.transform_wignerd_to_phase(
+            maxrank=self._maxrank,
+            nphasepol=6,
+            pelem=phase_element,
+            nrank=self._nrank[reff_ind],
+            wigcoef=self._wigcoef[...,reff_ind],
+            nangle=len(angles),
+            angle=angles)
+        return phase
+        
+        
+    def compute_table(self,
+                      num_effective_radii,
+                      start_effective_radius,
+                      end_effective_radius,
+                      max_integration_radius,
+                      log_space_reff): 
+        """
+        Compute a scattering table where for each effective radius:
+          1. Extinction-cross section per 1 unit of mass content [g/m^3](liquid water content for water clouds)  
+          2. Single scattering albedo, unitless in the range [0, 1].
+          3. Legendre expansion coefficients of the normalized scattering phase function (first coefficient is always 1.0)
+          4. Number of Legendre coefficients for each scattering phase function. 
+
+        Parameters
+        ----------
+        num_effective_radii: int
+            Number of effective radii for which to compute the table.
+        start_effective_radius: int
+            The starting (lowest) effective radius in the table.
+        end_effective_radius: int
+            The ending (highest) effective radius in the table.
+        max_integration_radius: int
+            The maximum radius for which to integrate over the size-distribution.
+            max_integration_radius > end_effective_radius.
+        log_space_reff: bool
+            True to use logarithmic spacing for the effective radius and False to use linear spacing.
+        
+        Notes
+        -----
+        Running this function may take some time.
+        """
+
+        assert None not in (self._partype, self._rindex, self._pardens,
+                            self._distflag, self._wavelen1, self._wavelen2,
+                            self._avgflag, self._deltawave, self._alpha, self._wavelencen), \
+               'Mie parameters were not set. Set them using set_parameters() setter.'
+
+        self._nretab = num_effective_radii
+        self._sretab = start_effective_radius
+        self._eretab = end_effective_radius
+        self._maxradius = max_integration_radius
+        self._logre = log_space_reff
+
+        # Calculate the maximum size parameter and the max number of Legendre terms
+        if self._avgflag == 'A':
+            xmax = 2 * np.pi * max_integration_radius / self._wavelen1
+        else:
+            xmax = 2 * np.pi * max_integration_radius / self._wavelencen
+        self._maxrank = int(np.round(2.0 * (xmax + 4.0*xmax**0.3334 + 2.0)))
+
+        print('Computing mie table...')
+        self._reff, self._extinct, self._ssalb, self._nrank, self._wigcoef = core.get_mie_table(
+            nretab=self._nretab, 
+            logre=self._logre,
+            maxrank=self._maxrank,
+            wavelen1=self._wavelen1, 
+            wavelen2=self._wavelen2, 
+            wavelencen=self._wavelencen,
+            deltawave=self._deltawave, 
+            pardens=self._pardens, 
+            sretab=self._sretab, 
+            eretab=self._eretab, 
+            alpha=self._alpha, 
+            maxradius=self._maxradius, 
+            rindex=self._rindex, 
+            partype=self._partype, 
+            avgflag=self._avgflag, 
+            distflag=self._distflag
+        )
+        
+        # A simple hack: duplicate the table for two grid points (effectinve radii). 
+        # This is because two or more grid points are requiered for interpolation. 
+        if self._nretab == 1:
+            self._reff = np.tile(self._reff, 2)
+            self._extinct = np.tile(self._extinct, 2)
+            self._ssalb = np.tile(self._ssalb, 2)
+            self._nrank = np.tile(self._nrank, 2)
+            self._wigcoef = np.tile(self._wigcoef, 2)
+            
+        self.init_intepolators()
+        
+        print('Done.')
+    
+    
+    
+    def write_table(self, file_path): 
+        """
+        Write a pre-computed table to <file_path>. 
+    
+        Parameters
+        ----------
+        file_path: str
+            Path to file.
+      
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        This function must be ran after pre-computing a scattering table with compute_table().
+        """        
+        print('Writing mie table to file: {}'.format(file_path))
+        core.write_mie_table(
+            mietabfile=file_path,
+            wavelen1=self._wavelen1, 
+            wavelen2=self._wavelen2,
+            deltawave=self._deltawave,
+            partype=self._partype,
+            pardens=self._pardens, 
+            rindex=self._rindex,
+            distflag=self._distflag,
+            alpha=self._alpha, 
+            gamma=self._gamma,
+            nretab=self._nretab,
+            sretab=self._sretab, 
+            eretab=self._eretab,             
+            reff=self._reff,
+            extinct=self._extinct,
+            ssalb=self._ssalb,
+            nrank=self._nrank,
+            wigcoef=self._wigcoef,
+            maxrank=self._maxrank,
+        )
+        print('Done.')       
+
+
+    def read_table(self, file_path): 
+        """
+        Read a pre-computed table from <file_path>. 
+    
+        Parameters
+        ----------
+        file_path: str
+            Path to file.
+    
+        Returns
+        -------
+        None
+    
+        """   
+    
+        def read_table_header(file_path):
+            assert np.genfromtxt(file_path, max_rows=1, dtype=str)[1] == 'Polarized', 'Not a polarized table format'
+            wavelen1, wavelen2, deltawave = np.genfromtxt(file_path, max_rows=1, skip_header=1, usecols=(0, 1, 2), dtype=float)
+            pardens = np.genfromtxt(file_path, max_rows=1, skip_header=2, usecols=(0), dtype=float)
+            partype = np.asscalar(np.genfromtxt(file_path, max_rows=1, skip_header=2, usecols=(1), dtype=str))
+            rindex  = np.complex(np.genfromtxt(file_path, max_rows=1, skip_header=3, usecols=(0), dtype=float), 
+                                 np.genfromtxt(file_path, max_rows=1, skip_header=3, usecols=(1), dtype=float))
+            alpha = np.genfromtxt(file_path, max_rows=1, skip_header=4, usecols=(0), dtype=float)
+    
+            distribution = np.asscalar(np.genfromtxt(file_path, max_rows=1, skip_header=4, usecols=(1), dtype=str))
+            if distribution == 'gamma':
+                distflag = 'G'
+            elif distribution == 'lognormal':
+                distflag = 'L'
+            else:
+                raise NotImplementedError('Distribution type {} not supported'.format(distibution))
+    
+            nretab = np.genfromtxt(file_path, max_rows=1, skip_header=5, usecols=(0), dtype=int)
+            sretab, eretab = np.genfromtxt(file_path, max_rows=1, skip_header=5, usecols=(1, 2), dtype=float)
+            maxrank = np.genfromtxt(file_path, max_rows=1, skip_header=6, usecols=(0), dtype=int)
+    
+            return wavelen1, wavelen2, deltawave, pardens, partype, rindex, alpha, distflag, nretab, sretab, eretab, maxrank        
+    
+    
+    
+        print('Reading mie table from file: {}'.format(file_path))
+        self._wavelen1, self._wavelen2, self._deltawave, self._pardens, \
+            self._partype, self._rindex, self._alpha, self._distflag, \
+            self._nretab, self._sretab, self._eretab, self._maxrank = read_table_header(file_path)
+    
+        self._reff, self._extinct, self._ssalb, self._nrank, self._wigcoef = \
+            core.read_mie_table(mietabfile=file_path, 
+                                nretab=self._nretab, 
+                                maxrank=self._maxrank)
+    
+        self.init_intepolators()
+        print('Done.')
+    
+           
+    @property
+    def wigcoef(self):
+        if hasattr(self, '_wigcoef'):
+            return self._wigcoef
+        else:
+            print('Mie table was not computed or loaded') 
+     
+    @property
+    def nleg(self):
+        return self._nrank
+   
+   
+    @property
+    def maxleg(self):
+        return self._maxrank      
+    
+    @property
+    def legcoef(self):
+        return self._wigcoef    
+        
+            
 class Rayleigh(object):
     """
     Rayleigh scattering for temperature profile.

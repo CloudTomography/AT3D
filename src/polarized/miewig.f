@@ -229,82 +229,6 @@ C           Calculate the first Stokes parameter scattering matrix element
       P4 = -DIMAG( DCONJG(S1)*S2 )
       RETURN
       END
- 
-
-
-
-      SUBROUTINE WIGNERFCT (X, NRANK, M, M1, DMM1)
-C      The routine computes the DMM1N vector coefficients for
-C      M >= 0, M1 >= 0,  N = 0,...,NRANK, and -1 < X= COS(BETA) < 1
-      IMPLICIT NONE
-      INTEGER  NRANK, M, M1
-      DOUBLE PRECISION  X
-      DOUBLE PRECISION  DMM1(0:NRANK)
-      INTEGER  N0, N
-      DOUBLE PRECISION  FACT1, FACT2, DMM1_N0
-
-      N0 = MAX( M, M1 )
-      DMM1 = 0.D0
-      IF (N0 .EQ. 0) THEN
-        DMM1(0) = 1.D0
-        DMM1(1) = X
-        DO N = 1, NRANK - 1
-          FACT1 = DBLE( 2 * N + 1 ) * X / DBLE( N + 1 )
-          FACT2 = DBLE( N ) / DBLE( N + 1 )
-          DMM1(N+1) = FACT1 * DMM1(N) - FACT2 * DMM1(N-1)
-        END DO
-      ELSE
-        DMM1(N0) = DMM1_N0( X, M, M1 )
-        DO N = N0, NRANK - 1
-          FACT1 = DBLE( N * (N + 1) ) * X - DBLE( M * M1  )
-          FACT1 = FACT1 / DSQRT( DBLE( (N + 1)**2 - M**2   ) )
-          FACT1 = FACT1 / DSQRT( DBLE( (N + 1)**2 - M1**2 ) )
-          FACT1 = FACT1 * DBLE( 2 * N + 1 ) / DBLE( N )
-          FACT2 = DSQRT( DBLE( N**2 - M**2   ) )  
-     .                 * DSQRT( DBLE( N**2 - M1**2 ) )
-          FACT2 = FACT2 / DSQRT( DBLE( (N + 1)**2 - M**2   ) )
-          FACT2 = FACT2 / DSQRT( DBLE( (N + 1)**2 - M1**2 ) )
-          FACT2 = FACT2 * DBLE( N + 1 ) / DBLE( N )
-          DMM1(N+1) = FACT1 * DMM1(N) - FACT2 * DMM1(N-1)
-        END DO
-      END IF
-      RETURN
-      END
-
-
-      DOUBLE PRECISION FUNCTION DMM1_N0 (X, M, M1)
-C      The routine computes the Wigner functions for
-C      M >= 0, M1 >= 0, AND N0 = MAX(M,M1)
-      IMPLICIT NONE
-      INTEGER  M, M1
-      DOUBLE PRECISION  X
-      INTEGER           P, MAXM, MINM
-      DOUBLE PRECISION  PROD, FACT, CMM1, DMM1N0
-
-      IF (M .EQ. M1) THEN
-        FACT = ((1.D0 + X)/2.D0)**M
-        DMM1N0 = FACT
-      ELSE
-        IF ( M1 .GT. M ) THEN
-          CMM1 = 1.D0
-        ELSE
-          CMM1 = (- 1.D0)**(M - M1)
-        END IF
-        MAXM = MAX(M,M1)
-        MINM = MIN(M,M1)
-        PROD = 1.D0
-        DO P = 1, MAXM - MINM
-          FACT = DSQRT( DBLE(M + M1 + P) / DBLE(P) )
-          PROD = PROD * FACT
-        END DO
-        FACT = DSQRT( ( 1.D0 - X ) / 2.D0 )
-        DMM1N0 = CMM1 * PROD * FACT**( MAXM - MINM )
-        FACT = DSQRT( ( 1.D0 + X ) / 2.D0 )
-        DMM1N0 = DMM1N0 * FACT**( MAXM + MINM )
-      END IF
-      DMM1_N0 = DMM1N0
-      RETURN
-      END
 
  
 
@@ -343,5 +267,6 @@ C      Gauss-Legendre quadrature.
 
       RETURN
       END
+
 
 
