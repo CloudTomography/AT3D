@@ -15,7 +15,7 @@
       END MODULE
 
 
-      SUBROUTINE TRILIN_INTERP_PROP (X, Y, Z, INIT, NLEG, &
+      SUBROUTINE TRILIN_INTERP_PROP (X, Y, Z, INIT, NSTLEG, NLEG, &
                      TEMP, EXTINCT, ALBEDO, LEGEN, IPHASE)
 !      Trilinearly interpolates the quantities on the input property
 !     grid at the single point (X,Y,Z) to get the output TEMP,EXTINCT,
@@ -38,7 +38,7 @@
       DOUBLE PRECISION SCAT1,SCAT2,SCAT3,SCAT4,SCAT5,SCAT6,SCAT7,SCAT8
       DOUBLE PRECISION SCATTER, MAXSCAT, KG, EXTMIN, SCATMIN
       SAVE EXTMIN, SCATMIN
-
+      
       IF (INIT) THEN
 !         If there are tabulated phase functions, then transfer them
         DO I = 1, NUMPHASE
@@ -127,6 +127,7 @@
       ELSE
         ALBEDO = SCATTER/EXTMIN
       ENDIF
+            
 !         For tabulated phase functions pick the one we are on top of
 !         or the one with the most scattering weight.
       IF (NUMPHASE .GT. 0) THEN

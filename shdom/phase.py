@@ -162,7 +162,7 @@ class TabulatedPhase(Phase):
         self._iphasep = index.data
         
         # Legenp is without the zero order term which is 1.0 for normalized phase function
-        self._legenp = legendre_table[1:].ravel(order='F')        
+        self._legenp = legendre_table[1:].ravel(order='F')    
         self._maxleg = legendre_table.shape[0] - 1
         
         # Asymetry parameter is proportional to the legendre series first coefficient 
@@ -202,6 +202,158 @@ class TabulatedPhase(Phase):
     
 
 
+class PhaseMatrix(Phase):
+    """
+    An abstract Phase Matirx object for polarized Muller matrices that is inherited by two types of Phase functions:
+      1. GridPhase: The phase function is specified at every point on the grid.
+      2. TabulatedPhase: A table of phase functions is saved with a pointer at every point on the grid.
+    
+    The TabulatedPhase is more efficient in memory and runtime.
+    """
+    def __init__(self):
+        super(PhaseMatrix, self).__init__()
+        self._type = 'AbstractPhaseMatrixObject'
+        self._nstleg = None
+        
+    @property
+    def nstleg(self):
+        return self._nstleg
+    
+    
+class GridPhaseMatrix(PhaseMatrix):
+    """
+    A GridPhaseMatrix object spefies the phase matrix (Muller) at every point in the grid. 
+    This is the equivalent of the GridData object for the phase matrix.
+    
+    Parameters
+    ----------
+    grid: Grid object
+        A Grid object of type '1D' or '3D'.
+    data: np.array
+        data contains the vector field (legendre coefficients).
+    """
+    def __init__(self, grid, data):
+        self._type = 'Grid'
+        self._data = data
+        self._grid = grid 
+        self._linear_interpolator1d = interp1d(grid.z, self.data, assume_sorted=True, copy=False, bounds_error=False, fill_value=0.0) 
+        if grid.type == '3D':
+            self._linear_interpolator3d = RegularGridInterpolator((grid.x, grid.y, grid.z), self.data.transpose([2, 3, 4, 1, 0]), bounds_error=False, fill_value=0.0)
+    
+        self._numphase = grid.num_points
+        self._iphasep = np.arange(1, grid.num_points+1, dtype=np.int32)
+        
+        # Legenp is without the zero order term which is 1.0 for normalized phase function
+        self._legenp = data.ravel(order='F')       
+        self._maxleg = data.shape[1] - 1
+        self._nstleg = data.shape[0]
+        
+        # Asymetry parameter is proportional to the legendre series first coefficient 
+        self._maxasym = data[0, 1,...].max() / 3.0
+
+
+    def __add__(self, other):
+        """Adding two GridPhaseMatrix objects by resampling to a common grid and padding with zeros to the larger legendre series."""
+        assert other.__class__ is GridPhaseMatrix, 'Only GridPhaseMatrix can be added to GridPhaseMatrix object'
+        assert self.nstleg == other.nstleg, 'Different number of stokes parameters.'
+        grid = self.grid + other.grid
+        self_data = self.resample(grid)
+        other_data = other.resample(grid)
+        depth_diff = self.maxleg - other.maxleg
+        if depth_diff > 0:
+            data = self_data + np.pad(other_data, ((0,0), (0, depth_diff), (0, 0), (0, 0), (0, 0)), 'constant')
+        elif depth_diff < 0:
+            data = other_data + np.pad(self_data, ((0,0), (0, -depth_diff), (0, 0), (0, 0), (0, 0)), 'constant')
+        return GridPhaseMatrix(grid, data)
+
+    
+    def __mul__(self, other):
+        """Multiplying a GridPhaseMatrix objects by a GridData object."""
+        assert other.__class__ is GridData, 'Only scalar field (GridData) can multiply a GridPhaseMatrix object'
+        assert self.nstleg == other.nstleg, 'Different number of stokes parameters.'
+        grid = self.grid + other.grid
+        other_data = other.resample(grid)
+        data = self.resample(grid) * other_data[np.newaxis, np.newaxis, ...]  
+        return GridPhaseMatrix(grid, data)
+    
+    
+    def __div__(self, other):  
+        """Dividing a GridPhaseMatrix objects by a GridData object."""
+        assert other.__class__ is GridData, 'Only scalar field (GridData) can divide a GridPhaseMatrix object'
+        assert self.nstleg == other.nstleg, 'Different number of stokes parameters.'
+        grid = self.grid + other.grid
+        other_data = other.resample(grid)        
+        data = self.resample(grid) / other_data[np.newaxis, np.newaxis, ...] 
+        return GridPhaseMatrix(grid, data)     
+    
+    
+    def resample(self, grid):
+        """Resample data to a new Grid."""
+        if self.grid.type == '1D':
+            if np.array_equiv(self.grid.z, grid.z):
+                return self.data
+            data = self._linear_interpolator1d(grid.z)
+        else:
+            if self.grid == grid:
+                return self.data
+            data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1)).transpose([4, 3, 0, 1, 2])
+        return data
+
+
+    
+class TabulatedPhaseMatrix(PhaseMatrix):
+    """
+    The TabulatedPhase internally keeps a phase function table and a pointer array for each grid point.
+    This could potentially be more efficient than GridPhase in memory and computation if the number of table entery is much smaller than number of grid points.
+    
+    Parameters
+    ----------
+    legendre_table: np.array(shape=(nleg, numphase), dtype=np.float32)
+       The Legendre table.
+    index: GridData object
+       A GridData object with dtype=int. This is a pointer to the enteries in the legendre_table.
+    """
+    def __init__(self, legendre_table, index):
+        self._type = 'Tabulated'
+        self._legendre_table = np.array(legendre_table, dtype=np.float32)
+        self._index = index
+        self._grid = index.grid
+        self._nstleg = legendre_table.shape[0]
+        self._numphase = legendre_table.shape[2]
+        self._iphasep = index.data
+        
+        # Legenp is without the zero order term which is 1.0 for normalized phase function
+        self._legenp = legendre_table.ravel(order='F')        
+        self._maxleg = legendre_table.shape[1] - 1
+        
+        # Asymetry parameter is proportional to the legendre series first coefficient 
+        self._maxasym = legendre_table[0, 1].max() / 3.0
+
+    
+    def add_ambient(self, other):
+        """
+        Adding an ambient medium means that the AmientMedium will only `fill the holes`. 
+        This is an approximation which speeds up computations.
+        """
+        # Join the two tables
+        assert self.nstleg == other.nstleg, 'Different number of stokes parameters.'
+        self_legendre_table = self.legendre_table
+        other_legendre_table = other.legendre_table
+        if self.maxleg > other.maxleg:
+            other_legendre_table = np.pad(other_legendre_table, ((0,0), (0, self.maxleg - other.maxleg), (0, 0)), 'constant')
+        elif other.maxleg > self.maxleg:
+            self_legendre_table = np.pad(self_legendre_table, ((0,0), (0, other.maxleg - self.maxleg), (0, 0)), 'constant')
+        legendre_table = np.concatenate((other_legendre_table, self_legendre_table), axis=2)        
+        
+        # Join the indices
+        grid = self.grid + other.grid 
+        self_index = self.index.resample(grid, method='nearest')
+        other_index = other.index.resample(grid, method='nearest')
+        self_index[self_index>0] += other_index.max()
+        self_index[self_index==0] = (self_index + other_index)[self_index==0]
+        index = GridData(grid, self_index.astype(np.int32))
+        return TabulatedPhaseMatrix(legendre_table, index)     
+    
             
             
 class Mie(object):
@@ -758,7 +910,49 @@ class MiePolarized(Mie):
             angle=angles)
         return phase
         
-        
+    
+    def get_tabulated_phase(self, reff):
+        """
+        Interpolate the phase function for an effective radius grid.
+    
+        Parameters
+        ----------
+        reff: float
+            The effective radius for which to retrieve the phase function [microns].
+            
+        Returns
+        -------
+        phase: TabulatedPhase
+            A Phase object containting the phase function legendre coeffiecients as a table.
+        """   
+        maxleg = self.nleg.max()
+        phase_table = self.legcoef[:maxleg, :]
+        index_data = self._legen_index_interpolator(reff.data).astype(np.int32)
+        index = GridData(reff.grid, index_data)
+        phase = TabulatedPhaseMatrix(phase_table, index)        
+        return phase    
+
+
+    def get_grid_phase(self, reff):
+        """
+        Interpolate the phase function for an effective radius grid.
+    
+        Parameters
+        ----------
+        reff: float
+            The effective radius for which to retrieve the phase function [microns].
+            
+        Returns
+        -------
+        phase: GridPhase
+            A Phase object containting the phase function legendre coeffiecients on a 3D grid
+        """   
+        maxleg = self._nleg_interpolator(reff.data).max().astype(np.int)
+        phase_data = self._legcoef_interpolator(reff.data)[:maxleg + 1,...]
+        phase = GridPhaseMatrix(reff.grid, phase_data) 
+        return phase
+    
+    
     def compute_table(self,
                       num_effective_radii,
                       start_effective_radius,

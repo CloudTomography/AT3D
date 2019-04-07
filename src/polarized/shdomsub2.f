@@ -325,6 +325,7 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .          (GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP), 
      .           .FALSE., NSTLEG, NLEG, TEMP(IP), EXTINCT(IP),
      .            ALBEDO(IP), LEGEN(1,0,IP), IPHASE(IP))
+      
       ENDDO 
       RETURN
       END
@@ -389,7 +390,7 @@ C       TEMP array is unchanged.
       REAL    F, BB
 
       ALBMAX = 0.0 
-
+      
       IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
         DO IPH = 1, NUMPHASE
           F = LEGEN(1,ML+1,IPH)

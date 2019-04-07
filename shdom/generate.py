@@ -289,8 +289,7 @@ class SingleVoxel(Generator):
 class Homogeneous(Generator):
     """
     Define a homogeneous Medium. 
-    A cloud mask can be provided so that the medium is only homogeneous inside the cloud volume.
-    
+
     Parameters
     ----------
     args: arguments from argparse.ArgumentParser()
@@ -356,7 +355,35 @@ class Homogeneous(Generator):
         
         reff_data = np.full(shape=(self.grid.nx, self.grid.ny, self.grid.nz), fill_value=self.args.reff, dtype=np.float32)        
         self._reff = shdom.GridData(self.grid, reff_data)
+        self._phase = mie.get_grid_phase(self._reff)
+        
             
+class HomogeneousPolarized(Homogeneous):
+    """
+    Define a homogeneous Medium with Polarized Mie phase function. 
+   
+    
+    Parameters
+    ----------
+    args: arguments from argparse.ArgumentParser()
+        The arguments requiered for this generator.    
+    """
+    
+    def __init__(self, args):
+        super(HomogeneousPolarized, self).__init__(args)
+        
+    def init_phase(self):
+        mie = shdom.MiePolarized()
+        if self.args.mie_table_path:
+            mie.read_table(self.args.mie_table_path)
+        else:
+            mie.set_parameters((self.args.wavelength, self.args.wavelength), 'Water', 'gamma', 7.0)
+            mie.compute_table(1, self.args.reff, self.args.reff, 65.0)   
+        
+        reff_data = np.full(shape=(self.grid.nx, self.grid.ny, self.grid.nz), fill_value=self.args.reff, dtype=np.float32)        
+        self._reff = shdom.GridData(self.grid, reff_data)
+        self._phase = mie.get_tabulated_phase(self._reff)
+        
 class LesFile(Generator):
     """
     Generate an optical medium from an LES file which contains

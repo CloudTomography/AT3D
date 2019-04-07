@@ -641,7 +641,7 @@ class RteSolver(object):
         self._pa.extdirp = np.empty(shape=(self._maxpg,), dtype=np.float32, order='F')
         self._work = np.empty(shape=(self._maxido,), dtype=np.float32, order='F')
         self._work1 = np.empty(shape=(8*self._maxig,), dtype=np.int32, order='F')
-        self._work2 = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')        
+        self._work2 = np.empty(shape=(self._maxig), dtype=np.float32, order='F')        
         
            
     def solve(self, maxiter, verbose=True):
@@ -759,4 +759,287 @@ class RteSolver(object):
     def info(self):
         return self._scene_parameters.info + os.linesep + self._numerical_parameters.info
     
+    
+    
+class RteSolverPolarized(RteSolver):
+    """
+    Polarized Radiative Trasnfer solver object. 
+    This object contains the interface to SHDOM internal structures and methods.
+    To solve the RTE:
+      1. Set the solver parameters with RteSolverPolarized.set_parameters(scene_parameters, numerical_parameters)
+      2. Attach the solver to a medium object RteSolverPolarized.init_medium(Medium)
+      3. Run solution iterations with RteSolverPolarized.solve(maxiter)
+    
+    Parameters
+    ----------
+    num_stokes: int
+        The number of stokes for which to solve the RTE can be 1, 3, or 4. 
+        num_stokes=1 means unpolarized.
+        num_stokes=3 means linear polarization.
+        num_stokes=4 means full polarization.
+        
+    Notes
+    -----
+    k-distribution not supported.
+    """
+    
+    def __init__(self, num_stokes, scene_params=None, numerical_params=None):
+        super(RteSolverPolarized, self).__init__(scene_params, numerical_params)
+        
+        assert num_stokes in [1, 3, 4], 'num_stokes should be {1, 3, 4}'
+        self._nstokes = num_stokes
+        
+        
+    
+
+    def set_phase(self, phase):
+        """
+        set the phase function internal SHDOM parameters
+        
+        Parameters
+        ----------
+        phase: shdom.Phase
+          TabulatedPhase or GridPhase object.
+            
+        """
+        self._pa.iphasep = phase.iphasep.ravel()
+        self._pa.numphase = phase.numphase          
+        self._maxleg = phase.maxleg 
+        self._nleg = phase.maxleg
+        
+        # Legenp is without the zero order term which is 1.0 for normalized phase function
+        self._pa.legenp = phase.legenp
+        self._maxasym = phase.maxasym
+        self._maxpgl = phase.grid.num_points * phase.maxleg         
+
+        if phase.numphase > 0:
+            self._maxigl = phase.numphase*(phase.maxleg + 1)
+        else:
+            self._maxigl = self._maxig*(phase.maxleg + 1)
+    
+        self._iphase = np.empty(shape=(self._maxig,), dtype=np.int32, order='F')
+        self._legen = np.empty(shape=(phase.nstleg, self._maxigl,), dtype=np.float32, order='F')        
+
+        if self._nstokes == 1:
+            self._nstleg = 1
+        else:
+            self._nstleg = phase.nstleg
+           
+
+
+    def init_memory(self):
+        """A utility function to initialize internal memory structures and parameters."""
+        
+        # Make ml and mm from nmu and nphi
+        # ML is the maximum meridional mode, MM is the maximum azimuthal mode,
+        # and NCS is the azimuthal mode flag (|NCS|=1 for cosine only, |NCS|=2 for 
+        # sines and cosines).
+        # nphi0max: The maximum number of azimuth angles actually used;
+        # for NCS=1 (cosine modes only) NPHI0=INT((NPHI+2)/2),
+        # otherwise NPHI0=NPHI.
+        self._ncs = 2
+        self._ml = self._nmu - 1
+        self._mm = max(0, int(self._nphi / 2) - 1)
+        self._nlm = (2 * self._mm + 1) * (self._ml + 1) - self._mm * (self._mm + 1)
+    
+        self._nphi0max = self._nphi
+        self._memword = self._nmu*(2 + 2 * self._nphi + 2 * self._nlm + 2 * 33 *32)
+    
+        # Guess maximum number of grid points, cells, SH vector size needed
+        # but don't let MAX_TOTAL_MB be exceeded
+        if self._max_total_mb*1024**2 > 1.75*sys.maxsize:
+            self._max_total_mb > 1.75*sys.maxsize/1024**2 
+            print 'MAX_TOTAL_MB reduced to fit memory model: ', self._max_total_mb
+    
+        if self._splitacc < 0.0:
+            self._adapt_grid_factor = 1.0
+    
+        self._big_arrays = 3
+        if not self._accelflag:
+            self._big_arrays = 2        
+    
+        wantmem = self._adapt_grid_factor * self._nbpts * (
+            28 + 16.5 * self._cell_to_point_ratio + \
+            self._nphi0max*self._nstokes + self._num_sh_term_factor*self._nstokes*self._nlm*self._big_arrays)                
+    
+        REDUCE = min(1.0, ((self._max_total_mb * 1024**2) / 4 - self._memword) / wantmem)
+        self._adapt_grid_factor *= REDUCE
+        assert self._adapt_grid_factor > 1.0, 'max_total_mb memory limit exceeded with just base grid.'
+    
+        if REDUCE < 1.0:
+            print 'adapt_grid_factor reduced to ', self._adapt_grid_factor
+    
+        wantmem *= REDUCE
+        assert wantmem < sys.maxsize, 'number of words of memory exceeds max integer size: %d'% wantmem
+        self._maxig = int(self._adapt_grid_factor*self._nbpts)
+        self._maxic = int(self._cell_to_point_ratio*self._maxig)
+        self._maxiv = int(self._num_sh_term_factor*self._nlm*self._maxig)
+        self._maxido = self._maxig*self._nphi0max
+    
+        assert 4.0*(self._maxiv+self._maxig)*self._nstokes < sys.maxsize, 'size of big sh arrays (maxiv) probably exceeds max integer number of bytes: %d' % self._maxiv
+        assert 4.0*8.0*self._maxic <= sys.maxsize, 'size of gridptr array (8*maxic) probably exceeds max integer number of bytes: %d' % 8*self._maxic
+    
+        self._maxnbc = int(self._maxig*3/self._nz)
+        self._maxsfcpars = 4
+        if self._sfctype.endswith('L'):
+            self._maxbcrad = 2*self._maxnbc
+        else:
+            self._maxbcrad = int((2+self._nmu*self._nphi0max/2)*self._maxnbc)
+    
+        self._sfcgridparms = np.empty(self._maxsfcpars*self._maxnbc,dtype=np.float32)               
+        self._bcptr = np.empty(shape=(self._maxnbc, 2), dtype=np.int32, order='F')
+        self._bcrad = np.empty(shape=(self._nstokes,self._maxbcrad), dtype=np.float32, order='F')
+
+        # Array allocation
+        self._extinct = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
+        self._albedo = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
+        self._mu = np.empty(shape=(self._nmu,), dtype=np.float32, order='F')
+        self._wtdo = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
+        self._phi = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
+        self._phi0 = np.empty(shape=(self._nmu,), dtype=np.int32, order='F')
+        self._cmu1 = np.empty(shape=(self._nlm*self._nmu,), dtype=np.float32, order='F')
+        self._cmu2 = np.empty(shape=(self._nlm*self._nmu,), dtype=np.float32, order='F')
+        self._cphi1 = np.empty(shape=(33*32*self._nmu,), dtype=np.float32, order='F')
+        self._cphi2 = np.empty(shape=(33*32*self._nmu,), dtype=np.float32, order='F')
+        self._temp = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
+        self._planck = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
+        self._gridptr = np.empty(shape=(8, self._maxic), dtype=np.int32, order='F')
+        self._neighptr = np.empty(shape=(6, self._maxic), dtype=np.int32, order='F')
+        self._treeptr = np.empty(shape=(2, self._maxic), dtype=np.int32, order='F')
+        self._cellflags = np.empty(shape=(self._maxic,), dtype=np.int16, order='F')
+        self._gridpos = np.empty(shape=(3, self._maxig), dtype=np.float32, order='F')
+        self._rshptr = np.empty(shape=(self._maxig+2,), dtype=np.int32, order='F')
+        self._shptr = np.empty(shape=(self._maxig+1,), dtype=np.int32, order='F')
+        self._oshptr = np.empty(shape=(self._maxig+1,), dtype=np.int32, order='F')
+        self._radiance = np.empty(shape=(self._nstokes, self._maxiv+self._maxig), dtype=np.float32, order='F')
+        self._source = np.empty(shape=(self._nstokes, self._maxiv), dtype=np.float32, order='F')
+        self._delsource = np.empty(shape=(self._nstokes, self._maxiv), dtype=np.float32, order='F')
+        self._fluxes = np.empty(shape=(2, self._maxig,), dtype=np.float32, order='F')
+        self._fluxes1 = np.empty(shape=(4, self._maxig,), dtype=np.float32, order='F')
+        self._dirflux = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
+        self._pa.extdirp = np.empty(shape=(self._maxpg,), dtype=np.float32, order='F')
+        self._work = np.empty(shape=(self._nstokes*self._maxido,), dtype=np.float32, order='F')
+        self._work1 = np.empty(shape=(8*self._maxig,), dtype=np.int32, order='F')
+        self._work2 = np.empty(shape=(self._nstokes*self._maxig), dtype=np.float32, order='F')        
+        
+           
+    def solve(self, maxiter, verbose=True):
+        """
+        Main solver routine.
+
+        Performs the SHDOM solution procedure.
+
+        Parameters
+        ----------
+        maxiter: integer
+            Maximum number of iterations for the iterative solution.
+            
+        Returns
+        -------
+        None
+
+        Notes
+        -----
+        inradflag=True not supported.
+        """
+        
+        inradflag=False
+        
+        self._nang, self._nphi0, self._mu, self._phi, self._wtdo, self._sfcgridparms, self._solcrit, \
+            self._iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
+            self._ntoppts, self._nbotpts, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
+            self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr,\
+            self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun = \
+            core.solve_rte(
+                nstokes=self._nstokes,
+                nstleg=self._nstleg,
+                nx=self._nx,
+                ny=self._ny,
+                nx1=self._nx1,
+                ny1=self._ny1,
+                nz=self._nz,
+                ml=self._ml,
+                mm=self._mm,
+                ncs=self._ncs,
+                nlm=self._nlm,
+                nmu=self._nmu,
+                nphi=self._nphi,
+                numphase=self._pa.numphase,
+                mu=self._mu,
+                phi=self._phi,
+                wtdo=self._wtdo,
+                inradflag=inradflag,
+                bcflag=self._bcflag,
+                ipflag=self._ipflag,
+                deltam=self._deltam,
+                srctype=self._srctype,
+                highorderrad=self._highorderrad,
+                solarflux=self._solarflux,
+                solarmu=self._solarmu,
+                solaraz=self._solaraz,
+                skyrad=self._skyrad,
+                sfctype=self._sfctype,
+                gndtemp=self._gndtemp,
+                gndalbedo=self._gndalbedo,
+                nxsfc=self._nxsfc,
+                nysfc=self._nysfc,
+                delxsfc=self._delxsfc,
+                delysfc=self._delysfc,
+                nsfcpar=self._nsfcpar,
+                sfcparms=self._sfcparms,
+                sfcgridparms=self._sfcgridparms,
+                units=self._units,
+                waveno=self._waveno,
+                wavelen=self._wavelen,
+                accelflag=self._accelflag,
+                solacc=self._solacc,
+                maxiter=maxiter,
+                splitacc=self._splitacc,
+                shacc=self._shacc,
+                xgrid=self._xgrid,
+                ygrid=self._ygrid,
+                zgrid=self._zgrid,
+                temp=self._temp,
+                planck=self._planck,
+                iphase=self._iphase,
+                maxbcrad=self._maxbcrad,
+                bcptr=self._bcptr,
+                bcrad=self._bcrad,
+                cmu1=self._cmu1,
+                cmu2=self._cmu2,
+                cphi1=self._cphi1,
+                cphi2=self._cphi2,
+                npts=self._npts,
+                gridpos=self._gridpos,
+                ncells=self._ncells,
+                gridptr=self._gridptr,
+                neighptr=self._neighptr,
+                treeptr=self._treeptr,
+                cellflags=self._cellflags,
+                rshptr=self._rshptr,
+                shptr=self._shptr,
+                oshptr=self._oshptr,
+                work=self._work,
+                work1=self._work1,
+                work2=self._work2,
+                source=self._source,
+                delsource=self._delsource,
+                radiance=self._radiance,
+                fluxes=self._fluxes,
+                dirflux=self._dirflux,
+                nleg=self._nleg,
+                maxiv=self._maxiv,
+                maxic=self._maxic,
+                maxig=self._maxig,
+                maxido=self._maxido,
+                verbose=verbose
+            )        
+    
+    @property
+    def num_iterations(self):
+        return self._iters
+    
+    @property
+    def info(self):
+        return self._scene_parameters.info + os.linesep + self._numerical_parameters.info
     

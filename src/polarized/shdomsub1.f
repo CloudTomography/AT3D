@@ -34,10 +34,7 @@ Cf2py intent(out) :: NANG
 Cf2py intent(in) :: MAXITER, BCFLAG, IPFLAG
 Cf2py intent(out) :: NPHI0, ITER
       INTEGER MAXIV, MAXIC, MAXIG, MAXIDO
-Cf2py intent(in) :: MAXIG
-Cf2py integer intent(hide), depend(SOURCE) :: MAXIV=len(SOURCE)
-Cf2py integer intent(hide), depend(CELLFLAGS) :: MAXIC=len(CELLFLAGS)
-Cf2py integer intent(hide), depend(WORK) :: MAXIDO=len(WORK)
+Cf2py intent(in) :: MAXIV, MAXIC, MAXIG, MAXIDO
       INTEGER MAXNBC, MAXBCRAD, NTOPPTS, NBOTPTS, BCPTR(MAXNBC,2)
 Cf2py intent(out) :: NTOPPTS, NBOTPTS
 Cf2py intent(in) :: MAXBCRAD, BCPTR
@@ -174,8 +171,8 @@ C             base grid points
      .                  *(NY+IBITS(BCFLAG,1,1)-IBITS(BCFLAG,3,1))
         CALL INTERP_RADIANCE (NSTOKES, NBPTS, NPTS, RSHPTR, RADIANCE,
      .             NBCELLS, NCELLS, TREEPTR, GRIDPTR, GRIDPOS)
-C           Initialize the source function from the radiance field
-        CALL COMPUTE_SOURCE (NSTOKES, ML,MM, NLM, 
+C           Initialize the source function from the radiance field        
+        CALL COMPUTE_SOURCE (NSTOKES, ML, MM, NLM, 
      .         NSTLEG, NLEG, NUMPHASE, NPTS,
      .         FIXSH, SRCTYPE, SOLARMU, YLMSUN, ALBEDO, LEGEN, 
      .         IPHASE, PLANCK, DIRFLUX, SHACC,
@@ -326,8 +323,8 @@ C             discrete ordinates.
 C            Compute the source function from the radiance field,
 C              do the adaptive spherical harmonics truncation, compute 
 C              the solution criterion, and dot products for acceleration.
-        IF (SOLCRIT .LT. ENDADAPTSOL .OR. ITER .GT. 30)  FIXSH = .TRUE.
-        CALL COMPUTE_SOURCE (NSTOKES, ML,MM,  NLM,
+        IF (SOLCRIT .LT. ENDADAPTSOL .OR. ITER .GT. 30)  FIXSH = .TRUE.       
+        CALL COMPUTE_SOURCE (NSTOKES, ML, MM, NLM,
      .         NSTLEG, NLEG, NUMPHASE, NPTS,
      .         FIXSH, SRCTYPE, SOLARMU, YLMSUN, ALBEDO, LEGEN,
      .         IPHASE, PLANCK, DIRFLUX, SHACC,
@@ -749,7 +746,7 @@ C     unless HIGHORDERRAD is on, in which case all terms are kept.
       IMPLICIT NONE
       INTEGER NPTS, NSTOKES, ML, MM, NSTLEG,NLEG, NUMPHASE, MAXIR
       INTEGER SHPTR(NPTS+1), RSHPTR(NPTS+2)
-      INTEGER*2 IPHASE(NPTS)
+      INTEGER IPHASE(NPTS)
       LOGICAL HIGHORDERRAD, FIXSH
       REAL    ALBEDO(NPTS), LEGEN(NSTLEG,0:NLEG,*), RADIANCE(NSTOKES,*)
       REAL    SHACC
