@@ -193,7 +193,7 @@ class AmbientMedium(Medium):
             albedo = (self.albedo*self.extinction + other.albedo*other.extinction) / extinction
             medium = AmbientMedium()
             medium.set_optical_properties(extinction, albedo, self.phase)
-        elif other.type == medium:
+        elif other.type == 'Medium':
             medium = other + self
         else:
             raise NotImplementedError

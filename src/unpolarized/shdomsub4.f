@@ -172,7 +172,7 @@ C             Extrapolate ray to domain top if above
       
       
       
-      SUBROUTINE RAYLEIGH_EXTINCT (NZT, ZLEVELS,TEMP, RAYLCOEF, EXTRAYL)
+      SUBROUTINE RAYLEIGH_EXTINCT (NZT, ZLEVELS,TEMP, RAYSFCPRES, RAYLCOEF, EXTRAYL)
 C       Computes the molecular Rayleigh extinction profile EXTRAYL [/km]
 C     from the temperature profile TEMP [K] at ZLEVELS [km].  Assumes
 C     a linear lapse rate between levels to compute the pressure at
@@ -181,15 +181,15 @@ C     density, with the coefficient RAYLCOEF in [K/(mb km)].
       IMPLICIT NONE
       INTEGER NZT
 Cf2py intent(in) :: NZT
-      REAL    ZLEVELS(NZT), TEMP(NZT), RAYLCOEF, EXTRAYL(NZT)
-Cf2py intent(in) :: ZLEVELS, TEMP, RAYLCOEF
+      REAL    ZLEVELS(NZT), TEMP(NZT), RAYSFCPRES, RAYLCOEF, EXTRAYL(NZT)
+Cf2py intent(in) :: ZLEVELS, TEMP, RAYSFCPRES, RAYLCOEF
 Cf2py intent(out) :: EXTRAYL
       INTEGER I
       REAL    PRES, LAPSE, TS, DZ
 
 C           Find surface pressure by integrating hydrostatic relation
 C           for a dry atmosphere up to surface height.
-      PRES = 1013.
+      PRES = RAYSFCPRES
       TS = TEMP(1)
       LAPSE = 6.5*0.001
       PRES = PRES*(TS/(TS+LAPSE*ZLEVELS(1)*1000.))**(9.8/(287.*LAPSE))

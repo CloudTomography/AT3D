@@ -325,7 +325,6 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .          (GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP), 
      .           .FALSE., NSTLEG, NLEG, TEMP(IP), EXTINCT(IP),
      .            ALBEDO(IP), LEGEN(1,0,IP), IPHASE(IP))
-      
       ENDDO 
       RETURN
       END
@@ -1885,7 +1884,7 @@ C         to calculate the Stokes radiance vector for this pixel
      .                       MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD, 
      .                       SFCTYPE, NSFCPAR, SFCGRIDPARMS,
      .                       MU2, PHI2, X0,Y0,Z0, 
-     .                     XE,YE,ZE, SIDE, TRANSMIT, VISRAD, VALIDRAD)
+     .                       XE,YE,ZE, SIDE, TRANSMIT, VISRAD, VALIDRAD)
 900     CONTINUE
 c        WRITE (6,'(1X,2F8.4,1X,2F11.7,4(1X,F11.6))') 
 c     .         X0,Y0,MURAY,PHIRAY,VISRAD(:)
@@ -2024,6 +2023,7 @@ C          direction my interpolating in scattering angle in the PHASETAB
 C          table and then rotating the Q/U polarization to the outgoing plane.
         COSSCAT = SOLARMU*MU2 + SQRT((1.0-SOLARMU**2)*(1.0-MU2**2))
      .                  *COS(SOLARAZ-PHI2)
+        COSSCAT = MAX(MIN(1.0D0, COSSCAT), -1.0D0)
         IF (NUMPHASE .GT. 0) THEN
           ALLOCATE (SINGSCAT(NSTOKES,NUMPHASE))
           F = (NSCATANGLE-1)*(ACOS(COSSCAT)/PI) + 1
@@ -2045,7 +2045,6 @@ C          table and then rotating the Q/U polarization to the outgoing plane.
           ENDDO
         ENDIF
       ENDIF
-
 C         Make the ray direction (opposite to the outgoing direction)
       CX = SQRT(1.0D0-MU2**2)*COS(PHI2-PI)
       CY = SQRT(1.0D0-MU2**2)*SIN(PHI2-PI)
@@ -2068,7 +2067,6 @@ C         Make the ray direction (opposite to the outgoing direction)
         CZ = 0.0
         CZINV = 1.0E6
       ENDIF
-
 C         Setup for the ray path direction
       IF (CX .LT. 0.0) THEN
         BITX = 1
@@ -2102,7 +2100,6 @@ c      print '(A,5(1X,F8.5),1X,I6)',
 c     .     'INTEGRATE_1RAY:',X0,Y0,Z0,MU2,PHI2,ICELL
       IFACE = 0
       NGRID = 0
-
 C         Loop until reach a Z boundary or transmission is very small
       VALIDRAD = .FALSE.
       DO WHILE (.NOT. VALIDRAD .AND. ICELL .GT. 0)
@@ -2140,7 +2137,6 @@ C         Compute the source function times extinction in direction (MU2,PHI2)
      .             DONETHIS, OLDIPTS, OEXTINCT8, OSRCEXT8, 
      .             EXTINCT8, SRCEXT8)
         ENDIF
-
 C         Interpolate the source and extinction to the current point
         IPT1 = GRIDPTR(1,ICELL)
         IPT2 = GRIDPTR(8,ICELL)
@@ -2206,7 +2202,6 @@ C             (always need to deal with the cell that is wrapped)
         XN = XE + SO*CX
         YN = YE + SO*CY
         ZN = ZE + SO*CZ
-
 C           Find the optical path across the grid cell and figure how
 C             many subgrid intervals to use
         U = (XN-GRIDPOS(1,IPT1))*INVDELX
@@ -2262,8 +2257,6 @@ C                 Linear extinction, linear source*extinction, to second order
           SRCEXT1(:) = SRCEXT0(:)
 C                End of sub grid cell loop
         ENDDO
-
-
 C               Get the intersection face number (i.e. neighptr index)
         IF (SOX .LE. SOZ .AND. SOX .LE. SOY) THEN
           IFACE = 2-BITX
@@ -2304,7 +2297,6 @@ C           Get the location coordinate
             ZN = GRIDPOS(3,GRIDPTR(IOCT,INEXTCELL))
           ENDIF
         ENDIF
-
 C           If the transmission is greater than zero and not at a 
 C             boundary then prepare for next cell
         IF (TRANSMIT .LT. TRANSCUT .OR. NGRID.GT.MAXCELLSCROSS) THEN
@@ -2326,11 +2318,9 @@ C             boundary then prepare for next cell
         XE = XN
         YE = YN
         ZE = ZN
-
       ENDDO
 
       SIDE = IFACE
-
       IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
         IF (NUMPHASE .GT. 0) THEN
           DEALLOCATE (SINGSCAT)
@@ -2339,6 +2329,7 @@ C             boundary then prepare for next cell
         ENDIF
       ENDIF
       DEALLOCATE (YLMDIR)
+      
       RETURN
       END
 

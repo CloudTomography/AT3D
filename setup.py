@@ -58,6 +58,7 @@ if POLARIZED_SHDOM:
                              'polarized/shdomsub1.f',
                              'polarized/shdomsub2.f',
                              'polarized/shdomsub3.f',
+                             'polarized/shdomsub4.f',
                              'polarized/make_mie_table.f90', 
                              'polarized/miewig.f',
                              'polarized/indexwatice.f'])
@@ -100,7 +101,8 @@ F2PY_CORE_API = [
 ]
 
 if POLARIZED_SHDOM:
-    F2PY_CORE_API.append('transform_wignerd_to_phase')
+    F2PY_CORE_API.extend(['transform_wignerd_to_phase',
+                          'rayleigh_phase_function'])
 
 
 def uniq_arr(arr):

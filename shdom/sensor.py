@@ -177,7 +177,7 @@ class Sensor(object):
             bcrad=rte_solver._bcrad,
             extinct=rte_solver._extinct,
             albedo=rte_solver._albedo,
-            legen=rte_solver._legen.reshape(rte_solver._nleg+1, -1),            
+            legen=rte_solver._legen,            
             dirflux=rte_solver._dirflux,
             fluxes=rte_solver._fluxes,
             source=rte_solver._source,          
@@ -785,3 +785,154 @@ class PerspectiveMonochromeSensor(ProjectiveMonochromeSensor):
     @property
     def position(self):
         return self._position
+
+
+
+class SensorPolarized(Sensor):
+    """TODO"""
+    def __init__(self):
+        super(SensorPolarized, self).__init__()
+        self._type = 'SensorPolarized'
+    
+    def render(self, rte_solver):
+        """
+        TODO
+        
+        Parameters
+        ----------
+        rte_solver: shdom.RteSolver object
+            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
+        
+        Returns
+        -------
+        stokes: np.array(shape=(nstokes, sensor.npix), dtype=np.float)
+            The rendered radiances.
+        """
+        
+        maxscatang = 721
+        nscatangle = max(36, min(maxscatang, 2*rte_solver._nleg))
+        nstphase = min(rte_solver._nstleg, 2)
+        stokes, dolp, aolp, docp = core.render(
+            nscatangle=nscatangle,
+            nstphase=nstphase,
+            nstokes=rte_solver._nstokes,
+            nstleg=rte_solver._nstleg,
+            camx=self.x,
+            camy=self.y,
+            camz=self.z,
+            cammu=self.mu,
+            camphi=self.phi,
+            npix=self.npix,             
+            nx=rte_solver._nx,
+            ny=rte_solver._ny,
+            nz=rte_solver._nz,
+            bcflag=rte_solver._bcflag,
+            ipflag=rte_solver._ipflag,   
+            npts=rte_solver._npts,
+            ncells=rte_solver._ncells,
+            ml=rte_solver._ml,
+            mm=rte_solver._mm,
+            nlm=rte_solver._nlm,
+            numphase=rte_solver._pa.numphase,
+            nmu=rte_solver._nmu,
+            nphi0max=rte_solver._nphi0max,
+            nphi0=rte_solver._nphi0,
+            maxnbc=rte_solver._maxnbc,
+            ntoppts=rte_solver._ntoppts,
+            nbotpts=rte_solver._nbotpts,
+            nsfcpar=rte_solver._nsfcpar,
+            gridptr=rte_solver._gridptr,
+            neighptr=rte_solver._neighptr,
+            treeptr=rte_solver._treeptr,             
+            shptr=rte_solver._shptr,
+            bcptr=rte_solver._bcptr,
+            cellflags=rte_solver._cellflags,
+            iphase=rte_solver._iphase,
+            deltam=rte_solver._deltam,
+            solarmu=rte_solver._solarmu,
+            solaraz=rte_solver._solaraz,
+            gndtemp=rte_solver._gndtemp,
+            gndalbedo=rte_solver._gndalbedo,
+            skyrad=rte_solver._skyrad,
+            waveno=rte_solver._waveno,
+            wavelen=rte_solver._wavelen,
+            mu=rte_solver._mu,
+            phi=rte_solver._phi.reshape(rte_solver._nmu, -1),
+            wtdo=rte_solver._wtdo.reshape(rte_solver._nmu, -1),
+            xgrid=rte_solver._xgrid,
+            ygrid=rte_solver._ygrid,
+            zgrid=rte_solver._zgrid,
+            gridpos=rte_solver._gridpos,
+            sfcgridparms=rte_solver._sfcgridparms,
+            bcrad=rte_solver._bcrad,
+            extinct=rte_solver._extinct,
+            albedo=rte_solver._albedo,
+            legen=rte_solver._legen,            
+            dirflux=rte_solver._dirflux,
+            fluxes=rte_solver._fluxes,
+            source=rte_solver._source,          
+            srctype=rte_solver._srctype,
+            sfctype=rte_solver._sfctype,
+            units=rte_solver._units
+        )
+        return stokes, dolp, aolp, docp
+    
+        
+        
+class PrincipalPlaneSensorPolarized(SensorPolarized):
+    """TODO"""
+    def __init__(self, wavelength, source, x, y, z, resolution=1.0):
+        super(PrincipalPlaneSensorPolarized, self).__init__()
+        self._type = 'PrincipalPlaneSensorPolarized'
+        
+        self._angles = np.arange(-89.0, 89.0, resolution)
+        self._npix = len(self._angles)
+        self._x = np.full(self.npix, x, dtype=np.float32)
+        self._y = np.full(self.npix, y, dtype=np.float32)
+        self._z = np.full(self.npix, z, dtype=np.float32)
+        self._mu = (np.cos(np.deg2rad(self._angles))).astype(np.float64)
+        self._phi = np.deg2rad(180 * (self._angles < 0.0).astype(np.float) + source.azimuth)
+        self._source = source
+        self._wavelength = wavelength
+    
+    @property 
+    def angles(self):
+        return self._angles
+        
+        
+class AlmucantarSensorPolarized(SensorPolarized):
+    """TODO"""
+    def __init__(self, wavelength, source, x, y, z, resolution=1.0):
+        super(AlmucantarSensorPolarized, self).__init__()
+        self._type = 'AlmucantarSensorPolarized'
+        self._phi = np.deg2rad(np.arange(180.0, 360.0, resolution)).astype(np.float64)
+        self._npix = len(self._phi)
+        self._mu = np.full(self.npix, np.cos(np.deg2rad(source.zenith - 180)), dtype=np.float64)
+        self._x = np.full(self.npix, x, dtype=np.float32)
+        self._y = np.full(self.npix, y, dtype=np.float32)
+        self._z = np.full(self.npix, z, dtype=np.float32)
+        
+        self._wavelength = wavelength
+
+    
+class ReflectanceSensorPolarized(SensorPolarized):
+    """TODO"""
+    def __init__(self, wavelength, x, y, z, resolution=5.0):
+        super(ReflectanceSensorPolarized, self).__init__()
+        self._type = 'ReflectanceSensorPolarized'
+        
+        self._wavelength = wavelength
+        mu = np.cos(np.deg2rad(np.arange(0.0, 80.0+resolution, resolution)))
+        phi = np.deg2rad(np.arange(0.0, 360.0+resolution, resolution))
+        self._x, self._y, self._z, self._mu, self._phi = np.meshgrid(x, y, z, mu, phi)
+        self._x = self._x.ravel().astype(np.float32)
+        self._y = self._y.ravel().astype(np.float32)
+        self._z = self._z.ravel().astype(np.float32)
+        self._mu = self._mu.ravel().astype(np.float64)
+        self._phi = self._phi.ravel().astype(np.float64)
+        self._npix = self.x.size
+        self._resolution = [phi.size, mu.size]
+        
+    @property
+    def resolution(self):
+        return self._resolution

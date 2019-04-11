@@ -139,12 +139,12 @@ class NumericalParameters(object):
                  num_phi_bins=16,
                  split_accuracy=0.1,
                  deltam=True, 
-                 spherical_harmonics_accuracy=0.003,
+                 spherical_harmonics_accuracy=0.01,
                  solution_accuracy=0.0001,
                  acceleration_flag=True,
-                 max_total_mb=100000.0,
-                 adapt_grid_factor=10,
-                 num_sh_term_factor=9,
+                 max_total_mb=10000.0,
+                 adapt_grid_factor=5,
+                 num_sh_term_factor=5,
                  cell_to_point_ratio=1.5,
                  high_order_radiance=True):
         
@@ -418,12 +418,18 @@ class RteSolver(object):
             
         """
         self._pa.iphasep = phase.iphasep.ravel()
-        self._pa.numphase = phase.numphase          
-        self._maxleg = phase.maxleg 
-        self._nleg = phase.maxleg
+        self._pa.numphase = phase.numphase
         
+        # Determine the number of legendre coefficient for a given angular resolution
+        if self._deltam:
+            self._nleg = self._mm+1
+        else:
+            self._nleg = self._mm
+        self._nleg = self._maxleg = max(phase.maxleg, self._nleg)
+        
+
         # Legenp is without the zero order term which is 1.0 for normalized phase function
-        self._pa.legenp = phase.legenp
+        self._pa.legenp = phase.get_legenp(self._nleg)
         self._maxasym = phase.maxasym
         self._maxpgl = phase.grid.num_points * phase.maxleg         
 
@@ -642,7 +648,6 @@ class RteSolver(object):
         self._work = np.empty(shape=(self._maxido,), dtype=np.float32, order='F')
         self._work1 = np.empty(shape=(8*self._maxig,), dtype=np.int32, order='F')
         self._work2 = np.empty(shape=(self._maxig), dtype=np.float32, order='F')        
-        
            
     def solve(self, maxiter, verbose=True):
         """
@@ -668,7 +673,7 @@ class RteSolver(object):
         
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, self._sfcgridparms, self._solcrit, \
             self._iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
-            self._ntoppts, self._nbotpts, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
+            self._ntoppts, self._nbotpts, self._bcptr, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
             self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr,\
             self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun = \
             core.solve_rte(
@@ -789,8 +794,6 @@ class RteSolverPolarized(RteSolver):
         assert num_stokes in [1, 3, 4], 'num_stokes should be {1, 3, 4}'
         self._nstokes = num_stokes
         
-        
-    
 
     def set_phase(self, phase):
         """
@@ -803,12 +806,18 @@ class RteSolverPolarized(RteSolver):
             
         """
         self._pa.iphasep = phase.iphasep.ravel()
-        self._pa.numphase = phase.numphase          
-        self._maxleg = phase.maxleg 
-        self._nleg = phase.maxleg
+        self._pa.numphase = phase.numphase   
         
+        # Determine the number of legendre coefficient for a given angular resolution
+        if self._deltam:
+            self._nleg = self._mm+1
+        else:
+            self._nleg = self._mm
+        self._nleg = self._maxleg = max(phase.maxleg, self._nleg)
+
         # Legenp is without the zero order term which is 1.0 for normalized phase function
-        self._pa.legenp = phase.legenp
+        self._pa.legenp = phase.get_legenp(self._nleg)
+
         self._maxasym = phase.maxasym
         self._maxpgl = phase.grid.num_points * phase.maxleg         
 
@@ -824,6 +833,8 @@ class RteSolverPolarized(RteSolver):
             self._nstleg = 1
         else:
             self._nstleg = phase.nstleg
+            
+        self._ylmsun = np.empty(shape=(self._nstleg, self._nlm), dtype=np.float32, order='F') 
            
 
 
@@ -832,12 +843,7 @@ class RteSolverPolarized(RteSolver):
         
         # Make ml and mm from nmu and nphi
         # ML is the maximum meridional mode, MM is the maximum azimuthal mode,
-        # and NCS is the azimuthal mode flag (|NCS|=1 for cosine only, |NCS|=2 for 
-        # sines and cosines).
-        # nphi0max: The maximum number of azimuth angles actually used;
-        # for NCS=1 (cosine modes only) NPHI0=INT((NPHI+2)/2),
-        # otherwise NPHI0=NPHI.
-        self._ncs = 2
+        # nphi0max: The maximum number of azimuth angles actually used
         self._ml = self._nmu - 1
         self._mm = max(0, int(self._nphi / 2) - 1)
         self._nlm = (2 * self._mm + 1) * (self._ml + 1) - self._mm * (self._mm + 1)
@@ -897,10 +903,6 @@ class RteSolverPolarized(RteSolver):
         self._wtdo = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
         self._phi = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
         self._phi0 = np.empty(shape=(self._nmu,), dtype=np.int32, order='F')
-        self._cmu1 = np.empty(shape=(self._nlm*self._nmu,), dtype=np.float32, order='F')
-        self._cmu2 = np.empty(shape=(self._nlm*self._nmu,), dtype=np.float32, order='F')
-        self._cphi1 = np.empty(shape=(33*32*self._nmu,), dtype=np.float32, order='F')
-        self._cphi2 = np.empty(shape=(33*32*self._nmu,), dtype=np.float32, order='F')
         self._temp = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
         self._planck = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
         self._gridptr = np.empty(shape=(8, self._maxic), dtype=np.int32, order='F')
@@ -947,10 +949,11 @@ class RteSolverPolarized(RteSolver):
         
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, self._sfcgridparms, self._solcrit, \
             self._iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
-            self._ntoppts, self._nbotpts, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
+            self._ntoppts, self._nbotpts, self._bcptr, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
             self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr,\
             self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun = \
             core.solve_rte(
+                ylmsun=self._ylmsun,
                 nstokes=self._nstokes,
                 nstleg=self._nstleg,
                 nx=self._nx,
@@ -960,7 +963,6 @@ class RteSolverPolarized(RteSolver):
                 nz=self._nz,
                 ml=self._ml,
                 mm=self._mm,
-                ncs=self._ncs,
                 nlm=self._nlm,
                 nmu=self._nmu,
                 nphi=self._nphi,
@@ -1005,10 +1007,6 @@ class RteSolverPolarized(RteSolver):
                 maxbcrad=self._maxbcrad,
                 bcptr=self._bcptr,
                 bcrad=self._bcrad,
-                cmu1=self._cmu1,
-                cmu2=self._cmu2,
-                cphi1=self._cphi1,
-                cphi2=self._cphi2,
                 npts=self._npts,
                 gridpos=self._gridpos,
                 ncells=self._ncells,

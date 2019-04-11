@@ -39,7 +39,8 @@ Cf2py integer intent(hide), depend(CELLFLAGS) :: MAXIC=len(CELLFLAGS)
 Cf2py integer intent(hide), depend(WORK) :: MAXIDO=len(WORK)
       INTEGER MAXNBC, MAXBCRAD, NTOPPTS, NBOTPTS, BCPTR(MAXNBC,2)
 Cf2py intent(out) :: NTOPPTS, NBOTPTS
-Cf2py intent(in) :: MAXBCRAD, BCPTR
+Cf2py intent(in,out) :: BCPTR
+Cf2py intent(in) :: MAXBCRAD
       INTEGER NPTS, NCELLS
 Cf2py intent(in, out) :: NPTS, NCELLS
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)

@@ -160,7 +160,8 @@ class Air(Generator):
     
     def set_temperature_profile(self, temperature_profile):
         self._temperature_profile = temperature_profile
-        self._rayleigh = shdom.Rayleigh(self.args.wavelength, self.temperature_profile)
+        self._rayleigh = shdom.Rayleigh(self.args.wavelength)
+        self.rayleigh.init_temperature_profile(temperature_profile)        
         
         
     def get_medium(self, phase_type):

@@ -26,10 +26,22 @@ class Phase(object):
         self._maxleg = None
         self._iphasep = None
         self._numphase = None
-        self._legenp = None
+        self._legendre_table = None
         self._maxasym = None
         self._grid = None
         
+        
+    def get_legenp(self, nleg):
+        """ 
+        TODO 
+        legenp is without the zero order term which is 1.0 for normalized phase function
+        """
+        legenp = self.legendre_table[1:]
+        if nleg > self.maxleg:
+            legenp = np.pad(legenp, ((0, nleg - self.maxleg), (0,0)), 'constant')
+        return legenp.ravel(order='F')    
+    
+    
     @property
     def type(self):
         return self._type
@@ -47,7 +59,7 @@ class Phase(object):
         return self._iphasep
     
     @property
-    def legenp(self):
+    def legen(self):
         return self._legenp
     
     @property
@@ -58,7 +70,11 @@ class Phase(object):
     def grid(self):
         return self._grid
     
-    
+    @property
+    def legendre_table(self):
+        return self._legendre_table    
+
+
 class GridPhase(Phase):
     """
     A GridPhase object spefies the phase function at every point in the grid. 
@@ -79,11 +95,9 @@ class GridPhase(Phase):
         if grid.type == '3D':
             self._linear_interpolator3d = RegularGridInterpolator((grid.x, grid.y, grid.z), self.data.transpose([1, 2, 3, 0]), bounds_error=False, fill_value=0.0)
     
+        self._legendre_table = data.reshape((data.shape[0], -1), order='F')
         self._numphase = grid.num_points
         self._iphasep = np.arange(1, grid.num_points+1, dtype=np.int32)
-        
-        # Legenp is without the zero order term which is 1.0 for normalized phase function
-        self._legenp = data[1:].ravel(order='F')       
         self._maxleg = data.shape[0] - 1
         
         # Asymetry parameter is proportional to the legendre series first coefficient 
@@ -122,6 +136,17 @@ class GridPhase(Phase):
         return GridPhase(grid, data)    
     
     
+    def get_legenp(self, nleg):
+        """ 
+        TODO 
+        legenp is without the zero order term which is 1.0 for normalized phase function
+        """
+        legenp = self.legendre_table[1:]
+        if nleg > self.maxleg:
+            legenp = np.pad(legenp, (0, nleg - self.maxleg), 'constant')
+        return legenp.ravel(order='F')     
+        
+        
     def resample(self, grid):
         """Resample data to a new Grid."""
         if self.grid.type == '1D':
@@ -160,9 +185,7 @@ class TabulatedPhase(Phase):
 
         self._numphase = legendre_table.shape[1]
         self._iphasep = index.data
-        
-        # Legenp is without the zero order term which is 1.0 for normalized phase function
-        self._legenp = legendre_table[1:].ravel(order='F')    
+          
         self._maxleg = legendre_table.shape[0] - 1
         
         # Asymetry parameter is proportional to the legendre series first coefficient 
@@ -192,10 +215,7 @@ class TabulatedPhase(Phase):
         index = GridData(grid, self_index.astype(np.int32))
         return TabulatedPhase(legendre_table, index)  
 
-    @property
-    def legendre_table(self):
-        return self._legendre_table
-    
+
     @property
     def index(self):
         return self._index
@@ -215,9 +235,19 @@ class PhaseMatrix(Phase):
         self._type = 'AbstractPhaseMatrixObject'
         self._nstleg = None
         
+    def get_legenp(self, nleg):
+        """ 
+        TODO 
+        """
+        legenp = self.legendre_table
+        if nleg > self.maxleg:
+            legenp = np.pad(legenp, ((0,0), (0, nleg - self.maxleg), (0,0)) , 'constant')
+        return legenp.ravel(order='F')       
+
     @property
     def nstleg(self):
         return self._nstleg
+    
     
     
 class GridPhaseMatrix(PhaseMatrix):
@@ -243,8 +273,7 @@ class GridPhaseMatrix(PhaseMatrix):
         self._numphase = grid.num_points
         self._iphasep = np.arange(1, grid.num_points+1, dtype=np.int32)
         
-        # Legenp is without the zero order term which is 1.0 for normalized phase function
-        self._legenp = data.ravel(order='F')       
+        self._legendre_table = data.reshape((data.shape[0], data.shape[1], -1), order='F')   
         self._maxleg = data.shape[1] - 1
         self._nstleg = data.shape[0]
         
@@ -299,16 +328,20 @@ class GridPhaseMatrix(PhaseMatrix):
             data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1)).transpose([4, 3, 0, 1, 2])
         return data
 
-
+    
+    @property
+    def data(self):
+        return self._data
+    
     
 class TabulatedPhaseMatrix(PhaseMatrix):
     """
-    The TabulatedPhase internally keeps a phase function table and a pointer array for each grid point.
+    The TabulatedPhaseMatrix internally keeps a phase function matrix table and a pointer array for each grid point.
     This could potentially be more efficient than GridPhase in memory and computation if the number of table entery is much smaller than number of grid points.
     
     Parameters
     ----------
-    legendre_table: np.array(shape=(nleg, numphase), dtype=np.float32)
+    legendre_table: np.array(shape=(nstokes, nleg, numphase), dtype=np.float32)
        The Legendre table.
     index: GridData object
        A GridData object with dtype=int. This is a pointer to the enteries in the legendre_table.
@@ -337,6 +370,7 @@ class TabulatedPhaseMatrix(PhaseMatrix):
         """
         # Join the two tables
         assert self.nstleg == other.nstleg, 'Different number of stokes parameters.'
+        
         self_legendre_table = self.legendre_table
         other_legendre_table = other.legendre_table
         if self.maxleg > other.maxleg:
@@ -352,9 +386,17 @@ class TabulatedPhaseMatrix(PhaseMatrix):
         self_index[self_index>0] += other_index.max()
         self_index[self_index==0] = (self_index + other_index)[self_index==0]
         index = GridData(grid, self_index.astype(np.int32))
-        return TabulatedPhaseMatrix(legendre_table, index)     
+        
+        return TabulatedPhaseMatrix(legendre_table, index)  
     
-            
+    @property
+    def legendre_table(self):
+        return self._legendre_table
+    
+    @property
+    def index(self):
+        return self._index   
+   
             
 class Mie(object):
     """
@@ -1172,19 +1214,41 @@ class Rayleigh(object):
         The wavelength in [microns].
     temperature_profile: TemperatureProfile 
         A TemperatureProfile object containing temperatures and altitudes on a 1D grid.
+    surface_pressure: float
+        Surface pressure in units [mb]
         
     Notes
     -----
     The ssa of air is 1.0 and the phase function legendre coefficients are [1.0, 0.0, 0.5].
     """
-    def __init__(self, wavelength, temperature_profile):
+    def __init__(self, wavelength):
         self._wavelength = wavelength
-        self._temperature_profile = temperature_profile
-        self._raylcoeff = (2.97e-4) * wavelength**(-4.15 + 0.2 * wavelength)
-        self._ssalb = np.array([1.0], dtype=np.float32)
-        self._phase = np.array([1.0, 0.0, 0.5], dtype=np.float32)
-       
+        self.init_ssalb()
+        self.init_phase()
         
+        
+    def init_ssalb(self):
+        """TODO"""
+        self._ssalb = np.array([1.0], dtype=np.float32)
+        
+        
+    def init_phase(self):
+        """TODO"""
+        self._phase = np.array([1.0, 0.0, 0.5], dtype=np.float32)
+
+        
+    def init_temperature_profile(self, temperature_profile, surface_pressure=1013):
+        """TODO"""    
+        self._temperature_profile = temperature_profile
+        self._surface_pressure = surface_pressure  
+        
+        # Use the parameterization of Bodhaine et al. (1999) eq 30 for tau_R at 
+        # sea level and convert to Rayleigh density coefficient:
+        #   k = 0.03370*(p_sfc/1013.25)*tau_R  for k in K/(mb km)
+        self._raylcoeff = 0.03370 * (surface_pressure/1013.25) * 0.0021520 * \
+            (1.0455996 - 341.29061/self.wavelength**2 - 0.90230850*self.wavelength**2) / (1 + 0.0027059889/self.wavelength**2 - 85.968563*self.wavelength**2)
+        
+
     def get_scattering_field(self, grid, phase_type='Tabulated'):
         """
         Interpolate the rayleigh extinction over a given 1D grid (altitude).
@@ -1211,6 +1275,7 @@ class Rayleigh(object):
             nzt=grid.nz,
             zlevels=grid.z,
             temp=temperature_profile,
+            raysfcpres=self._surface_pressure,
             raylcoef=self.rayleigh_coefficient
         )
          
@@ -1218,9 +1283,9 @@ class Rayleigh(object):
         albedo = GridData(grid, np.full(shape=(grid.nz,), fill_value=self.ssalb, dtype=np.float32))
         if phase_type == 'Tabulated':
             phase_indices = GridData(grid, np.ones(shape=(grid.nz,), dtype=np.int32))
-            phase = TabulatedPhase(self.phase[:, np.newaxis], phase_indices)
+            phase = TabulatedPhase(self.phase[..., np.newaxis], phase_indices)
         elif phase_type == 'Grid':
-            phase = GridPhase(grid, np.tile(self.phase[:, np.newaxis, np.newaxis, np.newaxis], (1, 1, 1, grid.nz))) 
+            phase = GridPhase(grid, np.tile(self.phase[..., np.newaxis, np.newaxis, np.newaxis], (1, 1, 1, grid.nz))) 
         else:
             raise AttributeError('Phase type not recognized')
       
@@ -1239,6 +1304,10 @@ class Rayleigh(object):
         return self._temperature_profile 
     
     @property
+    def surface_pressure(self):
+        return self._surface_pressure  
+    
+    @property
     def wavelength(self):
         return self._wavelength    
     
@@ -1253,3 +1322,64 @@ class Rayleigh(object):
     @property
     def phase(self):
         return self._phase      
+    
+    
+class RayleighPolarized(Rayleigh):
+    """TODO"""
+    def __init__(self, wavelength):
+        super(RayleighPolarized, self).__init__(wavelength)
+                
+    def init_phase(self):
+        """TODO"""
+        self._phase = core.rayleigh_phase_function(wavelen=self._wavelength).astype(np.float32)   
+
+
+    def get_scattering_field(self, grid, phase_type='Tabulated'):
+        """
+        TODO
+         
+        Parameters
+        ----------
+        grid: Grid  
+            a Grid object containing the altitude grid points in [km].
+        phase_type: 'Tabulated' or 'Grid'
+            Return either a TabulatedPhase or GridPhase object.
+            
+        Returns
+        -------
+        extinction: GridData
+            A GridData object containting the extinction (1/km) on a 1D grid
+        albedo: GridData
+            A GridData object containting the single scattering albedo unitless in range [0, 1] on a 3D grid
+        phase: Phase 
+            A Phase object containting the phase function legendre table and index grid.
+        """
+        
+        temperature_profile = self.temperature_profile.resample(grid)
+        
+        extinction_profile = core.rayleigh_extinct(
+            nzt=grid.nz,
+            zlevels=grid.z,
+            temp=temperature_profile,
+            raysfcpres=self._surface_pressure,
+            raylcoef=self.rayleigh_coefficient
+        )
+        
+        
+        if grid.type == '1D':
+            extinction = GridData(grid, extinction_profile)
+
+        elif grid.type == '3D':
+            extinction = GridData(grid, np.tile(extinction_profile, (grid.nx, grid.ny,1)))
+    
+        albedo = GridData(grid, np.full(shape=grid.shape, fill_value=self.ssalb, dtype=np.float32))
+        
+        if phase_type == 'Tabulated':
+            phase_indices = GridData(grid, np.ones(shape=grid.shape, dtype=np.int32))
+            phase = TabulatedPhaseMatrix(self.phase[...,np.newaxis], phase_indices)
+        elif phase_type == 'Grid':
+            phase = GridPhaseMatrix(grid, np.tile(self.phase[..., np.newaxis, np.newaxis, np.newaxis], (1, 1, 1, grid.nz))) 
+        else:
+            raise AttributeError('Phase type not recognized')
+      
+        return extinction, albedo, phase    

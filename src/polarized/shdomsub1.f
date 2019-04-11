@@ -1,6 +1,6 @@
 
         SUBROUTINE SOLVE_RTE (NSTOKES, NX, NY, NZ, NX1, NY1, NANG,
-     .               ML, MM, NCS, NLM, NMU, NPHI, NLEG, NSTLEG, 
+     .               ML, MM, NLM, NMU, NPHI, NLEG, NSTLEG, 
      .               NUMPHASE, NPHI0, MU, PHI, WTDO,
      .               MAXIV, MAXIC, MAXIG, MAXIDO, INRADFLAG, 
      .               BCFLAG, IPFLAG, DELTAM, SRCTYPE, HIGHORDERRAD,
@@ -13,7 +13,7 @@
      .               SPLITACC, SHACC, XGRID,YGRID,ZGRID,
      .               TEMP, PLANCK, EXTINCT, ALBEDO, LEGEN, IPHASE,
      .               MAXNBC, MAXBCRAD, NTOPPTS, NBOTPTS, BCPTR, BCRAD,
-     .               CMU1, CMU2, CPHI1, CPHI2,  NPTS, GRIDPOS, 
+     .               NPTS, GRIDPOS, 
      .               NCELLS, GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .               RSHPTR, SHPTR, OSHPTR, WORK, WORK1, WORK2,
      .               SOURCE, DELSOURCE, RADIANCE, FLUXES, DIRFLUX, 
@@ -27,8 +27,8 @@ C       cells and points on output.
       IMPLICIT NONE
       INTEGER NSTOKES, NX, NY, NZ, NX1, NY1, NXSFC, NYSFC, NSFCPAR
 Cf2py intent(in) :: NSTOKES, NX, NY, NX1, NY1, NZ, NXSFC, NYSFC, NSFCPAR
-      INTEGER ML, MM, NCS, NLM, NMU, NPHI, NANG, NLEG, NSTLEG, NUMPHASE
-Cf2py intent(in) :: ML, MM, NCS, NLM, NMU, NPHI, NLEG, NSTLEG, NUMPHASE
+      INTEGER ML, MM, NLM, NMU, NPHI, NANG, NLEG, NSTLEG, NUMPHASE
+Cf2py intent(in) :: ML, MM, NLM, NMU, NPHI, NLEG, NSTLEG, NUMPHASE
 Cf2py intent(out) :: NANG
       INTEGER NPHI0(NMU), MAXITER, ITER, BCFLAG, IPFLAG
 Cf2py intent(in) :: MAXITER, BCFLAG, IPFLAG
@@ -37,7 +37,8 @@ Cf2py intent(out) :: NPHI0, ITER
 Cf2py intent(in) :: MAXIV, MAXIC, MAXIG, MAXIDO
       INTEGER MAXNBC, MAXBCRAD, NTOPPTS, NBOTPTS, BCPTR(MAXNBC,2)
 Cf2py intent(out) :: NTOPPTS, NBOTPTS
-Cf2py intent(in) :: MAXBCRAD, BCPTR
+Cf2py intent(in, out) :: BCPTR
+Cf2py intent(in) :: MAXBCRAD
       INTEGER NPTS, NCELLS
 Cf2py intent(in, out) :: NPTS, NCELLS
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)
@@ -74,8 +75,6 @@ Cf2py intent(out) :: EXTINCT, ALBEDO, LEGEN
 Cf2py intent(in) :: XGRID, YGRID, ZGRID
       REAL    GRIDPOS(3,*)
 Cf2py intent(in, out) :: GRIDPOS
-      REAL    CMU1(*), CMU2(*), CPHI1(*), CPHI2(*)
-Cf2py intent(in) :: CMU1, CMU2, CPHI1, CPHI2
       REAL    BCRAD(*)
 Cf2py intent(in, out) :: BCRAD
       REAL    FLUXES(2,*), DIRFLUX(*)
@@ -90,27 +89,29 @@ Cf2py intent(in) :: SRCTYPE, UNITS, SFCTYPE
       LOGICAL VERBOSE
 Cf2py intent(in) :: VERBOSE
       INTEGER MAXNLM, MAXNMU, MAXNPHI
-      PARAMETER (MAXNLM=16384, MAXNMU=64, MAXNPHI=128)
-      REAL    YLMSUN(MAXNLM)
-Cf2py intent(out) :: YLMSUN
+      REAL    YLMSUN(NSTLEG,*)
+Cf2py intent(in,out) :: YLMSUN
+
       INTEGER NPHI0MAX, I, ORDINATESET, NBPTS, NBCELLS
       INTEGER MAXNANGBND, NANGBND(4,2), IERR
       LOGICAL FIXSH, SPLITTESTING, DOSPLIT, OUTOFMEM, LAMBERTIAN
       LOGICAL UNIFORM_SFC_BRDF
-      LOGICAL FFTFLAG(MAXNMU)
+      LOGICAL, ALLOCATABLE :: FFTFLAG(:)
       REAL    ALBMAX
       REAL    STARTADAPTSOL, ENDADAPTSOL, ADAPTRANGE, SPLITCRIT
       REAL    STARTSPLITACC, CURSPLITACC, AVGSOLCRIT, BETA
       REAL    DELJDOT, DELJOLD, DELJNEW, JNORM, ACCELPAR
-      
-      REAL    WTMU(MAXNMU)
-      REAL    WPHISAVE(MAXNMU*(3*MAXNPHI+15))
+      REAL, ALLOCATABLE :: CMU1(:,:,:), CMU2(:,:,:)
+      REAL, ALLOCATABLE :: CPHI1(:,:,:), CPHI2(:,:,:)
+      REAL, ALLOCATABLE :: WTMU(:), WPHISAVE(:)
       REAL, ALLOCATABLE :: SFC_BRDF_DO(:,:,:,:,:,:)
 
-C           Check array sizes
-      IF (NLM .GT. MAXNLM)   STOP 'SOLVE_RTE: MAXNLM exceeded'
-      IF (NMU .GT. MAXNMU)   STOP 'SOLVE_RTE: MAXNMU exceeded'
-      IF (NPHI .GT. MAXNPHI) STOP 'SOLVE_RTE: MAXNPHI exceeded'
+C       Allocate local arrays
+C         NSTLEG=1 for NSTOKES=1, otherwise NSTLEG=6
+      ALLOCATE (CMU1(NSTLEG,NLM,NMU), CMU2(NSTLEG,NLM,NMU))
+      ALLOCATE (CPHI1(-16:16,32,NMU), CPHI2(32,-16:16,NMU))
+      ALLOCATE (FFTFLAG(NMU), WTMU(NMU), WPHISAVE(NMU*(3*NPHI+15)))
+      
       
 C       Set up some things before solution loop
 
@@ -358,6 +359,14 @@ C             and average SH truncation.
      .                   '     Final Criterion: ', SOLCRIT
       ENDIF
 
+
+      IF (SFCTYPE(1:1) .EQ. 'V' .AND. UNIFORM_SFC_BRDF) THEN
+        DEALLOCATE (SFC_BRDF_DO)
+      ENDIF
+      DEALLOCATE (FFTFLAG, WTMU, WPHISAVE)
+      DEALLOCATE (CMU1, CMU2, CPHI1, CPHI2)
+      
+      
 C          Comment in for GLE graphics output of cell structure (see routine)
 c      CALL VISUALIZE_CELLS ('cellfinal.gle', YGRID(1), 1, IPFLAG,
 c     .           NX, XGRID(NX+1)-XGRID(1), ZGRID(NZ)-ZGRID(1),
@@ -924,8 +933,8 @@ C     boundary points.
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NSTOKES, NSTLEG, ML, MM, NLM
 Cf2py intent(in) :: NX, NY, NZ, NSTOKES, NSTLEG, ML, MM, NLM
-      INTEGER NMU, NPHI0MAX, NPHI0(*), NANG, NCS
-Cf2py intent(in) :: NMU, NPHI0MAX, NPHI0, NANG, NCS
+      INTEGER NMU, NPHI0MAX, NPHI0(*), NANG
+Cf2py intent(in) :: NMU, NPHI0MAX, NPHI0, NANG
       INTEGER BCFLAG, IPFLAG
 Cf2py intent(in) :: BCFLAG, IPFLAG
       INTEGER NPTS, NCELLS, MAXNBC, MAXBCRAD, NTOPPTS,NBOTPTS
