@@ -2,7 +2,7 @@ C     This file containts subroutines that were modified from their original pur
 C     The original subroutines were written by Frank Evans for the Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer.
 C     The modified subroutines were written by Aviad Levis, Technion Institute of Technology, 2019
 
-      SUBROUTINE RENDER (NSCATANGLE, NSTPHASE, NSTOKES, NX, NY, NZ, 
+      SUBROUTINE RENDER (NSTOKES, NX, NY, NZ, 
      .                   NPTS,NCELLS, ML, MM, NLM, NSTLEG, NLEG, 
      .                   NUMPHASE, NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .                   BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, 
@@ -50,7 +50,7 @@ Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE
       DOUBLE PRECISION CAMMU(*), CAMPHI(*)
 Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
       INTEGER  NPIX, NSTPHASE, NSCATANGLE
-Cf2py intent(in) :: NPIX, NSTPHASE, NSCATANGLE
+Cf2py intent(in) :: NPIX
       REAL   STOKES(NSTOKES, NPIX), DOLP(NPIX)
       REAL   AOLP(NPIX), AOLP1(NPIX), DOCP(NPIX)
 Cf2py intent(out) :: STOKES, DOLP, AOLP, DOCP
@@ -64,36 +64,37 @@ Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
       DOUBLE PRECISION U, R, PI
       DOUBLE PRECISION X0, Y0, Z0
       DOUBLE PRECISION XE,YE,ZE, TRANSMIT, VISRAD(NSTOKES)
-      
-      REAL  YLMSUN(NSTLEG, NLM)
-      REAL  PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
+      INTEGER MAXSCATANG
+      PARAMETER (MAXSCATANG=721)
+      REAL, ALLOCATABLE :: YLMSUN(:,:), PHASETAB(:,:,:)
       REAL  MEAN, STD1, STD2
   
+      ALLOCATE (YLMSUN(NSTLEG,NLM))
+
       IF (SRCTYPE .NE. 'T') THEN
         CALL YLMALL (.TRUE., SOLARMU, SOLARAZ, ML, MM, NSTLEG, YLMSUN)
         IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
+          NSCATANGLE = MAX(36,MIN(MAXSCATANG,2*NLEG))
+          NSTPHASE = MIN(NSTLEG,2)
+          ALLOCATE (PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE))
           CALL PRECOMPUTE_PHASE (NSCATANGLE, NUMPHASE, NSTPHASE, 
      .                    NSTOKES, ML, NSTLEG, NLEG, LEGEN, PHASETAB)
         ENDIF
       ENDIF
 
-C        Make the isotropic radiances for the top boundary
+C         Make the isotropic radiances for the top boundary
       CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN, 
-     .                           UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
+     .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
 C         Make the bottom boundary radiances for the Lambertian surfaces.  
 C          Compute the upwelling bottom radiances using the downwelling fluxes.
       IF (SFCTYPE .EQ. 'FL') THEN
-          CALL FIXED_LAMBERTIAN_BOUNDARY(NBOTPTS, BCPTR(1,2), DIRFLUX,
-     .                                   FLUXES, SRCTYPE, GNDTEMP,
-     .                                   GNDALBEDO, WAVENO, WAVELEN, 
-     .                                   UNITS, NSTOKES, 
-     .                                   BCRAD(1,1+NTOPPTS))
+        CALL FIXED_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
+     .             DIRFLUX, FLUXES, SRCTYPE, GNDTEMP, GNDALBEDO, 
+     .             WAVENO, WAVELEN, UNITS, NSTOKES, BCRAD(1,1+NTOPPTS))
       ELSE IF (SFCTYPE .EQ. 'VL') THEN
-          CALL VARIABLE_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
-     .                                       DIRFLUX, FLUXES, SRCTYPE, 
-     .                                       NSFCPAR, SFCGRIDPARMS,
-     .                                       NSTOKES, 
-     .                                       BCRAD(1,1+NTOPPTS))
+        CALL VARIABLE_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
+     .               DIRFLUX, FLUXES, SRCTYPE, NSFCPAR, SFCGRIDPARMS,
+     .               NSTOKES, BCRAD(1,1+NTOPPTS))
       ENDIF
   
       PI = ACOS(-1.0D0)

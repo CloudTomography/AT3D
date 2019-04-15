@@ -1,6 +1,5 @@
 """
-Sensor and Sensor related objects used for atmospheric rendering.
-The Sensor object defines the projection geometry.
+Camera, Sensor and Projection related objects used for rendering.
 """
 
 import core
@@ -12,10 +11,13 @@ from joblib import Parallel, delayed
 import copy
 
 norm = lambda x: x / np.linalg.norm(x, axis=0)
-       
+
     
 class Sensor(object):
-    """TODO"""
+    """
+    An abstract sensor class to be inhireted by specific sensor types.
+    A Sensor needs to define a render method.
+    """
     def __init__(self):
         self._type = 'AbstractSensor'
     
@@ -23,17 +25,20 @@ class Sensor(object):
     def type(self):
         return self._type
     
+    
 class RadianceSensor(Sensor):
-    """TODO"""
+    """
+    A Radiance sensor measures monochromatic radiances in [w/(m^2*sr*micron)]
+    """
     def __init__(self):
         super(RadianceSensor, self).__init__()
         self._type = 'RadianceSensor'
         
     def render(self, rte_solver, projection):
         """
-        The render method integrates a pre-computed in-scatter field (source function) J over the sensor gemoetry.
-        The source code for this function is in shdomsub4.f. 
-        It is a modified version of the original SHDOM visualize_radiance subroutine in shdomsub2.f.
+        The render method integrates a pre-computed in-scatter field (source function) J over the projection gemoetry.
+        The source code for this function is in src/unoplarized/shdomsub4.f. 
+        It is a modified version of the original SHDOM visualize_radiance subroutine in src/unpolarized/shdomsub2.f.
         
         Parameters
         ----------
@@ -273,14 +278,18 @@ class RadianceSensor(Sensor):
             
 
 class PolarizationSensor(Sensor):
-    """TODO"""
+    """
+    A Polarization sensor measures monochromatic radiances in [w/(m^2*sr*micron)]
+    """
     def __init__(self):
         super(PolarizationSensor, self).__init__()
         self._type = 'PolarizationSensor'
     
     def render(self, rte_solver, projection):
         """
-        TODO
+        The render method integrates a pre-computed stokes vector in-scatter field (source function) J over the sensor gemoetry.
+        The source code for this function is in src/oplarized/shdomsub4.f. 
+        It is a modified version of the original SHDOM visualize_radiance subroutine in src/polarized/shdomsub2.f.
         
         Parameters
         ----------
@@ -291,16 +300,16 @@ class PolarizationSensor(Sensor):
         
         Returns
         -------
-        stokes: np.array(shape=(nstokes, sensor.npix), dtype=np.float)
+        stokes: np.array(shape=(nstokes, sensor.resolution), dtype=np.float32)
             The rendered radiances.
+        dolp: np.array(shape=(sensor.resolution), dtype=np.float32)
+            Degree of Linear Polarization
+        aolp: np.array(shape=(sensor.resolution), dtype=np.float32)
+            Angle of Linear Polarization
+        docp: np.array(shape=(sensor.resolution), dtype=np.float32)
+            Degree of Circular Polarization
         """
-        
-        maxscatang = 721
-        nscatangle = max(36, min(maxscatang, 2*rte_solver._nleg))
-        nstphase = min(rte_solver._nstleg, 2)
         stokes, dolp, aolp, docp = core.render(
-            nscatangle=nscatangle,
-            nstphase=nstphase,
             nstokes=rte_solver._nstokes,
             nstleg=rte_solver._nstleg,
             camx=projection.x,
@@ -370,14 +379,43 @@ class PolarizationSensor(Sensor):
         return stokes, dolp, aolp, docp
 
     def par_render(self, rte_solver, projection, n_jobs=30, verbose=0):
-        """TODO"""
+        """
+        The par_render method integrates a pre-computed stokes vector in-scatter field (source function) J over the projection gemoetry.
+        This method is a parallel version of the render method.
+        
+        Parameters
+        ----------
+        rte_solver: shdom.RteSolver object
+            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
+        projection: shdom.Projection object
+            The Projection specifying the sensor camera geomerty.
+        n_jobs: int, default=30
+            The number of jobs to divide the rendering into.
+        verbose: int, default=0
+            How much verbosity in the parallel rendering proccess.
+            
+        Returns
+        -------
+        stokes: np.array(shape=(nstokes, sensor.resolution), dtype=np.float32)
+            The rendered radiances.
+        dolp: np.array(shape=(sensor.resolution), dtype=np.float32)
+            Degree of Linear Polarization
+        aolp: np.array(shape=(sensor.resolution), dtype=np.float32)
+            Angle of Linear Polarization
+        docp: np.array(shape=(sensor.resolution), dtype=np.float32)
+            Degree of Circular Polarization
+        
+        Notes
+        -----
+        Not implemented.
+        """
         raise NotImplementedError
     
 
 
 class Projection(object):
     """
-    Abstract Projection class to be inherited by the different types of sensors.
+    Abstract Projection class to be inherited by the different types of projections.
     Each projection defines an arrays of pixel locations (x,y,z) in km and directions (phi, mu).
     """
     def __init__(self):
@@ -671,7 +709,22 @@ class PerspectiveProjection(HomographyProjection):
     
     
 class PrincipalPlaneProjection(Projection):
-    """TODO"""
+    """
+    Measurments along the principal solar plane.
+    
+    Parameters
+    ----------
+    source: shdom.SolarSource
+        The source azimuth is used to find the solar principal plane
+    x: float
+        Location in global x coordinates [km] (North)
+    y: float
+        Location in global y coordinates [km] (East)
+    z: float
+        Location in global z coordinates [km] (Up)
+    resolution: float 
+        Angular resolution of the measurements in [deg]
+    """
     def __init__(self, source, x, y, z, resolution=1.0):
         super(PrincipalPlaneProjection, self).__init__()
         self._angles = np.arange(-89.0, 89.0, resolution)
@@ -689,7 +742,22 @@ class PrincipalPlaneProjection(Projection):
         
         
 class AlmucantarProjection(Projection):
-    """TODO"""
+    """
+    Measurments along the solar almucantar.
+    
+    Parameters
+    ----------
+    source: shdom.SolarSource
+        The source zenith is used to find the solar almucantar plane
+    x: float
+        Location in global x coordinates [km] (North)
+    y: float
+        Location in global y coordinates [km] (East)
+    z: float
+        Location in global z coordinates [km] (Up)
+    resolution: float 
+        Angular resolution of the measurements in [deg]
+    """
     def __init__(self, source, x, y, z, resolution=1.0):
         super(AlmucantarProjection, self).__init__()
         self._phi = np.deg2rad(np.arange(180.0, 360.0, resolution)).astype(np.float64)
@@ -699,10 +767,26 @@ class AlmucantarProjection(Projection):
         self._y = np.full(self.npix, y, dtype=np.float32)
         self._z = np.full(self.npix, z, dtype=np.float32)
 
-class ReflectanceProjection(Projection):
-    """TODO"""
+
+class HemisphericProjection(Projection):
+    """
+    Measurments of radiance on a hemisphere.
+    
+    Parameters
+    ----------
+    source: shdom.SolarSource
+        The source zenith is used to find the solar almucantar plane
+    x: float
+        Location in global x coordinates [km] (North)
+    y: float
+        Location in global y coordinates [km] (East)
+    z: float
+        Location in global z coordinates [km] (Up)
+    resolution: float 
+        Angular resolution of the measurements in [deg]
+    """
     def __init__(self, x, y, z, resolution=5.0):
-        super(ReflectanceProjection, self).__init__()
+        super(HemisphericProjection, self).__init__()
         mu = np.cos(np.deg2rad(np.arange(0.0, 80.0+resolution, resolution)))
         phi = np.deg2rad(np.arange(0.0, 360.0+resolution, resolution))
         self._x, self._y, self._z, self._mu, self._phi = np.meshgrid(x, y, z, mu, phi)
@@ -785,59 +869,35 @@ class Measurements(object):
     
     
 class Camera(object):
-    """TODO"""
+    """
+    An Camera object ecapsulates both sensor and projection.
+    A Sensor needs to define a render method.
+    """
     def __init__(self, sensor=Sensor(), projection=Projection()):
-        self._sensor = sensor
-        self._projection = projection
+        self.set_sensor(sensor)
+        self.set_projection(projection)
         
     def set_projection(self, projection):
         self._projection = projection
         
     def set_sensor(self, sensor):
-        self._projection = projection
+        self._sensor = sensor
         
+        # Update function docstring
+        if sensor.render.__doc__ is not None:
+            self.render.__func__.func_doc += sensor.render.__doc__
+        if sensor.par_render.__doc__ is not None:
+            self.par_render.__func__.func_doc += sensor.par_render.__doc__
+    
     def render(self, rte_solver):
         """
-        The render method integrates a pre-computed in-scatter field (source function) J over the sensor gemoetry.
-        The source code for this function is in shdomsub4.f. 
-        It is a modified version of the original SHDOM visualize_radiance subroutine in shdomsub2.f.
-    
-        Parameters
-        ----------
-        rte_solver: shdom.RteSolver object
-            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
-    
-        Returns
-        -------
-        TODO
+        Render an image according to the render function defined by the sensor.
         """
         return self.sensor.render(rte_solver, self.projection)
 
-        
-        
     def par_render(self, rte_solver, n_jobs=30, verbose=0):
         """
-        The par_render method integrates a pre-computed in-scatter field (source function) J over the sensor gemoetry.
-        The source code for this function is in shdomsub4.f. 
-        It is a modified version of the original SHDOM visualize_radiance subroutine in shdomsub2.f.
-        This method is a parallel version of the render method.
-
-        Parameters
-        ----------
-        rte_solver: shdom.RteSolver object
-            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
-        n_jobs: int, default=30
-            The number of jobs to divide the rendering into.
-        verbose: int, default=0
-            How much verbosity in the parallel rendering proccess.
-
-        Returns
-        -------
-        TODO.
-
-        Notes
-        -----
-        For a small domain, or small amout of pixels, par_render is slower than render.
+        Render an image according to the par_render function defined by the sensor.
         """        
         return self.sensor.par_render(rte_solver, self.projection, n_jobs, verbose)
            

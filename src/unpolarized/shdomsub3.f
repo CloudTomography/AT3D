@@ -344,7 +344,7 @@ Cf2py intent(in) MAXLEG
 Cf2py intent(in, out) NLEG, NUMPHASE
       INTEGER MAXNZ, MAXPG, MAXPGL
 Cf2py intent(in) MAXNZ, MAXPG, MAXPGL
-      INTEGER*2 IPHASEP(MAXPG)
+      INTEGER IPHASEP(MAXPG)
 Cf2py intent(out) IPHASEP
       LOGICAL DELTAM
 Cf2py intent(in) DELTAM
@@ -528,7 +528,7 @@ C       Warning if optical depth across a grid cell exceeds 2.
       INTEGER NPX, NPY, NPZ, NLEG
       INTEGER NUMPHASE
 Cf2py intent(in) :: NPX, NPY, NPZ, NLEG, NUMPHASE
-      INTEGER*2 IPHASEP(NPX*NPY*NPZ)
+      INTEGER IPHASEP(NPX*NPY*NPZ)
 Cf2py intent(in) :: IPHASEP
       REAL    DELX, DELY, ZLEVELS(NPZ)
 Cf2py intent(in) :: DELX, DELY, ZLEVELS
