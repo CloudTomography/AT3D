@@ -1,6 +1,4 @@
-#name=An isolated stratocumulus water cloud out of the entire cloud field.
-#original_cloud_data=@storm/data2/gmatheou/Factory/jplles/rev153/rico.20.smagorinsky/MISR01/An
-#resampled_cloud_data_grid_size=20,20,40m
+# An isolated stratocumulus water cloud out of the entire cloud field of rico.20.smagorinsky/MISR01/An
 32 36 25
 0.020 0.020     0.440     0.480     0.520     0.560     0.600     0.640     0.680     0.720     0.760     0.800     0.840     0.880     0.920     0.960     1.000     1.040     1.080     1.120     1.160     1.200     1.240     1.280     1.320     1.360     1.400
 2 2 4    0.00675 12.52100

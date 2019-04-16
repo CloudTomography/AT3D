@@ -216,7 +216,7 @@ class MicrophysicalMedium(object):
     
     def get_grid(self, path):
         """
-        A utility function to load Large Eddy Simulated clouds.
+        A utility function to a microphysical medium
         
         Parameters
         ----------
@@ -226,15 +226,13 @@ class MicrophysicalMedium(object):
         Returns
         -------
         grid: Grid object
-            The 3D grid of the LES generated data.
+            The 3D grid of the medium.
             
         Notes
         -----
         CSV format should be as follows:
         
-        #name=name of les file
-        #original_cloud_data=path to original 
-        #resampled_cloud_data_grid_size=grid resolution in meters
+        # comment line (description)
         nx ny nz
         dz dy dz     z_levels[0]     z_levels[1] ...  z_levels[nz-1]
         ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
@@ -244,17 +242,51 @@ class MicrophysicalMedium(object):
         ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
         """
         nx, ny, nz = np.genfromtxt(path, max_rows=1, dtype=int) 
-        dx, dy = np.genfromtxt(path, max_rows=1, usecols=(0, 1), dtype=float, skip_header=4)        
-        z_grid = np.genfromtxt(path, max_rows=1, usecols=range(2, 2 + nz), dtype=float, skip_header=4)
+        dx, dy = np.genfromtxt(path, max_rows=1, usecols=(0, 1), dtype=float, skip_header=2)        
+        z_grid = np.genfromtxt(path, max_rows=1, usecols=range(2, 2 + nz), dtype=float, skip_header=2)
         x_grid = np.linspace(0.0, (nx - 1)*dx, nx, dtype=np.float32)
         y_grid = np.linspace(0.0, (ny - 1)*dy, ny, dtype=np.float32)    
         grid = Grid(x=x_grid, y=y_grid, z=z_grid)
         return grid
         
+    
+    def save_to_csv(self, path, comment_line=''):
+        """
+        A utility function to save a microphysical medium.
+        
+        Parameters
+        ----------
+        path: str
+            Path to file.
+        comment_line: str, optional
+            A comment line describing the file.
+            
+            
+        Notes
+        -----
+        CSV format is as follows:
+        
+        # comment line (description)
+        nx ny nz
+        dz dy dz     z_levels[0]     z_levels[1] ...  z_levels[nz-1]
+        ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
+        .
+        .
+        .
+        ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
+        """
+        np.savetxt(path, X=np.array([self.grid.shape]), fmt='%d', header=comment_line)
+        f = open(path, 'ab')
+        np.savetxt(f, X=np.concatenate((np.array([self.grid.dx, self.grid.dy]), self.grid.z)).reshape(1,-1), fmt='%2.3f')
+        y, x, z = np.meshgrid(range(self.grid.nx), range(self.grid.ny), range(self.grid.nz))
+        data = np.vstack((x.ravel(), y.ravel(), z.ravel(), self.lwc.data.ravel(), self.reff.data.ravel())).T
+        np.savetxt(f, X=data, fmt='%d %d %d %.5f %.3f')        
+        f.close()
+        
         
     def load_from_csv(self, path):
         """ 
-        A utility function to load Large Eddy Simulated clouds.
+        A utility function to load a microphysical medium.
         
         Parameters
         ----------
@@ -265,9 +297,7 @@ class MicrophysicalMedium(object):
         -----
         CSV format should be as follows:
         
-        #name=name of les file
-        #original_cloud_data=path to original 
-        #resampled_cloud_data_grid_size=grid resolution in meters
+        # comment line (description)
         nx ny nz
         dz dy dz     z_levels[0]     z_levels[1] ...  z_levels[nz-1]
         ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
@@ -278,9 +308,9 @@ class MicrophysicalMedium(object):
         """ 
         
         self._grid = self.get_grid(path)
-        grid_index = np.genfromtxt(path, usecols=(0, 1, 2), dtype=int, skip_header=5)
-        lwc = np.genfromtxt(path, usecols=3, dtype=float, skip_header=5)
-        reff = np.genfromtxt(path, usecols=4, dtype=float, skip_header=5)
+        grid_index = np.genfromtxt(path, usecols=(0, 1, 2), dtype=int, skip_header=3)
+        lwc = np.genfromtxt(path, usecols=3, dtype=float, skip_header=3)
+        reff = np.genfromtxt(path, usecols=4, dtype=float, skip_header=3)
         
         particle_levels = np.array([z in grid_index[:, 2] for z in range(self.grid.nz)], dtype=int)
         lwc_data  = np.zeros(shape=(self.grid.nx, self.grid.ny, self.grid.nz), dtype=np.float32)
@@ -289,6 +319,7 @@ class MicrophysicalMedium(object):
         reff_data[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]] = reff
         self._lwc = GridData(self.grid, lwc_data)
         self._reff = GridData(self.grid, reff_data)
+
 
     @property
     def grid(self):
