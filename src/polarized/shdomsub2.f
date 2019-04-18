@@ -301,10 +301,12 @@ C               Base grid cells have no parents or children
 
 
 
-
- 
       SUBROUTINE INTERP_GRID (NPTS, NSTLEG, NLEG, GRIDPOS,
-     .               TEMP, EXTINCT, ALBEDO, LEGEN, IPHASE)
+     .               TEMP, EXTINCT, ALBEDO, LEGEN, IPHASE, 
+     .               NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
+     .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
+     .               ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
+     .               ZCKD, GASABS)
 C       Calls TRILIN_INTERP_PROP to interpolate the input arrays from 
 C     the property grid to each internal grid point. 
       IMPLICIT NONE
@@ -313,18 +315,36 @@ C     the property grid to each internal grid point.
       REAL    GRIDPOS(3,NPTS)
       REAL    TEMP(*), EXTINCT(*), ALBEDO(*), LEGEN(NSTLEG,0:NLEG,*)
       INTEGER IP
-
+      
+      INTEGER NPX, NPY, NPZ
+      INTEGER NUMPHASE
+      REAL DELX, DELY, XSTART, YSTART
+      REAL ZLEVELS(*)
+      REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
+      REAL LEGENP(*), EXTDIRP(*)
+      INTEGER IPHASEP(*)
+      INTEGER NZCKD
+      REAL ZCKD(*), GASABS(*)
+      
 C         Initialize: transfer the tabulated phase functions
       CALL TRILIN_INTERP_PROP (0.0, 0.0, 0.0, .TRUE., NSTLEG, NLEG, 
      .                         TEMP, EXTINCT, ALBEDO, 
-     .                         LEGEN(1,0,1), IPHASE)
+     .                         LEGEN(1,0,1), IPHASE, 
+     .                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
+     .                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
+     .                      ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
+     .                      ZCKD, GASABS)
 
 C         Trilinearly interpolate from the property grid to the adaptive grid
       DO IP = 1, NPTS
         CALL TRILIN_INTERP_PROP 
      .          (GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP), 
      .           .FALSE., NSTLEG, NLEG, TEMP(IP), EXTINCT(IP),
-     .            ALBEDO(IP), LEGEN(1,0,IP), IPHASE(IP))
+     .            ALBEDO(IP), LEGEN(1,0,IP), IPHASE(IP), 
+     .                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
+     .                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
+     .                      ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
+     .                      ZCKD, GASABS)
       ENDDO 
       RETURN
       END
@@ -335,7 +355,11 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
 
       SUBROUTINE MAKE_DIRECT (NPTS, BCFLAG, IPFLAG, DELTAM, 
      .                ML, NSTLEG, NLEG, SOLARFLUX, SOLARMU, SOLARAZ, 
-     .                GRIDPOS, DIRFLUX)
+     .                GRIDPOS, DIRFLUX, 
+     .                NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
+     .                XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
+     .                ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
+     .                ZCKD, GASABS)
 C       Makes the direct beam solar flux for the internal base grid.
 C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
@@ -348,10 +372,24 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
       LOGICAL VALIDBEAM
       REAL    UNIFZLEV, XO, YO, ZO, DIR, DIRPATH
 
+      INTEGER NPX, NPY, NPZ
+      INTEGER NUMPHASE
+      REAL DELX, DELY, XSTART, YSTART
+      REAL ZLEVELS(*)
+      REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
+      REAL LEGENP(*), EXTDIRP(*)
+      INTEGER IPHASEP(*)
+      INTEGER NZCKD
+      REAL ZCKD(*), GASABS(*)
+      
       CALL DIRECT_BEAM_PROP (1, 0.0, 0.0, 0.0, BCFLAG, IPFLAG,
      .            DELTAM, ML, NSTLEG, NLEG, 
      .            SOLARFLUX, SOLARMU, SOLARAZ, DIRFLUX(1),
-     .            UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM)
+     .            UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM, 
+     .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
+     .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
+     .            ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
+     .            ZCKD, GASABS)
 
       DO IP = 1, NPTS
         DIRPATH = 0.0
@@ -359,7 +397,11 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
      .           (0, GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP),
      .            BCFLAG, IPFLAG, DELTAM, ML, NSTLEG, NLEG,
      .            SOLARFLUX, SOLARMU, SOLARAZ,   DIRFLUX(IP),
-     .            UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM)
+     .            UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM, 
+     .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
+     .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
+     .            ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
+     .            ZCKD, GASABS)
       ENDDO
       RETURN
       END

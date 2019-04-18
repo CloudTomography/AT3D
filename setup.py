@@ -84,7 +84,6 @@ F2PY_CORE_API = [
     'rayleigh_extinct',
     'start_mpi',
     'end_shdom_mpi',
-    'shdom_property_arrays',
     'check_input_parmeters',
     'new_grids',
     'init_cell_structure',

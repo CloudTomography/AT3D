@@ -1,5 +1,5 @@
 SUBROUTINE GET_MIE_TABLE (NRETAB, MAXRANK, WAVELEN1, WAVELEN2, WAVELENCEN, DELTAWAVE, &
-                          PARDENS, SRETAB, ERETAB, ALPHA, MAXRADIUS, RINDEX, PARTYPE, &
+                          PARDENS, SRETAB, ERETAB, ALPHA, GAMMA, MAXRADIUS, RINDEX, PARTYPE, &
                           AVGFLAG, DISTFLAG, REFF, EXTINCT,SSALB,NRANK,WIGCOEF,LOGRE)
 ! 
 ! Does Mie computations to create a scattering table as a function of
@@ -28,7 +28,7 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXRANK, WAVELEN1, WAVELEN2, WAVELENCEN, DELTA
   REAL :: WAVELEN1, WAVELEN2, DELTAWAVE, PARDENS
 !  f2py intent(in) :: WAVELEN1, WAVELEN2, DELTAWAVE, PARDENS
   REAL :: SRETAB, ERETAB, ALPHA, GAMMA, MAXRADIUS
-!  f2py intent(in) :: SRETAB, ERETAB, ALPHA, GAMMA MAXRADIUS
+!  f2py intent(in) :: SRETAB, ERETAB, ALPHA, GAMMA, MAXRADIUS
   COMPLEX :: RINDEX
   CHARACTER(LEN=1), INTENT(IN) :: PARTYPE, AVGFLAG, DISTFLAG
 !  f2py intent(in) :: PARTYPE, AVGFLAG, DISTFLAG
@@ -70,6 +70,7 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXRANK, WAVELEN1, WAVELEN2, WAVELENCEN, DELTA
 
    ! Do the Mie computations for each radius, which may involve several
    !   Mie calculation over the wavelength integration
+  WRITE (6,*) 'Computing Mie scattering for all radii...'
   CALL COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, PARTYPE, &
                               WAVELENCEN, RINDEX, NSIZE, RADII, MAXRANK, &
                               EXTINCT1, SCATTER1, NRANK1, WIGCOEF1)
@@ -85,7 +86,7 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXRANK, WAVELEN1, WAVELEN2, WAVELENCEN, DELTA
     ELSE
       REFF(I) = (ERETAB-SRETAB)*FLOAT(I-1)/(NRETAB-1) + SRETAB
     ENDIF
-
+    WRITE (6,*) 'Computing average phase function for reff=', REFF(I)
     ! Calculate the discrete size number concentrations (ND), which vary
     ! according to a truncated gamma, modified gamma, or lognormal 
     ! distribution that gives the desired effective radius (REFF) and LWC (1 g/m^3).
@@ -593,7 +594,7 @@ SUBROUTINE WRITE_MIE_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
   CHARACTER(LEN=*), INTENT(IN) :: MIETABFILE
    !  f2py intent(in)  :: MIETABFILE
   INTEGER :: I, J, JP, K, L, NL, NPHASEPOL
-
+  WRITE(*,*) ALPHA
   OPEN (UNIT=3, FILE=MIETABFILE, STATUS='REPLACE')
   NPHASEPOL = 6
   WRITE (3,'(A)') '! Polarized Mie scattering table vs. effective radius (LWC=1 g/m^3)'
@@ -605,11 +606,11 @@ SUBROUTINE WRITE_MIE_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
   WRITE (3,'(1X,F5.3,2X,A1,A)') PARDENS, PARTYPE, '   particle density (g/cm^3) and type (Water, Ice, Aerosol)'
   WRITE (3,'(2(1X,E13.6),A)') RINDEX, '  particle index of refraction'
   IF (DISTFLAG == 'L') THEN
-    WRITE (3,'(F7.5,A)') ALPHA, '  lognormal log standard deviation'
+    WRITE (3,'(F7.3,A)') ALPHA, '  lognormal log standard deviation'
   ELSE IF (DISTFLAG == 'G') THEN
-    WRITE (3,'(F7.5,A)') ALPHA, ' gamma size distribution shape parameter'
+    WRITE (3,'(F7.3,A)') ALPHA, ' gamma size distribution shape parameter'
   ELSE IF (DISTFLAG == 'M') THEN
-    WRITE (3,'(2(1X,F7.5),A)') ALPHA, GAMMA, ' modified gamma size distribution shape parameters'
+    WRITE (3,'(2(1X,F7.3),A)') ALPHA, GAMMA, ' modified gamma size distribution shape parameters'
   ENDIF
   WRITE (3,'(1X,I3,2(1X,F8.3),A)') NRETAB, SRETAB, ERETAB, &
         '  number, starting, ending effective radius'

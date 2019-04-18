@@ -211,6 +211,54 @@ class SceneParameters(object):
                                                                os.linesep)
         
 
+
+class ShdomPropertyArrays(object):
+    """
+    Shdom property array module.
+    Contain the parameters that are in the original SHDOM_PROPERTY_ARRAYS module 
+    in shdom90.f90 .
+    
+    Parameters
+    ----------
+    npx: Number of x grid points
+    npy: Number of y grid points  
+    npz: Number of z grid points 
+    numphase: Number of phase function enteries in the table
+    delx: Delta-x spacing
+    dely: Delta-y spacing 
+    xstart: Starting position of x coordinates
+    ystart: Starting position of y coordinates 
+    zlevels: Altitude grid points
+    tempp: Temperatures at altitude grid points
+    extinctp: Extinction grid
+    albedop: Single scattering albedo grid
+    legenp: legendre phase function table
+    extdirp: optical depth integrated along sun rays
+    iphasep: pointer to phase function table
+    nzckd: Number of correlated-k distribution points
+    zckd: correlated-k distribution grid
+    gasabs: Gas absorption
+    """
+    def __init__(self):
+        self.npx = None
+        self.npy = None
+        self.npz = None
+        self.numphase = None
+        self.delx = None
+        self.dely = None
+        self.xstart = None
+        self.ystart = None
+        self.zlevels = None
+        self.tempp = None
+        self.extinctp = None
+        self.albedop = None
+        self.legenp = None
+        self.extdirp = None
+        self.iphasep = None
+        self.nzckd = None
+        self.zckd = None
+        self.gasabs = None
+        
         
 class RteSolver(object):
     """
@@ -232,10 +280,7 @@ class RteSolver(object):
         self._masterproc = core.start_mpi()
 
         # Link to the properties array module.
-        self._pa = core.shdom_property_arrays
-
-        # Zero itertions so far
-        self._iters = 0
+        self._pa = ShdomPropertyArrays()
         
         if scene_params:
             self.set_scene(scene_params)
@@ -397,7 +442,6 @@ class RteSolver(object):
             Initilize the RTE solver to a Medium object.
 
         """
-        
         self.set_grid(medium.grid)
         self.set_extinction(medium.extinction)
         self.set_albedo(medium.albedo)
@@ -406,6 +450,11 @@ class RteSolver(object):
         # Temperature is used for thermal radiation. Not supported yet.
         self._pa.tempp = np.zeros(shape=(self._maxpg,), dtype=np.float32)
         
+        # Zero itertions so far
+        self._iters = 0
+        self._solcrit = 1.0
+        self._inradflag = False        
+
 
     def set_phase(self, phase):
         """
@@ -552,8 +601,8 @@ class RteSolver(object):
                 treeptr=self._treeptr,
                 cellflags=self._cellflags
             )
-        self._nbcells = self._ncells       
-
+        self._nbcells = self._ncells
+        
 
     def init_memory(self):
         """A utility function to initialize internal memory structures and parameters."""
@@ -663,20 +712,15 @@ class RteSolver(object):
         Returns
         -------
         None
-
-        Notes
-        -----
-        inradflag=True not supported.
         """
         
-        inradflag=False
-        
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, self._sfcgridparms, self._solcrit, \
-            self._iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
+            iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
             self._ntoppts, self._nbotpts, self._bcptr, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
             self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr,\
             self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun = \
             core.solve_rte(
+                solcrit=self._solcrit,
                 nx=self._nx,
                 ny=self._ny,
                 nx1=self._nx1,
@@ -692,7 +736,7 @@ class RteSolver(object):
                 mu=self._mu,
                 phi=self._phi,
                 wtdo=self._wtdo,
-                inradflag=inradflag,
+                inradflag=self._inradflag,
                 bcflag=self._bcflag,
                 ipflag=self._ipflag,
                 deltam=self._deltam,
@@ -754,7 +798,9 @@ class RteSolver(object):
                 nleg=self._nleg,
                 maxig=self._maxig,
                 verbose=verbose
-            )        
+            )
+        self._iters += iters
+        self._inradflag = True
     
     @property
     def num_iterations(self):
@@ -939,20 +985,31 @@ class RteSolverPolarized(RteSolver):
         Returns
         -------
         None
-
-        Notes
-        -----
-        inradflag=True not supported.
         """
-        
-        inradflag=False
-        
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, self._sfcgridparms, self._solcrit, \
-            self._iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
+            iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
             self._ntoppts, self._nbotpts, self._bcptr, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
             self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr,\
             self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun = \
             core.solve_rte(
+                npx=self._pa.npx,
+                npy=self._pa.npy,
+                npz=self._pa.npz,
+                delx=self._pa.delx,
+                dely=self._pa.dely,                
+                xstart=self._pa.xstart,
+                ystart=self._pa.ystart,
+                zlevels=self._pa.zlevels,             
+                tempp=self._pa.tempp,
+                extinctp=self._pa.extinctp,
+                albedop=self._pa.albedop,
+                legenp=self._pa.legenp,
+                extdirp=self._pa.extdirp,
+                iphasep=self._pa.iphasep,
+                nzckd=self._pa.nzckd,
+                zckd=self._pa.zckd,
+                gasabs=self._pa.gasabs,
+                solcrit=self._solcrit,
                 ylmsun=self._ylmsun,
                 nstokes=self._nstokes,
                 nstleg=self._nstleg,
@@ -970,7 +1027,7 @@ class RteSolverPolarized(RteSolver):
                 mu=self._mu,
                 phi=self._phi,
                 wtdo=self._wtdo,
-                inradflag=inradflag,
+                inradflag=self._inradflag,
                 bcflag=self._bcflag,
                 ipflag=self._ipflag,
                 deltam=self._deltam,
@@ -1031,7 +1088,9 @@ class RteSolverPolarized(RteSolver):
                 maxig=self._maxig,
                 maxido=self._maxido,
                 verbose=verbose
-            )        
+            )
+        self._iters += iters
+        self._inradflag = True
     
     @property
     def num_iterations(self):

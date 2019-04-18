@@ -2,21 +2,12 @@
 !      See shdom.txt for documentation.
 !      Fortran 90 version of the main program for using allocatable arrays.
 
-      MODULE SHDOM_PROPERTY_ARRAYS
-        INTEGER, SAVE              :: NPX, NPY, NPZ
-	INTEGER, SAVE		   :: NUMPHASE
-        REAL,    SAVE              :: DELX, DELY, XSTART, YSTART
-        REAL,    SAVE, ALLOCATABLE :: ZLEVELS(:)
-        REAL,    SAVE, ALLOCATABLE :: TEMPP(:), EXTINCTP(:), ALBEDOP(:)
-        REAL,    SAVE, ALLOCATABLE :: LEGENP(:), EXTDIRP(:)
-        INTEGER, SAVE, ALLOCATABLE :: IPHASEP(:)
-        INTEGER, SAVE              :: NZCKD
-        REAL,    SAVE, ALLOCATABLE :: ZCKD(:), GASABS(:)
-      END MODULE
-
-
       SUBROUTINE TRILIN_INTERP_PROP (X, Y, Z, INIT, NSTLEG, NLEG, &
-                     TEMP, EXTINCT, ALBEDO, LEGEN, IPHASE)
+                     TEMP, EXTINCT, ALBEDO, LEGEN, IPHASE, &
+                     NPX, NPY, NPZ, NUMPHASE, DELX, DELY, &
+                     XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
+                     ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD, &
+                     ZCKD, GASABS)
 !      Trilinearly interpolates the quantities on the input property
 !     grid at the single point (X,Y,Z) to get the output TEMP,EXTINCT,
 !     ALBEDO, and LEGEN or IPHASE.  Interpolation is done on the 
@@ -25,8 +16,6 @@
 !     The phase function pointer IPHASE (for tabulated phase functions) 
 !     is that of the maximum weighted scattering property grid point.
 !     If INIT=.TRUE. then transfers the tabulated phase functions.
-
-      USE SHDOM_PROPERTY_ARRAYS
       IMPLICIT NONE
       INTEGER NSTLEG, NLEG
       INTEGER IPHASE
@@ -37,6 +26,17 @@
       DOUBLE PRECISION U, V, W, F1, F2, F3, F4, F5, F6, F7, F8, F
       DOUBLE PRECISION SCAT1,SCAT2,SCAT3,SCAT4,SCAT5,SCAT6,SCAT7,SCAT8
       DOUBLE PRECISION SCATTER, MAXSCAT, KG, EXTMIN, SCATMIN
+      
+      INTEGER NPX, NPY, NPZ
+      INTEGER NUMPHASE
+      REAL DELX, DELY, XSTART, YSTART
+      REAL ZLEVELS(*)
+      REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
+      REAL LEGENP(*), EXTDIRP(*)
+      INTEGER IPHASEP(*)
+      INTEGER NZCKD
+      REAL ZCKD(*), GASABS(*)
+        
       SAVE EXTMIN, SCATMIN
       
       IF (INIT) THEN
@@ -217,7 +217,11 @@
  
       SUBROUTINE DIRECT_BEAM_PROP (INIT, XI, YI, ZI, BCFLAG, IPFLAG, &
                      DELTAM, ML, NSTLEG, NLEG, SOLARFLUX, SOLARMU, SOLARAZ, & 
-                     DIRFLUX,  UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM)
+                     DIRFLUX,  UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM, &
+                     NPX, NPY, NPZ, NUMPHASE, DELX, DELY, &
+                     XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
+                     ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD, &
+                     ZCKD, GASABS)
 !       Computes the direct beam flux at point (XI,YI,ZI) by integrating
 !     the extinction through the property grid.  If called with 
 !     INIT=1 then the property grid extinction array, solar direction
@@ -241,7 +245,6 @@
 !     flag is false SIDE is returned with the boundary hit (1=-X, 2=+X,
 !     3=-Y, 4=+Y).  XE,YE,ZE returns the location of the exitting ray,
 !     and path is the optical path from XI,YI,ZI to the sun.
-      USE SHDOM_PROPERTY_ARRAYS
       IMPLICIT NONE
       INTEGER INIT, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, SIDE
       LOGICAL DELTAM, VALIDBEAM
@@ -267,7 +270,17 @@
       DOUBLE PRECISION UV,UMV,UVM,UMVM,UW,UMW,UWM,UMWM,VW,VMW,VWM,VMWM
       DOUBLE PRECISION VWU,VWUM,UWV,UWVM,UVW,UVWM
       REAL, SAVE, ALLOCATABLE :: GASEXT(:), EXTMIN(:), EXTMAX(:)
-
+      
+      INTEGER NPX, NPY, NPZ
+      INTEGER NUMPHASE
+      REAL DELX, DELY, XSTART, YSTART
+      REAL ZLEVELS(*)
+      REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
+      REAL LEGENP(*), EXTDIRP(*)
+      INTEGER IPHASEP(*)
+      INTEGER NZCKD
+      REAL ZCKD(*), GASABS(*)
+      
       SAVE  CX, CY, CZ, CXINV, CYINV, CZINV, DI, DJ, DK, IPDIRECT
       SAVE  DELXD, DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV
 
@@ -712,8 +725,11 @@
       
       SUBROUTINE DIRECT_BEAM_PROP1(XI, YI, ZI, BCFLAG, IPFLAG, &
                      DELTAM, ML, NLEG, SOLARFLUX, SOLARMU, SOLARAZ, & 
-                     SDIRFLUX,  UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM)
-      USE SHDOM_PROPERTY_ARRAYS
+                     SDIRFLUX,  UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM, &
+                     NPX, NPY, NPZ, NUMPHASE, DELX, DELY, &
+                     XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
+                     ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD, &
+                     ZCKD, GASABS)
       IMPLICIT NONE
       INTEGER INIT, BCFLAG, IPFLAG, ML, NLEG, SIDE
       LOGICAL DELTAM, VALIDBEAM
@@ -740,6 +756,17 @@
       DOUBLE PRECISION VWU,VWUM,UWV,UWVM,UVW,UVWM
       REAL EXTMIN(NPZ), EXTMAX(NPZ)
 
+      INTEGER NPX, NPY, NPZ
+      INTEGER NUMPHASE
+      REAL DELX, DELY, XSTART, YSTART
+      REAL ZLEVELS(*)
+      REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
+      REAL LEGENP(*), EXTDIRP(*)
+      INTEGER IPHASEP(*)
+      INTEGER NZCKD
+      REAL ZCKD(*), GASABS(*)
+      
+      
 !           Bit 2 of IPFLAG means do the direct beam in 3D
         IPDIRECT = IPFLAG
         IF (BTEST(IPFLAG,2)) IPDIRECT = 0

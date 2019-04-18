@@ -941,7 +941,40 @@ class MiePolarized(Mie):
 
 
     def transform_wignerd_to_phase(self, reff_ind, phase_element, angles):
-        """TODO"""
+        """
+        Transfrom the spectral representation into angular representation.
+        
+        From SHDOM documentation:
+         ! Transforms the phase matrix element (PELEM=1 to 6) from the Wigner 
+         ! d-function based coefficients of the scattering matrix (WIGCOEF) to 
+         ! a function of angle, PHASE(NANGLE) (at scattering angles in degrees
+         ! in ANGLE(:)).  The order of the six elements in WIGCOEF is the four 
+         ! diagonal ones (alpha1, alpha2, alpha3, alpha4) followed by the IQ and
+         ! UV coefficients (beta1, beta2).  The phase matrix elements indexed by
+         ! PELEM are P11, P22, P33, P44, P12, P34.  If PELEM<0 then the ABS(PELEM) 
+         ! phase matrix element is normalized by the P11 element on output in PHASE.
+         ! (Doicu et al., 2013, JQSRT, http://dx.doi.org/10.1016/j.jqsrt.2012.12.009).
+        
+        Parameters
+        ----------
+        reff_ind: int
+            Index of the effective radius in the table
+        phase_element: int
+            An integer in the range [1,6] where:
+            phase_element=1: P11
+            phase_element=2: P22
+            phase_element=3: P33
+            phase_element=4: P44
+            phase_element=5: P12
+            phase_element=6: P34
+        angles: np.array(dtype=float)
+            An array of angles for which to compute the phase function
+        
+        Returns
+        -------
+        phase: np.array(dtype=float, shape=(len(angles),))
+            The phase element as a function of angles
+        """
         phase = core.transform_wignerd_to_phase(
             maxrank=self._maxrank,
             nphasepol=6,
@@ -1058,6 +1091,7 @@ class MiePolarized(Mie):
             sretab=self._sretab, 
             eretab=self._eretab, 
             alpha=self._alpha, 
+            gamma=self._gamma,
             maxradius=self._maxradius, 
             rindex=self._rindex, 
             partype=self._partype, 
