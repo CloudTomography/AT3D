@@ -7,7 +7,7 @@
                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY, &
                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
                      ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD, &
-                     ZCKD, GASABS)
+                     ZCKD, GASABS, EXTMIN, SCATMIN)
 !      Trilinearly interpolates the quantities on the input property
 !     grid at the single point (X,Y,Z) to get the output TEMP,EXTINCT,
 !     ALBEDO, and LEGEN or IPHASE.  Interpolation is done on the 
@@ -36,8 +36,6 @@
       INTEGER IPHASEP(*)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
-        
-      SAVE EXTMIN, SCATMIN
       
       IF (INIT) THEN
 !         If there are tabulated phase functions, then transfer them
@@ -221,7 +219,9 @@
                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY, &
                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
                      ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD, &
-                     ZCKD, GASABS)
+                     ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV, &
+                     CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD, &
+                     XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
 !       Computes the direct beam flux at point (XI,YI,ZI) by integrating
 !     the extinction through the property grid.  If called with 
 !     INIT=1 then the property grid extinction array, solar direction
@@ -269,7 +269,7 @@
       DOUBLE PRECISION B1,B2,B3,B4,B5,B6,B7,B8,C1,C2,C3,C4,C5,C6,C7,C8 
       DOUBLE PRECISION UV,UMV,UVM,UMVM,UW,UMW,UWM,UMWM,VW,VMW,VWM,VMWM
       DOUBLE PRECISION VWU,VWUM,UWV,UWVM,UVW,UVWM
-      REAL, SAVE, ALLOCATABLE :: GASEXT(:), EXTMIN(:), EXTMAX(:)
+      REAL GASEXT(NPZ), EXTMIN(NPZ), EXTMAX(NPZ)
       
       INTEGER NPX, NPY, NPZ
       INTEGER NUMPHASE
@@ -280,18 +280,13 @@
       INTEGER IPHASEP(*)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
-      
-      SAVE  CX, CY, CZ, CXINV, CYINV, CZINV, DI, DJ, DK, IPDIRECT
-      SAVE  DELXD, DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV
 
 
       IF (INIT .EQ. 9) THEN
-        DEALLOCATE (GASEXT, EXTMIN, EXTMAX)
         RETURN
       ENDIF
 
       IF (INIT .EQ. 1) THEN
-        IF (.NOT. ALLOCATED(GASEXT)) ALLOCATE (GASEXT(NPZ), EXTMIN(NPZ), EXTMAX(NPZ))
 !           Get the gaseous extinction at the property grid levels
         DO IZ = 1, NPZ
           IF (NZCKD .GT. 0) THEN

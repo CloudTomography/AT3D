@@ -9,7 +9,7 @@ from enum import Enum
 import warnings
 import sys, os
 import dill as pickle
-
+from joblib import Parallel, delayed
 
 class BoundaryCondition(Enum):
     open = 1       # open boundary conditions mean that exiting radiance is lost.
@@ -453,7 +453,8 @@ class RteSolver(object):
         # Zero itertions so far
         self._iters = 0
         self._solcrit = 1.0
-        self._inradflag = False        
+        self._inradflag = False 
+        self._oldnpts = 0
 
 
     def set_phase(self, phase):
@@ -708,6 +709,8 @@ class RteSolver(object):
         ----------
         maxiter: integer
             Maximum number of iterations for the iterative solution.
+        verbose: verbosity
+            True will output solution iteration information into stdout.
             
         Returns
         -------
@@ -718,7 +721,7 @@ class RteSolver(object):
             iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
             self._ntoppts, self._nbotpts, self._bcptr, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
             self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr,\
-            self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun = \
+            self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun, self._oldnpts = \
             core.solve_rte(
                 solcrit=self._solcrit,
                 nx=self._nx,
@@ -797,7 +800,8 @@ class RteSolver(object):
                 dirflux=self._dirflux,
                 nleg=self._nleg,
                 maxig=self._maxig,
-                verbose=verbose
+                verbose=verbose,
+                oldnpts=self._oldnpts
             )
         self._iters += iters
         self._inradflag = True
@@ -981,7 +985,9 @@ class RteSolverPolarized(RteSolver):
         ----------
         maxiter: integer
             Maximum number of iterations for the iterative solution.
-            
+        verbose: verbosity
+            True will output solution iteration information into stdout.
+        
         Returns
         -------
         None
@@ -990,7 +996,7 @@ class RteSolverPolarized(RteSolver):
             iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
             self._ntoppts, self._nbotpts, self._bcptr, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
             self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr,\
-            self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun = \
+            self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun, self._oldnpts = \
             core.solve_rte(
                 npx=self._pa.npx,
                 npy=self._pa.npy,
@@ -1087,7 +1093,8 @@ class RteSolverPolarized(RteSolver):
                 maxic=self._maxic,
                 maxig=self._maxig,
                 maxido=self._maxido,
-                verbose=verbose
+                verbose=verbose,
+                oldnpts=self._oldnpts,
             )
         self._iters += iters
         self._inradflag = True
@@ -1100,3 +1107,173 @@ class RteSolverPolarized(RteSolver):
     def info(self):
         return self._scene_parameters.info + os.linesep + self._numerical_parameters.info
     
+    
+class RteSolverArray(object):
+    """
+    An RteSolverArray object encapsulate several solver e.g. for multiple spectral band imaging of a domain.
+    
+    Parameters
+    ----------
+    solver_list: list, optional
+        A list of Sensor objects
+    """
+    
+    def __init__(self, solver_list=None):
+        self._num_solvers = 0
+        self._solver_list = []
+        if solver_list:
+            for solver in solver_list:
+                self.add_solver(solver)
+
+    
+    def add_solver(self, rte_solver, name=None):
+        """
+        Add a rte_solver to the RteSolverArray
+        
+        Parameters
+        ----------
+        rte_solver: RteSolver object
+            A RteSolver object to add to the RteSolverArray
+        name: str, optional
+            An ID for the solver. 
+        """
+        self._solver_list.append(rte_solver)
+        self._num_solvers += 1
+           
+    def solve(self, maxiter, verbose=True):
+        """
+        Parallel solving of all solvers.
+
+        Parameters
+        ----------
+        maxiter: integer
+            Maximum number of iterations for the iterative solution.
+        verbose: verbosity
+            True will output solution iteration information into stdout.
+            
+        Returns
+        -------
+        None
+        """
+        output_arguments = \
+            Parallel(n_jobs=self.num_solvers, backend="threading")(
+            delayed(core.solve_rte, check_pickle=False)(
+                npx=rte_solver._pa.npx,
+                npy=rte_solver._pa.npy,
+                npz=rte_solver._pa.npz,
+                delx=rte_solver._pa.delx,
+                dely=rte_solver._pa.dely,                
+                xstart=rte_solver._pa.xstart,
+                ystart=rte_solver._pa.ystart,
+                zlevels=rte_solver._pa.zlevels,             
+                tempp=rte_solver._pa.tempp,
+                extinctp=rte_solver._pa.extinctp,
+                albedop=rte_solver._pa.albedop,
+                legenp=rte_solver._pa.legenp,
+                extdirp=rte_solver._pa.extdirp,
+                iphasep=rte_solver._pa.iphasep,
+                nzckd=rte_solver._pa.nzckd,
+                zckd=rte_solver._pa.zckd,
+                gasabs=rte_solver._pa.gasabs,
+                solcrit=rte_solver._solcrit,
+                ylmsun=rte_solver._ylmsun,
+                nstokes=rte_solver._nstokes,
+                nstleg=rte_solver._nstleg,
+                nx=rte_solver._nx,
+                ny=rte_solver._ny,
+                nx1=rte_solver._nx1,
+                ny1=rte_solver._ny1,
+                nz=rte_solver._nz,
+                ml=rte_solver._ml,
+                mm=rte_solver._mm,
+                nlm=rte_solver._nlm,
+                nmu=rte_solver._nmu,
+                nphi=rte_solver._nphi,
+                numphase=rte_solver._pa.numphase,
+                mu=rte_solver._mu,
+                phi=rte_solver._phi,
+                wtdo=rte_solver._wtdo,
+                inradflag=rte_solver._inradflag,
+                bcflag=rte_solver._bcflag,
+                ipflag=rte_solver._ipflag,
+                deltam=rte_solver._deltam,
+                srctype=rte_solver._srctype,
+                highorderrad=rte_solver._highorderrad,
+                solarflux=rte_solver._solarflux,
+                solarmu=rte_solver._solarmu,
+                solaraz=rte_solver._solaraz,
+                skyrad=rte_solver._skyrad,
+                sfctype=rte_solver._sfctype,
+                gndtemp=rte_solver._gndtemp,
+                gndalbedo=rte_solver._gndalbedo,
+                nxsfc=rte_solver._nxsfc,
+                nysfc=rte_solver._nysfc,
+                delxsfc=rte_solver._delxsfc,
+                delysfc=rte_solver._delysfc,
+                nsfcpar=rte_solver._nsfcpar,
+                sfcparms=rte_solver._sfcparms,
+                sfcgridparms=rte_solver._sfcgridparms,
+                units=rte_solver._units,
+                waveno=rte_solver._waveno,
+                wavelen=rte_solver._wavelen,
+                accelflag=rte_solver._accelflag,
+                solacc=rte_solver._solacc,
+                maxiter=maxiter,
+                splitacc=rte_solver._splitacc,
+                shacc=rte_solver._shacc,
+                xgrid=rte_solver._xgrid,
+                ygrid=rte_solver._ygrid,
+                zgrid=rte_solver._zgrid,
+                temp=rte_solver._temp,
+                planck=rte_solver._planck,
+                iphase=rte_solver._iphase,
+                maxbcrad=rte_solver._maxbcrad,
+                bcptr=rte_solver._bcptr,
+                bcrad=rte_solver._bcrad,
+                npts=rte_solver._npts,
+                gridpos=rte_solver._gridpos,
+                ncells=rte_solver._ncells,
+                gridptr=rte_solver._gridptr,
+                neighptr=rte_solver._neighptr,
+                treeptr=rte_solver._treeptr,
+                cellflags=rte_solver._cellflags,
+                rshptr=rte_solver._rshptr,
+                shptr=rte_solver._shptr,
+                oshptr=rte_solver._oshptr,
+                work=rte_solver._work,
+                work1=rte_solver._work1,
+                work2=rte_solver._work2,
+                source=rte_solver._source,
+                delsource=rte_solver._delsource,
+                radiance=rte_solver._radiance,
+                fluxes=rte_solver._fluxes,
+                dirflux=rte_solver._dirflux,
+                nleg=rte_solver._nleg,
+                maxiv=rte_solver._maxiv,
+                maxic=rte_solver._maxic,
+                maxig=rte_solver._maxig,
+                maxido=rte_solver._maxido,
+                verbose=verbose,
+                oldnpts=rte_solver._oldnpts
+                ) for rte_solver in self.solver_list)
+        
+        # Update solvers internal structures
+        for i, solver in enumerate(self.solver_list):
+            solver._nang, solver._nphi0, solver._mu, solver._phi, solver._wtdo, solver._sfcgridparms, solver._solcrit, \
+                iters, solver._temp, solver._planck, solver._extinct, solver._albedo, solver._legen, solver._iphase, \
+                solver._ntoppts, solver._nbotpts, solver._bcptr, solver._bcrad, solver._npts, solver._gridpos, solver._ncells, solver._gridptr, \
+                solver._neighptr, solver._treeptr, solver._cellflags, solver._rshptr, solver._shptr, solver._oshptr,\
+                solver._source, solver._delsource, solver._radiance, solver._fluxes, solver._dirflux, solver._ylmsun, solver._oldnpts = \
+                output_arguments[i]
+            solver._iters += iters
+            solver._inradflag = True
+
+
+
+    @property
+    def solver_list(self):
+        return self._solver_list
+    
+    @property
+    def num_solvers(self):
+        return self._num_solvers

@@ -306,7 +306,7 @@ C               Base grid cells have no parents or children
      .               NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .               ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
-     .               ZCKD, GASABS)
+     .               ZCKD, GASABS, EXTMIN, SCATMIN)
 C       Calls TRILIN_INTERP_PROP to interpolate the input arrays from 
 C     the property grid to each internal grid point. 
       IMPLICIT NONE
@@ -325,6 +325,7 @@ C     the property grid to each internal grid point.
       INTEGER IPHASEP(*)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
+      DOUBLE PRECISION EXTMIN, SCATMIN
       
 C         Initialize: transfer the tabulated phase functions
       CALL TRILIN_INTERP_PROP (0.0, 0.0, 0.0, .TRUE., NSTLEG, NLEG, 
@@ -333,7 +334,7 @@ C         Initialize: transfer the tabulated phase functions
      .                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .                      ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
-     .                      ZCKD, GASABS)
+     .                      ZCKD, GASABS, EXTMIN, SCATMIN)
 
 C         Trilinearly interpolate from the property grid to the adaptive grid
       DO IP = 1, NPTS
@@ -344,7 +345,7 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .                      ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
-     .                      ZCKD, GASABS)
+     .                      ZCKD, GASABS, EXTMIN, SCATMIN)
       ENDDO 
       RETURN
       END
@@ -359,7 +360,9 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .                NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .                XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .                ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
-     .                ZCKD, GASABS)
+     .                ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
+     .                CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
+     .                XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
 C       Makes the direct beam solar flux for the internal base grid.
 C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
@@ -381,6 +384,11 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
       INTEGER IPHASEP(*)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
+      DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
+      INTEGER IPDIRECT, DI, DJ, DK
+      DOUBLE PRECISION EPSS, EPSZ, XDOMAIN, YDOMAIN
+      DOUBLE PRECISION UNIFORMZLEV, DELXD,DELYD
+      
       
       CALL DIRECT_BEAM_PROP (1, 0.0, 0.0, 0.0, BCFLAG, IPFLAG,
      .            DELTAM, ML, NSTLEG, NLEG, 
@@ -389,7 +397,9 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .            ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
-     .            ZCKD, GASABS)
+     .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
+     .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
+     .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
 
       DO IP = 1, NPTS
         DIRPATH = 0.0
@@ -401,7 +411,9 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .            ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
-     .            ZCKD, GASABS)
+     .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
+     .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
+     .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
       ENDDO
       RETURN
       END
