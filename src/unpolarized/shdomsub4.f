@@ -55,36 +55,29 @@ Cf2py intent(out) :: VISOUT
       CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
 Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
 
-      INTEGER NSCATANGLE, I, J, L
-      INTEGER N  
+      INTEGER NSCATANGLE, I, J, L, N 
       REAL    MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION X0, Y0, Z0, X1, Y1, Z1, X2, Y2, Z2
-      DOUBLE PRECISION THETA0, THETA1, PHIR, PHI0, COSSCAT
+      DOUBLE PRECISION COSSCAT
       DOUBLE PRECISION U, R, PI
       INTEGER MAXNLM, MAXLEG, MAXPHASE, MAXSCATANG
       PARAMETER (MAXNLM=16384,MAXLEG=10000) 
-      PARAMETER (MAXPHASE=50000,MAXSCATANG=361)
-      REAL    YLMDIR(MAXNLM), YLMSUN(MAXNLM)
-      REAL   PHASETAB(MAXPHASE,MAXSCATANG), SINGSCAT(MAXPHASE)
+      PARAMETER (MAXPHASE=50000,MAXSCATANG=721)
+      REAL   YLMDIR(NLM), YLMSUN(NLM)
+      REAL   PHASETAB(NUMPHASE,MAXSCATANG), SINGSCAT(NUMPHASE)
       DOUBLE PRECISION SUNDIRLEG(0:MAXLEG)
   
   
-      IF ((ML+1)**2-(2-NCS)*(ML*(ML+1))/2 .GT. MAXNLM)
-     .    STOP 'VISUALIZE_RADIANCE: MAXNLM exceeded'
-          IF (NLEG .GT. MAXLEG) STOP 'RENDER: MAXLEG exceeded'
-          IF (NUMPHASE .GT. MAXPHASE) THEN
-              WRITE(*,*) 'NUMPHASE=', NUMPHASE, 'MAXPHASE=', MAXPHASE
-              STOP 'RENDER: MAXPHASE exceeded.'
-          ENDIF
+
   
-          IF (SRCTYPE .NE. 'T') THEN
-              CALL YLMALL (SOLARMU, SOLARAZ, ML, MM, NCS, YLMSUN)
-              IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
-                  NSCATANGLE = MAX(36,MIN(MAXSCATANG,2*NLEG))
-                  CALL PRECOMPUTE_PHASE(MAXPHASE, NSCATANGLE, NUMPHASE, 
-     .                                  ML, NLEG, LEGEN, PHASETAB)
-              ENDIF
+      IF (SRCTYPE .NE. 'T') THEN
+          CALL YLMALL (SOLARMU, SOLARAZ, ML, MM, NCS, YLMSUN)
+          IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
+              NSCATANGLE = MAX(36,MIN(MAXSCATANG,2*NLEG))
+              CALL PRECOMPUTE_PHASE(NSCATANGLE, NUMPHASE, 
+     .                              ML, NLEG, LEGEN, PHASETAB)
           ENDIF
+      ENDIF
   
   
 C         Make the isotropic radiances for the top boundary
@@ -172,7 +165,8 @@ C             Extrapolate ray to domain top if above
       
       
       
-      SUBROUTINE RAYLEIGH_EXTINCT (NZT, ZLEVELS,TEMP, RAYSFCPRES, RAYLCOEF, EXTRAYL)
+      SUBROUTINE RAYLEIGH_EXTINCT (NZT, ZLEVELS,TEMP, RAYSFCPRES, 
+     .                             RAYLCOEF, EXTRAYL)
 C       Computes the molecular Rayleigh extinction profile EXTRAYL [/km]
 C     from the temperature profile TEMP [K] at ZLEVELS [km].  Assumes
 C     a linear lapse rate between levels to compute the pressure at
@@ -181,7 +175,8 @@ C     density, with the coefficient RAYLCOEF in [K/(mb km)].
       IMPLICIT NONE
       INTEGER NZT
 Cf2py intent(in) :: NZT
-      REAL    ZLEVELS(NZT), TEMP(NZT), RAYSFCPRES, RAYLCOEF, EXTRAYL(NZT)
+      REAL    ZLEVELS(NZT), TEMP(NZT), RAYSFCPRES, RAYLCOEF
+      REAL    EXTRAYL(NZT)
 Cf2py intent(in) :: ZLEVELS, TEMP, RAYSFCPRES, RAYLCOEF
 Cf2py intent(out) :: EXTRAYL
       INTEGER I
@@ -296,7 +291,7 @@ Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
         CALL YLMALL (SOLARMU, SOLARAZ, ML, MM, NCS, YLMSUN)
         IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
           NSCATANGLE = MAX(36,MIN(MAXSCATANG,2*NLEG))
-          CALL PRECOMPUTE_PHASE (MAXPHASE, NSCATANGLE, NUMPHASE, ML,
+          CALL PRECOMPUTE_PHASE (NSCATANGLE, NUMPHASE, ML,
      .                           NLEG, LEGEN, PHASETAB)
         ENDIF
       ENDIF
@@ -945,8 +940,8 @@ C               source function because extinction is still scaled.
      .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, FLUXES,
      .             SHPTR, SOURCE, CAMX, CAMY, CAMZ, CAMMU, CAMPHI, 
-     .             NPIX, VISOUT, PHASETAB, YLMSUN, NSCATANGLE)
-
+     .             NPIX, VISOUT)
+Cf2py threadsafe
       IMPLICIT NONE
       INTEGER NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
 Cf2py intent(in) :: NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
@@ -984,28 +979,51 @@ Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE
 Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
       INTEGER  NPIX
 Cf2py intent(in) :: NPIX 
-      REAL   VISOUT(NPIX)
+      REAL VISOUT(NPIX)
 Cf2py intent(out) :: VISOUT
       CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
 Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
-      INTEGER NSCATANGLE, I, J, L 
-Cf2py intent(in) :: NSCATANGLE
-      REAL    MURAY, PHIRAY 
-      INTEGER MAXNLM, MAXLEG, MAXPHASE, MAXSCATANG
-      PARAMETER (MAXNLM=16384,MAXLEG=10000)
-      PARAMETER (MAXPHASE=500000, MAXSCATANG=361)
-      REAL    YLMDIR(MAXNLM), YLMSUN(MAXNLM)
-cf2py intent(in) :: YLMSUN
-      REAL    PHASETAB(MAXPHASE,MAXSCATANG), SINGSCAT(MAXPHASE)
-cf2py intent(in) :: PHASETAB
-      DOUBLE PRECISION SUNDIRLEG(0:MAXLEG)
-      
+
+      INTEGER NSCATANGLE, I, J, L, N
+      REAL    MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION X0, Y0, Z0, X1, Y1, Z1, X2, Y2, Z2
       DOUBLE PRECISION COSSCAT
-      DOUBLE PRECISION U, R, PI
-      REAL    MU2, PHI2
-      INTEGER N  
-  
+      DOUBLE PRECISION U, R, PI 
+      INTEGER MAXSCATANG
+      PARAMETER (MAXSCATANG=721)
+      REAL, ALLOCATABLE :: YLMSUN(:), PHASETAB(:,:)
+      REAL, ALLOCATABLE :: YLMDIR(:), SINGSCAT(:)
+      DOUBLE PRECISION, ALLOCATABLE :: SUNDIRLEG(:)
+
+      ALLOCATE (YLMSUN(NLM), YLMDIR(NLM))
+      ALLOCATE (SUNDIRLEG(0:NLEG), SINGSCAT(NUMPHASE))
+       
+      IF (SRCTYPE .NE. 'T') THEN
+          CALL YLMALL (SOLARMU, SOLARAZ, ML, MM, NCS, YLMSUN)
+          IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
+              NSCATANGLE = MAX(36,MIN(MAXSCATANG,2*NLEG))
+              ALLOCATE (PHASETAB(NUMPHASE, MAXSCATANG))
+              CALL PRECOMPUTE_PHASE(NSCATANGLE, NUMPHASE, 
+     .                              ML, NLEG, LEGEN, PHASETAB)
+          ENDIF
+      ENDIF
+      
+C         Make the isotropic radiances for the top boundary
+      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN, 
+     .                            UNITS, NTOPPTS, BCRAD(1))
+C         Make the bottom boundary radiances for the Lambertian surfaces.  
+C          Compute the upwelling bottom radiances using the downwelling fluxes.
+      IF (SFCTYPE .EQ. 'FL') THEN
+          CALL FIXED_LAMBERTIAN_BOUNDARY(NBOTPTS, BCPTR(1,2), DIRFLUX,
+     .                                   FLUXES, SRCTYPE, GNDTEMP,
+     .                                   GNDALBEDO, WAVENO, WAVELEN, 
+     .                                   UNITS, BCRAD(1+NTOPPTS))
+      ELSE IF (SFCTYPE .EQ. 'VL') THEN
+          CALL VARIABLE_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
+     .                                       DIRFLUX, FLUXES, SRCTYPE, 
+     .                                       NSFCPAR, SFCGRIDPARMS,
+     .                                       BCRAD(1+NTOPPTS))
+      ENDIF
   
       PI = ACOS(-1.0D0)
 C         Loop over pixels in image

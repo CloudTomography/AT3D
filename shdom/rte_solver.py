@@ -723,6 +723,23 @@ class RteSolver(object):
             self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr,\
             self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun, self._oldnpts = \
             core.solve_rte(
+                npx=self._pa.npx,
+                npy=self._pa.npy,
+                npz=self._pa.npz,
+                delx=self._pa.delx,
+                dely=self._pa.dely,                
+                xstart=self._pa.xstart,
+                ystart=self._pa.ystart,
+                zlevels=self._pa.zlevels,             
+                tempp=self._pa.tempp,
+                extinctp=self._pa.extinctp,
+                albedop=self._pa.albedop,
+                legenp=self._pa.legenp,
+                extdirp=self._pa.extdirp,
+                iphasep=self._pa.iphasep,
+                nzckd=self._pa.nzckd,
+                zckd=self._pa.zckd,
+                gasabs=self._pa.gasabs,                
                 solcrit=self._solcrit,
                 nx=self._nx,
                 ny=self._ny,

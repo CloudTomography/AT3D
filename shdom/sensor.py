@@ -52,13 +52,19 @@ class RadianceSensor(Sensor):
         radiance: np.array(shape=(projection.resolution), dtype=np.float)
             The rendered radiances.
         """
+        
+        if isinstance(projection.npix, list):
+            total_pix = np.sum(projection.npix)
+        else:
+            total_pix = projection.npix 
+            
         radiance = core.render(
             camx=projection.x,
             camy=projection.y,
             camz=projection.z,
             cammu=projection.mu,
             camphi=projection.phi,
-            npix=projection.npix,             
+            npix=total_pix,             
             nx=rte_solver._nx,
             ny=rte_solver._ny,
             nz=rte_solver._nz,
@@ -112,7 +118,14 @@ class RadianceSensor(Sensor):
             sfctype=rte_solver._sfctype,
             units=rte_solver._units
         )
-        return radiance.reshape(projection.resolution, order='F')
+        
+        if isinstance(projection.npix, list):
+            radiance = np.split(radiance, np.cumsum(projection.npix[:-1]))
+            radiance = map(lambda img, res: img.reshape(res, order='F'), radiance, projection.resolution)
+        else:
+            radiance = radiance.reshape(projection.resolution, order='F')
+        
+        return radiance
 
 
     def par_render(self, rte_solver, projection, n_jobs=30, verbose=0):
@@ -141,6 +154,8 @@ class RadianceSensor(Sensor):
         Notes
         -----
         For a small domain, or small amout of pixels, par_render is slower than render.
+        """
+        
         """
         maxnlm=16384
         maxleg=2000
@@ -201,7 +216,7 @@ class RadianceSensor(Sensor):
             
         elif rte_solver._sfctype == 'VL':
             raise NotImplementedError('Variable surface not implemented.')       
-        
+        """
         x_split = np.array_split(projection.x, n_jobs) 
         y_split = np.array_split(projection.y, n_jobs) 
         z_split = np.array_split(projection.z, n_jobs) 
@@ -268,13 +283,18 @@ class RadianceSensor(Sensor):
                 npix=npix,
                 srctype=rte_solver._srctype,
                 sfctype=rte_solver._sfctype,
-                units=rte_solver._units,
-                phasetab=rte_solver._phasetab,
-                ylmsun=rte_solver._ylmsun,
-                nscatangle=nscatangle
+                units=rte_solver._units
             ) for x, y, z, mu, phi, npix in zip(x_split, y_split, z_split, mu_split, phi_split, npix_split))   
         
-        return np.concatenate(radiance).reshape(projection.resolution, order='F')
+        radiance = np.concatenate(radiance)
+        
+        if isinstance(projection.npix, list):
+            radiance = np.split(radiance, np.cumsum(projection.npix[:-1]))
+            radiance = map(lambda img, res: img.reshape(res, order='F'), radiance, projection.resolution)
+        else:
+            radiance = radiance.reshape(projection.resolution, order='F')
+        
+        return radiance
             
 
 class PolarizationSensor(Sensor):
@@ -426,7 +446,6 @@ class Projection(object):
         self._phi = None
         self._npix = None
         self._resolution = None
-        self._type = 'AbstractProjection'
      
     def __getitem__(self, val):
         projection = copy.copy(self)
@@ -470,10 +489,6 @@ class Projection(object):
     @property 
     def npix(self):
         return self._npix    
-    
-    @property
-    def type(self):
-        return self._type
     
     @property
     def resolution(self):
@@ -914,113 +929,61 @@ class Camera(object):
         return (self.sensor.type, self.projection.type)
     
     
-class SensorArray(Sensor):
+
+class MultiViewProjection(Projection):
     """
-    A SensorArray object encapsulate several sensors e.g. for multi-view imaging of a domain.
+    A MultiViewProjection object encapsulate several projection geometries for multi-view imaging of a domain.
     
     Parameters
     ----------
-    sensor_list: list, optional
+    projection_list: list, optional
         A list of Sensor objects
     """
     
-    def __init__(self, sensor_list=None):
-        super(SensorArray, self).__init__()
-        self.type = 'SensorArray'
-        self._num_sensors = 0
-        self._sensor_list = []
-        if sensor_list:
-            for sensor in sensor_list:
-                self.add_sensor(sensor)
+    def __init__(self, projection_list=None):
+        super(MultiViewProjection, self).__init__()
+        self._num_projections = 0
+        self._projection_list = []
+        self._names = []
+        if projection_list:
+            for projection in projection_list:
+                self.add_projection(projection)
 
     
-    def add_sensor(self, sensor, id=None):
+    def add_projection(self, projection, name=None):
         """
-        Add a sensor to the SensorArray
+        Add a projection to the projection list
         
         Parameters
         ----------
-        sensor: Sensor object
-            A Sensor object to add to the SensorArray
-        id: str, optional
-            An ID for the sensor. 
+        projection: Projection object
+            A Projection object to add to the MultiViewProjection
+        name: str, optional
+            An ID for the projection. 
         """
         attributes = ['x', 'y', 'z', 'mu', 'phi']
         
-        if self.num_sensors is 0:
+        if self.num_projections == 0:
             for attr in attributes:
-                self.__setattr__('_' + attr, sensor.__getattribute__(attr))
-            self._npix = [sensor.npix]
-            self._resolution = [sensor.resolution]
-            self._type = [sensor.type]
-            self._ids = ['sensor0' if id is None else id]
+                self.__setattr__('_' + attr, projection.__getattribute__(attr))
+            self._npix = [projection.npix]
+            self._resolution = [projection.resolution]
+            self._names = [name]
         else:
             for attr in attributes:
                 self.__setattr__('_' + attr, np.concatenate((self.__getattribute__(attr), 
-                                                             sensor.__getattribute__(attr))))
-            self._npix.append(sensor.npix)
-            self._resolution.append(sensor.resolution)
-            self._type.append(sensor.type)
-            self._ids.append('sensor'+str(self.num_sensors) if id is None else id)  
-        
-        self._sensor_list.append(sensor)
-        self._num_sensors += 1
-    
-    
-    def render(self, rte_solver):
-        """
-        Serial rendering of each sensor.
-        
-        Parameters
-        ----------
-        rte_solver: shdom.RteSolver object
-            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
-        
-        Returns
-        -------
-        radiance: list
-            A list of the rendered radiances per sensor.
-        """
-        split_measurements = [sensor.render(rte_solver) for sensor in self.sensor_list]
-        radiance = []
-        for sensor, meas in zip(self.sensor_list, split_measurements):
-            meas = np.array(meas)
-            if hasattr(sensor, 'resolution'):
-                meas = meas.reshape(sensor.resolution, order='F')
-            radiance.append(meas)            
-        return radiance     
-
-
-    def par_render(self, rte_solver, n_jobs=30, verbose=0):
-        """
-        Parallel rendering of all sensors.
-        
-        Parameters
-        ----------
-        rte_solver: shdom.RteSolver object
-            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
-        
-        Returns
-        -------
-        radiance: list
-            A list of the rendered radiances per sensor.
-        """
-        radiance = super(SensorArray, self).par_render(rte_solver, n_jobs, verbose)
-        
-        split_measurements = np.split(radiance, np.cumsum(self.npix[:-1]))
-        radiance = []
-        for sensor, meas in zip(self.sensor_list, split_measurements):
-            meas = np.array(meas)
-            if hasattr(sensor, 'resolution'):
-                meas = meas.reshape(sensor.resolution, order='F')
-            radiance.append(meas)
-        return radiance    
-
+                                                             projection.__getattribute__(attr))))
+            self._npix.append(projection.npix)
+            self._names.append(name)  
+            self._resolution.append(projection.resolution)
+                                    
+        self._projection_list.append(projection)
+        self._num_projections += 1 
 
     @property
-    def sensor_list(self):
-        return self._sensor_list
+    def projection_list(self):
+        return self._projection_list
     
     @property
-    def num_sensors(self):
-        return self._num_sensors    
+    def num_projections(self):
+        return self._num_projections    

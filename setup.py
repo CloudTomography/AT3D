@@ -41,7 +41,7 @@ classifiers =  ['Development Status :: 3 - Alpha',
 # Set this to True for compiling the polarized 
 # version of the SHDOM algorithm.
 #
-POLARIZED_SHDOM = True
+POLARIZED_SHDOM = False
 
 #
 # f2py stuff

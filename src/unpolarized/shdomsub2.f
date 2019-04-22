@@ -1587,7 +1587,7 @@ Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
         CALL YLMALL (SOLARMU, SOLARAZ, ML, MM, NCS, YLMSUN)
         IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
           NSCATANGLE = MAX(36,MIN(MAXSCATANG,2*NLEG))
-          CALL PRECOMPUTE_PHASE (MAXPHASE, NSCATANGLE, NUMPHASE, ML,
+          CALL PRECOMPUTE_PHASE (NSCATANGLE, NUMPHASE, ML,
      .                           NLEG, LEGEN, PHASETAB)
         ENDIF
       ENDIF
@@ -1789,7 +1789,7 @@ c     .         X0,Y0,MURAY,PHIRAY,VISOUT(NVIS)
      .                        YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
      .                        MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD, 
      .                        SFCTYPE, NSFCPAR, SFCGRIDPARMS,
-     .                        MURAY,PHIRAY, MU2,PHI2, X0,Y0,Z0, RADOUT)
+     .                        MURAY,PHIRAY, MU2,PHI2, X0,Y0,Z0,RADOUT)
 
 C       Integrates the source function through the extinction field 
 C     (EXTINCT) backward in the direction (MURAY,PHIRAY) to find the 
@@ -1901,7 +1901,7 @@ C         Start at the desired point, getting the extinction and source there
       ZE = Z0
       CALL LOCATE_GRID_CELL (NX, NY, NZ, XGRID, YGRID, ZGRID, 
      .                  NCELLS, TREEPTR, GRIDPTR, CELLFLAGS, GRIDPOS,
-     .                  BCFLAG, IPFLAG, XE, YE, ZE,  ICELL)
+     .                  BCFLAG, IPFLAG, XE, YE, ZE, ICELL)
       IFACE = 0
       NGRID = 0
       RAD = 0.0D0
@@ -2354,22 +2354,21 @@ C               source function because extinction is still scaled.
 
 
  
-      SUBROUTINE PRECOMPUTE_PHASE (MAXPHASE, NSCATANGLE, NUMPHASE,
+      SUBROUTINE PRECOMPUTE_PHASE (NSCATANGLE, NUMPHASE,
      .                             ML, NLEG, LEGEN, PHASETAB)
 C       Precomputes the phase function as a function of scattering angle
 C     for all the tabulated phase functions.
       IMPLICIT NONE
-      INTEGER MAXPHASE, NSCATANGLE, ML, NLEG
+      INTEGER NSCATANGLE, ML, NLEG
       INTEGER NUMPHASE
-Cf2py intent(in) :: MAXPHASE, NSCATANGLE, NUMPHASE, ML, NLEG
+Cf2py intent(in) :: NSCATANGLE, NUMPHASE, ML, NLEG
       REAL    LEGEN(0:NLEG,NUMPHASE)
 Cf2py intent(in) :: LEGEN
-      REAL    PHASETAB(MAXPHASE,NSCATANGLE)
+      REAL    PHASETAB(NUMPHASE,NSCATANGLE)
 Cf2py intent(out) :: PHASETAB
 
       INTEGER I, J, L, MAXLEG
-      PARAMETER (MAXLEG=10000)
-      DOUBLE PRECISION PI, SUM, F, A, COSSCAT, LEGSCAT(0:MAXLEG)
+      DOUBLE PRECISION PI, SUM, F, A, COSSCAT, LEGSCAT(0:NLEG)
 
  
       PI = ACOS(-1.0D0)
