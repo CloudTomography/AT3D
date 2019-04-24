@@ -3,6 +3,7 @@ C Dummy routines to allow parallel SHDOM to compile without MPI.
 
 
       SUBROUTINE START_MPI (MASTERPROC)
+      IMPLICIT NONE
       LOGICAL MASTERPROC
 Cf2py intent(out) MASTERPROC
       MASTERPROC = .TRUE.
@@ -13,6 +14,7 @@ Cf2py intent(out) MASTERPROC
 
       SUBROUTINE MAP_SHDOM_MPI (BCFLAG, NPX, NPY, NX, NY, NZ, DELX,
      .                 DELY, PROPFILE, XSTART, YSTART, RUNNAME)
+      IMPLICIT NONE
       INTEGER BCFLAG, NPX, NPY, NX, NY, NZ
 Cf2py intent(in, out) :: BCFLAG, NPX, NPY, NX, NY, NZ
       REAL    DELX, DELY
@@ -201,6 +203,7 @@ Cf2py intent(in) :: NCELLSTOT, NPTSTOT, NSHTOT
       SUBROUTINE MAKE_DIRECT_PAR (SPT, NPTS, BCFLAG, IPFLAG, DELTAM, 
      .                ML, NLEG, SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS,
      .                NX, XGRID, NY, YGRID,  DIRFLUX)
+      IMPLICIT NONE
       INTEGER SPT, NPTS, BCFLAG, IPFLAG, ML, NLEG, NX, NY
       LOGICAL DELTAM
       REAL    SOLARFLUX, SOLARMU, SOLARAZ
@@ -215,6 +218,7 @@ Cf2py intent(in) :: NCELLSTOT, NPTSTOT, NSHTOT
 
       SUBROUTINE FIND_BOUNDARY_POINTS (BCFLAG, IPFLAG, NPTS, SWEEPORD,
      .               GRIDPTR, GRIDPOS, NX, NY, NZ, XGRID, YGRID, ZGRID)
+      IMPLICIT NONE
       INTEGER BCFLAG, IPFLAG, NPTS, SWEEPORD(NPTS,*), GRIDPTR(8,*)
       INTEGER NX, NY, NZ
       REAL GRIDPOS(3,NPTS), XGRID(NX), YGRID(NY), ZGRID(NZ)
@@ -256,6 +260,7 @@ Cf2py intent(in) :: NCELLSTOT, NPTSTOT, NSHTOT
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, FLUXES,
      .             SHPTR, SOURCE, SOURCE1, GRIDRAD,
      .             OUTPARMS,  NRAD, NANGOUT, RADOUT)
+      IMPLICIT NONE
       INTEGER NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS, NANGOUT
 Cf2py intent(in) :: NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS, NANGOUT
       INTEGER ML, MM, NCS, NLEG, NUMPHASE
@@ -304,14 +309,13 @@ Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
 
 
       SUBROUTINE CALC_ACCEL_SOLCRIT (DOACCEL, DELJDOT, DELJOLD, DELJNEW, 
-     .                               JNORM, ACCELPAR, SOLCRIT)
+     .                               JNORM, ACCELPAR, SOLCRIT, A)
 C     Calculates the acceleration parameter and solution criterion from
 C     the delta source function vector dot  products.
+      IMPLICIT NONE
       LOGICAL DOACCEL
       REAL    DELJDOT, DELJOLD, DELJNEW, JNORM, ACCELPAR, SOLCRIT
       REAL    R, THETA, A
-      SAVE   A
-      DATA   A/0.0/
 
 C       Accelerate if desired, didn't last time, and things are converging. 
       IF (DOACCEL .AND. A .EQ. 0.0 .AND. DELJNEW .LT. DELJOLD) THEN
@@ -340,6 +344,7 @@ C         WRITE (*,'(1X,A,3(1X,F7.3))') '! Acceleration: ', A,R,THETA
 
       SUBROUTINE END_SHDOM_MPI (NPTS, GRIDPOS, NPX,NPY, XSTART,YSTART,
      .                          DELX, DELY, NPXT, NPYT)
+      IMPLICIT NONE
       INTEGER NPTS, NPX, NPY, NPXT, NPYT
 Cf2py intent(in) :: NPTS, NPX, NPY, NPXT, NPYT
       REAL    GRIDPOS(3,NPTS), XSTART, YSTART, DELX, DELY

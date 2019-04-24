@@ -208,16 +208,15 @@
       END
  
  
-
-
- 
       SUBROUTINE DIRECT_BEAM_PROP (INIT, XI, YI, ZI, BCFLAG, IPFLAG, &
                      DELTAM, ML, NLEG, SOLARFLUX, SOLARMU, SOLARAZ, & 
                      DIRFLUX,  UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM, &
                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY, &
                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
                      ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD, &
-                     ZCKD, GASABS)
+                     ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV, &
+                     CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD, &
+                     XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
 !       Computes the direct beam flux at point (XI,YI,ZI) by integrating
 !     the extinction through the property grid.  If called with 
 !     INIT=1 then the property grid extinction array, solar direction
@@ -277,10 +276,6 @@
       INTEGER IPHASEP(*)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
-      
-      SAVE  CX, CY, CZ, CXINV, CYINV, CZINV, DI, DJ, DK, IPDIRECT
-      SAVE  DELXD, DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV
-
 
       IF (INIT .EQ. 9) THEN
         RETURN

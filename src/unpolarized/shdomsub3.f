@@ -13,6 +13,7 @@ C       Obtains the input parameters for the program from a namelist
 C     read from stdin.  See the overall program documentation for the 
 C     list of input parameters.  The subroutine dummy variables can't
 C     be in the namelist, hence the two sets of variables.
+      IMPLICIT NONE
       INTEGER dNX, dNY, dNZ, dNMU, dNPHI, dBCFLAG, dIPFLAG, dMAXPAR
       INTEGER dMAXITER, dNUMOUT, dMAXOUT
       LOGICAL dKDIST, dDELTAM, dACCELFLAG
@@ -37,6 +38,8 @@ C     be in the namelist, hence the two sets of variables.
       REAL  SOLARFLUX, SOLARMU, SOLARAZ
       REAL  GNDTEMP, GNDALBEDO, SKYRAD
       REAL  WAVENO(2), WAVELEN, SOLACC, SPLITACC, SHACC
+      REAL  MAX_TOTAL_MB, ADAPT_GRID_FACTOR
+      REAL  NUM_SH_TERM_FACTOR, CELL_TO_POINT_RATIO
       REAL  OUTPARMS(MAXPAR,MAXOUT)
       CHARACTER SRCTYPE*1, GRIDTYPE*1, UNITS*1
       CHARACTER OUTTYPES(MAXOUT)*1, OUTFILES(MAXOUT)*64
@@ -180,6 +183,7 @@ C     Check for reasonable ranges on SPLITACC and SHACC.
 C     Check for reasonable range of GNDTEMP and valid range of GNDALBEDO.
 C     Check for SOLARMU=0.
 C     Check for NPHI<NMU.
+      IMPLICIT NONE
       INTEGER NMU, NPHI
 Cf2py intent(in) :: NMU, NPHI
       LOGICAL DELTAM
@@ -264,6 +268,7 @@ C       Reads parts of the property file to get the maximum array sizes
 C     needed for allocatable arrays.  For extinction only and tabulated
 C     phase function formats, only the header is read, while for the
 C     standard format, the whole file must be read to determine MAXLEG.
+      IMPLICIT NONE
       INTEGER NPX, NPY, NPZ
 Cf2py intent(out) NPX, NPY, NPZ
       INTEGER NUMPHASE
@@ -338,6 +343,7 @@ C     input and the actual maximum number of terms on output, except that
 C     it may not exceed MAXLEG; otherwise NLEG is the number of Legendre
 C     terms to be used (regardless of what is in property file).
 C     See the overall program documentation for the three file formats.
+      IMPLICIT NONE
       INTEGER NPX, NPY, NPZ, MAXLEG, NLEG, NUMPHASE
 Cf2py intent(in, out) NPX, NPY, NPZ
 Cf2py intent(in) MAXLEG
@@ -525,6 +531,7 @@ C       above 1, asymmetry parameter below -1 or above 1, or IPHASE
 C       out of range (of tabulated phase functions).  
 C       Warning if Chi1=1, for people specifying Chi0.
 C       Warning if optical depth across a grid cell exceeds 2.
+      IMPLICIT NONE
       INTEGER NPX, NPY, NPZ, NLEG
       INTEGER NUMPHASE
 Cf2py intent(in) :: NPX, NPY, NPZ, NLEG, NUMPHASE
@@ -646,6 +653,7 @@ C           Warn about temperatures outside of Earth atmosphere temperatures
       SUBROUTINE READ_SURFACE_SIZE (SFCFILE, MAXSFCPTS, MAXSFCPARS)
 C       Gets the size of the surface property inputs (temperature is
 C       always included).
+      IMPLICIT NONE
       INTEGER MAXSFCPTS, MAXSFCPARS
 Cf2py intent(out) :: MAXSFCPTS, MAXSFCPARS
       CHARACTER SFCFILE*64
@@ -704,6 +712,7 @@ C       F  Fresnel       Real, Imaginary part of index of refraction
 C       R  RPV           rho0, k, Theta
 C       O  Ocean         Wind Speed (m/s), Pigmentation (mg/m^3)
 C
+      IMPLICIT NONE
       INTEGER MAXSFCPTS, MAXSFCPARS, NXSFC, NYSFC, NSFCPAR
 Cf2py intent(in) :: MAXSFCPTS, MAXSFCPARS
 Cf2py intent(out) :: NXSFC, NYSFC, NSFCPAR
@@ -857,6 +866,7 @@ C         Copy the edge points to the opposite side for periodic boundary
 
       SUBROUTINE READ_CKD_SIZE (CKDFILE, WAVENO, NG, NZCKD)
 C       Find the size of the k-distribution arrays for this wavenumber band.
+      IMPLICIT NONE
       INTEGER NG, NZCKD
       REAL    WAVENO(2)
       CHARACTER CKDFILE*64
@@ -900,6 +910,7 @@ C     or delta g's in DELG, the number of levels in NZCKD, the
 C     levels from the top down in ZCKD, and the absorption coefficients
 C     for each g and level in KABS.  The array sizes MAXNG and MAXNZ
 C     are checked.
+      IMPLICIT NONE
       INTEGER MAXNG, MAXNZ, NG, NZCKD
       REAL    WAVENO(2), SOLFLUX, DELG(*), ZCKD(*), KABS(*)
       CHARACTER CKDFILE*64
@@ -971,6 +982,7 @@ C     If the file name is 'NONE' then the INRADFLAG is set to false,
 C     otherwise it is true.  The input file may have any spherical 
 C     harmonic truncation smaller than the current (ML,MM,NLM).
 C     The flag NEWGRIDFLAG is set to false if reading succeeds.
+      IMPLICIT NONE
       INTEGER NX, NY, NZ, ML, MM, NCS, NLM, NPTS, NCELLS
       INTEGER SHPTR(*), RSHPTR(*)
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
@@ -1045,6 +1057,7 @@ C     the SHDOM solution. This includes the cell tree structure,
 C     the spherical harmonic expansion of the source function,
 C     the low order terms of the radiance expansion, and the flux array.
 C     If the file name is 'NONE' then no file is written.
+      IMPLICIT NONE
       INTEGER NX, NY, NZ, ML, MM, NCS, NLM, NPTS, NCELLS
 Cf2py intent(in) :: NX, NY, NZ, ML, MM, NCS, NLM, NCELLS
       INTEGER SHPTR(NPTS+1), RSHPTR(NPTS)
@@ -1106,6 +1119,7 @@ Cf2py intent(in) :: OUTSAVEFILE
 C       Outputs the final cell splitting criterion for each grid cell
 C     and direction (X,Y,Z).  Calls CELL_SPLIT_TEST.
 C     Mainly for debugging purposes.
+      IMPLICIT NONE
       INTEGER NCELLS
       INTEGER SHPTR(*), GRIDPTR(8,*)
       REAL    GRIDPOS(3,*), EXTINCT(*), SOURCE(*)
@@ -1154,6 +1168,7 @@ C     output.  The outlines of the cells are drawn, and arrows between
 C     the cell centers show the neighbor relationships.
 C     OUTTYPE=0 for cell outlines only, OUTTYPE=1 for cells and arrows.
 C     There is a special output for IP mode.
+      IMPLICIT NONE
       INTEGER OUTTYPE, IPFLAG, NX, NCELLS
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
       INTEGER*2 CELLFLAGS(*)
@@ -1296,7 +1311,7 @@ C     'F' - for hemispheric flux, 'H' - for heating rate (net flux
 C     convergence), 'S' - for spherical harmonic terms, and 'M' for
 C     medium properties.
 C     See the overall program documentation for output parameters.
-
+      IMPLICIT NONE
       INTEGER NX, NY, NZ, NBPTS, NPTS, NCELLS, NSH
       INTEGER ML, MM, NLM, NLEG, NMU, NPHI, NANG, NG
       INTEGER NUMPHASE
@@ -1825,7 +1840,7 @@ C     There are four supported types (OUTTYPE) of output: 'R' - for radiance,
 C     'F' - for hemispheric flux, 'H' - for heating rate (net flux 
 C     convergence), 'S' - for spherical harmonic terms
 C     See the overall program documentation for output parameters.
-
+      IMPLICIT NONE
       INTEGER NX, NY, NZ, NPTS, NCELLS, NSH
       INTEGER ML, MM, NLM, NMU, NPHI, NANG, NG
       INTEGER BCFLAG, IPFLAG

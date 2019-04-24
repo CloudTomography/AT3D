@@ -1,6 +1,6 @@
 
         SUBROUTINE SOLVE_RTE (NSTOKES, NX, NY, NZ, NX1, NY1, NANG,
-     .               ML, MM, NLM, NMU, NPHI, NLEG, NSTLEG, 
+     .               ML, MM, NCS, NLM, NMU, NPHI, NLEG, NSTLEG, 
      .               NUMPHASE, NPHI0, MU, PHI, WTDO,
      .               MAXIV, MAXIC, MAXIG, MAXIDO, INRADFLAG, 
      .               BCFLAG, IPFLAG, DELTAM, SRCTYPE, HIGHORDERRAD,
@@ -31,8 +31,8 @@ C       cells and points on output.
       IMPLICIT NONE
       INTEGER NSTOKES, NX, NY, NZ, NX1, NY1, NXSFC, NYSFC, NSFCPAR
 Cf2py intent(in) :: NSTOKES, NX, NY, NX1, NY1, NZ, NXSFC, NYSFC, NSFCPAR
-      INTEGER ML, MM, NLM, NMU, NPHI, NANG, NLEG, NSTLEG, NUMPHASE
-Cf2py intent(in) :: ML, MM, NLM, NMU, NPHI, NLEG, NSTLEG, NUMPHASE
+      INTEGER ML, MM, NCS, NLM, NMU, NPHI, NANG, NLEG, NSTLEG, NUMPHASE
+Cf2py intent(in) :: ML, MM, NCS,NLM, NMU, NPHI, NLEG, NSTLEG, NUMPHASE
 Cf2py intent(out) :: NANG
       INTEGER NPHI0(NMU), MAXITER, ITER, BCFLAG, IPFLAG
 Cf2py intent(in) :: MAXITER, BCFLAG, IPFLAG
@@ -115,6 +115,7 @@ Cf2py intent(in) ::ZCKD, GASABS
       INTEGER OLDNPTS 
 Cf2py intent(in,out) :: OLDNPTS
 
+      REAL A
       INTEGER SP, STACK(50)
       DOUBLE PRECISION EXTMIN, SCATMIN
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
@@ -279,7 +280,8 @@ C         as long as SPLITTESTING is true.
       STARTSPLITACC = CURSPLITACC
       AVGSOLCRIT = SOLCRIT
       SPLITCRIT = 0.0
-
+      A = 0.0
+      
       IF (VERBOSE) THEN
         WRITE (6,*) '! Iter Log(Sol)  SplitCrit  Npoints  Nsh(avg)'
       ENDIF
@@ -374,7 +376,7 @@ C              the solution criterion, and dot products for acceleration.
 C           Calculate the acceleration parameter and solution criterion
 C            from all the processors
         CALL CALC_ACCEL_SOLCRIT (ACCELFLAG, DELJDOT, DELJOLD, DELJNEW,
-     .                           JNORM, ACCELPAR, SOLCRIT)
+     .                           JNORM, ACCELPAR, SOLCRIT, A)
 
 C           Accelerate the convergence of the source function vector
         CALL ACCELERATE_SOLUTION (ACCELPAR, NPTS, SHPTR, OSHPTR, 

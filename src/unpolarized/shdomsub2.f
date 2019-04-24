@@ -4,6 +4,7 @@
      .                      XGRID, YGRID, ZGRID)
 C       Makes the XGRID, YGRID, and ZGRID arrays from the input Z levels
 C     and X and Y spacing from the property file according to the GRIDTYPE.
+      IMPLICIT NONE
       INTEGER BCFLAG, NPX, NPY, NPZ, NX, NY, NZ
 Cf2py intent(in) :: BCFLAG, NPX, NPY, NPZ, NX, NY, NZ
       REAL    XSTART, YSTART, DELXP, DELYP, ZLEVELS(NPZ)
@@ -125,6 +126,7 @@ C                        0  Do independent pixel for X
 C                        1  Do independent pixel for Y
 C                       2,3 Direction cell is split (0=no split, 1=X, 2=Y, 3=Z)
 C        IP is a grid point index, IC is a cell index.
+      IMPLICIT NONE
       INTEGER IPFLAG, BCFLAG, NX, NY, NZ, NX1, NY1, NPTS, NCELLS
 Cf2py intent(in) :: IPFLAG, BCFLAG, NX, NY, NZ, NX1, NY1
 Cf2py intent(out) :: NPTS, NCELLS
@@ -306,6 +308,7 @@ C               Base grid cells have no parents or children
      .               ZCKD, GASABS, EXTMIN, SCATMIN)
 C       Calls TRILIN_INTERP_PROP to interpolate the input arrays from 
 C     the property grid to each internal grid point. 
+      IMPLICIT NONE
       INTEGER NPTS, NLEG
       INTEGER IPHASE(*)  
       REAL    GRIDPOS(3,NPTS)
@@ -331,7 +334,7 @@ C         Initialize: transfer the tabulated phase functions
      .                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .                      ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .                      ZCKD, GASABS, EXTMIN, SCATMIN)
-     
+
 C         Trilinearly interpolate from the property grid to the adaptive grid
       DO IP = 1, NPTS
         CALL TRILIN_INTERP_PROP 
@@ -361,6 +364,7 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
 C       Makes the direct beam solar flux for the internal base grid.
 C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
+      IMPLICIT NONE
       INTEGER NPTS, BCFLAG, IPFLAG, ML, NLEG
       LOGICAL DELTAM
       REAL    SOLARFLUX, SOLARMU, SOLARAZ
@@ -423,6 +427,7 @@ C       terms are scaled first; only the 0 to ML LEGEN terms are scaled.
 C       Outputs PLANCK with (1-omega)*B(T) for thermal source, where B(T) is
 C       the Planck function (meaning depends on UNITS).  
 C       TEMP array is unchanged.
+      IMPLICIT NONE
       INTEGER ML, MM, NLEG, NPTS, NUMPHASE
       INTEGER IPHASE(NPTS)
       LOGICAL DELTAM
@@ -482,6 +487,7 @@ C       Initializes radiance field by solving plane-parallel two-stream.
 C     Solves the L=1 M=0 SH system by transforming the pentadiagonal
 C     system to tridiagonal and calling solver.
 C     Does the initialization for the NXY columns of the base grid.
+      IMPLICIT NONE
       INTEGER NXY, NZ, NCS, NLEG, NUMPHASE, RSHPTR(*)
       INTEGER IPHASE(NZ,NXY)
       REAL    GNDALBEDO, GNDTEMP, SKYRAD, SOLARFLUX, SOLARMU
@@ -491,17 +497,18 @@ C     Does the initialization for the NXY columns of the base grid.
       REAL    TEMP(NZ,NXY)
       REAL    RADIANCE(*)
       CHARACTER SRCTYPE*1, UNITS*1
-      INTEGER MAXNZ, NLAYER, I, IZ, IR, J, L
-      PARAMETER (MAXNZ=501)
+      INTEGER NLAYER, I, IZ, IR, J, L
+
       LOGICAL DELTAM
       REAL    PI, C0, C1
       REAL    EXT0, EXT1, SCAT0, SCAT1, G0, G1, GNDEMIS
-      REAL    OPTDEPTHS(MAXNZ), ALBEDOS(MAXNZ), ASYMMETRIES(MAXNZ)
-      REAL    TEMPS(MAXNZ), FLUXES(3,MAXNZ)
+      REAL, ALLOCATABLE :: OPTDEPTHS(:), ALBEDOS(:)
+      REAL, ALLOCATABLE :: TEMPS(:), FLUXES(:,:), ASYMMETRIES(:)
       CHARACTER SRCT*1
 
  
-      IF (NZ .GT. MAXNZ)  STOP 'INIT_RADIANCE: MAXNZ exceeded'
+      ALLOCATE (OPTDEPTHS(NZ), ALBEDOS(NZ), ASYMMETRIES(NZ))
+      ALLOCATE (TEMPS(NZ), FLUXES(3,NZ))
 
       NLAYER = NZ-1
       DELTAM=.FALSE.
@@ -523,10 +530,6 @@ C           Make layer properties for the Eddington routine
           SCAT0 = ALBEDO(IZ,I)*EXT0
           SCAT1 = ALBEDO(IZ+1,I)*EXT1
           OPTDEPTHS(L) = (ZGRID(IZ+1)-ZGRID(IZ))* (EXT0+EXT1)/2
-	  IF (OPTDEPTHS(L) .LT. 0.0) THEN
-	    WRITE(*,*) IZ, NXY, ZGRID(IZ), ZGRID(IZ+1), EXT0, EXT1, OPTDEPTHS(L)
-	    STOP
-	  ENDIF
           IF (EXT0+EXT1 .GT. 0.0) THEN
             ALBEDOS(L) = (SCAT0+SCAT1)/(EXT0+EXT1)
           ELSE
@@ -567,6 +570,7 @@ C           Convert fluxes to first two moments of spherical harmonics
           RSHPTR(IZ+NZ*(I-1)+1) = IR
         ENDDO
       ENDDO
+      DEALLOCATE (OPTDEPTHS, ALBEDOS, ASYMMETRIES, TEMPS, FLUXES)
       RETURN
       END
 
@@ -626,7 +630,7 @@ C                                   FLUXES(1,L) is upwelling diffuse,
 C                                   FLUXES(2,L) is downwelling diffuse,
 C                                   FLUXES(3,L) is downwelling direct,
 C                                   L=1 is top, L=NUML+1 is bottom
-
+      IMPLICIT NONE
       INTEGER   NLAYER
       LOGICAL   DELTAM
       REAL      TEMPS(*)
@@ -636,9 +640,6 @@ C                                   L=1 is top, L=NUML+1 is bottom
       CHARACTER*1 SRCTYPE, UNITS
       REAL      FLUXES(3,*)
  
-C               MAXLAY is maximum number of layers
-      INTEGER   MAXLAY, MAXN
-      PARAMETER (MAXLAY=500, MAXN=2*MAXLAY+2)
       INTEGER   N, L, I
       DOUBLE PRECISION DELTAU, G, OMEGA, F
       DOUBLE PRECISION LAMBDA, R, T, D, CP, CM, A, B, X1, X2
@@ -646,15 +647,17 @@ C               MAXLAY is maximum number of layers
       DOUBLE PRECISION RADP1P, RADP1M, RADP2P, RADP2M
       DOUBLE PRECISION PI, MU0, SKYFLUX,GNDFLUX, PLANCK1,PLANCK2,C,TAU
       DOUBLE PRECISION EXLP, EXLM, V, DS, B1, B2, SOLPP, SOLPM
-      DOUBLE PRECISION LOWER(MAXN), UPPER(MAXN), DIAG(MAXN), RHS(MAXN)
+      DOUBLE PRECISION, ALLOCATABLE :: LOWER(:),UPPER(:),DIAG(:),RHS(:)
       REAL      BBRAD
       PARAMETER (PI=3.1415926535)
+
+
+      N = 2*NLAYER+2
+      ALLOCATE (LOWER(N), UPPER(N), DIAG(N), RHS(N))
  
 C               Compute the reflection, transmission, and source
 C               coefficients for each layer for the diffuse Eddington
 C               two stream problem.
-      N = 2*NLAYER+2
-      IF (N .GT. MAXN) STOP 'EDDRTF: Exceeded maximum number of layers'
       IF (SRCTYPE .EQ. 'T') THEN
         CALL PLANCK_FUNCTION (TEMPS(1),UNITS,WAVENO,WAVELEN,BBRAD)
         PLANCK1 = PI*BBRAD
@@ -791,6 +794,7 @@ C           Put the fluxes in the output array
         I = I + 2
       ENDDO
  
+      DEALLOCATE (LOWER, UPPER, DIAG, RHS)
       RETURN
       END
  
@@ -803,6 +807,7 @@ C       DIAG(1..N) is the diagonal, and UPPER(1..N-1) is the
 C       superdiagonal.  On input RHS is the right hand side, while
 C       on output it is the solution vector.  Everything is destroyed.
 C       Hacked from Linpack DGTSL.
+      IMPLICIT NONE
       INTEGER N 
       DOUBLE PRECISION LOWER(*), DIAG(*), UPPER(*), RHS(*)
       INTEGER K, KB
@@ -874,12 +879,13 @@ C     and the integration weight for each ordinate. The first NMU/2 mu
 C     angles are the downwelling (mu<0) angles.  Also output are the
 C     maximum number of azimuthal angles (NPHI0MAX), the flags for doing 
 C     an azimuthal FFT for each mu and the total number of angles.
+      IMPLICIT NONE
       INTEGER NMU, NPHI, NCS, ITYPE,  NPHI0MAX, NPHI0(NMU), NANG
       LOGICAL FFTFLAG(NMU)
       REAL    MU(NMU), PHI(NMU,*), WTMU(NMU), WTDO(NMU,*)
       INTEGER MAXNPHI, J, K, MM
       REAL    DELPHI
-      PARAMETER (MAXNPHI=128)
+      PARAMETER (MAXNPHI=256)
       INTEGER GOODNFFT(MAXNPHI)
       DATA GOODNFFT/1,2,3,4,5,6,7,8,   9,10,11,12,13,14,16,16,
      .      18,18,20,20,24,24,24,24,  25,27,27,30,30,30,32,32,
@@ -890,7 +896,21 @@ C     an azimuthal FFT for each mu and the total number of angles.
      .          100,100,100,100,108,108,108,108, 
      .          108,108,108,108,120,120,120,120,
      .          120,120,120,120,120,120,120,120,
-     .          128,128,128,128,128,128,128,128/
+     .          128,128,128,128,128,128,128,128,
+     .          144,144,144,144,144,144,144,144,
+     .          144,144,144,144,144,144,144,144,
+     .          160,160,160,160,160,160,160,160,
+     .          160,160,160,160,160,160,160,160,
+     .          180,180,180,180,180,180,180,180,180,180,
+     .          180,180,180,180,180,180,180,180,180,180,
+     .          192,192,192,192,192,192,192,192,192,192,192,192,
+     .          200,200,200,200,200,200,200,200,
+     .          216,216,216,216,216,216,216,216,
+     .          216,216,216,216,216,216,216,216,
+     .          240,240,240,240,240,240,240,240,240,240,240,240,
+     .          240,240,240,240,240,240,240,240,240,240,240,240,
+     .          256,256,256,256,256,256,256,256,
+     .          256,256,256,256,256,256,256,256/
 
       MM = MAX(0,INT(NPHI/2)-1)
       NANG = 0
@@ -941,7 +961,7 @@ C               Compute the azimuth angles and weights
             ENDDO
           ENDIF
           NANG = NANG + NPHI0(J)
-          FFTFLAG(J) = (NPHI0(J) .GT. 14) .OR. (MM .GT. 16)
+          FFTFLAG(J) = (NPHI0(J) .GT. 14) .OR. (MM .GT. 15)
         ENDDO
         
       ELSE
@@ -964,6 +984,7 @@ C     (function of l, m, mu_j), and the phi dependent set CPHIn
 C     (function of m, phi_k) for each mu_j.
 C     The FFTPACK phase coefficients for the FFT in azimuth are also 
 C     output in WPHISAVE.
+      IMPLICIT NONE
       INTEGER ML, MM, NLM, NMU, NPHI0(NMU), NPHI0MAX, NCS
       LOGICAL FFTFLAG(NMU)
       REAL    MU(NMU), PHI(NMU,*), WTMU(NMU), WTDO(NMU,*)
@@ -1035,7 +1056,7 @@ C       L  Lambertian    albedo
 C       F  Fresnel       Real, Imaginary part of index of refraction
 C       R  Rahman et al  rho0, k, Theta
 C       O  Ocean         Wind Speed (m/s), Pigmentation (mg/m^3)
-
+      IMPLICIT NONE
       REAL   REFPARMS(*), WAVELEN, MU1, PHI1, MU2, PHI2, REFLECT
       CHARACTER  SFCTYPE*1
       REAL   PI
@@ -1164,6 +1185,7 @@ C      integrated over the outgoing directions for the incident solar
 C      direction to find the albedo.  The ocean albedo calculated with
 C      the existing discrete ordinates must agree within MAXALBEDODIF with 
 C      that calculated from a high resolution ordinate set (NMU2 mu's).
+      IMPLICIT NONE
       INTEGER NXSFC, NYSFC, NSFCPAR
       INTEGER NMU, NPHI0MAX, NPHI0(NMU)
       REAL    SFCPARMS(NSFCPAR,NXSFC+1,NYSFC+1)
@@ -1243,6 +1265,7 @@ C         discrete ordinate set.
       SUBROUTINE SUM_OUTPUT (IFLAG, WT, N, DATA, SUMDATA) 
 C         Sums an output array over the k-distribution. 
 C     If IFLAG=0 then the output array is set to the input times the weight.
+      IMPLICIT NONE
       INTEGER IFLAG, N,  I
       REAL    WT, DATA(N), SUMDATA(N)
       IF (IFLAG .EQ. 0) THEN
@@ -1264,6 +1287,7 @@ C     If IFLAG=0 then the output array is set to the input times the weight.
      .             SOLARMU, EXTINCT, ALBEDO, PLANCK, DIRFLUX,
      .             RADIANCE,  NETFLUXDIV)
 C       Computes the net flux divergence at every grid point.
+      IMPLICIT NONE
       INTEGER NPTS, RSHPTR(NPTS+1)
       REAL    PLANCK(NPTS), DIRFLUX(NPTS), SOLARMU
       REAL    EXTINCT(NPTS), ALBEDO(NPTS)
@@ -1300,20 +1324,18 @@ C     At each grid point the mean radiance and net flux (Fx, Fy, Fz)
 C     are computed.  The output includes the diffuse and direct solar
 C     components.  If NSHOUT=5 then the HIGHORDERRAD flag is set and the 
 C     rms of the higher order terms in the radiance series is computed.
+      IMPLICIT NONE
       INTEGER NPTS, RSHPTR(NPTS+1), ML, MM, NCS, NSHOUT
       REAL    SOLARMU, SOLARAZ, DIRFLUX(NPTS)
       REAL    RADIANCE(*), SHTERMS(NSHOUT,NPTS)
       CHARACTER SRCTYPE*1
-      INTEGER I, IR, J
+      INTEGER I, IR, J, NLM
       REAL    PI, C, C0, IMEAN, FX, FY, FZ, HORMS
-      REAL    SECSOL, SINSOL, SOLX, SOLY, SOLM, F0
-      INTEGER MAXNLM
-      PARAMETER (MAXNLM=16384)
-      REAL    YLMSUN(MAXNLM)
+      REAL    SECSOL, SINSOL, SOLX, SOLY, SOLM, F0   
+      REAL, ALLOCATABLE :: YLMSUN(:)
  
-C         This MAXNLM is for holding the SH series for the direct beam
-      IF ((ML+1)**2-(2-NCS)*(ML*(ML+1))/2 .GT. MAXNLM)
-     .    STOP 'COMPUTE_SH: MAXNLM exceeded'
+      NLM = (2*MM+1)*(ML+1) - MM*(MM+1)
+      ALLOCATE (YLMSUN(NLM))
 
 C             Spherical Harmonic output: individual SH terms
       PI = ACOS(-1.0)
@@ -1363,6 +1385,7 @@ C             Spherical Harmonic output: individual SH terms
           SHTERMS(5,I) = SQRT(HORMS)
         ENDIF
       ENDDO
+      DEALLOCATE (YLMSUN)
       RETURN
       END
 
@@ -1379,6 +1402,7 @@ C     from the old grid points.  The output data is in FLUXES, DIRFLUX,
 C     FLUXDIV, and SHTERMS.  OLDNPTS is set to zero to do no interpolation.
 C     Each new point is located in a cell, and the two parent grid points
 C     are found to interpolate the data from.
+      IMPLICIT NONE
       INTEGER OLDNPTS, NPTS, NBCELLS, NCELLS
       INTEGER GRIDPTR(8,NCELLS), TREEPTR(2,NCELLS)
       LOGICAL FLUX_OUT, FLUXDIV_OUT, SH_OUT
@@ -1440,6 +1464,7 @@ C              ends of the edge; assume the cell was split in half.
      .               NBCELLS, NCELLS, TREEPTR, GRIDPTR, GRIDPOS)
 C       Interpolates the spherical harmonic radiance array to the new
 C     grid points (>OLDNPTS) from the old grid points.
+      IMPLICIT NONE
       INTEGER OLDNPTS, NPTS, NBCELLS, NCELLS
       INTEGER RSHPTR(NPTS+1), GRIDPTR(8,NCELLS), TREEPTR(2,NCELLS)
       REAL    RADIANCE(*), GRIDPOS(3,*)
@@ -2576,7 +2601,7 @@ C             Integrate backward from the location to get the radiance
       END
 
  
-      SUBROUTINE COMPUTE_ONE_SOURCE (ML, MM, NCS, NLEG, NUMPHASE,
+      SUBROUTINE COMPUTE_ONE_SOURCE (ML, MM, NLM, NCS, NLEG, NUMPHASE,
      .             NPTS, DELTAM, MU, PHI, SRCTYPE, SOLARMU, SOLARAZ,
      .             ALBEDO, LEGEN, IPHASE, DIRFLUX, SHPTR,
      .             SOURCE, SOURCE1)
@@ -2586,9 +2611,10 @@ C     series is input in SOURCE.
 C     For a solar source if delta-M then use Nakajima and Tanaka TMS
 C     procedure, replacing delta-M single scattering with single scattering
 C     for unscaled untruncated phase function.
-      INTEGER NPTS, ML, MM, NCS, NLEG, SHPTR(*)
+      IMPLICIT NONE
+      INTEGER NPTS, ML, MM, NLM, NCS, NLEG, SHPTR(*)
       INTEGER NUMPHASE
-Cf2py intent(in) :: NPTS, ML, MM, NCS, NLEG, NUMPHASE, SHPTR   
+Cf2py intent(in) :: NPTS,ML,MM,NLM,NCS,NLEG,NUMPHASE,SHPTR   
       INTEGER IPHASE(*)
 Cf2py intent(in) :: IPHASE
       LOGICAL DELTAM
@@ -2603,20 +2629,16 @@ Cf2py intent(in) :: SOURCE
 Cf2py intent(in, out) :: SOURCE1    
       CHARACTER SRCTYPE*1
 Cf2py intent(in) :: SRCTYPE
-      INTEGER MAXNLM, MAXLEG, MAXPHASE
-      PARAMETER (MAXNLM=16384, MAXLEG=10000, MAXPHASE=500000)
-      INTEGER I, J, L, M, MS, ME, K, IS, NS
-      REAL    YLMDIR(MAXNLM), YLMSUN(MAXNLM)
-      DOUBLE PRECISION DA, F, A, SECMU0, COSSCAT
-      DOUBLE PRECISION SUNDIRLEG(0:MAXLEG), SINGSCAT(MAXPHASE)
 
+      INTEGER I, J, L, M, MS, ME, K, IS, NS
+      REAL, ALLOCATABLE :: YLMDIR(:), YLMSUN(:)
+      DOUBLE PRECISION, ALLOCATABLE :: SUNDIRLEG(:)
+      REAL, ALLOCATABLE :: SINGSCAT(:)
+      DOUBLE PRECISION DA, F, A, SECMU0, COSSCAT
  
-C         This MAXNLM is for holding the full untruncated phase function series
-      IF ((ML+1)**2-(2-NCS)*(ML*(ML+1))/2 .GT. MAXNLM)
-     .    STOP 'COMPUTE_ONE_SOURCE: MAXNLM exceeded'
-      IF (NLEG .GT. MAXLEG)  STOP 'COMPUTE_ONE_SOURCE: MAXLEG exceeded'
-      IF (NUMPHASE .GT. MAXPHASE)  
-     .    STOP 'COMPUTE_ONE_SOURCE: MAXPHASE exceeded'
+      ALLOCATE (YLMDIR(NLM), YLMSUN(NLM))
+      ALLOCATE (SUNDIRLEG(0:NLEG), SINGSCAT(NUMPHASE))
+
       IF (ABS(MU).GT.1.0) STOP 'COMPUTE_ONE_SOURCE: Bad mu'
  
 
@@ -2714,6 +2736,7 @@ C               source function because extinction is still scaled.
         ENDIF
       ENDDO
  
+      DEALLOCATE (YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT)
       RETURN
       END
  
@@ -2735,6 +2758,7 @@ C     The tranmsission and radiance of the ray so far (TRANSMIT, RADIANCE)
 C     are input and returned after the integration along with the exitting
 C     ray location (XE,YE,ZE) and side of the domain (1=-X,2=+X,3=-Y,4=+Y,
 C     5=-Z,6=+Z).
+      IMPLICIT NONE
       INTEGER BCFLAG, IPFLAG, NX, NY, NZ, NPTS, NCELLS, SIDE
 Cf2py intent(in) :: BCFLAG, IPFLAG, NX, NY, NZ, NPTS, NCELLS, SIDE      
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
@@ -3008,6 +3032,7 @@ C       Trilinearly interpolates the field (FIELD) given a grid cell
 C     pointer (ICELL), to compute the field value (VALUE) at the desired
 C     point (X,Y,Z). ND is the leading index of the FIELD (1 for a 
 C     scalar field), and the ID is the element to interpolate (if vector).
+      IMPLICIT NONE
       INTEGER ICELL, GRIDPTR(8,*), ND, ID
 Cf2py intent(in) :: ICELL, GRIDPTR, ND, ID
       DOUBLE PRECISION X, Y, Z
@@ -3054,6 +3079,7 @@ C     specified point (X0,Y0,Z0), and returns the cell pointer ICELL.
 C     First the base grid cell is found (using NX,NY,NZ, XGRID,YGRID,ZGRID),
 C     and the tree is traced down to find the smallest cell containing 
 C     the point.
+      IMPLICIT NONE
       INTEGER NX, NY, NZ, NCELLS, BCFLAG, IPFLAG
 Cf2py intent(in) :: NX, NY, NZ, NCELLS, BCFLAG, IPFLAG
       INTEGER ICELL
@@ -3227,6 +3253,7 @@ C       This subroutine computes a set of Legendre polynomials for
 C     a particular scattering angle COSSCAT.  NLEG is the maximum term.
 C     The Legendre functions evaluated at COSSCAT are returned in 
 C     P, starting at l=0 and ending with l=NLEG  (NLEG+1 terms).
+      IMPLICIT NONE
       INTEGER NLEG
 Cf2py intent(in) :: NLEG       
       DOUBLE PRECISION COSSCAT 
@@ -3266,6 +3293,7 @@ C     sines and cosines).  Returns normalized associated Legendre functions
 C     only if NCS<0. The set is returned for triangular truncation: 
 C     J = NCS*(L*(L+1))/2 + M+1  for L<=MM
 C     J = (NCS*MM+1)*L-MM*(2+NCS*(MM-1))/2 + M+1  for L>MM
+      IMPLICIT NONE
       INTEGER ML, MM, NCS
 Cf2py intent(in) :: ML, MM, NCS
       REAL    MU, PHI
@@ -3355,6 +3383,7 @@ C     Planck blackbody radiance in [Watts /(meter^2 ster)] over a
 C     wavenumber range [cm^-1] is returned. Otherwise, the Planck 
 C     blackbody radiance in [Watts /(meter^2 ster micron)] for a 
 C     temperature in [Kelvins] at a wavelength in [microns] is returned.
+      IMPLICIT NONE
       REAL  TEMP, WAVENO(2), WAVELEN, PLANCK
       CHARACTER*1  UNITS
       DOUBLE PRECISION X1, X2, F
@@ -3387,6 +3416,7 @@ C     temperature in [Kelvins] at a wavelength in [microns] is returned.
 C       Returns integral of x**3/(exp(x)-1) from x1 to x2.
 C       Accurate to better than 1 part in 10**9 for integral from
 C       0 to infinity (pi**4/15).
+      IMPLICIT NONE
       DOUBLE PRECISION X1, X2, F
       DOUBLE PRECISION INTLOW, INTHIGH
       DOUBLE PRECISION C
@@ -3464,6 +3494,7 @@ C         Generates the abscissas (X) and weights (W) for an N point
 C       Gauss-Legendre quadrature.  The XA are returned in this order: 
 C       -mu1, -mu2, ..., -muK, mu1, mu2, ..., muK  (mu1 > mu2 > muK, 
 C       K=N/2, N must be even).
+      IMPLICIT NONE
       INTEGER  N
       REAL     XA(*), WT(*)
       INTEGER  K, I, J, L
@@ -3504,6 +3535,7 @@ C         Generates the abscissas (X) and weights (W) for an N point
 C       Double-Gauss-Legendre quadrature.  The XA are returned in this order: 
 C       -mu1, -mu2, ..., -muK, mu1, mu2, ..., muK  (mu1 > mu2 > muK, 
 C       K=N/2, N must be even).
+      IMPLICIT NONE
       INTEGER  N
       REAL     XA(*), WT(*)
       INTEGER  K, I, J, L, N2

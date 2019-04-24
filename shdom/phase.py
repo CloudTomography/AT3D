@@ -33,7 +33,7 @@ class Phase(object):
         
     def get_legenp(self, nleg):
         """ 
-        TODO 
+        TODO
         legenp is without the zero order term which is 1.0 for normalized phase function
         """
         legenp = self.legendre_table[1:]
@@ -135,18 +135,7 @@ class GridPhase(Phase):
         data = self.resample(grid) / other_data[np.newaxis,...] 
         return GridPhase(grid, data)    
     
-    
-    def get_legenp(self, nleg):
-        """ 
-        TODO 
-        legenp is without the zero order term which is 1.0 for normalized phase function
-        """
-        legenp = self.legendre_table[1:]
-        if nleg > self.maxleg:
-            legenp = np.pad(legenp, (0, nleg - self.maxleg), 'constant')
-        return legenp.ravel(order='F')     
-        
-        
+
     def resample(self, grid):
         """Resample data to a new Grid."""
         if self.grid.type == '1D':
