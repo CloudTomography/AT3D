@@ -137,7 +137,6 @@ Cf2py intent(in,out) :: OLDNPTS
       REAL, ALLOCATABLE :: CPHI1(:,:,:), CPHI2(:,:,:)
       REAL, ALLOCATABLE :: WTMU(:), WPHISAVE(:)
       REAL, ALLOCATABLE :: SFC_BRDF_DO(:,:,:,:,:,:)
-      
 C       Allocate local arrays
 C         NSTLEG=1 for NSTOKES=1, otherwise NSTLEG=6
       ALLOCATE (CMU1(NLM,NMU), CMU2(NLM,NMU))
@@ -448,13 +447,14 @@ Cf2py intent(in) :: RADIANCE
 Cf2py intent(in,out) :: SOURCE, DELSOURCE
       CHARACTER SRCTYPE*1
 Cf2py intent(in) :: SRCTYPE
-      INTEGER MAXNLM
-      PARAMETER (MAXNLM=16384)
+
       INTEGER IS, ISO, IR, I, J, JS, K, L, LS, M, MS, ME, NS, NR
-      INTEGER LOFJ(MAXNLM)
-      REAL    SOURCET(MAXNLM)
+      INTEGER, ALLOCATABLE :: LOFJ(:)
+      REAL, ALLOCATABLE :: SOURCET(:)
       REAL    SRCMIN, C, SECMU0, D
 
+      ALLOCATE (SOURCET(NLM), LOFJ(NLM))
+      SOURCET = 0.0
       SRCMIN = SHACC
 C         Make source function from scattering integral and real sources:
 C           LEGEN has chil/(2l+1)
@@ -469,7 +469,6 @@ C         Make the l index as a function of SH term (J)
         MS = (1-NCS)*ME
         DO M = MS, ME
           J = J + 1
-          IF (J .GT. MAXNLM)  STOP 'COMPUTE_SOURCE: MAXNLM exceeded'
           LOFJ(J) = L
         ENDDO
       ENDDO
@@ -503,10 +502,6 @@ C             Compute the temporary source function for this point
           ENDIF
           IR = RSHPTR(I)
           NR = RSHPTR(I+1)-IR
-          IF (NR .GT. MAXNLM) THEN
-            WRITE (6,*) 'COMPUTE_SOURCE: NR>MAXNLM 1',I,IR,RSHPTR(I+1)
-            STOP
-          ENDIF
           DO J = 1, NR
             SOURCET(J) = SOURCET(J) 
      .                 + ALBEDO(I)*LEGEN(LOFJ(J),K)*RADIANCE(IR+J)
@@ -601,10 +596,6 @@ C           in the scattering from the radiance.
         ENDIF
         IR = RSHPTR(I)
         NR = RSHPTR(I+1)-IR
-        IF (NR .GT. MAXNLM) THEN
-          WRITE (6,*) 'COMPUTE_SOURCE: NR>MAXNLM 3',I,IR,RSHPTR(I+1)
-          STOP
-        ENDIF
         DO J = 1, NR
           SOURCET(J) = SOURCET(J) 
      .                 + ALBEDO(I)*LEGEN(LOFJ(J),K)*RADIANCE(IR+J)
@@ -646,9 +637,10 @@ C           Transfer the new source function
         DO J = 1, NS
           SOURCE(IS+J) = SOURCET(J)
         ENDDO
-        IS = IS + NS
+        IS = IS + NS        
       ENDDO 
       SHPTR(NPTS+1) = IS
+      DEALLOCATE (SOURCET, LOFJ)
       RETURN
       END
  
@@ -3002,9 +2994,9 @@ C         Find the max adaptive cell criterion after the cell divisions
      .             DELTAM, BCFLAG, IPFLAG, ACCELFLAG, GRIDPOS, 
      .             SRCTYPE, SOLARFLUX, SOLARMU, SOLARAZ, YLMSUN, 
      .             UNITS, WAVENO, WAVELEN, 
-     .             EXTINCT, ALBEDO, LEGEN,IPHASE, TEMP,PLANCK, DIRFLUX,
-     .             RSHPTR, RADIANCE, SHPTR, SOURCE, OSHPTR, 
-     .             NPX, NPY, NPZ, DELX, DELY,
+     .             EXTINCT, ALBEDO, LEGEN,IPHASE, TEMP,PLANCK, 
+     .             DIRFLUX, RSHPTR, RADIANCE, SHPTR, SOURCE,  
+     .             OSHPTR, NPX, NPY, NPZ, DELX, DELY,
      .             XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .             ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .             ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV, 

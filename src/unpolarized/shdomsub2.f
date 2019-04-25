@@ -353,8 +353,9 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
 
 
 
-      SUBROUTINE MAKE_DIRECT (NPTS, BCFLAG, IPFLAG, DELTAM, ML, NLEG,
-     .               SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS, DIRFLUX, 
+      SUBROUTINE MAKE_DIRECT (NPTS, BCFLAG, IPFLAG, DELTAM, 
+     .		     ML, NLEG, SOLARFLUX, SOLARMU,
+     .               SOLARAZ, GRIDPOS, DIRFLUX, 
      .               NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .               ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,

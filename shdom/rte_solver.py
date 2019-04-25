@@ -815,10 +815,13 @@ class RteSolver(object):
                 fluxes=self._fluxes,
                 dirflux=self._dirflux,
                 nleg=self._nleg,
+                maxiv=self._maxiv,
+                maxic=self._maxic,
                 maxig=self._maxig,
+                maxido=self._maxido,
                 verbose=verbose,
                 oldnpts=self._oldnpts,
-                ylmsun=rte_solver._ylmsun
+                ylmsun=self._ylmsun
             )
         self._iters += iters
         self._inradflag = True
@@ -1161,7 +1164,7 @@ class RteSolverArray(object):
                     verbose=verbose,
                     oldnpts=rte_solver._oldnpts,
                     ylmsun=rte_solver._ylmsun
-                    ) for rte_solver, proc in zip(self.solver_list, range(self.num_solvers)))
+                    ) for rte_solver in self.solver_list)
      
         # Update solvers internal structures
         for i, solver in enumerate(self.solver_list):

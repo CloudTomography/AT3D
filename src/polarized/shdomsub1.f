@@ -588,13 +588,11 @@ Cf2py intent(in) :: RADIANCE
 Cf2py intent(in, out) :: SOURCE, DELSOURCE
       CHARACTER SRCTYPE*1
 Cf2py intent(in) :: SRCTYPE
-      INTEGER MAXNLM
-      PARAMETER (MAXNLM=16384)
       INTEGER IS, ISO, IR, I, IPH, J, JS, K, L, LS, M, MS, ME, NS, NR
-      INTEGER LOFJ(MAXNLM)
-      REAL    SOURCET(NSTOKES, MAXNLM)
+      INTEGER, ALLOCATABLE :: LOFJ(:)
+      REAL, ALLOCATABLE :: SOURCET(:,:)
       REAL    SRCMIN, C, SECMU0, D
-
+      ALLOCATE (SOURCET(NSTOKES, NLM), LOFJ(NLM))
       SRCMIN = SHACC
 C         Make source function from scattering integral and real sources:
 C             Solar source: DIRFLUX has F0*exp(-tau)
@@ -627,10 +625,6 @@ C             Compute the temporary source function for this point
           ENDIF
           IR = RSHPTR(I)
           NR = RSHPTR(I+1)-IR
-          IF (NR .GT. MAXNLM) THEN
-            WRITE (6,*) 'COMPUTE_SOURCE: NR>MAXNLM 1',I,IR,RSHPTR(I+1)
-            STOP
-          ENDIF
           IF (NSTOKES .EQ. 1) THEN
             CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .                          SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN, 
@@ -773,6 +767,7 @@ C           Transfer the new source function
         IS = IS + NS
       ENDDO 
       SHPTR(NPTS+1) = IS
+      DEALLOCATE (SOURCET, LOFJ)
       RETURN
       END
  
