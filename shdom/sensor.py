@@ -63,8 +63,6 @@ class RadianceSensor(Sensor):
         -----
         For a small amout of pixels parallel rendering is slower due to communication overhead.
         """
-        
-        
         multiview = projection.__class__ is shdom.sensor.MultiViewProjection
         multichannel = rte_solver.__class__ is shdom.rte_solver.RteSolverArray
         
@@ -142,7 +140,6 @@ class RadianceSensor(Sensor):
                     units=rte_solver._units) for rte_solver, (x, y, z, mu, phi, npix) in 
                 itertools.product(rte_solvers, zip(x_split, y_split, z_split, mu_split, phi_split, npix_split)))  
             
-
         # Sequential rendering
         else:
             if isinstance(projection.npix, list):
@@ -240,135 +237,23 @@ class RadianceSensor(Sensor):
             radiance = radiance.reshape(new_shape, order='F') 
                 
         return radiance         
-               
-        
-    """
-        
-        
-        
-    # If multi-view sensor then split and reshape into images 
-    def reshape_radiance_to_image(radiance, projection):
-        if isinstance(projection.npix, list):
-            radiance = np.split(radiance, np.cumsum(projection.npix[:-1]))
-            radiance = map(lambda img, res: img.reshape(res, order='F'), radiance, projection.resolution)
-        else:
-            radiance = radiance.reshape(projection.resolution, order='F')
-        return radiance
-    radiance = [reshape_radiance_to_image(band, projection) for band in radiance]
     
-    # Make an angular list where each entery is an image (channels are last)
-    radiance = map(lambda img: np.squeeze(np.array(img).transpose([1, 2, 0])), zip(*radiance))
+ 
+class StokesSensor(Sensor):
     """
-        
-
-            
-
-class PolarizationSensor(Sensor):
-    """
-    A Polarization sensor measures monochromatic radiances in [w/(m^2*sr*micron)]
+    A StokesSensor measures monochromatic stokes vector [I, U, Q, V].
     """
     def __init__(self):
-        super(PolarizationSensor, self).__init__()
-        self._type = 'PolarizationSensor'
+        super(StokesSensor, self).__init__()
+        self._type = 'StokesSensor'
     
-    def render(self, rte_solver, projection):
-        """
+    def render(self, rte_solver, projection, n_jobs=1, verbose=0):
+        """      
         The render method integrates a pre-computed stokes vector in-scatter field (source function) J over the sensor gemoetry.
-        The source code for this function is in src/oplarized/shdomsub4.f. 
+        The source code for this function is in src/polarized/shdomsub4.f. 
         It is a modified version of the original SHDOM visualize_radiance subroutine in src/polarized/shdomsub2.f.
         
-        Parameters
-        ----------
-        rte_solver: shdom.RteSolver object
-            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
-        projection: shdom.Projection object
-            The Projection specifying the sensor camera geomerty.
-        
-        Returns
-        -------
-        stokes: np.array(shape=(nstokes, sensor.resolution), dtype=np.float32)
-            The rendered radiances.
-        dolp: np.array(shape=(sensor.resolution), dtype=np.float32)
-            Degree of Linear Polarization
-        aolp: np.array(shape=(sensor.resolution), dtype=np.float32)
-            Angle of Linear Polarization
-        docp: np.array(shape=(sensor.resolution), dtype=np.float32)
-            Degree of Circular Polarization
-        """
-        
-        stokes, dolp, aolp, docp = core.render(
-            nstokes=rte_solver._nstokes,
-            nstleg=rte_solver._nstleg,
-            camx=projection.x,
-            camy=projection.y,
-            camz=projection.z,
-            cammu=projection.mu,
-            camphi=projection.phi,
-            npix=projection.npix,             
-            nx=rte_solver._nx,
-            ny=rte_solver._ny,
-            nz=rte_solver._nz,
-            bcflag=rte_solver._bcflag,
-            ipflag=rte_solver._ipflag,   
-            npts=rte_solver._npts,
-            ncells=rte_solver._ncells,
-            ml=rte_solver._ml,
-            mm=rte_solver._mm,
-            nlm=rte_solver._nlm,
-            numphase=rte_solver._pa.numphase,
-            nmu=rte_solver._nmu,
-            nphi0max=rte_solver._nphi0max,
-            nphi0=rte_solver._nphi0,
-            maxnbc=rte_solver._maxnbc,
-            ntoppts=rte_solver._ntoppts,
-            nbotpts=rte_solver._nbotpts,
-            nsfcpar=rte_solver._nsfcpar,
-            gridptr=rte_solver._gridptr,
-            neighptr=rte_solver._neighptr,
-            treeptr=rte_solver._treeptr,             
-            shptr=rte_solver._shptr,
-            bcptr=rte_solver._bcptr,
-            cellflags=rte_solver._cellflags,
-            iphase=rte_solver._iphase,
-            deltam=rte_solver._deltam,
-            solarmu=rte_solver._solarmu,
-            solaraz=rte_solver._solaraz,
-            gndtemp=rte_solver._gndtemp,
-            gndalbedo=rte_solver._gndalbedo,
-            skyrad=rte_solver._skyrad,
-            waveno=rte_solver._waveno,
-            wavelen=rte_solver._wavelen,
-            mu=rte_solver._mu,
-            phi=rte_solver._phi.reshape(rte_solver._nmu, -1),
-            wtdo=rte_solver._wtdo.reshape(rte_solver._nmu, -1),
-            xgrid=rte_solver._xgrid,
-            ygrid=rte_solver._ygrid,
-            zgrid=rte_solver._zgrid,
-            gridpos=rte_solver._gridpos,
-            sfcgridparms=rte_solver._sfcgridparms,
-            bcrad=rte_solver._bcrad,
-            extinct=rte_solver._extinct,
-            albedo=rte_solver._albedo,
-            legen=rte_solver._legen,            
-            dirflux=rte_solver._dirflux,
-            fluxes=rte_solver._fluxes,
-            source=rte_solver._source,          
-            srctype=rte_solver._srctype,
-            sfctype=rte_solver._sfctype,
-            units=rte_solver._units
-        )
-        
-        stokes = stokes.reshape([rte_solver._nstokes, ] + projection.resolution, order='F')
-        dolp = dolp.reshape(projection.resolution, order='F')
-        aolp = aolp.reshape(projection.resolution, order='F')
-        docp = docp.reshape(projection.resolution, order='F')
-        
-        return stokes, dolp, aolp, docp
-
-    def par_render(self, rte_solver, projection, n_jobs=30, verbose=0):
-        """
-        The par_render method integrates a pre-computed stokes vector in-scatter field (source function) J over the projection gemoetry.
-        This method is a parallel version of the render method.
+        If n_jobs>1 than parallel rendering is used where all pixels are distributed amongst all workers
         
         Parameters
         ----------
@@ -376,30 +261,254 @@ class PolarizationSensor(Sensor):
             The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
         projection: shdom.Projection object
             The Projection specifying the sensor camera geomerty.
-        n_jobs: int, default=30
+        n_jobs: int, default=1
             The number of jobs to divide the rendering into.
         verbose: int, default=0
             How much verbosity in the parallel rendering proccess.
             
+            
         Returns
         -------
         stokes: np.array(shape=(nstokes, sensor.resolution), dtype=np.float32)
             The rendered radiances.
+
+            
+        Notes
+        -----
+        For a small amout of pixels parallel rendering is slower due to communication overhead.
+        """
+        multiview = projection.__class__ is shdom.sensor.MultiViewProjection
+        multichannel = rte_solver.__class__ is shdom.rte_solver.RteSolverArray
+        
+        # If rendering several atmospheres (e.g. multi-spectral rendering)
+        rte_solvers = rte_solver if multichannel else [rte_solver]
+        
+        # Parallel rendering using multithreading (threadsafe Fortran)
+        if n_jobs > 1:
+            x_split = np.array_split(projection.x, n_jobs) 
+            y_split = np.array_split(projection.y, n_jobs) 
+            z_split = np.array_split(projection.z, n_jobs) 
+            mu_split = np.array_split(projection.mu, n_jobs) 
+            phi_split = np.array_split(projection.phi, n_jobs)        
+            npix_split = map(lambda x: len(x), x_split)
+            
+            stokes = Parallel(n_jobs=n_jobs, backend="threading", verbose=verbose)(
+                delayed(core.render, check_pickle=False)(
+                    nstokes=rte_solver._nstokes,
+                    nstleg=rte_solver._nstleg,
+                    camx=x,
+                    camy=y,
+                    camz=z,
+                    cammu=mu,
+                    camphi=phi,
+                    npix=npix,             
+                    nx=rte_solver._nx,
+                    ny=rte_solver._ny,
+                    nz=rte_solver._nz,
+                    bcflag=rte_solver._bcflag,
+                    ipflag=rte_solver._ipflag,   
+                    npts=rte_solver._npts,
+                    ncells=rte_solver._ncells,
+                    ml=rte_solver._ml,
+                    mm=rte_solver._mm,
+                    nlm=rte_solver._nlm,
+                    numphase=rte_solver._pa.numphase,
+                    nmu=rte_solver._nmu,
+                    nphi0max=rte_solver._nphi0max,
+                    nphi0=rte_solver._nphi0,
+                    maxnbc=rte_solver._maxnbc,
+                    ntoppts=rte_solver._ntoppts,
+                    nbotpts=rte_solver._nbotpts,
+                    nsfcpar=rte_solver._nsfcpar,
+                    gridptr=rte_solver._gridptr,
+                    neighptr=rte_solver._neighptr,
+                    treeptr=rte_solver._treeptr,             
+                    shptr=rte_solver._shptr,
+                    bcptr=rte_solver._bcptr,
+                    cellflags=rte_solver._cellflags,
+                    iphase=rte_solver._iphase,
+                    deltam=rte_solver._deltam,
+                    solarmu=rte_solver._solarmu,
+                    solaraz=rte_solver._solaraz,
+                    gndtemp=rte_solver._gndtemp,
+                    gndalbedo=rte_solver._gndalbedo,
+                    skyrad=rte_solver._skyrad,
+                    waveno=rte_solver._waveno,
+                    wavelen=rte_solver._wavelen,
+                    mu=rte_solver._mu,
+                    phi=rte_solver._phi.reshape(rte_solver._nmu, -1),
+                    wtdo=rte_solver._wtdo.reshape(rte_solver._nmu, -1),
+                    xgrid=rte_solver._xgrid,
+                    ygrid=rte_solver._ygrid,
+                    zgrid=rte_solver._zgrid,
+                    gridpos=rte_solver._gridpos,
+                    sfcgridparms=rte_solver._sfcgridparms,
+                    bcrad=rte_solver._bcrad,
+                    extinct=rte_solver._extinct,
+                    albedo=rte_solver._albedo,
+                    legen=rte_solver._legen,            
+                    dirflux=rte_solver._dirflux,
+                    fluxes=rte_solver._fluxes,
+                    source=rte_solver._source,          
+                    srctype=rte_solver._srctype,
+                    sfctype=rte_solver._sfctype,
+                    units=rte_solver._units) for rte_solver, (x, y, z, mu, phi, npix) in 
+                itertools.product(rte_solvers, zip(x_split, y_split, z_split, mu_split, phi_split, npix_split)))  
+            
+            stokes = np.hstack(stokes)
+            
+        # Sequential rendering
+        else:
+            if isinstance(projection.npix, list):
+                total_pix = np.sum(projection.npix)
+            else:
+                total_pix = projection.npix             
+
+            stokes = core.render(
+                nstokes=rte_solver._nstokes,
+                nstleg=rte_solver._nstleg,
+                camx=projection.x,
+                camy=projection.y,
+                camz=projection.z,
+                cammu=projection.mu,
+                camphi=projection.phi,
+                npix=projection.npix,             
+                nx=rte_solver._nx,
+                ny=rte_solver._ny,
+                nz=rte_solver._nz,
+                bcflag=rte_solver._bcflag,
+                ipflag=rte_solver._ipflag,   
+                npts=rte_solver._npts,
+                ncells=rte_solver._ncells,
+                ml=rte_solver._ml,
+                mm=rte_solver._mm,
+                nlm=rte_solver._nlm,
+                numphase=rte_solver._pa.numphase,
+                nmu=rte_solver._nmu,
+                nphi0max=rte_solver._nphi0max,
+                nphi0=rte_solver._nphi0,
+                maxnbc=rte_solver._maxnbc,
+                ntoppts=rte_solver._ntoppts,
+                nbotpts=rte_solver._nbotpts,
+                nsfcpar=rte_solver._nsfcpar,
+                gridptr=rte_solver._gridptr,
+                neighptr=rte_solver._neighptr,
+                treeptr=rte_solver._treeptr,             
+                shptr=rte_solver._shptr,
+                bcptr=rte_solver._bcptr,
+                cellflags=rte_solver._cellflags,
+                iphase=rte_solver._iphase,
+                deltam=rte_solver._deltam,
+                solarmu=rte_solver._solarmu,
+                solaraz=rte_solver._solaraz,
+                gndtemp=rte_solver._gndtemp,
+                gndalbedo=rte_solver._gndalbedo,
+                skyrad=rte_solver._skyrad,
+                waveno=rte_solver._waveno,
+                wavelen=rte_solver._wavelen,
+                mu=rte_solver._mu,
+                phi=rte_solver._phi.reshape(rte_solver._nmu, -1),
+                wtdo=rte_solver._wtdo.reshape(rte_solver._nmu, -1),
+                xgrid=rte_solver._xgrid,
+                ygrid=rte_solver._ygrid,
+                zgrid=rte_solver._zgrid,
+                gridpos=rte_solver._gridpos,
+                sfcgridparms=rte_solver._sfcgridparms,
+                bcrad=rte_solver._bcrad,
+                extinct=rte_solver._extinct,
+                albedo=rte_solver._albedo,
+                legen=rte_solver._legen,            
+                dirflux=rte_solver._dirflux,
+                fluxes=rte_solver._fluxes,
+                source=rte_solver._source,          
+                srctype=rte_solver._srctype,
+                sfctype=rte_solver._sfctype,
+                units=rte_solver._units
+            )
+            
+        # Split into Multiview, Multi-channel images (channel last)
+        if multichannel:
+            num_channels = rte_solvers.num_solvers
+            stokes = np.array(np.split(stokes, num_channels, axis=-1)).transpose([1, 2, 0]).squeeze()      
+    
+        if multiview: 
+            split_indices = np.cumsum(projection.npix[:-1])        
+            stokes = np.split(stokes, split_indices)
+    
+            if multichannel:
+                stokes = [
+                    image.reshape(resolution + [num_channels], order='F')
+                    for image, resolution in zip(stokes, projection.resolution)
+                ]
+            else:
+                stokes = [
+                    image.reshape(resolution, order='F') 
+                    for image, resolution in zip(stokes, projection.resolution) 
+                ]                  
+        else:
+            new_shape =  [stokes.shape[0]] + projection.resolution
+            if multichannel:
+                new_shape.append(num_channels)       
+            stokes = stokes.reshape(new_shape, order='F')
+            
+        return stokes
+
+
+class DolpAolpSensor(StokesSensor):
+    """
+    A DolpAolp measures monochromatic Degree and angle of Linear Polarization.
+    """
+    def __init__(self):
+        super(StokesSensor, self).__init__()
+        self._type = 'DolpAolpSensor'
+    
+    def render(self, rte_solver, projection, n_jobs=1, verbose=0):
+        """   
+        The render method integrates a pre-computed stokes vector in-scatter field (source function) J over the sensor gemoetry.
+        The source code for this function is in src/polarized/shdomsub4.f. 
+        It is a modified version of the original SHDOM visualize_radiance subroutine in src/polarized/shdomsub2.f.
+        
+        If n_jobs>1 than parallel rendering is used where all pixels are distributed amongst all workers
+        
+        Parameters
+        ----------
+        rte_solver: shdom.RteSolver object
+            The RteSolver with the precomputed radiative transfer solution (RteSolver.solve method).
+        projection: shdom.Projection object
+            The Projection specifying the sensor camera geomerty.
+        n_jobs: int, default=1
+            The number of jobs to divide the rendering into.
+        verbose: int, default=0
+            How much verbosity in the parallel rendering proccess.
+            
+            
+        Returns
+        -------
         dolp: np.array(shape=(sensor.resolution), dtype=np.float32)
             Degree of Linear Polarization
         aolp: np.array(shape=(sensor.resolution), dtype=np.float32)
             Angle of Linear Polarization
-        docp: np.array(shape=(sensor.resolution), dtype=np.float32)
-            Degree of Circular Polarization
-        
-        Notes
-        -----
-        Not implemented.
         """
-        raise NotImplementedError
+        stokes = super(DolpAolpSensor, self).render(rte_solver, projection, n_jobs, verbose)
+        
+        indices = stokes[0] > 0.0
+        dolp = np.zeros_like(stokes[0])
+        aolp = np.zeros_like(stokes[0])
+        i, q, u = stokes[0][indices], stokes[1][indices], stokes[2][indices]
+        dolp[indices] = np.sqrt(q**2 + u**2) / i
+        aolp[indices] = (180.0/np.pi) * 0.5 * np.arctan2(u, q)
+        
+        # Choose the best range for the angle of linear polarization (-90 to 90 or 0 to 180)
+        aolp1 = aolp.reshape(-1, aolp.shape[-1])
+        aolp2 = aolp1.copy()
+        aolp2[aolp2 < 0.0] += 180.0
+        std1 = np.std(aolp1, axis=0)
+        std2 = np.std(aolp2, axis=0)
+        aolp[..., std2 < std1] = aolp2.reshape(aolp.shape)[..., std2 < std1]
+        
+        return dolp, aolp
     
-
-
+    
 class Projection(object):
     """
     Abstract Projection class to be inherited by the different types of projections.

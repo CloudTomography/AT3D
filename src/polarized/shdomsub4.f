@@ -13,7 +13,8 @@ C     The modified subroutines were written by Aviad Levis, Technion Institute o
      .                   GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                   EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, 
      .                   FLUXES, SHPTR, SOURCE, CAMX, CAMY, CAMZ, CAMMU, 
-     .                   CAMPHI, NPIX, STOKES, DOLP, AOLP, DOCP)
+     .                   CAMPHI, NPIX, STOKES)
+Cf2py threadsafe
       IMPLICIT NONE
       INTEGER NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
 Cf2py intent(in) :: NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
@@ -51,9 +52,8 @@ Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE
 Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
       INTEGER  NPIX, NSTPHASE, NSCATANGLE
 Cf2py intent(in) :: NPIX
-      REAL   STOKES(NSTOKES, NPIX), DOLP(NPIX)
-      REAL   AOLP(NPIX), AOLP1(NPIX), DOCP(NPIX)
-Cf2py intent(out) :: STOKES, DOLP, AOLP, DOCP
+      REAL   STOKES(NSTOKES, NPIX)
+Cf2py intent(out) :: STOKES
       CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
 Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
 
@@ -146,36 +146,36 @@ C      WRITE (6,'(1X,2F8.4,1X,2F11.7,4(1X,F11.6))')
 C     .         X0,Y0,Z0,MURAY,PHIRAY,VISRAD(:)
         
         STOKES(:, IVIS) = VISRAD(:)
-        IF (VISRAD(1) .GT. 0.0) THEN
-         IF (NSTOKES .GT. 1) THEN
+C        IF (VISRAD(1) .GT. 0.0) THEN
+C         IF (NSTOKES .GT. 1) THEN
 C           Output degree (0 to 1) and angle (-180 to 180) of linear polarization
-           DOLP(IVIS) = SQRT(VISRAD(2)**2+VISRAD(3)**2)/VISRAD(1)
-           AOLP(IVIS) = (180/PI)*0.5*ATAN2(VISRAD(3),VISRAD(2))
-         ENDIF
-         IF (NSTOKES .EQ. 4) THEN
+C           DOLP(IVIS) = SQRT(VISRAD(2)**2+VISRAD(3)**2)/VISRAD(1)
+C           AOLP(IVIS) = (180/PI)*0.5*ATAN2(VISRAD(3),VISRAD(2))
+C         ENDIF
+C         IF (NSTOKES .EQ. 4) THEN
 C           Output degree of circular polarization (-1 to 1)
-           DOCP(IVIS) = VISRAD(4)/VISRAD(1)
-         ENDIF    
-        ELSE
-          DOLP(IVIS) = 0.0
-          DOCP(IVIS) = 0.0
-          AOLP(IVIS) = 0.0
-        ENDIF
+C           DOCP(IVIS) = VISRAD(4)/VISRAD(1)
+C         ENDIF    
+C        ELSE
+C          DOLP(IVIS) = 0.0
+C          DOCP(IVIS) = 0.0
+C          AOLP(IVIS) = 0.0
+C        ENDIF
       ENDDO
       
-      IF (NSTOKES .GT. 1) THEN
+C      IF (NSTOKES .GT. 1) THEN
 C        Choose the best range for the angle of linear polarization (-90 to 90 or 0 to 180)
-        MEAN = SUM(AOLP(:))/NPIX
-        STD1 = SQRT(SUM((AOLP(:)-MEAN)**2)/NPIX)
-        WHERE (AOLP(:) < 0.0)
-          AOLP1(:) = AOLP(:)+180.0
-        END WHERE
-        MEAN = SUM(AOLP1(:))/NPIX
-        STD2 = SQRT(SUM((AOLP1(:)-MEAN)**2)/NPIX)
-        IF (STD2 < STD1) THEN
-          AOLP = AOLP1
-        ENDIF
-      ENDIF
+C        MEAN = SUM(AOLP(:))/NPIX
+C        STD1 = SQRT(SUM((AOLP(:)-MEAN)**2)/NPIX)
+C        WHERE (AOLP(:) < 0.0)
+C          AOLP1(:) = AOLP(:)+180.0
+C        END WHERE
+C        MEAN = SUM(AOLP1(:))/NPIX
+C        STD2 = SQRT(SUM((AOLP1(:)-MEAN)**2)/NPIX)
+C        IF (STD2 < STD1) THEN
+C          AOLP = AOLP1
+C        ENDIF
+C      ENDIF
 
       RETURN
       END

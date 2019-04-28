@@ -1043,7 +1043,7 @@ class RteSolverArray(object):
         self._solver_list.append(rte_solver)
         self._num_solvers += 1
         if name is None:
-            self._names.append('Solver{:d}'.fomrat(self.num_solvers))
+            self._names.append('Solver{:d}'.format(self.num_solvers))
         else:
             self._names.append(name)
 
