@@ -1,3 +1,16 @@
+        subroutine tic(t1)
+          implicit none
+          REAL t1
+          call cpu_time(t1)
+        end subroutine tic
+        
+        subroutine toc(t1, id)
+          implicit none
+          CHARACTER*64 id 
+          REAL t2, t1
+          call cpu_time(t2)
+          WRITE(6,*) "[", id, "]Time --> ", real(t2-t1)
+        end subroutine toc
 
         SUBROUTINE SOLVE_RTE (NSTOKES, NX, NY, NZ, NX1, NY1, NANG,
      .               ML, MM, NCS, NLM, NMU, NPHI, NLEG, NSTLEG, 
@@ -13,7 +26,7 @@
      .               SPLITACC, SHACC, XGRID,YGRID,ZGRID,
      .               TEMP, PLANCK, EXTINCT, ALBEDO, LEGEN, IPHASE,
      .               MAXNBC, MAXBCRAD, NTOPPTS, NBOTPTS, BCPTR, BCRAD,
-     .               NPTS, GRIDPOS, 
+     .               NPTS, GRIDPOS,
      .               NCELLS, GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .               RSHPTR, SHPTR, OSHPTR, WORK, WORK1, WORK2,
      .               SOURCE, DELSOURCE, RADIANCE, FLUXES, DIRFLUX, 
@@ -21,7 +34,7 @@
      .               NPX, NPY, NPZ, DELX, DELY,
      .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .               ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
-     .               ZCKD, GASABS, OLDNPTS)
+     .               ZCKD, GASABS, OLDNPTS, NPART)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C      Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -50,7 +63,7 @@ Cf2py intent(in, out) :: RSHPTR, SHPTR, OSHPTR
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
 Cf2py intent(in, out) :: GRIDPTR, NEIGHPTR, TREEPTR
       INTEGER*2 CELLFLAGS(*)
-      INTEGER  IPHASE(*)
+      INTEGER  IPHASE(MAXIG,NPART)
 Cf2py intent(in, out) :: CELLFLAGS, IPHASE
       INTEGER WORK1(*)
 Cf2py intent(in) :: WORK1
@@ -70,9 +83,10 @@ Cf2py intent(in) :: SOLACC, SPLITACC, SHACC
 Cf2py intent(in, out) :: SOLCRIT
       REAL    MU(*), WTDO(*), PHI(*)
 Cf2py intent(in, out) :: MU, WTDO, PHI
-      REAL    TEMP(*), PLANCK(*)
+      REAL    TEMP(*), PLANCK(MAXIG,NPART)
 Cf2py intent(in, out) :: TEMP, PLANCK
-      REAL    EXTINCT(MAXIG), ALBEDO(MAXIG), LEGEN(0:NLEG,NUMPHASE)
+      REAL    EXTINCT(MAXIG,NPART), ALBEDO(MAXIG,NPART)
+      REAL    LEGEN(0:NLEG,NUMPHASE), TOTAL_EXT(MAXIG)
 Cf2py intent(out) :: EXTINCT, ALBEDO, LEGEN
       REAL    XGRID(*), YGRID(*), ZGRID(*)
 Cf2py intent(in) :: XGRID, YGRID, ZGRID
@@ -95,17 +109,17 @@ Cf2py intent(in) :: VERBOSE
       REAL    YLMSUN(*)
 Cf2py intent(in, out) :: YLMSUN
 
-      INTEGER NPX, NPY, NPZ
-Cf2py intent(in) :: NPX, NPY, NPZ
+      INTEGER NPX, NPY, NPZ, NPART
+Cf2py intent(in) :: NPX, NPY, NPZ, NPART
       REAL DELX, DELY, XSTART, YSTART
 Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
 Cf2py intent(in) :: ZLEVELS
-      REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
+      REAL TEMPP(*), EXTINCTP(NPTS,NPART), ALBEDOP(NPTS,NPART)
 Cf2py intent(in) :: TEMPP, EXTINCTP, ALBEDOP
       REAL LEGENP(*), EXTDIRP(*)
 Cf2py intent(in) :: LEGENP, EXTDIRP
-      INTEGER IPHASEP(*)
+      INTEGER IPHASEP(NPTS,NPART)
 Cf2py intent(in) :: IPHASEP
       INTEGER NZCKD
 Cf2py intent(in) :: NZCKD
@@ -114,7 +128,7 @@ Cf2py intent(in) :: ZCKD, GASABS
       INTEGER OLDNPTS 
 Cf2py intent(in,out) :: OLDNPTS
 
-      REAL A
+      REAL A, t1
       INTEGER SP, STACK(50)
       DOUBLE PRECISION EXTMIN, SCATMIN
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
@@ -124,7 +138,7 @@ Cf2py intent(in,out) :: OLDNPTS
       INTEGER IX, IY, IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ
       
       INTEGER NPHI0MAX, I, ORDINATESET, NBPTS, NBCELLS
-      INTEGER MAXNANGBND, NANGBND(4,2)
+      INTEGER MAXNANGBND, NANGBND(4,2), IPA
       LOGICAL FIXSH, SPLITTESTING, DOSPLIT, OUTOFMEM, LAMBERTIAN
 
       LOGICAL, ALLOCATABLE :: FFTFLAG(:)
@@ -132,7 +146,7 @@ Cf2py intent(in,out) :: OLDNPTS
       REAL    STARTADAPTSOL, ENDADAPTSOL, ADAPTRANGE, SPLITCRIT
       REAL    STARTSPLITACC, CURSPLITACC, AVGSOLCRIT, BETA
       REAL    DELJDOT, DELJOLD, DELJNEW, JNORM, ACCELPAR
-      
+      INTEGER L, K
       REAL, ALLOCATABLE :: CMU1(:,:), CMU2(:,:)
       REAL, ALLOCATABLE :: CPHI1(:,:,:), CPHI2(:,:,:)
       REAL, ALLOCATABLE :: WTMU(:), WPHISAVE(:)
@@ -143,23 +157,28 @@ C         NSTLEG=1 for NSTOKES=1, otherwise NSTLEG=6
       ALLOCATE (CPHI1(-16:16,32,NMU), CPHI2(32,-16:16,NMU))
       ALLOCATE (FFTFLAG(NMU), WTMU(NMU), WPHISAVE(NMU*(3*NPHI+15)))
       
-      
+      OPEN (UNIT=3, FILE='new.txt', STATUS='REPLACE') 
 C       Set up some things before solution loop
 C           Transfer the medium properties to the internal grid and add gas abs
+      ALBMAX = 0.0
       CALL INTERP_GRID (NPTS, NLEG, GRIDPOS,
-     .                  TEMP, EXTINCT, ALBEDO, LEGEN, IPHASE, 
-     .                  NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
-     .                  XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
-     .                  ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
-     .                  ZCKD, GASABS, EXTMIN, SCATMIN)
- 
+     .        TEMP, EXTINCT(:NPTS,:), ALBEDO(:NPTS,:), LEGEN,
+     .        IPHASE(:NPTS,:), NPX, NPY, NPZ, NUMPHASE, DELX,
+     .        DELY, XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
+     .        ALBEDOP, LEGENP, EXTDIRP, 
+     .        IPHASEP,NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
+     .        NPART, TOTAL_EXT(:NPTS))
+   
 C         If Delta-M then scale the extinction, albedo, and Legendre terms.
 C         Put the Planck blackbody source in PLANCK.
-      CALL PREPARE_PROP (ML, MM, NLEG, NPTS, DELTAM, NUMPHASE, SRCTYPE,
-     .                   UNITS, WAVENO, WAVELEN, ALBMAX, 
-     .                   EXTINCT, ALBEDO, LEGEN, TEMP, PLANCK, IPHASE)
+      CALL PREPARE_PROP (ML,MM,NLEG,NPTS,DELTAM,NUMPHASE,SRCTYPE,
+     .        UNITS, WAVENO, WAVELEN, ALBMAX, EXTINCT(:NPTS,:), 
+     .        ALBEDO(:NPTS,:), LEGEN, TEMP, PLANCK(:NPTS,:),
+     .        IPHASE(:NPTS,:), NPART, TOTAL_EXT(:NPTS))
 C       Get the maximum single scattering albedo over all processors
+      
       CALL TOTAL_ALBEDO_MAX (ALBMAX)
+      
 C           Compute the solar transmission in DIRFLUX. 
 C           Precompute Ylm's for solar direction
       IF (SRCTYPE .NE. 'T') THEN
@@ -175,7 +194,8 @@ C           Precompute Ylm's for solar direction
      .             ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .             ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .             CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
-     .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
+     .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
+     .		   NPART)
         ENDIF
         CALL YLMALL (SOLARMU, SOLARAZ, ML, MM, NCS, YLMSUN)
       ENDIF
@@ -192,13 +212,15 @@ C           Make the Ylm transform coefficients
 
       FIXSH = .FALSE.
       IF (.NOT. INRADFLAG) THEN
-        OLDNPTS = 0
+        OLDNPTS = 0     
 C           Initialize the radiance on the base grid using Eddington 
 C             two-stream plane-parallel
         CALL INIT_RADIANCE (NX1*NY1, NZ, NCS, NLEG, RSHPTR, ZGRID,
-     .         EXTINCT, ALBEDO, LEGEN, TEMP, NUMPHASE, IPHASE,
-     .         SRCTYPE, SOLARFLUX, SOLARMU, GNDALBEDO, GNDTEMP, SKYRAD, 
-     .         UNITS, WAVENO, WAVELEN, RADIANCE)
+     .     EXTINCT(:NPTS,:), ALBEDO(:NPTS,:), LEGEN, TEMP, NUMPHASE, 
+     .     IPHASE(:NPTS,:),SRCTYPE, SOLARFLUX, SOLARMU, GNDALBEDO, 
+     .     GNDTEMP, SKYRAD, UNITS, WAVENO, WAVELEN, RADIANCE, NPART,
+     .     TOTAL_EXT(:NPTS))
+
 C           Interpolate the radiance on the non-base grid points from the 
 C             base grid points
         NBPTS = NX1*NY1*NZ
@@ -207,18 +229,19 @@ C             base grid points
         CALL INTERP_RADIANCE (NBPTS, NPTS, RSHPTR, RADIANCE,
      .             NBCELLS, NCELLS, TREEPTR, GRIDPTR, GRIDPOS)
 C           Initialize the source function from the radiance field
-        
+      
         CALL COMPUTE_SOURCE (ML,MM, NCS, NLM, NLEG, NUMPHASE, NPTS,
-     .           FIXSH, SRCTYPE, SOLARMU, YLMSUN, ALBEDO,
-     .           LEGEN, IPHASE, PLANCK, DIRFLUX, SHACC, MAXIV,
+     .           FIXSH, SRCTYPE, SOLARMU, YLMSUN, ALBEDO(:NPTS,:),
+     .           LEGEN, IPHASE(:NPTS,:),PLANCK,DIRFLUX,SHACC,MAXIV,
      .           RSHPTR, RADIANCE, SHPTR, SOURCE, OSHPTR, DELSOURCE, 
-     .           .TRUE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM)
+     .           .TRUE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
+     .           NPART, EXTINCT(:NPTS,:), TOTAL_EXT, 0)
       ENDIF
       IF (ACCELFLAG) THEN
         OSHPTR(1:NPTS+1) = SHPTR(1:NPTS+1)
         DELSOURCE(1:OSHPTR(NPTS+1)) = 0.0
       ENDIF
-
+      
       LAMBERTIAN = SFCTYPE(2:2) .EQ. 'L'
 C         Make the pointers to the grid points on the top and bottom boundaries
       CALL BOUNDARY_PNTS (NPTS, NANG, LAMBERTIAN, MAXNBC, MAXBCRAD, 
@@ -310,20 +333,23 @@ C           Make sure all processors are going to split cells if any want to
      .             ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .             ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV, 
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
-     .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
+     .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
+     .             NBPTS, TOTAL_EXT, ITER, t1)
+            
             IF (SOLCRIT .GT. STARTADAPTSOL)  STARTSPLITACC = SPLITCRIT
           ENDIF
 C           Find the maximum splitting criterion over all processors
           CALL TOTAL_SPLITCRIT_MAX (SPLITCRIT)
           IF (SOLCRIT .LE. ENDADAPTSOL)  SPLITTESTING = .FALSE.
         ENDIF
-
+        
 C            Find the SH truncation to use for the radiance (RSHPTR)
         CALL RADIANCE_TRUNCATION (HIGHORDERRAD, 
      .           ML, MM, NCS, NLEG, NUMPHASE, 
      .           NPTS, ALBEDO, LEGEN, IPHASE, SHPTR, RADIANCE,
-     .           MAXIV+MAXIG, FIXSH, SHACC, RSHPTR)
-
+     .           MAXIV+MAXIG, FIXSH, SHACC, RSHPTR, NPART, EXTINCT,
+     .           TOTAL_EXT)
+     
 C           Integrate the source function along discrete ordinates 
 C             to compute the radiance field.  The input source function 
 C             and output radiance are in spherical harmonic expansions,
@@ -340,20 +366,22 @@ C             discrete ordinates.
      .           MAXNBC, MAXBCRAD, NTOPPTS, NBOTPTS, BCPTR, BCRAD, 
      .           MU, PHI, WTDO,
      .           CMU1, CPHI1, CMU2, CPHI2, WPHISAVE, FFTFLAG,
-     .           DIRFLUX, FLUXES, EXTINCT, 
+     .           DIRFLUX, FLUXES, TOTAL_EXT, 
      .           SHPTR, SOURCE, RSHPTR, RADIANCE, 
      .           WORK, WORK1, WORK2, OLDNPTS, SP, STACK, IX, IY, 
      .           IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ)
-
+  
+                      
 C            Compute the source function from the radiance field,
 C              do the adaptive spherical harmonics truncation, compute 
 C              the solution criterion, and dot products for acceleration.
         IF (SOLCRIT .LT. ENDADAPTSOL .OR. ITER .GT. 30)  FIXSH = .TRUE.
         CALL COMPUTE_SOURCE (ML,MM, NCS, NLM, NLEG, NUMPHASE, NPTS,
-     .           FIXSH, SRCTYPE, SOLARMU, YLMSUN, ALBEDO,
-     .           LEGEN, IPHASE, PLANCK, DIRFLUX, SHACC, MAXIV,
-     .           RSHPTR, RADIANCE, SHPTR, SOURCE, OSHPTR, DELSOURCE, 
-     .           .FALSE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM)
+     .      FIXSH, SRCTYPE, SOLARMU, YLMSUN, ALBEDO(:NPTS,:),
+     .      LEGEN, IPHASE(:NPTS,:), PLANCK, DIRFLUX, SHACC, MAXIV,
+     .      RSHPTR, RADIANCE, SHPTR, SOURCE, OSHPTR, DELSOURCE, 
+     .      .FALSE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
+     .      NPART, EXTINCT(:NPTS,:), TOTAL_EXT, ITER)
 
 C           Calculate the acceleration parameter and solution criterion
 C            from all the processors
@@ -375,6 +403,7 @@ C             and average SH truncation.
      .          NPTS, FLOAT(SHPTR(NPTS+1))/NPTS, 
      .          FLOAT(SHPTR(NPTS+1))/(NPTS*NLM)
         ENDIF
+        
       ENDDO
       
       IF (VERBOSE) THEN
@@ -391,7 +420,6 @@ c     .           CELLFLAGS, GRIDPOS)
 C          Comment in for output of cell splitting criterion for every cell
 c      CALL OUTPUT_CELL_SPLIT ('cellsplit.dat',GRIDPTR,
 c     .                        GRIDPOS, EXTINCT, SHPTR, SOURCE, NCELLS)
-
       RETURN
       END
  
@@ -400,7 +428,8 @@ c     .                        GRIDPOS, EXTINCT, SHPTR, SOURCE, NCELLS)
      .             FIXSH, SRCTYPE, SOLARMU, YLMSUN, ALBEDO, 
      .             LEGEN, IPHASE, PLANCK, DIRFLUX, SHACC, MAXIV,
      .             RSHPTR, RADIANCE, SHPTR, SOURCE, OSHPTR, DELSOURCE,
-     .             FIRST,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM)
+     .             FIRST,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
+     .             NPART, EXTINCT, TOTAL_EXT, ITER)
 C       Computes the source function (SOURCE) in spherical harmonic space 
 C     for all the grid points.  The thermal source and/or solar 
 C     pseudo-source (in PLANCK or DIRFLUX) is added to the scattering source 
@@ -425,12 +454,12 @@ C     of the solution criterion (SOLCRIT, the RMS difference in succesive
 C     source function fields normalized by the RMS of the field).
       IMPLICIT NONE
 
-      INTEGER NPTS, ML, MM, NCS, NLM, NLEG, MAXIV
+      INTEGER NPTS, ML, MM, NCS, NLM, NLEG, MAXIV, ITER
 Cf2py intent(in) :: NPTS, ML, MM, NCS, NLM, NLEG, MAXIV
-      INTEGER NUMPHASE
+      INTEGER NUMPHASE, NPART
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)
 Cf2py intent(in) :: RSHPTR, SHPTR, OSHPTR
-      INTEGER IPHASE(*)
+      INTEGER IPHASE(NPTS,NPART)
 Cf2py intent(in) :: IPHASE
       LOGICAL FIXSH, FIRST, ACCELFLAG
 Cf2py intent(in) :: FIXSH, FIRST, ACCELFLAG
@@ -438,9 +467,10 @@ Cf2py intent(in) :: FIXSH, FIRST, ACCELFLAG
 Cf2py intent(in) :: SHACC, YLMSUN, SOLARMU
       REAL    DELJDOT, DELJOLD, DELJNEW, JNORM
 Cf2py intent(out) :: DELJDOT, DELJOLD, DELJNEW, JNORM
-      REAL    ALBEDO(*), LEGEN(0:NLEG,*)
+      REAL    ALBEDO(NPTS,NPART), LEGEN(0:NLEG,*)
+      REAL    EXTINCT(NPTS,NPART), TOTAL_EXT(*)
 Cf2py intent(in) :: ALBEDO, LEGEN
-      REAL    PLANCK(*), DIRFLUX(*)
+      REAL    PLANCK(NPTS,NPART), DIRFLUX(*)
 Cf2py intent(in) :: PLANCK, DIRFLUX
       REAL    RADIANCE(*), SOURCE(*), DELSOURCE(*)
 Cf2py intent(in) :: RADIANCE 
@@ -449,9 +479,11 @@ Cf2py intent(in,out) :: SOURCE, DELSOURCE
 Cf2py intent(in) :: SRCTYPE
 
       INTEGER IS, ISO, IR, I, J, JS, K, L, LS, M, MS, ME, NS, NR
+      INTEGER IPA
       INTEGER, ALLOCATABLE :: LOFJ(:)
       REAL, ALLOCATABLE :: SOURCET(:)
-      REAL    SRCMIN, C, SECMU0, D
+      REAL    SRCMIN, C, SECMU0, D, EXT
+      DOUBLE PRECISION W
 
       ALLOCATE (SOURCET(NLM), LOFJ(NLM))
       SOURCET = 0.0
@@ -481,31 +513,52 @@ C         Compute the dot products of the successive source differences
         JNORM = 0.0
         DO I = 1, NPTS
 C             Compute the temporary source function for this point
-          IF (NUMPHASE .GT. 0) THEN
-            K = IPHASE(I)
-          ELSE
-            K = I
-          ENDIF
-          IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
-            D = DIRFLUX(I)*SECMU0
-            DO J = 1, NLM
-              SOURCET(J) = ALBEDO(I)*LEGEN(LOFJ(J),K)*D*YLMSUN(J)
-            ENDDO
-            IF (SRCTYPE .EQ. 'B') THEN
-              SOURCET(1) = SOURCET(1) + C*PLANCK(I)
+          EXT = TOTAL_EXT(I)
+          DO IPA = 1, NPART
+            IF (EXT.EQ.0.0) THEN
+              W = 1.0D0
+            ELSE
+              W = EXTINCT(I,IPA)/EXT
             ENDIF
-          ELSE
-            SOURCET(1) = C*PLANCK(I)
-            DO J = 2, NLM
-              SOURCET(J) = 0.0
+          
+            IF (NUMPHASE .GT. 0) THEN
+              K = IPHASE(I,IPA)
+            ELSE
+              K = I
+            ENDIF
+            IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
+              D = DIRFLUX(I)*SECMU0
+              DO J = 1, NLM
+                IF (IPA.EQ.1) THEN
+                  SOURCET(J) = ALBEDO(I,IPA)*LEGEN(LOFJ(J),K)*
+     .                            D*YLMSUN(J)*W
+                ELSE 
+                  SOURCET(J) = SOURCET(J) + ALBEDO(I,IPA)*
+     .              LEGEN(LOFJ(J),K)*D*YLMSUN(J)*W
+                ENDIF
+              ENDDO
+              IF (SRCTYPE .EQ. 'B') THEN
+                SOURCET(1) = SOURCET(1) + C*PLANCK(I,IPA)*W
+              ENDIF
+            ELSE
+              IF (IPA.EQ.1) THEN
+                SOURCET(1) = C*PLANCK(I,IPA)*W
+              ELSE 
+                SOURCET(1) = SOURCET(1) + C*PLANCK(I,IPA)*W
+              ENDIF
+              DO J = 2, NLM
+                SOURCET(J) = 0.0
+              ENDDO
+            ENDIF
+            IR = RSHPTR(I)
+            NR = RSHPTR(I+1)-IR
+            DO J = 1, NR
+              SOURCET(J) = SOURCET(J) 
+     .          + ALBEDO(I,IPA)*LEGEN(LOFJ(J),K)*
+     .            RADIANCE(IR+J)*W
             ENDDO
-          ENDIF
-          IR = RSHPTR(I)
-          NR = RSHPTR(I+1)-IR
-          DO J = 1, NR
-            SOURCET(J) = SOURCET(J) 
-     .                 + ALBEDO(I)*LEGEN(LOFJ(J),K)*RADIANCE(IR+J)
           ENDDO
+
 C             Compute the dot product of the new and old source difference,
 C               and the solution criterion (don't use new points for Jnorm).
           IF (ACCELFLAG) THEN
@@ -533,30 +586,51 @@ C         Compute and store the new source function difference vector
       IF (.NOT. FIRST .AND. ACCELFLAG) THEN
         DO I = 1, NPTS
 C             Compute the temporary source function for this point
-          IF (NUMPHASE .GT. 0) THEN
-            K = IPHASE(I)
-          ELSE
-            K = I
-          ENDIF
-          IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
-            D = DIRFLUX(I)*SECMU0
-            DO J = 1, NLM
-              SOURCET(J) = ALBEDO(I)*LEGEN(LOFJ(J),K)*D*YLMSUN(J)
-            ENDDO
-            IF (SRCTYPE .EQ. 'B') THEN
-              SOURCET(1) = SOURCET(1) + C*PLANCK(I)
+          EXT = TOTAL_EXT(I)
+          DO IPA = 1, NPART
+          
+            IF (EXT.EQ.0.0) THEN
+              W = 1.0D0
+            ELSE
+              W = EXTINCT(I,IPA)/EXT
             ENDIF
-          ELSE
-            SOURCET(1) = C*PLANCK(I)
-            DO J = 2, NLM
-              SOURCET(J) = 0.0
+            
+            IF (NUMPHASE .GT. 0) THEN
+              K = IPHASE(I,IPA)
+            ELSE
+              K = I
+            ENDIF
+            IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
+              D = DIRFLUX(I)*SECMU0
+              DO J = 1, NLM
+                IF (IPA.EQ.1) THEN
+                  SOURCET(J) = ALBEDO(I,IPA)*LEGEN(LOFJ(J),K)
+     .                         *D*YLMSUN(J)*W
+                ELSE
+                  SOURCET(J) = SOURCET(J)+ ALBEDO(I,IPA)*D*
+     .             LEGEN(LOFJ(J),K)*YLMSUN(J)*W
+                ENDIF
+              ENDDO
+              IF (SRCTYPE .EQ. 'B') THEN
+                SOURCET(1) = SOURCET(1) + C*PLANCK(I,IPA)*W
+              ENDIF
+            ELSE
+              IF (IPA.EQ.1) THEN
+                SOURCET(1) = C*PLANCK(I,IPA)*W
+              ELSE 
+                SOURCET(1) = SOURCET(1) + C*PLANCK(I,IPA)*W
+              ENDIF
+              DO J = 2, NLM
+                SOURCET(J) = 0.0
+              ENDDO
+            ENDIF
+            IR = RSHPTR(I)
+            NR = RSHPTR(I+1)-IR
+            DO J = 1, NR
+              SOURCET(J) = SOURCET(J) 
+     .           + ALBEDO(I,IPA)*LEGEN(LOFJ(J),K)*
+     .              RADIANCE(IR+J)*W
             ENDDO
-          ENDIF
-          IR = RSHPTR(I)
-          NR = RSHPTR(I+1)-IR
-          DO J = 1, NR
-            SOURCET(J) = SOURCET(J) 
-     .                 + ALBEDO(I)*LEGEN(LOFJ(J),K)*RADIANCE(IR+J)
           ENDDO
 C             Make the source difference vector
           IS = SHPTR(I)
@@ -569,38 +643,58 @@ C             Make the source difference vector
         OSHPTR(NPTS+1) = SHPTR(NPTS+1)
       ENDIF
 
-
 C         Compute the source function in the temporary array.
 C           Start with the thermal and/or solar source, then add
 C           in the scattering from the radiance.
       IS = 0
       DO I = 1, NPTS
-        IF (NUMPHASE .GT. 0) THEN
-          K = IPHASE(I)
-        ELSE
-          K = I
-        ENDIF
-        IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
-          D = DIRFLUX(I)*SECMU0
-          DO J = 1, NLM
-            SOURCET(J) = ALBEDO(I)*LEGEN(LOFJ(J),K)*D*YLMSUN(J)
-          ENDDO
-          IF (SRCTYPE .EQ. 'B') THEN
-            SOURCET(1) = SOURCET(1) + C*PLANCK(I)
+        EXT = TOTAL_EXT(I)
+        DO IPA = 1, NPART
+        
+          IF (EXT.EQ.0.0) THEN
+            W = 1.0D0
+          ELSE
+            W = EXTINCT(I,IPA)/EXT
           ENDIF
-        ELSE
-          SOURCET(1) = C*PLANCK(I)
-          DO J = 2, NLM
-            SOURCET(J) = 0.0
+          
+          IF (NUMPHASE .GT. 0) THEN
+            K = IPHASE(I,IPA)
+          ELSE
+            K = I
+          ENDIF
+          IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
+            D = DIRFLUX(I)*SECMU0
+            DO J = 1, NLM
+              IF (IPA.EQ.1) THEN
+                SOURCET(J) = ALBEDO(I,IPA)*LEGEN(LOFJ(J),K)
+     .                   *D*YLMSUN(J)*W
+              ELSE 
+                SOURCET(J) = SOURCET(J) + ALBEDO(I,IPA)*
+     .           D*LEGEN(LOFJ(J),K)*YLMSUN(J)*W
+              ENDIF
+            ENDDO
+            IF (SRCTYPE .EQ. 'B') THEN
+              SOURCET(1) = SOURCET(1)+C*PLANCK(I,IPA)*W
+     .                         
+            ENDIF
+          ELSE
+            IF (IPA.EQ.1) THEN
+              SOURCET(1) = C*PLANCK(I,IPA)*W
+            ELSE 
+              SOURCET(1) = SOURCET(1) + C*PLANCK(I,IPA)*W
+            ENDIF
+            DO J = 2, NLM
+              SOURCET(J) = 0.0
+            ENDDO
+          ENDIF
+          IR = RSHPTR(I)
+          NR = RSHPTR(I+1)-IR
+          DO J = 1, NR
+            SOURCET(J) = SOURCET(J) 
+     .        + ALBEDO(I,IPA)*LEGEN(LOFJ(J),K)* 
+     .           RADIANCE(IR+J)*W
           ENDDO
-        ENDIF
-        IR = RSHPTR(I)
-        NR = RSHPTR(I+1)-IR
-        DO J = 1, NR
-          SOURCET(J) = SOURCET(J) 
-     .                 + ALBEDO(I)*LEGEN(LOFJ(J),K)*RADIANCE(IR+J)
         ENDDO
-
         IF (FIXSH) THEN
           NS = SHPTR(I+1)-IS
         ELSE
@@ -650,7 +744,8 @@ C           Transfer the new source function
       SUBROUTINE RADIANCE_TRUNCATION (HIGHORDERRAD, 
      .             ML, MM, NCS, NLEG, NUMPHASE, 
      .             NPTS, ALBEDO, LEGEN, IPHASE, SHPTR, RADIANCE,
-     .             MAXIR, FIXSH, SHACC, RSHPTR)
+     .             MAXIR, FIXSH, SHACC, RSHPTR, NPART, EXTINCT,
+     .             TOTAL_EXT)
 C       Computes the next radiance spherical harmonic series truncation 
 C     to use based on the current source function truncation and the 
 C     scattering properties.  The radiance truncation is the smaller
@@ -665,26 +760,27 @@ C     unless HIGHORDERRAD is on, in which case all terms are kept.
       IMPLICIT NONE
       INTEGER NPTS, ML, MM, NCS, NLEG, MAXIR
 Cf2py intent(in) :: NPTS, ML, MM, NCS, NLEG, MAXIR
-      INTEGER NUMPHASE
+      INTEGER NUMPHASE, NPART
       INTEGER SHPTR(*), RSHPTR(*)
 Cf2py intent(in) ::SHPTR
 Cf2py intent(in,out) :: RSHPTR
-      INTEGER IPHASE(*)
+      INTEGER IPHASE(NPTS,NPART)
 Cf2py intent(in) :: IPHASE
       LOGICAL HIGHORDERRAD, FIXSH
 Cf2py intent(in) ::  HIGHORDERRAD, FIXSH
-      REAL    ALBEDO(*), LEGEN(0:NLEG,*), RADIANCE(*)
+      REAL    ALBEDO(NPTS,NPART), LEGEN(0:NLEG,*), RADIANCE(*)
+      REAL    EXTINCT(NPTS,NPART), TOTAL_EXT(*)
 Cf2py intent(in) :: ALBEDO, LEGEN, RADIANCE
       REAL    SHACC
 Cf2py intent(in) :: SHACC
-      INTEGER NLM
+      INTEGER NLM, IPA
       INTEGER IRO, IR, NRO, NR, I, J, K, L, LR, LS, M, MS, ME, NS
       INTEGER, ALLOCATABLE :: LOFJ(:)
       LOGICAL NOTEND
-      REAL    RADMIN
+      REAL    RADMIN, EXT, RAD
+      DOUBLE PRECISION W
 
       IF (FIXSH)  GOTO 190
-
       RADMIN = SHACC
       NOTEND = .TRUE.
 C         Make the l index as a function of SH term (J)
@@ -700,54 +796,65 @@ C         Make the l index as a function of SH term (J)
         ENDDO
       ENDDO
 
-
-      IRO = 0
-      IR = 0
-      RSHPTR(1) = 0
-      DO I = 1, NPTS
+      DO IPA = 1, NPART
+        IRO = 0
+        IR = 0
+        RSHPTR(1) = 0
+        DO I = 1, NPTS
 C           Find how many terms wanted for the radiance based on the
 C             radiance threshold (RADMIN) (use the mean radiance as an 
 C             upper limit to the SH term radiance).
 C             We don't have radiances for any new points, so don't use them
-        NRO = RSHPTR(I+1)-IRO
-        IF (NRO .EQ. 0)  NOTEND = .FALSE.
-        IF (NOTEND) THEN 
-          IF (NUMPHASE .GT. 0) THEN
-            K = IPHASE(I)
+          NRO = RSHPTR(I+1)-IRO
+          IF (NRO .EQ. 0)  NOTEND = .FALSE.
+          EXT = TOTAL_EXT(I)
+        
+          IF (NOTEND) THEN 
+            IF (EXT.EQ.0.0) THEN
+              W = 1.0D0
+            ELSE
+              W = EXTINCT(I,IPA)/EXT
+            ENDIF
+            
+            IF (NUMPHASE .GT. 0) THEN
+              K = IPHASE(I,IPA)
+            ELSE
+              K = I
+            ENDIF
+            
+            LR = 1
+            DO L = 1, ML
+              IF (W*ALBEDO(I,IPA)*LEGEN(L,K)*RADIANCE(IRO+1) 
+     .          .GT. RADMIN) LR = L
+            ENDDO      
           ELSE
-            K = I
+            LR = ML
           ENDIF
-          LR = 1
-          DO L = 1, ML
-            IF (ALBEDO(I)*LEGEN(L,K)*RADIANCE(IRO+1) .GT. RADMIN)
-     .        LR = L
-          ENDDO
-        ELSE
-          LR = ML
-        ENDIF
-        IRO = IRO + NRO
+        
+          IRO = IRO + NRO
           
 C           The radiance L truncation is the smaller of the radiance cutoff 
 C             from above and a few more than the source truncation, but
 C             it is at least 1 (so low order terms are always available).
 C             For higher order radiance option, use all terms.
 C             But if out of memory, use the source function truncation.
-        NS = MAX(1,SHPTR(I+1)-SHPTR(I))
-        LS = LOFJ(NS)
-        LR = MIN(LR, LS+ML/8+2)
-        IF (HIGHORDERRAD)  LR = ML
-        IF (LR .LE. MM) THEN
-          NR = NCS*(LR*(LR+1))/2 + LR+1
-        ELSE
-          NR = (NCS*MM+1)*LR-(MM*(2+NCS*(MM-1)))/2 + MM+1
-        ENDIF
-        IR = IR + NR
-        RSHPTR(I+1) = IR
-        IF (IR .GT. MAXIR) THEN
-          WRITE (6,*) 
+          NS = MAX(1,SHPTR(I+1)-SHPTR(I))
+          LS = LOFJ(NS)
+          LR = MIN(LR, LS+ML/8+2)
+          IF (HIGHORDERRAD)  LR = ML
+          IF (LR .LE. MM) THEN
+            NR = NCS*(LR*(LR+1))/2 + LR+1
+          ELSE
+            NR = (NCS*MM+1)*LR-(MM*(2+NCS*(MM-1)))/2 + MM+1
+          ENDIF
+          IR = IR + NR
+          RSHPTR(I+1) = IR
+          IF (IR .GT. MAXIR) THEN
+            WRITE (6,*)
      .    'RADIANCE_TRUNCATION: Out of memory for more radiance terms.'
-          GOTO 190
-        ENDIF
+            GOTO 190
+          ENDIF
+        ENDDO
       ENDDO 
       RSHPTR(NPTS+2) = IR
       DEALLOCATE (LOFJ)
@@ -2780,7 +2887,8 @@ C             do first and put the second child on the stack.
      .             ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .             ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV, 
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
-     .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
+     .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
+     .             NBPTS, TOTAL_EXT, ITER, t1)
 C       Splits the cells that have a cell dividing criterion greater than
 C     CURSPLITACC if DOSPLIT is true.  The current splitting criterion
 C     achieved is returned in SPLITCRIT.  If we are at the end of the
@@ -2792,7 +2900,7 @@ Cf2py intent(in) :: MAXIG, MAXIC, MAXIV, MAXIDO, NPHI0MAX
       INTEGER NPTS, NCELLS, BCFLAG, IPFLAG
 Cf2py intent(in,out) :: NPTS, NCELLS, BCFLAG, IPFLAG
       INTEGER NX, NY, ML, MM, NLM, NCS, NLEG
-      INTEGER NUMPHASE
+      INTEGER NUMPHASE, NPART, NBPTS
 Cf2py intent(in) :: NX, NY, ML, MM, NLM, NCS, NLEG, NUMPHASE
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
 Cf2py intent(in,out) :: GRIDPTR, NEIGHPTR, TREEPTR
@@ -2800,7 +2908,7 @@ Cf2py intent(in,out) :: GRIDPTR, NEIGHPTR, TREEPTR
 Cf2py intent(in,out) :: RSHPTR, SHPTR, OSHPTR
 Cf2py intent(in,out) :: ADAPTIND
       INTEGER*2 CELLFLAGS(*)
-      INTEGER IPHASE(*)
+      INTEGER IPHASE(MAXIG,NPART)
 Cf2py intent(in,out) :: CELLFLAGS, IPHASE
       LOGICAL DELTAM, ACCELFLAG, DOSPLIT, OUTOFMEM
 Cf2py intent(in) :: DELTAM, ACCELFLAG, DOSPLIT 
@@ -2814,11 +2922,12 @@ Cf2py intent(in) :: WAVENO, WAVELEN
       REAL    GRIDPOS(3,*), XGRID(*), YGRID(*), ADAPTCRIT(*)
 Cf2py intent(in,out) :: GRIDPOS, XGRID, YGRID
 Cf2py intent(in) :: ADAPTCRIT
-      REAL    EXTINCT(*), ALBEDO(*), LEGEN(0:NLEG,*)
+      REAL    EXTINCT(MAXIG,NPART), ALBEDO(MAXIG,NPART)
+      REAL    LEGEN(0:NLEG,*), TOTAL_EXT(*)
 Cf2py intent(in,out) :: EXTINCT, ALBEDO, LEGEN
-      REAL    RADIANCE(*), SOURCE(*)
+      REAL    RADIANCE(*), SOURCE(*), t1
 Cf2py intent(in,out) :: RADIANCE, SOURCE
-      REAL    TEMP(*), PLANCK(*), DIRFLUX(*)
+      REAL    TEMP(*), PLANCK(MAXIG,NPART), DIRFLUX(*)
 Cf2py intent(in,out) :: TEMP, PLANCK, DIRFLUX
       CHARACTER SRCTYPE*1, UNITS*1
 Cf2py intent(in) :: SRCTYPE, UNITS
@@ -2827,12 +2936,12 @@ Cf2py intent(in) :: SRCTYPE, UNITS
       LOGICAL OUTOFMEM0
       REAL    ADAPT(3), FRAC
       
-      INTEGER NPX, NPY, NPZ
+      INTEGER NPX, NPY, NPZ, ITER, K, L
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
-      REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
+      REAL TEMPP(*), EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
       REAL LEGENP(*), EXTDIRP(*)
-      INTEGER IPHASEP(*)
+      INTEGER IPHASEP(NBPTS,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
       DOUBLE PRECISION EXTMIN, SCATMIN
@@ -2842,6 +2951,7 @@ Cf2py intent(in) :: SRCTYPE, UNITS
       DOUBLE PRECISION EPSS, EPSZ, XDOMAIN, YDOMAIN
       DOUBLE PRECISION UNIFORMZLEV, DELXD,DELYD
       
+
       IF (DOSPLIT) THEN
         OLDNPTS = NPTS
 C          Do the cells in batchs, so the newly split cells can be tested
@@ -2854,9 +2964,9 @@ C             splitting criterion for 3 directions for each cell.
           DO ICELL = ICELL1, NCELLS
             IF (TREEPTR(2,ICELL) .EQ. 0) THEN
 C               If this is a end node cell then compute adaptive criterion
-              CALL CELL_SPLIT_TEST (GRIDPTR, GRIDPOS, EXTINCT,
-     .                              SHPTR, SOURCE, ICELL, 
-     .                              ADAPT, ADAPTCRIT(N+1), IDIR)
+              CALL CELL_SPLIT_TEST (GRIDPTR, GRIDPOS, TOTAL_EXT,
+     .                         SHPTR, SOURCE, ICELL, ADAPT,
+     .                         ADAPTCRIT(N+1), IDIR)
               ADAPTIND(N+1) = 4*ICELL + IDIR
               N = N + 1
             ENDIF
@@ -2874,7 +2984,7 @@ C               for cells split during grid smoothing
           MAXWORK = MAXIDO - FRAC*(MAXIDO-NPHI0MAX*NPTS) - 4*NPHI0MAX
           MAXSH = MAXIV - FRAC*(MAXIV-SHPTR(NPTS+1)) - 4*NLM
           MAXRAD = MAXIV+MAXIG- FRAC*(MAXIV+MAXIG-RSHPTR(NPTS+1))-4*NLM
-
+          
 C             Go down the list from highest adaptive cell criterion on down
           OUTOFMEM0 = OUTOFMEM
           I = 1
@@ -2904,7 +3014,8 @@ C                 Interpolate the medium properties, radiance, and source
      .               ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .               ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV, 
      .               CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
-     .               XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
+     .               XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
+     .               MAXIG, NBPTS, TOTAL_EXT, ITER)
             ENDIF
             I = I + 1
           ENDDO
@@ -2914,7 +3025,7 @@ C                 Interpolate the medium properties, radiance, and source
           MAXWORK = MAXIDO - 4*NPHI0MAX
           MAXSH = MAXIV - 4*NLM
           MAXRAD = MAXIV+MAXIG - 4*NLM
-
+          
 C             Split some more cells to make the adaptive grid "smoother"
           DO WHILE (.NOT. OUTOFMEM .AND. I .LE. N)
             IF (NCELLS .GT. MAXCELLS .OR. NPTS .GT. MAXPTS .OR.
@@ -2927,7 +3038,7 @@ C                 See if cell should be split to make better grid:
 C                   IDIR=0 if no, IDIR=direction (1,2,3) otherwise
               ICELL = ADAPTIND(I)/4
               CALL GRID_SMOOTH_TEST (GRIDPTR, GRIDPOS, NEIGHPTR,
-     .                       TREEPTR, CELLFLAGS, SHPTR, ICELL,  IDIR)
+     .                       TREEPTR, CELLFLAGS, SHPTR, ICELL, IDIR)
 C                 Set IDIR=0 to stop adaptive grid smoothing
 c              IDIR = 0
               IF (IDIR .GT. 0) THEN
@@ -2935,6 +3046,7 @@ C                   Create the new grid points and make pointers
                 CALL DIVIDE_CELL (NPTS, NCELLS, GRIDPTR, NEIGHPTR, 
      .               TREEPTR,CELLFLAGS,GRIDPOS,ICELL,IDIR, NEWPOINTS)
 C                   Interpolate the medium properties, radiance, and source
+
                 CALL INTERPOLATE_POINT (NEWPOINTS, NPTS,
      .               ML,MM,NCS, NLM, NLEG, NUMPHASE, 
      .               DELTAM, BCFLAG, IPFLAG, ACCELFLAG, GRIDPOS, 
@@ -2947,12 +3059,13 @@ C                   Interpolate the medium properties, radiance, and source
      .               ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .               ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV, 
      .               CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
-     .               XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
+     .               XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
+     .               MAXIG, NBPTS, TOTAL_EXT, ITER)
               ENDIF
             ENDIF
             I = I + 1
           ENDDO
-
+        
         ENDDO
         IF (OUTOFMEM0) THEN
           OUTOFMEM = .TRUE.
@@ -2967,7 +3080,7 @@ C        If in parallel mode, calculate all the direct beam fluxes at once
           CALL MAKE_DIRECT_PAR (OLDNPTS+1, NPTS, BCFLAG, 
      .                            IPFLAG, DELTAM, ML, NLEG,
      .                            SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS,
-     .                            NX, XGRID, NY, YGRID,  DIRFLUX)
+     .                            NX, XGRID, NY, YGRID, DIRFLUX)
         ENDIF
       ENDIF
 
@@ -2976,13 +3089,12 @@ C         Find the max adaptive cell criterion after the cell divisions
       SPLITCRIT = 0.0
       DO ICELL = 1, NCELLS
         IF (TREEPTR(2,ICELL) .EQ. 0) THEN
-          CALL CELL_SPLIT_TEST (GRIDPTR, GRIDPOS, EXTINCT,
-     .                          SHPTR, SOURCE, ICELL, 
-     .                          ADAPT, ADAPTCRIT(1), IDIR)
+          CALL CELL_SPLIT_TEST (GRIDPTR, GRIDPOS, TOTAL_EXT,
+     .                          SHPTR, SOURCE, ICELL, ADAPT,
+     .                          ADAPTCRIT(1), IDIR)
           SPLITCRIT = MAX(SPLITCRIT, ADAPTCRIT(1))
         ENDIF
       ENDDO
-      
       RETURN
       END
 
@@ -3001,7 +3113,8 @@ C         Find the max adaptive cell criterion after the cell divisions
      .             ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .             ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV, 
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
-     .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
+     .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
+     .             MAXIG, NBPTS, TOTAL_EXT, ITER)
 C       Interpolates the medium properties, radiance, and source function for
 C     new grid points (specified in NEWPOINTS).  The medium properties are 
 C     interpolated from the property grid, since interpolating from the 
@@ -3012,39 +3125,41 @@ C     recomputed (rather than interpolated).  The radiance is averaged
 C     from the two parent grid points, and used to compute the source
 C     function for the new points.
       IMPLICIT NONE
-      INTEGER NEWPOINTS(3,4), NPTS
+      INTEGER NEWPOINTS(3,4), NPTS, NPART
       INTEGER ML, MM, NCS, NLM, NLEG, BCFLAG, IPFLAG
-      INTEGER NUMPHASE
+      INTEGER NUMPHASE, MAXIG, NBPTS
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)
-      INTEGER IPHASE(NPTS)
+      INTEGER IPHASE(MAXIG,NPART)
       LOGICAL DELTAM, ACCELFLAG
       REAL    SOLARFLUX, SOLARMU, SOLARAZ, YLMSUN(*)
       REAL    WAVENO(2), WAVELEN
-      REAL    EXTINCT(NPTS), ALBEDO(NPTS), LEGEN(0:NLEG,NPTS)
-      REAL    TEMP(NPTS), PLANCK(NPTS), DIRFLUX(NPTS)
+      REAL    EXTINCT(MAXIG,NPART), ALBEDO(MAXIG,NPART)
+      REAL    LEGEN(0:NLEG,*), TOTAL_EXT(*)
+      REAL    TEMP(*), PLANCK(MAXIG,NPART), DIRFLUX(*)
       REAL    RADIANCE(*), SOURCE(*)
       REAL    GRIDPOS(3,*)
       CHARACTER SRCTYPE*1, UNITS*1
-      INTEGER I, IP1, IP2, IP, J, K, L, M, ME, MS
+      INTEGER I, IP1, IP2, IP, J, K, L, M, ME, MS, IPA
       INTEGER IS, NS, NS1, NS2
       INTEGER IR, IR1, IR2, NR, NR1, NR2, SIDE
       LOGICAL VALIDBEAM
       REAL    X, Y, Z, F, BB, C, D, RAD1, RAD2, SECMU0
-      REAL    UNIFZLEV, XO, YO, ZO, DIRPATH
+      REAL    UNIFZLEV, XO, YO, ZO, DIRPATH, EXT
+      DOUBLE PRECISION W
 
       INTEGER, ALLOCATABLE :: LOFJ(:)
       
       INTEGER NPX, NPY, NPZ
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
-      REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
+      REAL TEMPP(*), EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
       REAL LEGENP(*), EXTDIRP(*)
-      INTEGER IPHASEP(*)
+      INTEGER IPHASEP(NBPTS,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
       DOUBLE PRECISION  EXTMIN, SCATMIN
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
-      INTEGER IPDIRECT, DI, DJ, DK
+      INTEGER IPDIRECT, DI, DJ, DK, ITER
       DOUBLE PRECISION EPSS, EPSZ, XDOMAIN, YDOMAIN
       DOUBLE PRECISION UNIFORMZLEV, DELXD,DELYD
       
@@ -3077,31 +3192,38 @@ C             Interpolate the medium properties from the property grid
           X = GRIDPOS(1,IP)
           Y = GRIDPOS(2,IP)
           Z = GRIDPOS(3,IP)
-          CALL TRILIN_INTERP_PROP (X, Y, Z, .FALSE., NLEG, 
-     .                             TEMP(IP), EXTINCT(IP), ALBEDO(IP), 
-     .                             LEGEN(0,IP), IPHASE(IP), 
-     .                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
-     .                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
-     .                      ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
-     .                      ZCKD, GASABS, EXTMIN, SCATMIN)
+          TOTAL_EXT(IP) = 0.0 
+          DO IPA = 1, NPART
+            CALL TRILIN_INTERP_PROP (X, Y, Z, .FALSE., NLEG, 
+     .        TEMP(IP), EXTINCT(IP,IPA), ALBEDO(IP,IPA), 
+     .        LEGEN(0,IP), IPHASE(IP,IPA), 
+     .        NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
+     .        XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP(:,IPA),
+     .        ALBEDOP(:,IPA), LEGENP, EXTDIRP, 
+     .        IPHASEP(:,IPA), NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN)
 C             Do the Delta-M scaling of extinction and albedo for this point
-          IF (DELTAM) THEN
-            IF (NUMPHASE .GT. 0) THEN
-              F = LEGEN(ML+1,IPHASE(IP))
-            ELSE
-              F = LEGEN(ML+1,IP)
-              DO L = 0, ML
-                LEGEN(L,IP) = (LEGEN(L,IP) - F)/(1-F)
-              ENDDO
-            ENDIF
-            EXTINCT(IP) = (1.0-ALBEDO(IP)*F)*EXTINCT(IP)
-            ALBEDO(IP) = (1.0-F)*ALBEDO(IP)/(1.0-ALBEDO(IP)*F)
-          ENDIF
+          
+            IF (DELTAM) THEN
+              IF (NUMPHASE .GT. 0) THEN
+                F = LEGEN(ML+1,IPHASE(IP,IPA))
+              ELSE
+                F = LEGEN(ML+1,IP)
+                DO L = 0, ML
+                  LEGEN(L,IP) = (LEGEN(L,IP) - F)/(1-F)
+                ENDDO
+              ENDIF
+              EXTINCT(IP,IPA) = (1.0-ALBEDO(IP,IPA)*F)*EXTINCT(IP,IPA)
+              ALBEDO(IP,IPA) = (1.0-F)*ALBEDO(IP,IPA) / 
+     .                            (1.0-ALBEDO(IP,IPA)*F)
+            ENDIF 
+            
+            TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
 C             Compute the new Planck source function (if needed)
-          IF (SRCTYPE .NE. 'S') THEN
-            CALL PLANCK_FUNCTION (TEMP(IP), UNITS,WAVENO,WAVELEN,BB)
-            PLANCK(IP) = (1.0-ALBEDO(IP))*BB
-          ENDIF
+            IF (SRCTYPE .NE. 'S') THEN
+              CALL PLANCK_FUNCTION (TEMP(IP),UNITS,WAVENO,WAVELEN,BB)
+              PLANCK(IP,IPA) = (1.0-ALBEDO(IP,IPA))*BB
+            ENDIF
+          ENDDO
 C             Compute the new direct beam flux (if needed)
           IF (SRCTYPE .NE. 'T') THEN
             IF (BTEST(BCFLAG,2) .OR. BTEST(BCFLAG,3)) THEN
@@ -3120,7 +3242,8 @@ C               Otherwise, calculate the exact direct beam from property grid
      .                  ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .                  ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .                  CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
-     .                  XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
+     .                  XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
+     .                  NPART, NBPTS)
             ENDIF
           ENDIF
 
@@ -3153,30 +3276,52 @@ C             Compute the source function for the new points
           IS = SHPTR(IP)
           SHPTR(IP+1) = IS + NS
           IF (ACCELFLAG)  OSHPTR(IP+1) = OSHPTR(IP)
-          IF (NUMPHASE .GT. 0) THEN
-            K = IPHASE(IP)
-          ELSE
-            K = IP
-          ENDIF
-          IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
-            D = DIRFLUX(IP)*SECMU0
-            DO J = 1, NS
-              SOURCE(IS+J) = ALBEDO(IP)*LEGEN(LOFJ(J),K)*D*YLMSUN(J)
-            ENDDO
-            IF (SRCTYPE .EQ. 'B') THEN
-              SOURCE(IS+1) = SOURCE(IS+1) + C*PLANCK(IP)
+          
+          EXT = TOTAL_EXT(IP)
+          DO IPA = 1, NPART
+                              
+            IF (EXT.EQ.0.0) THEN
+              W = 1.0
+            ELSE
+              W = EXTINCT(IP,IPA)/EXT
             ENDIF
-          ELSE
-            SOURCE(IS+1) = C*PLANCK(IP)
-            DO J = 2, NS
-              SOURCE(IS+J) = 0.0
+            
+            IF (NUMPHASE .GT. 0) THEN
+              K = IPHASE(IP,IPA)
+            ELSE
+              K = IP
+            ENDIF
+            IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
+              D = DIRFLUX(IP)*SECMU0
+              DO J = 1, NS
+                IF (IPA.EQ.1) THEN
+                  SOURCE(IS+J) = ALBEDO(IP,IPA)* 
+     .                   LEGEN(LOFJ(J),K)*D*YLMSUN(J)*W
+                ELSE
+                  SOURCE(IS+J) = SOURCE(IS+J) + ALBEDO(IP,IPA)* 
+     .              LEGEN(LOFJ(J),K)*D*YLMSUN(J)*W
+                ENDIF
+              ENDDO
+              IF (SRCTYPE .EQ. 'B') THEN
+                SOURCE(IS+1) = SOURCE(IS+1)+C*PLANCK(IP,IPA)*W
+              ENDIF
+            ELSE
+              IF (IPA.EQ.1) THEN
+                SOURCE(IS+1) = C*PLANCK(IP,IPA)*W
+              ELSE 
+                SOURCE(IS+1) = SOURCE(IS+1)+C*PLANCK(IP,IPA)*W
+              ENDIF
+              DO J = 2, NS
+                SOURCE(IS+J) = 0.0
+              ENDDO
+            ENDIF
+            IR = RSHPTR(IP)
+            NR = MIN(NS,RSHPTR(IP+1)-RSHPTR(IP))
+            DO J = 1, NR
+              SOURCE(IS+J) = SOURCE(IS+J) 
+     .         + ALBEDO(IP,IPA)*LEGEN(LOFJ(J),K)*
+     .           RADIANCE(IR+J)*W
             ENDDO
-          ENDIF
-          IR = RSHPTR(IP)
-          NR = MIN(NS,RSHPTR(IP+1)-RSHPTR(IP))
-          DO J = 1, NR
-            SOURCE(IS+J) = SOURCE(IS+J) 
-     .                 + ALBEDO(IP)*LEGEN(LOFJ(J),K)*RADIANCE(IR+J)
           ENDDO
         ENDIF
       ENDDO
@@ -3690,6 +3835,7 @@ C               harmonic term differences.
 
       RETURN
       END
+
 
 
 

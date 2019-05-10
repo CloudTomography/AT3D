@@ -305,23 +305,25 @@ C               Base grid cells have no parents or children
      .               NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .               ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
-     .               ZCKD, GASABS, EXTMIN, SCATMIN)
+     .               ZCKD, GASABS, EXTMIN, SCATMIN,NPART, 
+     .		     TOTAL_EXT)
 C       Calls TRILIN_INTERP_PROP to interpolate the input arrays from 
 C     the property grid to each internal grid point. 
       IMPLICIT NONE
-      INTEGER NPTS, NLEG
-      INTEGER IPHASE(*)  
-      REAL    GRIDPOS(3,NPTS)
-      REAL    TEMP(*), EXTINCT(*), ALBEDO(*), LEGEN(0:NLEG,*)
-      INTEGER IP
+      INTEGER NPTS, NLEG, NPART
+      INTEGER IPHASE(NPTS,NPART)  
+      REAL    GRIDPOS(3,NPTS), TOTAL_EXT(NPTS)
+      REAL    TEMP(*), EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
+      REAL    LEGEN(0:NLEG,*)
+      INTEGER IP, IPA
       
       INTEGER NPX, NPY, NPZ
       INTEGER NUMPHASE
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
-      REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
+      REAL TEMPP(*), EXTINCTP(NPTS,NPART), ALBEDOP(NPTS,NPART)
       REAL LEGENP(*), EXTDIRP(*)
-      INTEGER IPHASEP(*)
+      INTEGER IPHASEP(NPTS,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
       DOUBLE PRECISION EXTMIN, SCATMIN
@@ -336,16 +338,21 @@ C         Initialize: transfer the tabulated phase functions
      .                      ZCKD, GASABS, EXTMIN, SCATMIN)
 
 C         Trilinearly interpolate from the property grid to the adaptive grid
-      DO IP = 1, NPTS
-        CALL TRILIN_INTERP_PROP 
+      TOTAL_EXT(:NPTS) = 0.0
+      DO IPA = 1, NPART
+	DO IP = 1, NPTS
+	  CALL TRILIN_INTERP_PROP 
      .          (GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP), 
-     .           .FALSE., NLEG, TEMP(IP), EXTINCT(IP), ALBEDO(IP), 
-     .            LEGEN(0,IP), IPHASE(IP), 
+     .           .FALSE., NLEG, TEMP(IP), EXTINCT(IP,IPA), 
+     .            ALBEDO(IP,IPA), LEGEN(0,IP), IPHASE(IP,IPA), 
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
-     .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
-     .            ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
-     .            ZCKD, GASABS, EXTMIN, SCATMIN)
-      ENDDO 
+     .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP(:,IPA),
+     .            ALBEDOP(:,IPA),LEGENP,EXTDIRP,IPHASEP(:,IPA),
+     .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN)
+	  TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
+	ENDDO
+      ENDDO
+       
       RETURN
       END
  
@@ -361,7 +368,8 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .               ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .               ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .               CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
-     .               XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
+     .               XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
+     .		     NPART)
 C       Makes the direct beam solar flux for the internal base grid.
 C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
@@ -378,10 +386,10 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
       INTEGER NUMPHASE
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
-      REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
-      REAL LEGENP(*), EXTDIRP(*)
-      INTEGER IPHASEP(*)
-      INTEGER NZCKD
+      REAL TEMPP(*), EXTINCTP(NPTS,NPART), ALBEDOP(NPTS,NPART)
+      REAL LEGENP(NPTS,NPART), EXTDIRP(*)
+      INTEGER IPHASEP(NPTS,NPART)
+      INTEGER NZCKD, NPART
       REAL ZCKD(*), GASABS(*)
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
       INTEGER IPDIRECT, DI, DJ, DK
@@ -396,21 +404,23 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
      .         ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .         ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .         CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
-     .         XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
+     .         XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, 
+     .	       NPART, NPTS)
 
       DO IP = 1, NPTS
         DIRPATH = 0.0
         CALL DIRECT_BEAM_PROP 
      .           (0, GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP),
      .            BCFLAG, IPFLAG, DELTAM,ML,NLEG,
-     .            SOLARFLUX,SOLARMU,SOLARAZ,   DIRFLUX(IP),
+     .            SOLARFLUX,SOLARMU,SOLARAZ, DIRFLUX(IP),
      .            UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM, 
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .            ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
-     .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV)
+     .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, 
+     .		  NPART, NPTS)
       ENDDO
       RETURN
       END
@@ -421,7 +431,8 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
   
       SUBROUTINE PREPARE_PROP (ML, MM, NLEG, NPTS, DELTAM, NUMPHASE, 
      .               SRCTYPE, UNITS, WAVENO, WAVELEN, ALBMAX, 
-     .               EXTINCT, ALBEDO, LEGEN, TEMP, PLANCK, IPHASE)
+     .               EXTINCT, ALBEDO, LEGEN, TEMP, PLANCK, IPHASE,
+     .		     NPART, TOTAL_EXT)
 C       Prepares the grid arrays for the iterative solution process.
 C       If doing Delta-M scaling then the extinction, albedo, and Legendre
 C       terms are scaled first; only the 0 to ML LEGEN terms are scaled.
@@ -430,13 +441,13 @@ C       the Planck function (meaning depends on UNITS).
 C       TEMP array is unchanged.
       IMPLICIT NONE
       INTEGER ML, MM, NLEG, NPTS, NUMPHASE
-      INTEGER IPHASE(NPTS)
+      INTEGER IPHASE(NPTS,NPART), NPART
       LOGICAL DELTAM
-      REAL  WAVENO(2), WAVELEN, ALBMAX
-      REAL  EXTINCT(NPTS), ALBEDO(NPTS), LEGEN(0:NLEG,*)
-      REAL  TEMP(NPTS), PLANCK(NPTS)
+      REAL  WAVENO(2), WAVELEN, ALBMAX, TOTAL_EXT(NPTS)
+      REAL  EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
+      REAL  LEGEN(0:NLEG,*), TEMP(NPTS), PLANCK(NPTS,NPART)
       CHARACTER*1 SRCTYPE, UNITS
-      INTEGER I, K, L
+      INTEGER I, K, L, IPA
       REAL    F, BB
 
       ALBMAX = 0.0 
@@ -450,28 +461,30 @@ C       TEMP array is unchanged.
         ENDDO
       ENDIF
 
-      DO I = 1, NPTS
-        IF (DELTAM) THEN
-          IF (NUMPHASE .GT. 0) THEN
-            F = LEGEN(ML+1,IPHASE(I))
-          ELSE
-            F = LEGEN(ML+1,I)
-            DO L = 0, ML
-              LEGEN(L,I) = (LEGEN(L,I) - F)/(1-F)
-            ENDDO
-          ENDIF
-          EXTINCT(I) = (1.0-ALBEDO(I)*F)*EXTINCT(I)
-	  IF (EXTINCT(I).LT.0) THEN
-	    WRITE(*,*) 'PREPARE_PROP:', I, EXTINCT(I), F, ML, IPHASE(I),
-     .		LEGEN(ML+1,IPHASE(I)), LEGEN(0, IPHASE(I))
+      IF (DELTAM) TOTAL_EXT(:NPTS) = 0.0
+      
+      DO IPA = 1, NPART
+	DO I = 1, NPTS
+	  IF (DELTAM) THEN
+	    IF (NUMPHASE .GT. 0) THEN
+	      F = LEGEN(ML+1,IPHASE(I,IPA))
+	    ELSE
+	      F = LEGEN(ML+1,I)
+	      DO L = 0, ML
+		LEGEN(L,I) = (LEGEN(L,I) - F)/(1-F)
+	      ENDDO
+	    ENDIF
+	    EXTINCT(I,IPA) = (1.0-ALBEDO(I,IPA)*F)*EXTINCT(I,IPA)
+	    ALBEDO(I,IPA) = (1.0-F)*ALBEDO(I,IPA)/
+     .			    (1.0-ALBEDO(I,IPA)*F)
+            TOTAL_EXT(I) = TOTAL_EXT(I) + EXTINCT(I,IPA)
 	  ENDIF
-          ALBEDO(I) = (1.0-F)*ALBEDO(I)/(1.0-ALBEDO(I)*F)
-        ENDIF
-        ALBMAX = MAX(ALBMAX,ALBEDO(I))
-        IF (SRCTYPE .NE. 'S') THEN
-          CALL PLANCK_FUNCTION (TEMP(I), UNITS,WAVENO,WAVELEN,BB)
-          PLANCK(I) = (1.0-ALBEDO(I))*BB
-        ENDIF
+	  ALBMAX = MAX(ALBMAX, ALBEDO(I,IPA))
+	  IF (SRCTYPE .NE. 'S') THEN
+	    CALL PLANCK_FUNCTION (TEMP(I), UNITS,WAVENO,WAVELEN,BB)
+	    PLANCK(I,IPA) = (1.0-ALBEDO(I,IPA))*BB
+	  ENDIF
+	ENDDO
       ENDDO
       RETURN
       END
@@ -483,18 +496,20 @@ C       TEMP array is unchanged.
       SUBROUTINE INIT_RADIANCE (NXY, NZ, NCS, NLEG, RSHPTR, ZGRID,
      .             EXTINCT, ALBEDO, LEGEN, TEMP, NUMPHASE, IPHASE,
      .             SRCTYPE, SOLARFLUX, SOLARMU, GNDALBEDO, GNDTEMP, 
-     .             SKYRAD, UNITS, WAVENO, WAVELEN,  RADIANCE)
+     .             SKYRAD, UNITS, WAVENO, WAVELEN, RADIANCE, NPART,
+     .		   TOTAL_EXT)
 C       Initializes radiance field by solving plane-parallel two-stream.
 C     Solves the L=1 M=0 SH system by transforming the pentadiagonal
 C     system to tridiagonal and calling solver.
 C     Does the initialization for the NXY columns of the base grid.
       IMPLICIT NONE
       INTEGER NXY, NZ, NCS, NLEG, NUMPHASE, RSHPTR(*)
-      INTEGER IPHASE(NZ,NXY)
+      INTEGER IPHASE(NZ,NXY,NPART), NPART
       REAL    GNDALBEDO, GNDTEMP, SKYRAD, SOLARFLUX, SOLARMU
       REAL    WAVENO(2), WAVELEN
-      REAL    ZGRID(NZ)
-      REAL    EXTINCT(NZ,NXY), ALBEDO(NZ,NXY), LEGEN(0:NLEG,*)
+      REAL    ZGRID(NZ), TOTAL_EXT(NZ,NXY)
+      REAL    EXTINCT(NZ,NXY,NPART), ALBEDO(NZ,NXY,NPART)
+      REAL    LEGEN(0:NLEG,*)
       REAL    TEMP(NZ,NXY)
       REAL    RADIANCE(*)
       CHARACTER SRCTYPE*1, UNITS*1
@@ -526,10 +541,10 @@ C         Loop over all the columns in the base grid
 C           Make layer properties for the Eddington routine
         DO IZ = 1, NLAYER
           L = NZ-IZ
-          EXT0 = EXTINCT(IZ,I)
-          EXT1 = EXTINCT(IZ+1,I)
-          SCAT0 = ALBEDO(IZ,I)*EXT0
-          SCAT1 = ALBEDO(IZ+1,I)*EXT1
+          EXT0 = TOTAL_EXT(IZ,I)
+          EXT1 = TOTAL_EXT(IZ+1,I)
+          SCAT0 = SUM(ALBEDO(IZ,I,:)*EXTINCT(IZ,I,:))
+          SCAT1 = SUM(ALBEDO(IZ+1,I,:)*EXTINCT(IZ+1,I,:)) 
           OPTDEPTHS(L) = (ZGRID(IZ+1)-ZGRID(IZ))* (EXT0+EXT1)/2
           IF (EXT0+EXT1 .GT. 0.0) THEN
             ALBEDOS(L) = (SCAT0+SCAT1)/(EXT0+EXT1)
@@ -537,17 +552,17 @@ C           Make layer properties for the Eddington routine
             ALBEDOS(L) = 0.0
           ENDIF
           IF (NUMPHASE .GT. 0) THEN
-            J = IPHASE(IZ,I)
-            G0 = LEGEN(1,J)
-            J = IPHASE(IZ+1,I)
-            G1 = LEGEN(1,J)
+            G0 = SUM(ALBEDO(IZ,I,:)*EXTINCT(IZ,I,:)*
+     .			LEGEN(1,IPHASE(IZ,I,:)))
+	    G1 = SUM(ALBEDO(IZ+1,I,:)*EXTINCT(IZ+1,I,:)*
+     .			LEGEN(1,IPHASE(IZ+1,I,:)))
           ELSE
             J = NZ*(I-1)+IZ
             G0 = LEGEN(1,J)
             G1 = LEGEN(1,J+1)
           ENDIF
           IF (SCAT0+SCAT1 .GT. 0.0) THEN
-            ASYMMETRIES(L) = (SCAT0*G0+SCAT1*G1)/(SCAT0+SCAT1)
+            ASYMMETRIES(L) = (G0 + G1)/(SCAT0+SCAT1)
           ELSE
             ASYMMETRIES(L) = 0.0
           ENDIF
