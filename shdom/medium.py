@@ -9,61 +9,165 @@ import core
 import numpy as np
 from enum import Enum
 import warnings
-from shdom import Grid, GridData, BoundingBox, Rayleigh
+import shdom
 import dill as pickle
+from collections import OrderedDict
+ 
 
-
-class Medium(object):
-    """
-    The Medium object encapsulates an atmospheric optical medium. 
-    This means specifying extinction, single scattering albedo and phase function at every point in the domain.
-    """
-    def __init__(self):
-        self._type = 'Medium'
-        self._extinction = None
-        self._albedo = None
-        self._phase = None        
+class Scatterer(object):
+    """TODO"""
+    def __init__(self, extinction=None, albedo=None, phase=None):
         
-        
-    def set_optical_properties(self, extinction, albedo, phase):
-        """
-        Set Medium optical properties: extinction, single scattering albedo and phase function at every point in the domain.
-    
-        Parameters
-        ----------
-        extinction: GridData
-        albedo: GridData
-        phase: Phase (TabulatedPhase or GridPhase)
-        
-        Notes
-        -----
-        Different grids for extinction and albedo and phase is not supported.
-        """        
         assert extinction.grid == albedo.grid == phase.grid, \
                'Different grids for phase, albedo and extinction is not supported.'        
+        
+        self.grid = extinction.grid
         self.extinction = extinction
         self.albedo = albedo
         self.phase = phase
         
- 
-    def __add__(self, other):
-        """Adding two Medium objects or a Medium and AmbientMedium."""
-        extinction = self.extinction + other.extinction
-        scat = self.albedo*self.extinction + other.albedo*other.extinction
-        albedo = scat / extinction        
-        if other.type == 'Medium':
-            if self.phase.type == 'Tabulated' or other.phase.type == 'Tabulated':
-                raise NotImplementedError('Medium adding of tabulated phases not implemented.')
-            phase = (self.albedo*self.extinction*self.phase + other.albedo*other.extinction*other.phase) / scat
-        if other.type == 'AmbientMedium':
-            if self.phase.type == 'Grid' or other.phase.type == 'Grid':
-                raise NotImplementedError('AmbientMedium adding of grid phases not implemented.')
-            phase = self.phase.add_ambient(other.phase)
-        medium = Medium()
-        medium.set_optical_properties(extinction, albedo, phase)
-        return medium
+        
+    def resample(self, grid):
+        """TODO"""
+        if self.grid == grid:
+            return self
+        else:
+            extinction = self.extinction.resample(grid)
+            albedo = self.albedo.resample(grid)
+            phase = self.phase.resample(grid)            
+            return shdom.Scatterer(extinction, albedo, phase)
+        
+        
+    @property
+    def extinction(self):
+        return self._extinction
     
+    @extinction.setter
+    def extinction(self, val):
+        if val is not None:
+            assert val.min_value >= 0.0, 'Extinction should be larger than 0.0'
+        self._extinction = val
+    
+    @property
+    def albedo(self):
+        return self._albedo    
+    
+    @albedo.setter
+    def albedo(self, val):
+        if val is not None:       
+            assert (val.max_value <= 1.0 and  val.min_value >= 0.0), 'Single scattering albedo should be in the range [0, 1]'
+        self._albedo = val
+        
+    @property
+    def phase(self):
+        return self._phase
       
+    @phase.setter
+    def phase(self, val):
+        self._phase = val
+        
+    @property
+    def grid(self):
+        return self._grid
+    
+    @grid.setter
+    def grid(self, val):
+        self._grid = val    
+    
+    @property
+    def bounding_box(self):
+        return self.grid.bounding_box
+    
+    
+class OpticalMedium(object):
+    """
+    The OpticalMedium object encapsulates an atmospheric optical medium with multiple Scatterers.
+    This means specifying extinction, single scattering albedo and phase function at every point in the domain for every scatterer.
+    """
+    def __init__(self, grid):
+        self._scatterers = OrderedDict()
+        self._num_scatterers = 0
+        self.set_grid(grid)
+        self._extinctp = None
+        self._albedop = None
+        self._iphasep = None
+        self._legendre_table = None
+        self._maxleg = 0
+        self._numphase = 0
+        self._maxasym = 0.0
+        
+        
+    def set_grid(self, grid):
+        """
+        TODO
+        """
+        self._grid = grid
+        
+    
+    def get_scatterer(self, name):
+        """
+        TODO
+        """
+        return self.scatterers[name]
+    
+    def add_scatterer(self, scatterer, name=None):
+        """
+        Add an optical scatterer to the medium
+        The extinction, single scattering albedo and phase function at every point in the domain 
+        are provided by the scatterer model.
+    
+        Parameters
+        ----------
+        scatterer: shdom.Scatterer,
+            A scattering particle distribution model
+        """
+        
+        first_particle = True if self.num_scatterers==0 else False
+        
+        self._num_scatterers += 1
+        if name is None:
+            name = 'scatterer{:d}'.format(self._num_scatterers)
+        self.scatterers[name] = scatterer.resample(self.grid)
+        
+        extinctp = self.scatterers[name].extinction.data.ravel()[...,np.newaxis]
+        albedop = self.scatterers[name].albedo.data.ravel()[...,np.newaxis]
+        legendre_table = self.scatterers[name].phase.legendre_table  
+        iphasep = self.scatterers[name].phase.iphasep[...,np.newaxis]            
+
+        if first_particle: 
+            self._extinctp = extinctp
+            self._albedop = albedop
+            self._legendre_table = legendre_table
+            self._iphasep = iphasep            
+        
+        else:
+            self._extinctp = np.append(self.extinctp, extinctp, axis=-1)
+            self._albedop = np.append(self.albedop, albedop, axis=-1)
+           
+            nleg = legendre_table.shape[0] - 1
+            if self.maxleg > nleg :
+                legendre_table = np.pad(legendre_table, ((0, self.maxleg - nleg), (0,0)), 'constant')            
+            elif nleg > self.maxleg:
+                self._legendre_table = np.pad(self.legendre_table, ((0, nleg - self.maxleg), (0,0)), 'constant')            
+            self._legendre_table = np.append(self.legendre_table, legendre_table, axis=-1)
+            self._iphasep = np.append(self.iphasep, iphasep + self.numphase, axis=-1)   
+
+        self._maxasym = max(self.maxasym, self.scatterers[name].phase.maxasym)
+        self._maxleg = max(self.maxleg, self.scatterers[name].phase.maxleg)
+        self._numphase += self.scatterers[name].phase.numphase     
+        
+        
+    def get_legenp(self, nleg):
+        """ 
+        TODO
+        legenp is without the zero order term which is 1.0 for normalized phase function
+        """
+        legenp = self.legendre_table[1:]
+        if nleg > self.maxleg:
+            legenp = np.pad(legenp, ((0, nleg - self.maxleg), (0,0)), 'constant')
+        return legenp.ravel(order='F') 
+    
+    
     def save(self, path):
         """
         Save Medium to file.
@@ -121,7 +225,7 @@ class Medium(object):
             A boolean mask with True making cloudy voxels and False marking non-cloud region.    
         """
         mask_data = np.array(mask.resample(self.grid, method='nearest'), dtype=np.float)
-        mask = GridData(self.grid, mask_data)
+        mask = shdom.GridData(self.grid, mask_data)
         self.extinction *= mask
         self.albedo *= mask
         if self.phase.type == 'Tabulated':
@@ -129,94 +233,96 @@ class Medium(object):
         elif self.phase.type == 'Grid':
             self.phase * mask
     
+
     @property
-    def extinction(self):
-        return self._extinction
-    
-    @extinction.setter
-    def extinction(self, val):
-        self._extinction = val
-        self.grid = self.extinction.grid
+    def numphase(self):
+        return self._numphase
     
     @property
-    def albedo(self):
-        return self._albedo    
+    def maxleg(self):
+        return self._maxleg
     
-    @albedo.setter
-    def albedo(self, val):
-        assert (val.max_value <= 1.0 and  val.min_value >= 0.0), 'Single scattering albedo should be in the range [0, 1]'
-        self._albedo = val
-        
     @property
-    def phase(self):
-        return self._phase    
-      
-    @phase.setter
-    def phase(self, val):
-        self._phase = val
-        
+    def maxasym(self):
+        return self._maxasym
+    
     @property
     def grid(self):
         return self._grid
     
-    @grid.setter
-    def grid(self, val):
-        self._grid = val
-        self._bounding_box = self.grid.bounding_box
+    @property
+    def extinctp(self):
+        return self._extinctp
     
     @property
-    def bounding_box(self):
-        return self._bounding_box
+    def albedop(self):
+        return self._albedop
+    
     
     @property
-    def type(self):
-        return self._type
+    def iphasep(self):
+        return self._iphasep    
+
+    @property
+    def legendre_table(self):
+        return self._legendre_table
+    
+    @property
+    def scatterers(self):
+        return self._scatterers
+    
+    @property
+    def num_scatterers(self):
+        return self._num_scatterers
     
     
-    
-    
-class AmbientMedium(Medium):
-    """
-    An AmbientMedium is defined in the same way a Medium is defined
-    by its optical properties: extinction, albedo and phase function. 
-    When it is added to a Medium it only `fills in the holes` where there is no medium density. 
-    This approximation gives efficiency in memory and computations.
-    """
-    def __init__(self):
-        super(AmbientMedium, self).__init__()
-        self._type = 'AmbientMedium'
-        
-        
-    def __add__(self, other):
-        if other.type == 'AmbientMedium':
-            extinction = self.extinction + other.extinction
-            albedo = (self.albedo*self.extinction + other.albedo*other.extinction) / extinction
-            medium = AmbientMedium()
-            medium.set_optical_properties(extinction, albedo, self.phase)
-        elif other.type == 'Medium':
-            medium = other + self
-        else:
-            raise NotImplementedError
-        return medium
-    
- 
 class MicrophysicalMedium(object):
     """
     A MicrophysicalMedium encapsulates microphysical properties on a grid
     
-    Notes
-    -----
-    Currently effective variance is a scalar (homogeneous veff).
+    Parameters
+    ----------
+    grid: shdom.Grid
+        A grid for the microphysical medium.
     """
-    def __init__(self, veff=0.1):
+    def __init__(self, grid=None):
+        self.set_grid(grid)
         self._lwc = None
         self._reff = None
         self._veff = None
-        self._grid = None
-    
-    def get_grid(self, path):
+        
+        
+    def set_lwc(self, lwc):
         """
-        A utility function to a microphysical medium
+        TODO
+        """
+        self._lwc = lwc.resample(self.grid)
+
+
+    def set_reff(self, reff):
+        """
+        TODO
+        """
+        self._reff = reff.resample(self.grid)
+        
+        
+    def set_veff(self, veff):
+        """
+        TODO
+        """
+        self._veff = veff.resample(self.grid)
+
+
+    def set_grid(self, grid):
+        """
+        TODO
+        """
+        self._grid = grid  
+
+
+    def load_grid(self, path):
+        """
+        A utility function to load a microphysical medium from file
         
         Parameters
         ----------
@@ -225,7 +331,7 @@ class MicrophysicalMedium(object):
              
         Returns
         -------
-        grid: Grid object
+        grid: shdom.Grid object
             The 3D grid of the medium.
             
         Notes
@@ -246,7 +352,7 @@ class MicrophysicalMedium(object):
         z_grid = np.genfromtxt(path, max_rows=1, usecols=range(2, 2 + nz), dtype=float, skip_header=2)
         x_grid = np.linspace(0.0, (nx - 1)*dx, nx, dtype=np.float32)
         y_grid = np.linspace(0.0, (ny - 1)*dy, ny, dtype=np.float32)    
-        grid = Grid(x=x_grid, y=y_grid, z=z_grid)
+        grid = shdom.Grid(x=x_grid, y=y_grid, z=z_grid)
         return grid
         
     
@@ -284,14 +390,18 @@ class MicrophysicalMedium(object):
         f.close()
         
         
-    def load_from_csv(self, path):
+    def load_from_csv(self, path, veff=0.1):
         """ 
         A utility function to load a microphysical medium.
         
         Parameters
         ----------
         path: str
-             Path to file. 
+            Path to file. 
+        veff: float
+            If effective variance is not specified in the csv file as a 6th column,
+            this value is used as a homogeneous value. 
+            Default value is veff=0.1
     
         Notes
         -----
@@ -300,26 +410,34 @@ class MicrophysicalMedium(object):
         # comment line (description)
         nx ny nz
         dz dy dz     z_levels[0]     z_levels[1] ...  z_levels[nz-1]
-        ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
+        ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]  veff[ix, iy, iz](optional)
         .
         .
         .
-        ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
+        ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]  veff[ix, iy, iz](optional)
         """ 
+        self.set_grid(self.load_grid(path))
+        data = np.genfromtxt(path, skip_header=3)
         
-        self._grid = self.get_grid(path)
-        grid_index = np.genfromtxt(path, usecols=(0, 1, 2), dtype=int, skip_header=3)
-        lwc = np.genfromtxt(path, usecols=3, dtype=float, skip_header=3)
-        reff = np.genfromtxt(path, usecols=4, dtype=float, skip_header=3)
+        grid_index = data[:, :3].astype(int)
+        lwc = data[:, 3]
+        reff = data[:, 4]
+        if data.shape[1] == 6:
+            veff = data[:, 5]
+        else:
+            veff = veff * np.ones_like(reff)
         
         particle_levels = np.array([z in grid_index[:, 2] for z in range(self.grid.nz)], dtype=int)
         lwc_data  = np.zeros(shape=(self.grid.nx, self.grid.ny, self.grid.nz), dtype=np.float32)
         reff_data = np.zeros(shape=(self.grid.nx, self.grid.ny, self.grid.nz), dtype=np.float32)
+        veff_data = np.zeros(shape=(self.grid.nx, self.grid.ny, self.grid.nz), dtype=np.float32)
         lwc_data[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]]  = lwc
         reff_data[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]] = reff
-        self._lwc = GridData(self.grid, lwc_data)
-        self._reff = GridData(self.grid, reff_data)
-
+        veff_data[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]] = veff
+        
+        self.set_lwc(shdom.GridData(self.grid, lwc_data))
+        self.set_reff(shdom.GridData(self.grid, reff_data))
+        self.set_veff(shdom.GridData(self.grid, veff_data))
 
     @property
     def grid(self):

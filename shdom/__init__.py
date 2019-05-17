@@ -370,58 +370,57 @@ class GridData(object):
     
     def __add__(self, other):
         """Add two GridData objects by resampling to a common grid."""
-        grid = self.grid + other.grid
-        data = self.resample(grid) + other.resample(grid)
+        if self.grid == other.grid:
+            grid = self.grid
+            data = self.data * other.data
+        else:
+            grid = self.grid + other.grid
+            data = self.resample(grid).data + other.resample(grid).data
         return GridData(grid, data)
     
     
     def __sub__(self, other):
         """Subtract two GridData objects by resampling to a common grid."""
-        grid = self.grid + other.grid
-        data = self.resample(grid) - other.resample(grid)
+        if self.grid == other.grid:
+            grid = self.grid
+            data = self.data * other.data
+        else:
+            grid = self.grid + other.grid
+            data = self.resample(grid).data - other.resample(grid).data
         return GridData(grid, data)       
     
     
     def __mul__(self, other):
-        """ 
-        Two multiplication options:
-          1. Multiply two GridData objects by resampling to a common grid. 
-          2. Multiply a GridData object by a GridPhase object.
-        """
-        if other.__class__ is GridPhase:
-            result = other * self
+        """Multiply two GridData objects by resampling to a common grid."""
+        if self.grid == other.grid:
+            grid = self.grid
+            data = self.data * other.data
         else:
             grid = self.grid + other.grid
-            data = self.resample(grid) * other.resample(grid)
-            result = GridData(grid, data)  
-        return result
+            data = self.resample(grid).data * other.resample(grid).data
+         
+        return GridData(grid, data) 
     
-    
-    def __div__(self, other):
-        """Divide two GridData objects by resampling to a common grid."""
-        grid = self.grid + other.grid
-        data = self.resample(grid) / other.resample(grid)
-        result = GridData(grid, data) 
-        return result
     
     
     def resample(self, grid, method='linear'):
         """Resample data to a new Grid."""
-        if self.type == '1D':
-            if np.array_equiv(self.grid.z, grid.z):
-                return self.data
-            if method == 'linear':
-                data = self._linear_interpolator1d(grid.z)
-            elif method == 'nearest':
-                data = self._nearest_interpolator1d(grid.z)
+        if self.grid == grid:
+            return self        
         else:
-            if self.grid == grid:
-                return self.data
-            if method == 'linear':
-                data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1))
-            elif method == 'nearest':
-                data = self._nearest_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1)) 
-        return data
+            if self.type == '1D':
+                if method == 'linear':
+                    data = self._linear_interpolator1d(grid.z)
+                elif method == 'nearest':
+                    data = self._nearest_interpolator1d(grid.z)
+                if grid.type == '3D':
+                    data = np.tile(data[np.newaxis, np.newaxis, :], (grid.nx, grid.ny, 1))
+            else:
+                if method == 'linear':
+                    data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1))
+                elif method == 'nearest':
+                    data = self._nearest_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1)) 
+        return GridData(grid, data.astype(self.data.dtype))
     
     @property
     def grid(self):

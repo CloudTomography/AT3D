@@ -26,7 +26,7 @@ MAINTAINER = "Aviad Levis"
 MAINTAINER_EMAIL = "aviad.levis@gmail.com"
 URL = "https://github.com/aviadlevis/pyshdom"
 LICENSE = "MIT"
-VERSION = "0.0.1"
+VERSION = "2.0.0"
 
 classifiers =  ['Development Status :: 3 - Alpha',
                 'Programming Language :: Python',
@@ -79,8 +79,17 @@ F2PY_SHDOM_FILES = [
 F2PY_CORE_API = [
     'get_mie_table',
     'get_center_wavelen',
-    'write_mie_table',
-    'read_mie_table',
+    'get_refract_index',
+    'get_nsize',
+    'get_sizes',
+    'compute_mie_all_sizes',
+    'make_multi_size_dist',
+    'write_mono_table',
+    'read_mono_table',
+    'get_poly_table',
+    'write_poly_table',
+    'read_poly_table',
+    'transform_leg_to_phase',
     'rayleigh_extinct',
     'start_mpi',
     'end_shdom_mpi',
@@ -97,9 +106,7 @@ F2PY_CORE_API = [
 ]
 
 if POLARIZED_SHDOM:
-    F2PY_CORE_API.extend(['transform_wignerd_to_phase',
-                          'rayleigh_phase_function'])
-
+    F2PY_CORE_API.extend(['rayleigh_phase_function'])
 
 
 def _run_command(cmd):

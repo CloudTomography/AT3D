@@ -105,7 +105,7 @@ class RadianceSensor(Sensor):
                     shptr=rte_solver._shptr,
                     bcptr=rte_solver._bcptr,
                     cellflags=rte_solver._cellflags,
-                    iphase=rte_solver._iphase,
+                    iphase=rte_solver._iphase[:rte_solver._npts],
                     deltam=rte_solver._deltam,
                     solarmu=rte_solver._solarmu,
                     solaraz=rte_solver._solaraz,
@@ -123,8 +123,8 @@ class RadianceSensor(Sensor):
                     gridpos=rte_solver._gridpos,
                     sfcgridparms=rte_solver._sfcgridparms,
                     bcrad=rte_solver._bcrad,
-                    extinct=rte_solver._extinct,
-                    albedo=rte_solver._albedo,
+                    extinct=rte_solver._extinct[:rte_solver._npts],
+                    albedo=rte_solver._albedo[:rte_solver._npts],
                     legen=rte_solver._legen.reshape(rte_solver._nleg+1, -1),            
                     dirflux=rte_solver._dirflux,
                     fluxes=rte_solver._fluxes,
@@ -137,7 +137,9 @@ class RadianceSensor(Sensor):
                     npix=npix,
                     srctype=rte_solver._srctype,
                     sfctype=rte_solver._sfctype,
-                    units=rte_solver._units) for rte_solver, (x, y, z, mu, phi, npix) in 
+                    units=rte_solver._units,
+                    total_ext=rte_solver._total_ext[:rte_solver._npts],
+                    npart=rte_solver._npart) for rte_solver, (x, y, z, mu, phi, npix) in 
                 itertools.product(rte_solvers, zip(x_split, y_split, z_split, mu_split, phi_split, npix_split)))  
             
         # Sequential rendering
@@ -179,7 +181,7 @@ class RadianceSensor(Sensor):
                 shptr=rte_solver._shptr,
                 bcptr=rte_solver._bcptr,
                 cellflags=rte_solver._cellflags,
-                iphase=rte_solver._iphase,
+                iphase=rte_solver._iphase[:rte_solver._npts],
                 deltam=rte_solver._deltam,
                 solarmu=rte_solver._solarmu,
                 solaraz=rte_solver._solaraz,
@@ -197,15 +199,17 @@ class RadianceSensor(Sensor):
                 gridpos=rte_solver._gridpos,
                 sfcgridparms=rte_solver._sfcgridparms,
                 bcrad=rte_solver._bcrad,
-                extinct=rte_solver._extinct,
-                albedo=rte_solver._albedo,
+                extinct=rte_solver._extinct[:rte_solver._npts],
+                albedo=rte_solver._albedo[:rte_solver._npts],
                 legen=rte_solver._legen,            
                 dirflux=rte_solver._dirflux,
                 fluxes=rte_solver._fluxes,
                 source=rte_solver._source,          
                 srctype=rte_solver._srctype,
                 sfctype=rte_solver._sfctype,
-                units=rte_solver._units
+                units=rte_solver._units,
+                total_ext=rte_solver._total_ext[:rte_solver._npts],
+                npart=rte_solver._npart
             ) for rte_solver in rte_solvers]
             
             
@@ -326,7 +330,7 @@ class StokesSensor(Sensor):
                     shptr=rte_solver._shptr,
                     bcptr=rte_solver._bcptr,
                     cellflags=rte_solver._cellflags,
-                    iphase=rte_solver._iphase,
+                    iphase=rte_solver._iphase[:rte_solver._npts],
                     deltam=rte_solver._deltam,
                     solarmu=rte_solver._solarmu,
                     solaraz=rte_solver._solaraz,
@@ -344,15 +348,17 @@ class StokesSensor(Sensor):
                     gridpos=rte_solver._gridpos,
                     sfcgridparms=rte_solver._sfcgridparms,
                     bcrad=rte_solver._bcrad,
-                    extinct=rte_solver._extinct,
-                    albedo=rte_solver._albedo,
+                    extinct=rte_solver._extinct[:rte_solver._npts],
+                    albedo=rte_solver._albedo[:rte_solver._npts],
                     legen=rte_solver._legen,            
                     dirflux=rte_solver._dirflux,
                     fluxes=rte_solver._fluxes,
                     source=rte_solver._source,          
                     srctype=rte_solver._srctype,
                     sfctype=rte_solver._sfctype,
-                    units=rte_solver._units) for rte_solver, (x, y, z, mu, phi, npix) in 
+                    units=rte_solver._units,
+                    total_ext=rte_solver._total_ext[:rte_solver._npts],
+                    npart=rte_solver._npart) for rte_solver, (x, y, z, mu, phi, npix) in 
                 itertools.product(rte_solvers, zip(x_split, y_split, z_split, mu_split, phi_split, npix_split)))  
             
             stokes = np.hstack(stokes)
@@ -397,7 +403,7 @@ class StokesSensor(Sensor):
                 shptr=rte_solver._shptr,
                 bcptr=rte_solver._bcptr,
                 cellflags=rte_solver._cellflags,
-                iphase=rte_solver._iphase,
+                iphase=rte_solver._iphase[:rte_solver._npts],
                 deltam=rte_solver._deltam,
                 solarmu=rte_solver._solarmu,
                 solaraz=rte_solver._solaraz,
@@ -415,15 +421,17 @@ class StokesSensor(Sensor):
                 gridpos=rte_solver._gridpos,
                 sfcgridparms=rte_solver._sfcgridparms,
                 bcrad=rte_solver._bcrad,
-                extinct=rte_solver._extinct,
-                albedo=rte_solver._albedo,
+                extinct=rte_solver._extinct[:rte_solver._npts],
+                albedo=rte_solver._albedo[:rte_solver._npts],
                 legen=rte_solver._legen,            
                 dirflux=rte_solver._dirflux,
                 fluxes=rte_solver._fluxes,
                 source=rte_solver._source,          
                 srctype=rte_solver._srctype,
                 sfctype=rte_solver._sfctype,
-                units=rte_solver._units
+                units=rte_solver._units,
+                total_ext=rte_solver._total_ext[:rte_solver._npts],
+                npart=rte_solver._npart
             )
             
         # Split into Multiview, Multi-channel images (channel last)

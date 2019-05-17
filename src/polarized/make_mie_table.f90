@@ -1,6 +1,6 @@
-SUBROUTINE GET_MIE_TABLE (NRETAB, MAXRANK, WAVELEN1, WAVELEN2, WAVELENCEN, DELTAWAVE, &
+SUBROUTINE GET_MIE_TABLE (NRETAB, MAXLEG, WAVELEN1, WAVELEN2, WAVELENCEN, DELTAWAVE, &
                           PARDENS, SRETAB, ERETAB, ALPHA, GAMMA, MAXRADIUS, RINDEX, PARTYPE, &
-                          AVGFLAG, DISTFLAG, REFF, EXTINCT,SSALB,NRANK,WIGCOEF,LOGRE)
+                          AVGFLAG, DISTFLAG, REFF, EXTINCT,SSALB,NLEG,LEGCOEF,LOGRE)
 ! 
 ! Does Mie computations to create a scattering table as a function of
 ! effective radius for gamma, modified gamma, or lognormal size distributions 
@@ -33,18 +33,18 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXRANK, WAVELEN1, WAVELEN2, WAVELENCEN, DELTA
   CHARACTER(LEN=1), INTENT(IN) :: PARTYPE, AVGFLAG, DISTFLAG
 !  f2py intent(in) :: PARTYPE, AVGFLAG, DISTFLAG
   INTEGER :: NSIZE, I, J, L, NL
-  INTEGER, INTENT(IN) :: MAXRANK
-!  f2py intent(in) :: MAXRANK
+  INTEGER, INTENT(IN) :: MAXLEG
+!  f2py intent(in) :: MAXLEG
   REAL :: SCATTER, WAVELENCEN
 !  f2py intent(in) :: WAVELENCEN
   REAL, INTENT(OUT) :: REFF(NRETAB), EXTINCT(NRETAB), SSALB(NRETAB)
 !  f2py intent(out) :: REFF, EXTINCT, SSALB
-  REAL, INTENT(OUT) :: NRANK(NRETAB), WIGCOEF(6,0:MAXRANK,NRETAB)
-!  f2py intent(out) :: NRANK, WIGCOEF
-  INTEGER, ALLOCATABLE :: NRANK1(:)
+  REAL, INTENT(OUT) :: NLEG(NRETAB), LEGCOEF(6,0:MAXLEG,NRETAB)
+!  f2py intent(out) :: NLEG, LEGCOEF
+  INTEGER, ALLOCATABLE :: NLEG1(:)
   REAL, ALLOCATABLE :: RADII(:), ND(:)
   REAL, ALLOCATABLE :: QEXT(:), QSCA(:)
-  REAL, ALLOCATABLE :: EXTINCT1(:), SCATTER1(:), WIGCOEF1(:, :,:)
+  REAL, ALLOCATABLE :: EXTINCT1(:), SCATTER1(:), LEGCOEF1(:, :,:)
 
   IF (PARTYPE == 'W') THEN
     PARDENS = 1.0
@@ -61,8 +61,8 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXRANK, WAVELEN1, WAVELEN2, WAVELENCEN, DELTA
   CALL GET_NSIZE (SRETAB, MAXRADIUS, WAVELENCEN, NSIZE)
 
    ! Allocate all the arrays here
-  ALLOCATE (RADII(NSIZE), ND(NSIZE), NRANK1(NSIZE))
-  ALLOCATE (EXTINCT1(NSIZE), SCATTER1(NSIZE), WIGCOEF1(6, 0:MAXRANK,NSIZE))
+  ALLOCATE (RADII(NSIZE), ND(NSIZE), NLEG1(NSIZE))
+  ALLOCATE (EXTINCT1(NSIZE), SCATTER1(NSIZE), LEGCOEF1(6, 0:MAXLEG,NSIZE))
 
 
    ! Make up the discrete particle radii to use
@@ -70,10 +70,10 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXRANK, WAVELEN1, WAVELEN2, WAVELENCEN, DELTA
 
    ! Do the Mie computations for each radius, which may involve several
    !   Mie calculation over the wavelength integration
-  WRITE (6,*) 'Computing Mie scattering for all radii...'
+
   CALL COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, PARTYPE, &
-                              WAVELENCEN, RINDEX, NSIZE, RADII, MAXRANK, &
-                              EXTINCT1, SCATTER1, NRANK1, WIGCOEF1)
+                              WAVELENCEN, RINDEX, NSIZE, RADII, MAXLEG, &
+                              EXTINCT1, SCATTER1, NLEG1, LEGCOEF1)
 
 
   ! Loop over the number of output tabulated effective radii
@@ -86,7 +86,6 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXRANK, WAVELEN1, WAVELEN2, WAVELENCEN, DELTA
     ELSE
       REFF(I) = (ERETAB-SRETAB)*FLOAT(I-1)/(NRETAB-1) + SRETAB
     ENDIF
-    WRITE (6,*) 'Computing average phase function for reff=', REFF(I)
     ! Calculate the discrete size number concentrations (ND), which vary
     ! according to a truncated gamma, modified gamma, or lognormal 
     ! distribution that gives the desired effective radius (REFF) and LWC (1 g/m^3).
@@ -96,20 +95,20 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXRANK, WAVELEN1, WAVELEN2, WAVELENCEN, DELTA
     ! Sum the scattering properties over the discrete size distribution
     EXTINCT(I) = 0.0
     SCATTER = 0.0
-    WIGCOEF(:,:,I) = 0.0
+    LEGCOEF(:,:,I) = 0.0
     NL = 1
     DO J = 1, NSIZE
       EXTINCT(I) = EXTINCT(I) + ND(J)*EXTINCT1(J)
       SCATTER = SCATTER + ND(J)*SCATTER1(J)
-      NL = MAX(NL,NRANK1(J))
-      WIGCOEF(:,0:NL,I) = WIGCOEF(:,0:NL,I) + ND(J)*WIGCOEF1(:,0:NL,J)
+      NL = MAX(NL,NLEG1(J))
+      LEGCOEF(:,0:NL,I) = LEGCOEF(:,0:NL,I) + ND(J)*LEGCOEF1(:,0:NL,J)
     ENDDO
     DO L = 0, NL
-      WIGCOEF(:,L,I) = WIGCOEF(:,L,I)/SCATTER
-      IF (WIGCOEF(1,L,I) .GT. 0.5E-5) NRANK(I) = L
+      LEGCOEF(:,L,I) = LEGCOEF(:,L,I)/SCATTER
+      IF (LEGCOEF(1,L,I) .GT. 0.5E-5) NLEG(I) = L
     ENDDO
-    IF (ABS(WIGCOEF(1,0,I)-1.0) > 0.0001) THEN
-      PRINT *,'Phase function not normalized for Reff=',REFF,WIGCOEF(1,0,I)
+    IF (ABS(LEGCOEF(1,0,I)-1.0) > 0.0001) THEN
+      PRINT *,'Phase function not normalized for Reff=',REFF,LEGCOEF(1,0,I)
       STOP
     ENDIF 
     IF (EXTINCT(I) > 0.0) THEN
@@ -366,9 +365,9 @@ END SUBROUTINE GET_REFRACT_INDEX
 
 SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
                                 PARTYPE, WAVELENCEN, RINDEX, NSIZE, RADII, &
-                                MAXRANK, EXTINCT1, SCATTER1, NRANK1, WIGCOEF1)
+                                MAXLEG, EXTINCT1, SCATTER1, NLEG1, LEGCOEF1)
  ! Does a Mie computation for each particle radius in RADII and returns the
- ! optical properties in arrays EXTINCT1, SCATTER1, NRANK1, and WIGCOEF1.
+ ! optical properties in arrays EXTINCT1, SCATTER1, NLEG1, and LEGCOEF1.
  ! For AVGFLAG='C' the computation is done at a single wavelength (WAVELENCEN),
  ! using the input index of refraction (RINDEX).  For AVGFLAG='A' an
  ! integration of the Mie properties over wavelength is performed for
@@ -380,24 +379,27 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
  ! returned with the product of the phase function times the scattering
  ! coefficient.
   IMPLICIT NONE
-  INTEGER, INTENT(IN) :: NSIZE, MAXRANK
+  INTEGER, INTENT(IN) :: NSIZE, MAXLEG
   REAL,    INTENT(IN) :: WAVELEN1, WAVELEN2, DELTAWAVE, WAVELENCEN
   REAL,    INTENT(IN) :: RADII(NSIZE)
   COMPLEX, INTENT(IN) :: RINDEX
   CHARACTER(LEN=1), INTENT(IN) :: AVGFLAG, PARTYPE
-  INTEGER, INTENT(OUT) :: NRANK1(NSIZE)
+  INTEGER, INTENT(OUT) :: NLEG1(NSIZE)
   REAL,    INTENT(OUT) :: EXTINCT1(NSIZE), SCATTER1(NSIZE)
-  REAL,    INTENT(OUT) :: WIGCOEF1(6,0:MAXRANK,NSIZE)
+  REAL,    INTENT(OUT) :: LEGCOEF1(6,0:MAXLEG,NSIZE)
   INTEGER :: I, NL
   REAL    :: WAVECEN, WAVE, BBTEMP, PLANCK, SUMP, A
-  REAL    :: MRE, MIM, EXT, SCAT, COEF(6,0:MAXRANK)
+  REAL    :: MRE, MIM, EXT, SCAT, COEF(6,0:MAXLEG)
   COMPLEX :: REFIND
+  
+  WRITE(*,*) 'Computing mie scattering for all sizes, this may take a while...'
 
   IF (AVGFLAG == 'C') THEN
      ! For using one central wavelength: just call Mie routine for each radius
     DO I = 1, NSIZE
-      CALL MIE_ONE (WAVELENCEN, RINDEX, RADII(I), MAXRANK, &
-                    EXTINCT1(I), SCATTER1(I), NRANK1(I), WIGCOEF1(1,0,I) )
+      WRITE(*,*) 'Computing mie for radius: ', RADII(I), ' microns'
+      CALL MIE_ONE (WAVELENCEN, RINDEX, RADII(I), MAXLEG, &
+                    EXTINCT1(I), SCATTER1(I), NLEG1(I), LEGCOEF1(1,0,I) )
     ENDDO
 
   ELSE
@@ -413,8 +415,8 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
     ENDIF 
     EXTINCT1(:) = 0.0
     SCATTER1(:) = 0.0
-    NRANK1(:) = 1
-    WIGCOEF1(:,:,:) = 0.0
+    NLEG1(:) = 1
+    LEGCOEF1(:,:,:) = 0.0
     SUMP = 0.0
     WAVE = WAVELEN1
     DO WHILE (WAVE <= WAVELEN2)   ! Loop over the wavelengths
@@ -427,22 +429,43 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
       ENDIF
       REFIND = CMPLX(MRE,-MIM)
       DO I = 1, NSIZE
-        CALL MIE_ONE (WAVE, REFIND, RADII(I), MAXRANK, EXT, SCAT, NL, COEF)
+        CALL MIE_ONE (WAVE, REFIND, RADII(I), MAXLEG, EXT, SCAT, NL, COEF)
         EXTINCT1(I) = EXTINCT1(I) + PLANCK*EXT
         SCATTER1(I) = SCATTER1(I) + PLANCK*SCAT
-        NRANK1(I) = MAX(NRANK1(I),NL)
-        WIGCOEF1(:,0:NL,I) = WIGCOEF1(:,0:NL,I) + PLANCK*COEF(:,0:NL)
+        NLEG1(I) = MAX(NLEG1(I),NL)
+        LEGCOEF1(:,0:NL,I) = LEGCOEF1(:,0:NL,I) + PLANCK*COEF(:,0:NL)
       ENDDO
       WAVE = WAVE + DELTAWAVE
     ENDDO
     EXTINCT1(:) = EXTINCT1(:)/SUMP
     SCATTER1(:) = SCATTER1(:)/SUMP
-    WIGCOEF1(:,:,:) = WIGCOEF1(:,:,:)/SUMP
+    LEGCOEF1(:,:,:) = LEGCOEF1(:,:,:)/SUMP
   ENDIF
 END SUBROUTINE COMPUTE_MIE_ALL_SIZES
 
 
 
+SUBROUTINE MAKE_MULTI_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA,&
+				GAMMA, ND, NDIST)
+ ! Calculates the number concentrations (ND in cm^-3) for the NSIZE
+ ! discrete particle radii (micron) of a gamma or lognormal size distribution
+ ! with an effective radius of REFF (micron), gamma shape parameter or 
+ ! lognormal standard deviation of ALPHA, and mass content of 1 g/m^3.
+ ! Also handles modified gamma distributions specified by ALPHA and GAMMA.
+  IMPLICIT NONE
+  INTEGER, INTENT(IN)  :: NSIZE, NDIST
+  REAL,    INTENT(IN)  :: RADII(NSIZE), REFF(NDIST), ALPHA(NDIST), GAMMA, PARDENS
+  REAL,    INTENT(OUT) :: ND(NSIZE, NDIST)
+  CHARACTER(LEN=1), INTENT(IN) :: DISTFLAG
+  INTEGER :: K
+  
+  DO K = 1, NDIST
+    CALL MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF(K), ALPHA(K),&
+   			GAMMA, ND(1,K))
+  ENDDO
+END SUBROUTINE MAKE_MULTI_SIZE_DIST
+
+  
 
 
 SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, ND)
@@ -478,7 +501,7 @@ SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, N
                          NSIZE, RADII, ND, TRUERE)
     ENDDO
     IF (TRUERE <= REFF) THEN
-      PRINT *, 'MAKE_SIZE_DIST: effective radius cannot be achieved',REFF,TRUERE
+      PRINT *, 'MAKE_SIZE_DIST: effective radius cannot be achieved',REFF,TRUERE,ALPHA
       STOP
     ENDIF
   ELSE
@@ -494,7 +517,7 @@ SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, N
                          NSIZE, RADII, ND, TRUERE)
     ENDDO
     IF (TRUERE >= REFF) THEN
-      PRINT *, 'MAKE_SIZE_DIST: effective radius cannot be achieved',REFF,TRUERE
+      PRINT *, 'MAKE_SIZE_DIST: effective radius cannot be achieved',REFF,TRUERE,ALPHA
       STOP
     ENDIF
   ENDIF
@@ -568,7 +591,7 @@ END SUBROUTINE DO_SIZE_DIST
 SUBROUTINE WRITE_MIE_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
                             PARTYPE, PARDENS, RINDEX, &
                             DISTFLAG, ALPHA, GAMMA, NRETAB, SRETAB, ERETAB, &
-                            REFF, EXTINCT, SSALB, NRANK, MAXRANK, WIGCOEF)
+                            REFF, EXTINCT, SSALB, NLEG, MAXLEG, LEGCOEF)
 			    
  ! Writes the table of Mie scattering properties as a function of 
  ! effective radius.  There are two types of tables output: 
@@ -577,8 +600,8 @@ SUBROUTINE WRITE_MIE_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
  ! of the Mie phase matrix elements.
   IMPLICIT NONE
   INTEGER :: NRETAB
-  INTEGER, INTENT(IN) ::  MAXRANK, NRANK(NRETAB)
-  !  f2py intent(in)  ::  MAXRANK, NRANK
+  INTEGER, INTENT(IN) ::  MAXLEG, NLEG(NRETAB)
+  !  f2py intent(in)  ::  MAXLEG, NLEG
   COMPLEX, INTENT(IN) :: RINDEX
   !  f2py intent(in)  ::  RINDEX
   REAL,    INTENT(IN) :: WAVELEN1, WAVELEN2, DELTAWAVE
@@ -587,8 +610,8 @@ SUBROUTINE WRITE_MIE_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
   !  f2py intent(in)  :: PARDENS, SRETAB, ERETAB, ALPHA, GAMMA
   REAL,    INTENT(IN) :: REFF(NRETAB), EXTINCT(NRETAB), SSALB(NRETAB)
    !  f2py intent(in)  :: REFF(NRETAB), EXTINCT(NRETAB), SSALB(NRETAB)
-  REAL,    INTENT(IN) :: WIGCOEF(6,0:MAXRANK,NRETAB)
-   !  f2py intent(in)  :: WIGCOEF
+  REAL,    INTENT(IN) :: LEGCOEF(6,0:MAXLEG,NRETAB)
+   !  f2py intent(in)  :: LEGCOEF
   CHARACTER(LEN=1), INTENT(IN) :: PARTYPE, DISTFLAG
    !  f2py intent(in)  :: PARTYPE, DISTFLAG
   CHARACTER(LEN=*), INTENT(IN) :: MIETABFILE
@@ -613,14 +636,14 @@ SUBROUTINE WRITE_MIE_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
   ENDIF
   WRITE (3,'(1X,I3,2(1X,F8.3),A)') NRETAB, SRETAB, ERETAB, &
         '  number, starting, ending effective radius'
-  WRITE (3,'(1X,I5,A)') MAXRANK, '  maximum rank allowed'
+  WRITE (3,'(1X,I5,A)') MAXLEG, '  maximum rank allowed'
   DO I = 1, NRETAB
     WRITE (3,'(1X,F8.4,1X,E12.5,1X,F8.6,1X,I6,A)') &
-        REFF(I), EXTINCT(I), SSALB(I), NRANK(I), '  Reff  Ext  Alb  Nrank'
+        REFF(I), EXTINCT(I), SSALB(I), NLEG(I), '  Reff  Ext  Alb  NLEG'
     DO J = 1, NPHASEPOL
-    	WRITE (3,'(I1,1X,201(1X,F10.5))') J, (WIGCOEF(J,L,I), L=0,MIN(NRANK(I),200))
-      DO K = 200, NRANK(I)-1, 200
-        WRITE (3,'(2X,200(1X,F10.5))') (WIGCOEF(J,K+L,I),L=1,MIN(200,NRANK(I)-K))
+    	WRITE (3,'(I1,1X,201(1X,F10.5))') J, (LEGCOEF(J,L,I), L=0,MIN(NLEG(I),200))
+      DO K = 200, NLEG(I)-1, 200
+        WRITE (3,'(2X,200(1X,F10.5))') (LEGCOEF(J,K+L,I),L=1,MIN(200,NLEG(I)-K))
       ENDDO
     ENDDO
   ENDDO
@@ -629,20 +652,14 @@ END SUBROUTINE WRITE_MIE_TABLE
 
   
 SUBROUTINE READ_MIE_TABLE(MIETABFILE, NRETAB, REFF, EXTINCT, &
-                          SSALB, NRANK, WIGCOEF, MAXRANK) 
+                          SSALB, NLEG, LEGCOEF, MAXLEG) 
   IMPLICIT NONE
   CHARACTER(LEN=*), INTENT(IN) :: MIETABFILE
-!f2py intent(in) :: MIETABFILE
   INTEGER, INTENT(IN) :: NRETAB
-!f2py intent(in) :: NRETAB
   REAL, INTENT(OUT) :: REFF(NRETAB), EXTINCT(NRETAB), SSALB(NRETAB)
-!  f2py intent(out) :: REFF, EXTINCT, SSALB
-  INTEGER, INTENT(OUT) :: NRANK(NRETAB)
-!  f2py intent(out) ::  NRANK
-  REAL, INTENT(OUT) :: WIGCOEF(6,0:MAXRANK,NRETAB)
-!  f2py intent(OUT) :: WIGCOEF
-  INTEGER, INTENT(IN) :: MAXRANK
-!  f2py intent(in) :: MAXRANK
+  INTEGER, INTENT(OUT) :: NLEG(NRETAB)
+  REAL, INTENT(OUT) :: LEGCOEF(6,0:MAXLEG,NRETAB)
+  INTEGER, INTENT(IN) :: MAXLEG
   INTEGER :: I, J, L, M, K, NL, NPHASEPOL
 
   NPHASEPOL = 6
@@ -656,11 +673,11 @@ SUBROUTINE READ_MIE_TABLE(MIETABFILE, NRETAB, REFF, EXTINCT, &
     READ (1,*)
     DO I = 1, NRETAB
       READ (1,'(1X,F8.4,1X,E12.5,1X,F8.6,1X,I6,A)') &
-          REFF(I), EXTINCT(I), SSALB(I), NRANK(I)
+          REFF(I), EXTINCT(I), SSALB(I), NLEG(I)
       DO J = 1, NPHASEPOL
-      	READ (1,'(I1,1X,201(1X,F10.5))'), M, (WIGCOEF(J,L,I), L=0,MIN(NRANK(I),200))
-        DO K = 200, NRANK(I)-1, 200
-          READ (1,'(2X,200(1X,F10.5))') (WIGCOEF(J,K+L,I),L=1,MIN(200,NRANK(I)-K))
+      	READ (1,'(I1,1X,201(1X,F10.5))'), M, (LEGCOEF(J,L,I), L=0,MIN(NLEG(I),200))
+        DO K = 200, NLEG(I)-1, 200
+          READ (1,'(2X,200(1X,F10.5))') (LEGCOEF(J,K+L,I),L=1,MIN(200,NLEG(I)-K))
         ENDDO
       ENDDO
     ENDDO
@@ -669,25 +686,22 @@ END SUBROUTINE READ_MIE_TABLE
   
   
   
-SUBROUTINE TRANSFORM_WIGNERD_TO_PHASE (MAXRANK, NPHASEPOL, &
-				       PELEM, NRANK, WIGCOEF, &
-				       NANGLE, ANGLE, PHASE)
+SUBROUTINE TRANSFORM_LEG_TO_PHASE (MAXLEG, NPHASEPOL, &
+				   PELEM, NLEG, LEGCOEF, &
+				   NANGLE, ANGLE, PHASE)
  ! Transforms the phase matrix element (PELEM=1 to 6) from the Wigner 
- ! d-function based coefficients of the scattering matrix (WIGCOEF) to 
+ ! d-function based coefficients of the scattering matrix (LEGCOEF) to 
  ! a function of angle, PHASE(NANGLE) (at scattering angles in degrees
- ! in ANGLE(:)).  The order of the six elements in WIGCOEF is the four 
+ ! in ANGLE(:)).  The order of the six elements in LEGCOEF is the four 
  ! diagonal ones (alpha1, alpha2, alpha3, alpha4) followed by the IQ and
  ! UV coefficients (beta1, beta2).  The phase matrix elements indexed by
  ! PELEM are P11, P22, P33, P44, P12, P34.  If PELEM<0 then the ABS(PELEM) 
  ! phase matrix element is normalized by the P11 element on output in PHASE.
  ! (Doicu et al., 2013, JQSRT, http://dx.doi.org/10.1016/j.jqsrt.2012.12.009).
   IMPLICIT NONE
-  INTEGER, INTENT(IN) :: MAXRANK, NPHASEPOL, PELEM, NRANK, NANGLE
-!f2py intent(in) :: MAXRANK, NPHASEPOL, PELEM, NRANK, NANGLE
-  REAL,    INTENT(IN) :: WIGCOEF(NPHASEPOL,0:MAXRANK), ANGLE(NANGLE)
-!f2py intent(in) :: WIGCOEF, ANGLE
+  INTEGER, INTENT(IN) :: MAXLEG, NPHASEPOL, PELEM, NLEG, NANGLE
+  REAL,    INTENT(IN) :: LEGCOEF(NPHASEPOL,0:MAXLEG), ANGLE(NANGLE)
   REAL,    INTENT(OUT) :: PHASE(NANGLE)
-!f2py intent(out) :: PHASE
   INTEGER :: J, N
   DOUBLE PRECISION :: PI, X, XM, A1, A2, A3, A4, B1, B2, A2P3, A2M3
   DOUBLE PRECISION, ALLOCATABLE :: D00(:), D22P(:), D22M(:), D20(:)
@@ -700,7 +714,7 @@ SUBROUTINE TRANSFORM_WIGNERD_TO_PHASE (MAXRANK, NPHASEPOL, &
   ENDIF
 
    ! Allocate arrays for Wigner functions D20, D22, D2-2 and D00
-  ALLOCATE (D00(0:NRANK), D22P(0:NRANK), D22M(0:NRANK), D20(0:NRANK))
+  ALLOCATE (D00(0:NLEG), D22P(0:NLEG), D22M(0:NLEG), D20(0:NLEG))
   ALLOCATE (NORM(NANGLE))
 
   PI = DACOS(-1.0D0)
@@ -712,21 +726,21 @@ SUBROUTINE TRANSFORM_WIGNERD_TO_PHASE (MAXRANK, NPHASEPOL, &
      ! from the Wigner d-function coefficients
     SELECT CASE (ABS(PELEM))
     CASE (1)
-      CALL WIGNERFCT (X, NRANK, 0, 0, D00)
+      CALL WIGNERFCT (X, NLEG, 0, 0, D00)
       A1 = 0.0D0
-      DO N = 0, NRANK
-	A1 = A1 + WIGCOEF(1,N) * D00(N)
+      DO N = 0, NLEG
+	A1 = A1 + LEGCOEF(1,N) * D00(N)
       ENDDO
       PHASE(J) = A1
 
     CASE (2:3)
-      CALL WIGNERFCT (X, NRANK, 2, 2, D22P)
-      CALL WIGNERFCT (XM, NRANK, 2, 2, D22M) ! multiply by (-1)**N
+      CALL WIGNERFCT (X, NLEG, 2, 2, D22P)
+      CALL WIGNERFCT (XM, NLEG, 2, 2, D22M) ! multiply by (-1)**N
       A2P3 = 0.0D0
       A2M3 = 0.0D0
-      DO N = 2, NRANK
-	A2P3 = A2P3 + (WIGCOEF(2,N) + WIGCOEF(3,N)) * D22P(N)
-	A2M3 = A2M3 + (WIGCOEF(2,N) - WIGCOEF(3,N)) *(-1)**N * D22M(N)
+      DO N = 2, NLEG
+	A2P3 = A2P3 + (LEGCOEF(2,N) + LEGCOEF(3,N)) * D22P(N)
+	A2M3 = A2M3 + (LEGCOEF(2,N) - LEGCOEF(3,N)) *(-1)**N * D22M(N)
       ENDDO
       A2 = 0.5D0 *(A2P3 + A2M3)
       A3 = 0.5D0 *(A2P3 - A2M3)
@@ -737,26 +751,26 @@ SUBROUTINE TRANSFORM_WIGNERD_TO_PHASE (MAXRANK, NPHASEPOL, &
       ENDIF
 
     CASE (4)
-      CALL WIGNERFCT (X, NRANK, 0, 0, D00)
+      CALL WIGNERFCT (X, NLEG, 0, 0, D00)
       A4 = 0.0D0
-      DO N = 0, NRANK
-	A4 = A4 + WIGCOEF(4,N) * D00(N)
+      DO N = 0, NLEG
+	A4 = A4 + LEGCOEF(4,N) * D00(N)
       ENDDO
       PHASE(J) = A4
 
     CASE (5)
-      CALL WIGNERFCT (X, NRANK, 2, 0, D20)
+      CALL WIGNERFCT (X, NLEG, 2, 0, D20)
       B1 = 0.0D0
-      DO N = 2, NRANK
-	B1 = B1 - WIGCOEF(5,N) * D20(N)
+      DO N = 2, NLEG
+	B1 = B1 - LEGCOEF(5,N) * D20(N)
       ENDDO
       PHASE(J) = B1
 
     CASE (6)
-      CALL WIGNERFCT (X, NRANK, 2, 0, D20)
+      CALL WIGNERFCT (X, NLEG, 2, 0, D20)
       B2 = 0.0D0
-      DO N = 2, NRANK
-	B2 = B2 - WIGCOEF(6,N) * D20(N)
+      DO N = 2, NLEG
+	B2 = B2 - LEGCOEF(6,N) * D20(N)
       ENDDO
       PHASE(J) = B2
 
@@ -767,10 +781,10 @@ SUBROUTINE TRANSFORM_WIGNERD_TO_PHASE (MAXRANK, NPHASEPOL, &
 
      ! Calculate P11 function if normalization by it is desired
     IF (PELEM < 0) THEN
-      CALL WIGNERFCT (X, NRANK, 0, 0, D00)
+      CALL WIGNERFCT (X, NLEG, 0, 0, D00)
       A1 = 0.0D0
-      DO N = 0, NRANK
-	A1 = A1 + WIGCOEF(1,N) * D00(N)
+      DO N = 0, NLEG
+	A1 = A1 + LEGCOEF(1,N) * D00(N)
       ENDDO
       NORM(J) = A1
     ENDIF
@@ -781,5 +795,131 @@ SUBROUTINE TRANSFORM_WIGNERD_TO_PHASE (MAXRANK, NPHASEPOL, &
     PHASE(:) = PHASE(:)/NORM(:)
   ENDIF
   DEALLOCATE (D00, D22P, D22M, D20, NORM)
-END SUBROUTINE TRANSFORM_WIGNERD_TO_PHASE
+END SUBROUTINE TRANSFORM_LEG_TO_PHASE
 
+
+
+SUBROUTINE READ_MONO_TABLE(MIETABFILE, NRTAB, RADIUS, EXTINCT, &
+			  SCATTER, NLEG, LEGCOEF, MAXLEG) 
+  IMPLICIT NONE
+  CHARACTER(LEN=*), INTENT(IN) :: MIETABFILE
+  INTEGER, INTENT(IN) :: NRTAB
+  REAL, INTENT(OUT) :: RADIUS(NRTAB), EXTINCT(NRTAB), SCATTER(NRTAB)
+  INTEGER, INTENT(OUT) :: NLEG(NRTAB)
+  REAL, INTENT(OUT) :: LEGCOEF(6,0:MAXLEG,NRTAB)
+  INTEGER, INTENT(IN) :: MAXLEG
+  
+  INTEGER :: I, J, L, M, K, NL, NPHASEPOL
+
+  NPHASEPOL = 6
+  OPEN (UNIT=1, FILE=MIETABFILE, STATUS='OLD')
+    READ (1,*)
+    READ (1,*)
+    READ (1,*)
+    READ (1,*)
+    READ (1,*)
+    READ (1,*)
+    DO I = 1, NRTAB
+      READ (1,'(1X,F8.4,1X,E12.5,1X,E12.5,1X,I6,A)') &
+	  RADIUS(I), EXTINCT(I), SCATTER(I), NLEG(I)
+      DO J = 1, NPHASEPOL
+	READ (1,'(I1,1X,201(1X,F15.5))'), M, (LEGCOEF(J,L,I), L=0,MIN(NLEG(I),200))
+	DO K = 200, NLEG(I)-1, 200
+	  READ (1,'(2X,200(1X,F15.5))') (LEGCOEF(J,K+L,I),L=1,MIN(200,NLEG(I)-K))
+	ENDDO
+      ENDDO
+    ENDDO
+  CLOSE (1)
+END SUBROUTINE READ_MONO_TABLE
+
+
+SUBROUTINE WRITE_MONO_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
+                            PARTYPE, PARDENS, RINDEX, NRTAB, &
+                            RADII, EXTINCT, SCATTER, NLEG, MAXLEG, LEGCOEF)
+			    
+ ! Writes the table of Mie monodisperse scattering properties as a function of 
+ ! radius. 
+  IMPLICIT NONE
+  INTEGER, INTENT(IN) :: NRTAB
+  INTEGER, INTENT(IN) :: MAXLEG, NLEG(NRTAB)
+  COMPLEX, INTENT(IN) :: RINDEX
+  REAL,    INTENT(IN) :: WAVELEN1, WAVELEN2, DELTAWAVE
+  REAL,    INTENT(IN) :: PARDENS
+  REAL,    INTENT(IN) :: RADII(NRTAB), EXTINCT(NRTAB), SCATTER(NRTAB)
+  REAL,    INTENT(IN) :: LEGCOEF(6,0:MAXLEG, NRTAB)
+  CHARACTER(LEN=1), INTENT(IN) :: PARTYPE
+  CHARACTER(LEN=*), INTENT(IN) :: MIETABFILE
+ 
+  INTEGER :: I, J, JP, K, L, NL, NPHASEPOL
+  OPEN (UNIT=3, FILE=MIETABFILE, STATUS='REPLACE')
+  NPHASEPOL = 6
+  WRITE (3,'(A)') '! Polarized monodisperse Mie scattering table vs. radius'
+  IF (DELTAWAVE < 0.0) THEN
+    WRITE (3,'(2(1X,F8.3),A)') WAVELEN1, WAVELEN2, '  wavelength range (micron)'
+  ELSE
+    WRITE (3,'(3(1X,F8.3),A)') WAVELEN1, WAVELEN2, DELTAWAVE, '  wavelength range and averaging step (micron)'
+  ENDIF
+  WRITE (3,'(1X,F5.3,2X,A1,A)') PARDENS, PARTYPE, '   particle density (g/cm^3) and type (Water, Ice, Aerosol)'
+  WRITE (3,'(2(1X,E13.6),A)') RINDEX, '  particle index of refraction'
+  WRITE (3,'(1X,I5,2(1X,F8.3),A)') NRTAB, RADII(1), RADII(NRTAB), &
+        '  number, starting, ending radius'
+  WRITE (3,'(1X,I5,A)') MAXLEG, '  maximum rank allowed'
+  DO I = 1, NRTAB
+    WRITE (3,'(1X,F8.4,1X,E12.5,1X,E12.5,1X,I6,A)') &
+        RADII(I), EXTINCT(I), SCATTER(I), NLEG(I), '  Radius  Ext  Scat  Nleg'
+    DO J = 1, NPHASEPOL
+    	WRITE (3,'(I1,1X,201(1X,F15.5))') J, (LEGCOEF(J,L,I), L=0,MIN(NLEG(I),200))
+      DO K = 200, NLEG(I)-1, 200
+        WRITE (3,'(2X,200(1X,F15.5))') (LEGCOEF(J,K+L,I),L=1,MIN(200,NLEG(I)-K))
+      ENDDO
+    ENDDO
+  ENDDO
+  CLOSE (3)
+END SUBROUTINE WRITE_MONO_TABLE
+
+
+SUBROUTINE GET_POLY_TABLE (ND, NDIST, NSIZE, MAXLEG, NLEG1, EXTINCT1,&
+		      SCATTER1, LEGCOEF1, EXTINCT, SSALB, NLEG, LEGCOEF)
+  IMPLICIT NONE
+  REAL, INTENT(IN) :: ND(NSIZE, NDIST)
+  INTEGER, INTENT(IN) :: NDIST, NSIZE
+  INTEGER, INTENT(IN) :: MAXLEG
+  INTEGER, INTENT(IN) :: NLEG1(NSIZE)
+  REAL, INTENT(IN) :: EXTINCT1(NSIZE), SCATTER1(NSIZE)
+  REAL, INTENT(IN) :: LEGCOEF1(6, 0:MAXLEG, NSIZE)
+  
+  REAL, INTENT(OUT) :: EXTINCT(NDIST), SSALB(NDIST)
+  REAL, INTENT(OUT) :: NLEG(NDIST), LEGCOEF(6,0:MAXLEG,NDIST)
+
+  INTEGER :: I, J, L, NL
+  REAL :: SCATTER
+
+  ! Loop over the number of output tabulated effective radii
+  DO I = 1, NDIST
+    ! Sum the scattering properties over the discrete size distribution
+    EXTINCT(I) = 0.0
+    SCATTER = 0.0
+    LEGCOEF(:,:,I) = 0.0
+    NL = 1
+    DO J = 1, NSIZE
+      EXTINCT(I) = EXTINCT(I) + ND(J,I)*EXTINCT1(J)
+      SCATTER = SCATTER + ND(J,I)*SCATTER1(J)
+      NL = MAX(NL,NLEG1(J))
+      LEGCOEF(:,0:NL,I) = LEGCOEF(:,0:NL,I) + ND(J,I)*LEGCOEF1(:,0:NL,J)
+    ENDDO
+    DO L = 0, NL
+      LEGCOEF(:,L,I) = LEGCOEF(:,L,I)/SCATTER
+      IF (LEGCOEF(1,L,I) .GT. 0.5E-5) NLEG(I) = L 
+    ENDDO
+    IF (ABS(LEGCOEF(1,0,I)-1.0) > 0.0001) THEN
+      PRINT *,'Phase function not normalized',I,LEGCOEF(1,0,I)
+      STOP
+    ENDIF 
+    IF (EXTINCT(I) > 0.0) THEN
+      SSALB(I) = SCATTER/EXTINCT(I)
+    ENDIF
+    EXTINCT(I) = 0.001*EXTINCT(I)
+
+  ENDDO  ! end of effective radius loop
+
+END SUBROUTINE GET_POLY_TABLE

@@ -56,14 +56,14 @@ C         Use layer mean temperature to compute fractional pressure change.
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, FLUXES,
      .             SHPTR, SOURCE, CAMX, CAMY, CAMZ, CAMMU, CAMPHI, 
      .             NPIX, GRADOUT, COST, MEASUREMENTS, RSHPTR, VISOUT,
-     .             RADIANCE)
+     .             NPART, TOTAL_EXT, RADIANCE)
 
       IMPLICIT NONE
       INTEGER NX, NY, NZ, BCFLAG, IPFLAG, NPTS
       INTEGER NBPTS, NCELLS, NBCELLS
 Cf2py intent(in) :: NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NBPTS, NCELLS, NBCELLS
       INTEGER ML, MM, NCS, NLM, NLEG
-      INTEGER NUMPHASE
+      INTEGER NUMPHASE, NPART
 Cf2py intent(in) :: ML, MM, NCS, NLM, NLEG, NUMPHASE
       INTEGER NMU, NPHI0MAX, NPHI0(*)
 Cf2py intent(in) :: NMU, NPHI0MAX, NPHI0
@@ -74,7 +74,7 @@ Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
       INTEGER SHPTR(*), BCPTR(MAXNBC,2), RSHPTR(*)
 Cf2py intent(in) :: SHPTR, BCPTR, RSHPTR
       INTEGER*2 CELLFLAGS(*)
-      INTEGER IPHASE(*)
+      INTEGER IPHASE(NPTS,NPART)
 Cf2py intent(in) :: CELLFLAGS, IPHASE
       LOGICAL DELTAM
 Cf2py intent(in) :: DELTAM
@@ -88,8 +88,9 @@ Cf2py intent(in) :: MU, PHI, WTDO
 Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
       REAL    SFCGRIDPARMS(*), BCRAD(*)
 Cf2py intent(in) :: SFCGRIDPARMS, BCRAD
-      REAL    EXTINCT(*), ALBEDO(*), LEGEN(0:NLEG,*)
-Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN
+      REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
+      REAL    TOTAL_EXT(NPTS), LEGEN(0:NLEG,*)
+Cf2py intent(in) :: EXTINCT, ALBEDO, TOTAL_EXT, LEGEN
       REAL    DIRFLUX(*), FLUXES(2,*), SOURCE(*), RADIANCE(*)
 Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE, RADIANCE
       REAL    CAMX(*), CAMY(*), CAMZ(*), CAMMU(*), CAMPHI(*)
@@ -194,19 +195,20 @@ C             Extrapolate ray to domain top if above
         
         RAYGRAD = 0.0
         CALL EXTGRAD_INTEGRATE_1RAY (BCFLAG, IPFLAG, 
-     .                       NX, NY, NZ, NPTS, NCELLS, 
-     .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
-     .                       XGRID, YGRID, ZGRID, GRIDPOS,
-     .                       ML, MM, NCS, NLM, NLEG, NUMPHASE,
-     .                       NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, 
-     .                       DELTAM, SRCTYPE, WAVELEN, SOLARMU,SOLARAZ,
-     .                       EXTINCT, ALBEDO, LEGEN, IPHASE, 
-     .                       DIRFLUX, SHPTR, SOURCE, 
-     .                       YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
-     .                       MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD, 
-     .                       SFCTYPE, NSFCPAR, SFCGRIDPARMS,
-     .                       MURAY, PHIRAY, MU2, PHI2, X0, Y0, Z0, 
-     .                       VISOUT(N), RAYGRAD, RSHPTR, RADIANCE)
+     .               NX, NY, NZ, NPTS, NCELLS, 
+     .               GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
+     .               XGRID, YGRID, ZGRID, GRIDPOS,
+     .               ML, MM, NCS, NLM, NLEG, NUMPHASE,
+     .               NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, 
+     .               DELTAM, SRCTYPE, WAVELEN, SOLARMU,SOLARAZ,
+     .               EXTINCT(:NPTS,:), ALBEDO(:NPTS,:), LEGEN,
+     .               IPHASE(:NPTS,:), DIRFLUX, SHPTR, SOURCE, 
+     .               YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
+     .               MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD, 
+     .               SFCTYPE, NSFCPAR, SFCGRIDPARMS,NPART,
+     .               MURAY, PHIRAY, MU2, PHI2, X0, Y0, Z0, 
+     .               VISOUT(N), RAYGRAD, RSHPTR, TOTAL_EXT, 
+     .               RADIANCE)
 900     CONTINUE
         
         PIXEL_ERROR = (VISOUT(N) - MEASUREMENTS(N))
@@ -223,19 +225,19 @@ C             Extrapolate ray to domain top if above
       END
       
       SUBROUTINE EXTGRAD_INTEGRATE_1RAY (BCFLAG, IPFLAG, 
-     .                        NX, NY, NZ, NPTS, NCELLS, 
-     .                        GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
-     .                        XGRID, YGRID, ZGRID, GRIDPOS,
-     .                        ML, MM, NCS, NLM, NLEG, NUMPHASE,
-     .                        NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, 
-     .                        DELTAM, SRCTYPE, WAVELEN,SOLARMU,SOLARAZ,
-     .                        EXTINCT, ALBEDO, LEGEN, IPHASE, 
-     .                        DIRFLUX, SHPTR, SOURCE, 
-     .                        YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
-     .                        MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD, 
-     .                        SFCTYPE, NSFCPAR, SFCGRIDPARMS,
-     .                        MURAY,PHIRAY, MU2, PHI2, X0, Y0, Z0, 
-     .                        RADOUT, RAYGRAD, RSHPTR, RADIANCE)
+     .                 NX, NY, NZ, NPTS, NCELLS, 
+     .                 GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
+     .                 XGRID, YGRID, ZGRID, GRIDPOS,
+     .                 ML, MM, NCS, NLM, NLEG, NUMPHASE,
+     .                 NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, 
+     .                 DELTAM, SRCTYPE, WAVELEN,SOLARMU,SOLARAZ,
+     .                 EXTINCT, ALBEDO, LEGEN, IPHASE, 
+     .                 DIRFLUX, SHPTR, SOURCE, YLMDIR, 
+     .                 YLMSUN, SUNDIRLEG, SINGSCAT, MAXNBC, 
+     .                 NTOPPTS, NBOTPTS, BCPTR, BCRAD, 
+     .                 SFCTYPE, NSFCPAR, SFCGRIDPARMS,NPART,
+     .                 MURAY,PHIRAY, MU2, PHI2, X0, Y0, Z0, 
+     .                 RADOUT,RAYGRAD,RSHPTR,TOTAL_EXT,RADIANCE)
 
 C       Integrates the source function through the extinction field 
 C     (EXTINCT) backward in the direction (MURAY,PHIRAY) to find the 
@@ -248,15 +250,15 @@ C     outgoing radiance (RAD) at the point X0,Y0,Z0.
       INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
       INTEGER SHPTR(NPTS+1), RSHPTR(NPTS+1)
       INTEGER*2 CELLFLAGS(NCELLS)
-      INTEGER IPHASE(NPTS)
+      INTEGER IPHASE(NPTS,NPART), NPART
       INTEGER BCPTR(MAXNBC,2)
       LOGICAL DELTAM
       REAL    WTDO(NMU,NPHI0MAX), MU(NMU), PHI(NMU,NPHI0MAX)
       REAL    WAVELEN, SOLARMU, SOLARAZ
       REAL    SFCGRIDPARMS(NSFCPAR,NBOTPTS), BCRAD(*)
       REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
-      REAL    EXTINCT(NPTS), ALBEDO(NPTS), LEGEN(0:NLEG,NPTS) 
-      REAL    DIRFLUX(NPTS)
+      REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
+      REAL    DIRFLUX(NPTS), TOTAL_EXT(NPTS), LEGEN(0:NLEG,NPTS) 
       DOUBLE PRECISION RAYGRAD(*)
       REAL    SOURCE(*), RADIANCE(*)
       REAL    YLMDIR(NLM), YLMSUN(NLM), SINGSCAT(NUMPHASE)
@@ -374,12 +376,12 @@ C           Decide which of the eight grid points we need the source function
      
 C         Compute the source function times extinction in direction (MU2,PHI2)
         CALL COMPUTE_SOURCE_1CELL (ICELL, GRIDPTR, 
-     .             ML, MM, NCS, NLM, NLEG, NUMPHASE,
-     .             NPTS, DELTAM, SRCTYPE, SOLARMU, 
-     .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, 
-     .             SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, 
-     .             SINGSCAT, DONETHIS, OLDIPTS, OEXTINCT8,
-     .             OSRCEXT8, EXTINCT8, SRCEXT8)
+     .        ML, MM, NCS, NLM, NLEG, NUMPHASE,
+     .        NPTS, DELTAM, SRCTYPE, SOLARMU, EXTINCT(:NPTS,:),
+     .        ALBEDO(:NPTS,:), LEGEN(:NPTS,:), IPHASE, DIRFLUX, 
+     .        SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, 
+     .        SINGSCAT, DONETHIS, OLDIPTS, OEXTINCT8,OSRCEXT8,
+     .        EXTINCT8, SRCEXT8, TOTAL_EXT(:NPTS), NPART)
      
      
 C         Interpolate the source and extinction to the current point
@@ -775,7 +777,7 @@ C               source function because extinction is still scaled.
      .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, FLUXES,
      .             SHPTR, SOURCE, CAMX, CAMY, CAMZ, CAMMU, CAMPHI, 
-     .             NPIX, VISOUT)
+     .             NPIX, NPART, TOTAL_EXT, VISOUT)
 Cf2py threadsafe
       IMPLICIT NONE
       INTEGER NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
@@ -791,7 +793,7 @@ Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
       INTEGER SHPTR(*), BCPTR(MAXNBC,2)
 Cf2py intent(in) :: SHPTR, BCPTR
       INTEGER*2 CELLFLAGS(*)
-      INTEGER IPHASE(*)
+      INTEGER IPHASE(NPTS,NPART)
 Cf2py intent(in) :: CELLFLAGS, IPHASE
       LOGICAL DELTAM
 Cf2py intent(in) :: DELTAM
@@ -805,15 +807,16 @@ Cf2py intent(in) :: MU, PHI, WTDO
 Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
       REAL    SFCGRIDPARMS(*), BCRAD(*)
 Cf2py intent(in) :: SFCGRIDPARMS, BCRAD
-      REAL    EXTINCT(*), ALBEDO(*), LEGEN(0:NLEG,*)
-Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN
+      REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
+      REAL    TOTAL_EXT(NPTS), LEGEN(0:NLEG,*)
+Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN, TOTAL_EXT
       REAL    DIRFLUX(*), FLUXES(2,*), SOURCE(*)
 Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE
       DOUBLE PRECISION  CAMX(*), CAMY(*), CAMZ(*)
       REAL CAMMU(*), CAMPHI(*)
 Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
-      INTEGER  NPIX
-Cf2py intent(in) :: NPIX 
+      INTEGER  NPIX, NPART
+Cf2py intent(in) :: NPIX, NPART
       REAL VISOUT(NPIX)
 Cf2py intent(out) :: VISOUT
       CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
@@ -842,7 +845,7 @@ Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
      .                              ML, NLEG, LEGEN, PHASETAB)
           ENDIF
       ENDIF
-      
+
 C         Make the isotropic radiances for the top boundary
       CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN, 
      .                            UNITS, NTOPPTS, BCRAD(1))
@@ -859,7 +862,7 @@ C          Compute the upwelling bottom radiances using the downwelling fluxes.
      .                                       NSFCPAR, SFCGRIDPARMS,
      .                                       BCRAD(1+NTOPPTS))
       ENDIF
-  
+
       PI = ACOS(-1.0D0)
 C         Loop over pixels in image
       DO N = 1, NPIX
@@ -905,20 +908,22 @@ C           Extrapolate ray to domain top if above
                 ENDDO
             ENDIF
         ENDIF
+
         CALL INTEGRATE_1RAY (BCFLAG, IPFLAG, 
-     .                       NX, NY, NZ, NPTS, NCELLS, 
-     .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
-     .                       XGRID, YGRID, ZGRID, GRIDPOS,
-     .                       ML, MM, NCS, NLM, NLEG, NUMPHASE,
-     .                       NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, 
-     .                       DELTAM, SRCTYPE, WAVELEN, SOLARMU,
-     .                       SOLARAZ, EXTINCT, ALBEDO, LEGEN,  
-     .                       IPHASE, DIRFLUX, SHPTR, SOURCE, 
-     .                       YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
-     .                       MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD, 
-     .                       SFCTYPE, NSFCPAR, SFCGRIDPARMS,
-     .                       MURAY, PHIRAY, MU2, PHI2, X0, Y0, Z0, 
-     .                       VISOUT(N))
+     .                 NX, NY, NZ, NPTS, NCELLS, 
+     .                 GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
+     .                 XGRID, YGRID, ZGRID, GRIDPOS,
+     .                 ML, MM, NCS, NLM, NLEG, NUMPHASE,
+     .                 NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, 
+     .                 DELTAM, SRCTYPE, WAVELEN, SOLARMU,SOLARAZ,
+     .                 EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
+     .                 SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG,
+     .                 SINGSCAT, MAXNBC, NTOPPTS, NBOTPTS,
+     .                 BCPTR, BCRAD, SFCTYPE, NSFCPAR, 
+     .                 SFCGRIDPARMS,NPART, MURAY, PHIRAY, 
+     .                 MU2, PHI2, X0, Y0, Z0, 
+     .                 TOTAL_EXT, VISOUT(N))
+C       WRITE(*,*) N, VISOUT(N)
   900   CONTINUE
       ENDDO
   

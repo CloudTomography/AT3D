@@ -322,23 +322,6 @@ class RteSolver(object):
         self.set_numerics(params['numerical_params'])
         self.set_scene(params['scene_params'])
         
-        
-    def __del__(self):
-        try:
-            core.end_shdom_mpi(
-                gridpos=self._gridpos,
-                npx=self._pa.npx,
-                npy=self._pa.npy,
-                xstart=self._pa.xstart,
-                ystart=self._pa.ystart,
-                delx=self._pa.delx,
-                dely=self._pa.dely,
-                npxt=self._npxt,
-                npyt=self._npyt
-            )
-        except Exception as e:
-            warnings.warn(repr(e))
-
 
     def set_scene(self, scene_params):
         """
@@ -444,10 +427,11 @@ class RteSolver(object):
             Initilize the RTE solver to a Medium object.
 
         """
+        self._npart = medium.num_scatterers
         self.set_grid(medium.grid)
-        self.set_extinction(medium.extinction)
-        self.set_albedo(medium.albedo)
-        self.set_phase(medium.phase)
+        self.set_extinction(medium)
+        self.set_albedo(medium)
+        self.set_phase(medium)
         
         # Temperature is used for thermal radiation. Not supported yet.
         self._pa.tempp = np.zeros(shape=(self._maxpg,), dtype=np.float32)
@@ -459,64 +443,63 @@ class RteSolver(object):
         self._oldnpts = 0
 
 
-    def set_phase(self, phase):
+    def set_phase(self, medium):
         """
         set the phase function internal SHDOM parameters
         
         Parameters
         ----------
-        phase: shdom.Phase
-          TabulatedPhase or GridPhase object.
+        medium: shdom.OpticalMedium
+            an OpticalMedium object contains legenp,iphasep properties
             
         """
-        self._pa.iphasep = phase.iphasep.ravel()
-        self._pa.numphase = phase.numphase
+        self._pa.iphasep = medium.iphasep.astype(np.int32)
+        self._pa.numphase = medium.numphase
         
         # Determine the number of legendre coefficient for a given angular resolution
         if self._deltam:
             self._nleg = self._mm+1
         else:
             self._nleg = self._mm
-        self._nleg = self._maxleg = max(phase.maxleg, self._nleg)
+        self._nleg = self._maxleg = max(medium.maxleg, self._nleg)
         
-
         # Legenp is without the zero order term which is 1.0 for normalized phase function
-        self._pa.legenp = phase.get_legenp(self._nleg)
-        self._maxasym = phase.maxasym
-        self._maxpgl = phase.grid.num_points * phase.maxleg         
+        self._pa.legenp = medium.get_legenp(self._nleg).astype(np.float32)
+        self._maxasym = medium.maxasym
+        self._maxpgl = medium.grid.num_points * medium.maxleg         
 
-        if phase.numphase > 0:
-            self._maxigl = phase.numphase*(phase.maxleg + 1)
+        if medium.numphase > 0:
+            self._maxigl = medium.numphase*(medium.maxleg + 1)
         else:
-            self._maxigl = self._maxig*(phase.maxleg + 1)
+            self._maxigl = self._maxig*(medium.maxleg + 1)
     
-        self._iphase = np.empty(shape=(self._maxig,), dtype=np.int32, order='F')
+        self._iphase = np.empty(shape=(self._maxig, self._npart), dtype=np.int32, order='F')
         self._legen = np.empty(shape=(self._maxigl,), dtype=np.float32, order='F')        
         self._ylmsun = np.empty(shape=(self._nlm, ), dtype=np.float32, order='F') 
                    
 
-    def set_albedo(self, albedo):
+    def set_albedo(self, medium):
         """
         set the single scattering albedo
         
         Parameters
         ----------
-        albedo: shdom.GridData
-            The single scattering albedo on a grid. 
+        medium: shdom.OpticalMedium
+            an OpticalMedium object contains albedop property
         """
-        self._pa.albedop = np.array(albedo.data.ravel(), dtype=np.float32)
+        self._pa.albedop = medium.albedop.astype(np.float32)
         
         
-    def set_extinction(self, extinction):
+    def set_extinction(self, medium):
         """
         set the optical extinction.
         
         Parameters
         ----------
-        extinction: shdom.GridData
-            The optical extinction on a grid. 
+        medium: shdom.OpticalMedium
+            an OpticalMedium object contains extinctp property
         """
-        self._pa.extinctp = np.array(extinction.data.ravel(), dtype=np.float32)
+        self._pa.extinctp = medium.extinctp.astype(np.float32)
     
     
     def set_grid(self, grid):
@@ -673,14 +656,15 @@ class RteSolver(object):
         self._bcrad = np.empty(shape=(self._maxbcrad,), dtype=np.float32, order='F')
     
         # Array allocation
-        self._extinct = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
-        self._albedo = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
+        self._total_ext = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
+        self._extinct = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
+        self._albedo = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
         self._mu = np.empty(shape=(self._nmu,), dtype=np.float32, order='F')
         self._wtdo = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
         self._phi = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
         self._phi0 = np.empty(shape=(self._nmu,), dtype=np.int32, order='F')
         self._temp = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
-        self._planck = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
+        self._planck = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
         self._gridptr = np.empty(shape=(8, self._maxic), dtype=np.int32, order='F')
         self._neighptr = np.empty(shape=(6, self._maxic), dtype=np.int32, order='F')
         self._treeptr = np.empty(shape=(2, self._maxic), dtype=np.int32, order='F')
@@ -717,13 +701,18 @@ class RteSolver(object):
         -------
         None
         """
-        
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, self._sfcgridparms, self._solcrit, \
             iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
             self._ntoppts, self._nbotpts, self._bcptr, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
-            self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr,\
-            self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun, self._oldnpts = \
+            self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr, self._source, \
+            self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun, self._oldnpts, self._total_ext = \
             core.solve_rte(
+                npart=self._npart,
+                extinctp=self._pa.extinctp,
+                albedop=self._pa.albedop,
+                planck=self._planck,
+                iphase=self._iphase,
+                iphasep=self._pa.iphasep,                
                 nstokes=self._nstokes,
                 nstleg=self._nstleg,
                 npx=self._pa.npx,
@@ -734,12 +723,9 @@ class RteSolver(object):
                 xstart=self._pa.xstart,
                 ystart=self._pa.ystart,
                 zlevels=self._pa.zlevels,             
-                tempp=self._pa.tempp,
-                extinctp=self._pa.extinctp,
-                albedop=self._pa.albedop,
+                tempp=self._pa.tempp,          
                 legenp=self._pa.legenp,
-                extdirp=self._pa.extdirp,
-                iphasep=self._pa.iphasep,
+                extdirp=self._pa.extdirp,                            
                 nzckd=self._pa.nzckd,
                 zckd=self._pa.zckd,
                 gasabs=self._pa.gasabs,                
@@ -791,8 +777,6 @@ class RteSolver(object):
                 ygrid=self._ygrid,
                 zgrid=self._zgrid,
                 temp=self._temp,
-                planck=self._planck,
-                iphase=self._iphase,
                 maxbcrad=self._maxbcrad,
                 bcptr=self._bcptr,
                 bcrad=self._bcrad,
@@ -900,7 +884,7 @@ class RteSolverPolarized(RteSolver):
         else:
             self._maxigl = self._maxig*(phase.maxleg + 1)
     
-        self._iphase = np.empty(shape=(self._maxig,), dtype=np.int32, order='F')
+        self._iphase = np.empty(shape=(self._maxig, self._npart), dtype=np.int32, order='F')
         self._legen = np.empty(shape=(phase.nstleg, self._maxigl,), dtype=np.float32, order='F')        
 
         if self._nstokes == 1:
@@ -972,14 +956,14 @@ class RteSolverPolarized(RteSolver):
         self._bcrad = np.empty(shape=(self._nstokes,self._maxbcrad), dtype=np.float32, order='F')
 
         # Array allocation
-        self._extinct = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
-        self._albedo = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
+        self._extinct = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
+        self._albedo = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
         self._mu = np.empty(shape=(self._nmu,), dtype=np.float32, order='F')
         self._wtdo = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
         self._phi = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
         self._phi0 = np.empty(shape=(self._nmu,), dtype=np.int32, order='F')
         self._temp = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
-        self._planck = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
+        self._planck = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
         self._gridptr = np.empty(shape=(8, self._maxic), dtype=np.int32, order='F')
         self._neighptr = np.empty(shape=(6, self._maxic), dtype=np.int32, order='F')
         self._treeptr = np.empty(shape=(2, self._maxic), dtype=np.int32, order='F')
