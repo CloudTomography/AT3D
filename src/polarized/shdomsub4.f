@@ -3,7 +3,7 @@ C     The original subroutines were written by Frank Evans for the Spherical Har
 C     The modified subroutines were written by Aviad Levis, Technion Institute of Technology, 2019
 
       SUBROUTINE RENDER (NSTOKES, NX, NY, NZ, 
-     .                   NPTS,NCELLS, ML, MM, NLM, NSTLEG, NLEG, 
+     .                   NPTS, NCELLS, ML, MM, NCS, NLM, NSTLEG, NLEG, 
      .                   NUMPHASE, NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .                   BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, 
      .                   SOLARAZ, SFCTYPE, NSFCPAR, SFCGRIDPARMS, 
@@ -13,13 +13,13 @@ C     The modified subroutines were written by Aviad Levis, Technion Institute o
      .                   GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                   EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, 
      .                   FLUXES, SHPTR, SOURCE, CAMX, CAMY, CAMZ, CAMMU, 
-     .                   CAMPHI, NPIX, STOKES)
+     .                   CAMPHI, NPIX, NPART, TOTAL_EXT, STOKES)
 Cf2py threadsafe
       IMPLICIT NONE
       INTEGER NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
 Cf2py intent(in) :: NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
-      INTEGER ML, MM, NSTLEG, NLM, NLEG, NUMPHASE
-Cf2py intent(in) :: ML, MM, NSTLEG, NLM, NLEG, NUMPHASE
+      INTEGER ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
+Cf2py intent(in) :: ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
       INTEGER NMU, NPHI0MAX, NPHI0(*)
 Cf2py intent(in) :: NMU, NPHI0MAX, NPHI0
       INTEGER MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
@@ -29,7 +29,7 @@ Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
       INTEGER SHPTR(*), BCPTR(MAXNBC,2)
 Cf2py intent(in) :: SHPTR, BCPTR
       INTEGER*2 CELLFLAGS(*)
-      INTEGER IPHASE(*)
+      INTEGER IPHASE(NPTS,NPART)
 Cf2py intent(in) :: CELLFLAGS, IPHASE
       LOGICAL DELTAM
 Cf2py intent(in) :: DELTAM
@@ -43,8 +43,10 @@ Cf2py intent(in) :: MU, PHI, WTDO
 Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
       REAL    SFCGRIDPARMS(*), BCRAD(NSTOKES, *)
 Cf2py intent(in) :: SFCGRIDPARMS, BCRAD
-      REAL    EXTINCT(*), ALBEDO(*), LEGEN(NSTLEG,0:NLEG,*)
-Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN
+      REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
+      REAL    TOTAL_EXT(NPTS), LEGEN(NSTLEG, 0:NLEG,*)
+Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN, TOTAL_EXT
+
       REAL    DIRFLUX(*), FLUXES(2,*), SOURCE(NSTOKES, *)
 Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE
       REAL CAMX(*), CAMY(*), CAMZ(*)
@@ -139,7 +141,8 @@ C         to calculate the Stokes radiance vector for this pixel
      .                       MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD, 
      .                       SFCTYPE, NSFCPAR, SFCGRIDPARMS,
      .                       MU2, PHI2, X0,Y0,Z0, 
-     .                       XE,YE,ZE, SIDE, TRANSMIT, VISRAD, VALIDRAD)
+     .                       XE,YE,ZE, SIDE, TRANSMIT, VISRAD, VALIDRAD,
+     .   	             TOTAL_EXT, NPART)
 900   CONTINUE
 
 C      WRITE (6,'(1X,2F8.4,1X,2F11.7,4(1X,F11.6))') 
@@ -181,50 +184,9 @@ C      ENDIF
       END
 
 
-
-      SUBROUTINE RAYLEIGH_EXTINCT (NZT, ZLEVELS,TEMP, RAYSFCPRES, 
-     .                            RAYLCOEF, EXTRAYL)
-C       Computes the molecular Rayleigh extinction profile EXTRAYL [/km]
-C     from the temperature profile TEMP [K] at ZLEVELS [km].  Assumes
-C     a linear lapse rate between levels to compute the pressure at
-C     each level.  The Rayleigh extinction is proportional to air
-C     density, with the coefficient RAYLCOEF in [K/(mb km)].
-      IMPLICIT NONE
-      INTEGER   NZT
-Cf2py intent(in) :: NZT
-      REAL      ZLEVELS(NZT), TEMP(NZT), RAYSFCPRES, RAYLCOEF
-Cf2py intent(in) :: ZLEVELS, TEMP, RAYSFCPRES, RAYLCOEF
-      REAL      EXTRAYL(NZT)
-Cf2py intent(out) :: EXTRAYL
-      INTEGER I
-      REAL    PRES, LAPSE, TS, DZ
-
-C           Find surface pressure by integrating hydrostatic relation
-C           for a dry atmosphere up to surface height.
-      PRES = RAYSFCPRES
-      TS = TEMP(1)
-      LAPSE = 6.5*0.001
-      PRES = PRES*(TS/(TS+LAPSE*ZLEVELS(1)*1000.))**(9.8/(287.*LAPSE))
-
-C         Use layer mean temperature to compute fractional pressure change.
-      DO I = 1, NZT-1
-        EXTRAYL(I) = RAYLCOEF*PRES/TEMP(I)
-        DZ = 1000.*(ZLEVELS(I+1)-ZLEVELS(I))
-        LAPSE = (TEMP(I)-TEMP(I+1))/DZ
-        IF (ABS(LAPSE) .GT. 0.00001) THEN
-          PRES = PRES*(TEMP(I+1)/TEMP(I))**(9.8/(287.*LAPSE))
-        ELSE
-          PRES = PRES*EXP(-9.8*DZ/(287.*TEMP(I)))
-        ENDIF
-      ENDDO  
-      EXTRAYL(NZT) = RAYLCOEF*PRES/TEMP(NZT)
       
-      RETURN
-      END
-      
-      
-      
-      SUBROUTINE RAYLEIGH_PHASE_FUNCTION (WAVELEN, RAYWIGCOEF)
+      SUBROUTINE RAYLEIGH_PHASE_FUNCTION (WAVELEN, RAYLEGCOEF,
+     .                                    TABLE_TYPE)
 C     Returns the Wigner d-function coefficients for either the Rayleigh 
 C     scalar phase function or polarized phase matrix for molecular 
 C     scattering by air.  Includes the wavelength depolarization factor.  
@@ -236,23 +198,26 @@ C     Thanks to Adrian Doicu.   WAVELEN is the wavelength in microns.
 Cf2py intent(in) :: WAVELEN
       INTEGER   NCOEF
       PARAMETER (NCOEF=2)
-      REAL      RAYWIGCOEF(6, 0:NCOEF)
-Cf2py intent(out) :: RAYWIGCOEF
+      REAL      RAYLEGCOEF(6, 0:NCOEF)
+Cf2py intent(out) :: RAYLEGCOEF
+      CHARACTER(LEN=6) :: TABLE_TYPE
+Cf2py intent(out) ::  TABLE_TYPE
       DOUBLE PRECISION AKING, BKING, CKING
       PARAMETER (AKING=1.0469541D0, 
      .           BKING=3.2503153D-04, CKING=3.8622851D-05)
       REAL :: FKING, DEPOL, DELTA, DELTAP
       
-      RAYWIGCOEF(1:6,:) = 0.0
+      TABLE_TYPE = 'VECTOR'
+      RAYLEGCOEF(1:6,:) = 0.0
       FKING = AKING + BKING/WAVELEN**2 + CKING/WAVELEN**4
       DEPOL = 6.D0*(FKING-1.D0) / (3.D0 + 7.D0*FKING)
       
       DELTA = (1.0 - DEPOL) / (1.0 + 0.5*DEPOL) 
       DELTAP = (1.0 - 2.0*DEPOL) / (1.0 - DEPOL) 
-      RAYWIGCOEF(1,0) = 1.0  ; RAYWIGCOEF(1,2) = 0.5*DELTA
-      RAYWIGCOEF(2,2) = 3.0*DELTA
-      RAYWIGCOEF(4,1) = 1.5*DELTAP*DELTA
-      RAYWIGCOEF(5,2) = SQRT(1.5)*DELTA
+      RAYLEGCOEF(1,0) = 1.0  ; RAYLEGCOEF(1,2) = 0.5*DELTA
+      RAYLEGCOEF(2,2) = 3.0*DELTA
+      RAYLEGCOEF(4,1) = 1.5*DELTAP*DELTA
+      RAYLEGCOEF(5,2) = SQRT(1.5)*DELTA
       
       RETURN
       END

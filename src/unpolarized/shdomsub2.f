@@ -2063,7 +2063,8 @@ C           at the viewing angle from the spherical harmonic source function.
           EXTINCT8(N) = EXTINCT8(ABS(I))
           SRCEXT8(N) = SRCEXT8(ABS(I))
         ELSE
-
+	
+	  EXT = TOTAL_EXT(IP)
           OLDIPTS(N) = IP
           IS = SHPTR(IP)
           NS = SHPTR(IP+1)-IS
@@ -2077,8 +2078,6 @@ C             Special case for solar source and Delta-M
           IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
 	    
 	    DO IPA = 1, NPART
-	    
-	      EXT = TOTAL_EXT(IP)
 	      IF (EXT.EQ.0.0) THEN
 		W = 1.0D0
 	      ELSE

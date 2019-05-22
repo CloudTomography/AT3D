@@ -1,6 +1,46 @@
 C Dummy routines to allow parallel SHDOM to compile without MPI.
 
 
+      SUBROUTINE RAYLEIGH_EXTINCT (NZT, ZLEVELS,TEMP, RAYSFCPRES, 
+     .                             RAYLCOEF, EXTRAYL)
+C       Computes the molecular Rayleigh extinction profile EXTRAYL [/km]
+C     from the temperature profile TEMP [K] at ZLEVELS [km].  Assumes
+C     a linear lapse rate between levels to compute the pressure at
+C     each level.  The Rayleigh extinction is proportional to air
+C     density, with the coefficient RAYLCOEF in [K/(mb km)].
+      IMPLICIT NONE
+      INTEGER NZT
+Cf2py intent(in) :: NZT
+      REAL    ZLEVELS(NZT), TEMP(NZT), RAYSFCPRES, RAYLCOEF
+      REAL    EXTRAYL(NZT)
+Cf2py intent(in) :: ZLEVELS, TEMP, RAYSFCPRES, RAYLCOEF
+Cf2py intent(out) :: EXTRAYL
+      INTEGER I
+      REAL    PRES, LAPSE, TS, DZ
+
+C           Find surface pressure by integrating hydrostatic relation
+C           for a dry atmosphere up to surface height.
+      PRES = RAYSFCPRES
+      TS = TEMP(1)
+      LAPSE = 6.5*0.001
+      PRES = PRES*(TS/(TS+LAPSE*ZLEVELS(1)*1000.))**(9.8/(287.*LAPSE))
+
+C         Use layer mean temperature to compute fractional pressure change.
+      DO I = 1, NZT-1
+        EXTRAYL(I) = RAYLCOEF*PRES/TEMP(I)
+        DZ = 1000.*(ZLEVELS(I+1)-ZLEVELS(I))
+        LAPSE = (TEMP(I)-TEMP(I+1))/DZ
+        IF (ABS(LAPSE) .GT. 0.00001) THEN
+          PRES = PRES*(TEMP(I+1)/TEMP(I))**(9.8/(287.*LAPSE))
+        ELSE
+          PRES = PRES*EXP(-9.8*DZ/(287.*TEMP(I)))
+        ENDIF
+      ENDDO  
+      EXTRAYL(NZT) = RAYLCOEF*PRES/TEMP(NZT)
+      
+      RETURN
+      END
+      
 
       SUBROUTINE START_MPI (MASTERPROC)
       IMPLICIT NONE

@@ -15,11 +15,86 @@ norm = lambda x: x / np.linalg.norm(x, axis=0)
     
 class Sensor(object):
     """
-    An abstract sensor class to be inhireted by specific sensor types.
+    A sensor class to be inhireted by specific sensor types.
     A Sensor needs to define a render method.
     """
     def __init__(self):
-        self._type = 'AbstractSensor'
+        self._type = 'Sensor'
+    
+    def render(self, rte_solver, projection):
+        """TODO"""
+        
+        if isinstance(projection.npix, list):
+            total_pix = np.sum(projection.npix)
+        else:
+            total_pix = projection.npix 
+            
+        output = core.render(
+            ncs=rte_solver._ncs,
+            nstokes=rte_solver._nstokes,
+            nstleg=rte_solver._nstleg,
+            camx=projection.x,
+            camy=projection.y,
+            camz=projection.z,
+            cammu=projection.mu,
+            camphi=projection.phi,
+            npix=total_pix,             
+            nx=rte_solver._nx,
+            ny=rte_solver._ny,
+            nz=rte_solver._nz,
+            bcflag=rte_solver._bcflag,
+            ipflag=rte_solver._ipflag,   
+            npts=rte_solver._npts,
+            ncells=rte_solver._ncells,
+            ml=rte_solver._ml,
+            mm=rte_solver._mm,
+            nlm=rte_solver._nlm,
+            numphase=rte_solver._pa.numphase,
+            nmu=rte_solver._nmu,
+            nphi0max=rte_solver._nphi0max,
+            nphi0=rte_solver._nphi0,
+            maxnbc=rte_solver._maxnbc,
+            ntoppts=rte_solver._ntoppts,
+            nbotpts=rte_solver._nbotpts,
+            nsfcpar=rte_solver._nsfcpar,
+            gridptr=rte_solver._gridptr,
+            neighptr=rte_solver._neighptr,
+            treeptr=rte_solver._treeptr,             
+            shptr=rte_solver._shptr,
+            bcptr=rte_solver._bcptr,
+            cellflags=rte_solver._cellflags,
+            iphase=rte_solver._iphase[:rte_solver._npts],
+            deltam=rte_solver._deltam,
+            solarmu=rte_solver._solarmu,
+            solaraz=rte_solver._solaraz,
+            gndtemp=rte_solver._gndtemp,
+            gndalbedo=rte_solver._gndalbedo,
+            skyrad=rte_solver._skyrad,
+            waveno=rte_solver._waveno,
+            wavelen=rte_solver._wavelen,
+            mu=rte_solver._mu,
+            phi=rte_solver._phi.reshape(rte_solver._nmu, -1),
+            wtdo=rte_solver._wtdo.reshape(rte_solver._nmu, -1),
+            xgrid=rte_solver._xgrid,
+            ygrid=rte_solver._ygrid,
+            zgrid=rte_solver._zgrid,
+            gridpos=rte_solver._gridpos,
+            sfcgridparms=rte_solver._sfcgridparms,
+            bcrad=rte_solver._bcrad,
+            extinct=rte_solver._extinct[:rte_solver._npts],
+            albedo=rte_solver._albedo[:rte_solver._npts],
+            legen=rte_solver._legen,            
+            dirflux=rte_solver._dirflux,
+            fluxes=rte_solver._fluxes,
+            source=rte_solver._source,          
+            srctype=rte_solver._srctype,
+            sfctype=rte_solver._sfctype,
+            units=rte_solver._units,
+            total_ext=rte_solver._total_ext[:rte_solver._npts],
+            npart=rte_solver._npart)    
+        
+        return output
+    
     
     @property
     def type(self):
@@ -71,150 +146,17 @@ class RadianceSensor(Sensor):
         
         # Parallel rendering using multithreading (threadsafe Fortran)
         if n_jobs > 1:
-            x_split = np.array_split(projection.x, n_jobs) 
-            y_split = np.array_split(projection.y, n_jobs) 
-            z_split = np.array_split(projection.z, n_jobs) 
-            mu_split = np.array_split(projection.mu, n_jobs) 
-            phi_split = np.array_split(projection.phi, n_jobs)        
-            npix_split = map(lambda x: len(x), x_split)
-        
             radiance = Parallel(n_jobs=n_jobs, backend="threading", verbose=verbose)(
-                delayed(core.render, check_pickle=False)(
-                    nx=rte_solver._nx,
-                    ny=rte_solver._ny,
-                    nz=rte_solver._nz,
-                    bcflag=rte_solver._bcflag,
-                    ipflag=rte_solver._ipflag,   
-                    npts=rte_solver._npts,
-                    ncells=rte_solver._ncells,
-                    ml=rte_solver._ml,
-                    mm=rte_solver._mm,
-                    ncs=rte_solver._ncs,
-                    nlm=rte_solver._nlm,
-                    numphase=rte_solver._pa.numphase,
-                    nmu=rte_solver._nmu,
-                    nphi0max=rte_solver._nphi0max,
-                    nphi0=rte_solver._nphi0,
-                    maxnbc=rte_solver._maxnbc,
-                    ntoppts=rte_solver._ntoppts,
-                    nbotpts=rte_solver._nbotpts,
-                    nsfcpar=rte_solver._nsfcpar,
-                    gridptr=rte_solver._gridptr,
-                    neighptr=rte_solver._neighptr,
-                    treeptr=rte_solver._treeptr,             
-                    shptr=rte_solver._shptr,
-                    bcptr=rte_solver._bcptr,
-                    cellflags=rte_solver._cellflags,
-                    iphase=rte_solver._iphase[:rte_solver._npts],
-                    deltam=rte_solver._deltam,
-                    solarmu=rte_solver._solarmu,
-                    solaraz=rte_solver._solaraz,
-                    gndtemp=rte_solver._gndtemp,
-                    gndalbedo=rte_solver._gndalbedo,
-                    skyrad=rte_solver._skyrad,
-                    waveno=rte_solver._waveno,
-                    wavelen=rte_solver._wavelen,
-                    mu=rte_solver._mu,
-                    phi=rte_solver._phi.reshape(rte_solver._nmu, -1),
-                    wtdo=rte_solver._wtdo.reshape(rte_solver._nmu, -1),
-                    xgrid=rte_solver._xgrid,
-                    ygrid=rte_solver._ygrid,
-                    zgrid=rte_solver._zgrid,
-                    gridpos=rte_solver._gridpos,
-                    sfcgridparms=rte_solver._sfcgridparms,
-                    bcrad=rte_solver._bcrad,
-                    extinct=rte_solver._extinct[:rte_solver._npts],
-                    albedo=rte_solver._albedo[:rte_solver._npts],
-                    legen=rte_solver._legen.reshape(rte_solver._nleg+1, -1),            
-                    dirflux=rte_solver._dirflux,
-                    fluxes=rte_solver._fluxes,
-                    source=rte_solver._source, 
-                    camx=x,
-                    camy=y,
-                    camz=z,
-                    cammu=mu,
-                    camphi=phi, 
-                    npix=npix,
-                    srctype=rte_solver._srctype,
-                    sfctype=rte_solver._sfctype,
-                    units=rte_solver._units,
-                    total_ext=rte_solver._total_ext[:rte_solver._npts],
-                    npart=rte_solver._npart) for rte_solver, (x, y, z, mu, phi, npix) in 
-                itertools.product(rte_solvers, zip(x_split, y_split, z_split, mu_split, phi_split, npix_split)))  
+                delayed(super(RadianceSensor, self).render, check_pickle=False)(
+                    rte_solver=rte_solver,
+                    projection=projection) for rte_solver, projection in 
+                itertools.product(rte_solvers, projection.split(n_jobs)))  
             
         # Sequential rendering
         else:
-            if isinstance(projection.npix, list):
-                total_pix = np.sum(projection.npix)
-            else:
-                total_pix = projection.npix 
+            radiance = [super(RadianceSensor, self).render(rte_solver, projection) for rte_solver in rte_solvers]
 
-            radiance = [core.render(
-                camx=projection.x,
-                camy=projection.y,
-                camz=projection.z,
-                cammu=projection.mu,
-                camphi=projection.phi,
-                npix=total_pix,             
-                nx=rte_solver._nx,
-                ny=rte_solver._ny,
-                nz=rte_solver._nz,
-                bcflag=rte_solver._bcflag,
-                ipflag=rte_solver._ipflag,   
-                npts=rte_solver._npts,
-                ncells=rte_solver._ncells,
-                ml=rte_solver._ml,
-                mm=rte_solver._mm,
-                ncs=rte_solver._ncs,
-                nlm=rte_solver._nlm,
-                numphase=rte_solver._pa.numphase,
-                nmu=rte_solver._nmu,
-                nphi0max=rte_solver._nphi0max,
-                nphi0=rte_solver._nphi0,
-                maxnbc=rte_solver._maxnbc,
-                ntoppts=rte_solver._ntoppts,
-                nbotpts=rte_solver._nbotpts,
-                nsfcpar=rte_solver._nsfcpar,
-                gridptr=rte_solver._gridptr,
-                neighptr=rte_solver._neighptr,
-                treeptr=rte_solver._treeptr,             
-                shptr=rte_solver._shptr,
-                bcptr=rte_solver._bcptr,
-                cellflags=rte_solver._cellflags,
-                iphase=rte_solver._iphase[:rte_solver._npts],
-                deltam=rte_solver._deltam,
-                solarmu=rte_solver._solarmu,
-                solaraz=rte_solver._solaraz,
-                gndtemp=rte_solver._gndtemp,
-                gndalbedo=rte_solver._gndalbedo,
-                skyrad=rte_solver._skyrad,
-                waveno=rte_solver._waveno,
-                wavelen=rte_solver._wavelen,
-                mu=rte_solver._mu,
-                phi=rte_solver._phi.reshape(rte_solver._nmu, -1),
-                wtdo=rte_solver._wtdo.reshape(rte_solver._nmu, -1),
-                xgrid=rte_solver._xgrid,
-                ygrid=rte_solver._ygrid,
-                zgrid=rte_solver._zgrid,
-                gridpos=rte_solver._gridpos,
-                sfcgridparms=rte_solver._sfcgridparms,
-                bcrad=rte_solver._bcrad,
-                extinct=rte_solver._extinct[:rte_solver._npts],
-                albedo=rte_solver._albedo[:rte_solver._npts],
-                legen=rte_solver._legen,            
-                dirflux=rte_solver._dirflux,
-                fluxes=rte_solver._fluxes,
-                source=rte_solver._source,          
-                srctype=rte_solver._srctype,
-                sfctype=rte_solver._sfctype,
-                units=rte_solver._units,
-                total_ext=rte_solver._total_ext[:rte_solver._npts],
-                npart=rte_solver._npart
-            ) for rte_solver in rte_solvers]
-            
-            
         radiance = np.concatenate(radiance) 
-        
         # Split into Multiview, Multi-channel images (channel last)
         if multichannel:
             num_channels = rte_solvers.num_solvers
@@ -289,151 +231,17 @@ class StokesSensor(Sensor):
         
         # Parallel rendering using multithreading (threadsafe Fortran)
         if n_jobs > 1:
-            x_split = np.array_split(projection.x, n_jobs) 
-            y_split = np.array_split(projection.y, n_jobs) 
-            z_split = np.array_split(projection.z, n_jobs) 
-            mu_split = np.array_split(projection.mu, n_jobs) 
-            phi_split = np.array_split(projection.phi, n_jobs)        
-            npix_split = map(lambda x: len(x), x_split)
-            
             stokes = Parallel(n_jobs=n_jobs, backend="threading", verbose=verbose)(
-                delayed(core.render, check_pickle=False)(
-                    nstokes=rte_solver._nstokes,
-                    nstleg=rte_solver._nstleg,
-                    camx=x,
-                    camy=y,
-                    camz=z,
-                    cammu=mu,
-                    camphi=phi,
-                    npix=npix,             
-                    nx=rte_solver._nx,
-                    ny=rte_solver._ny,
-                    nz=rte_solver._nz,
-                    bcflag=rte_solver._bcflag,
-                    ipflag=rte_solver._ipflag,   
-                    npts=rte_solver._npts,
-                    ncells=rte_solver._ncells,
-                    ml=rte_solver._ml,
-                    mm=rte_solver._mm,
-                    nlm=rte_solver._nlm,
-                    numphase=rte_solver._pa.numphase,
-                    nmu=rte_solver._nmu,
-                    nphi0max=rte_solver._nphi0max,
-                    nphi0=rte_solver._nphi0,
-                    maxnbc=rte_solver._maxnbc,
-                    ntoppts=rte_solver._ntoppts,
-                    nbotpts=rte_solver._nbotpts,
-                    nsfcpar=rte_solver._nsfcpar,
-                    gridptr=rte_solver._gridptr,
-                    neighptr=rte_solver._neighptr,
-                    treeptr=rte_solver._treeptr,             
-                    shptr=rte_solver._shptr,
-                    bcptr=rte_solver._bcptr,
-                    cellflags=rte_solver._cellflags,
-                    iphase=rte_solver._iphase[:rte_solver._npts],
-                    deltam=rte_solver._deltam,
-                    solarmu=rte_solver._solarmu,
-                    solaraz=rte_solver._solaraz,
-                    gndtemp=rte_solver._gndtemp,
-                    gndalbedo=rte_solver._gndalbedo,
-                    skyrad=rte_solver._skyrad,
-                    waveno=rte_solver._waveno,
-                    wavelen=rte_solver._wavelen,
-                    mu=rte_solver._mu,
-                    phi=rte_solver._phi.reshape(rte_solver._nmu, -1),
-                    wtdo=rte_solver._wtdo.reshape(rte_solver._nmu, -1),
-                    xgrid=rte_solver._xgrid,
-                    ygrid=rte_solver._ygrid,
-                    zgrid=rte_solver._zgrid,
-                    gridpos=rte_solver._gridpos,
-                    sfcgridparms=rte_solver._sfcgridparms,
-                    bcrad=rte_solver._bcrad,
-                    extinct=rte_solver._extinct[:rte_solver._npts],
-                    albedo=rte_solver._albedo[:rte_solver._npts],
-                    legen=rte_solver._legen,            
-                    dirflux=rte_solver._dirflux,
-                    fluxes=rte_solver._fluxes,
-                    source=rte_solver._source,          
-                    srctype=rte_solver._srctype,
-                    sfctype=rte_solver._sfctype,
-                    units=rte_solver._units,
-                    total_ext=rte_solver._total_ext[:rte_solver._npts],
-                    npart=rte_solver._npart) for rte_solver, (x, y, z, mu, phi, npix) in 
-                itertools.product(rte_solvers, zip(x_split, y_split, z_split, mu_split, phi_split, npix_split)))  
-            
-            stokes = np.hstack(stokes)
+                delayed(super(StokesSensor, self).render, check_pickle=False)(
+                    rte_solver=rte_solver,
+                    projection=projection) for rte_solver, projection in 
+                itertools.product(rte_solvers, projection.split(n_jobs)))  
             
         # Sequential rendering
-        else:
-            if isinstance(projection.npix, list):
-                total_pix = np.sum(projection.npix)
-            else:
-                total_pix = projection.npix             
-
-            stokes = core.render(
-                nstokes=rte_solver._nstokes,
-                nstleg=rte_solver._nstleg,
-                camx=projection.x,
-                camy=projection.y,
-                camz=projection.z,
-                cammu=projection.mu,
-                camphi=projection.phi,
-                npix=projection.npix,             
-                nx=rte_solver._nx,
-                ny=rte_solver._ny,
-                nz=rte_solver._nz,
-                bcflag=rte_solver._bcflag,
-                ipflag=rte_solver._ipflag,   
-                npts=rte_solver._npts,
-                ncells=rte_solver._ncells,
-                ml=rte_solver._ml,
-                mm=rte_solver._mm,
-                nlm=rte_solver._nlm,
-                numphase=rte_solver._pa.numphase,
-                nmu=rte_solver._nmu,
-                nphi0max=rte_solver._nphi0max,
-                nphi0=rte_solver._nphi0,
-                maxnbc=rte_solver._maxnbc,
-                ntoppts=rte_solver._ntoppts,
-                nbotpts=rte_solver._nbotpts,
-                nsfcpar=rte_solver._nsfcpar,
-                gridptr=rte_solver._gridptr,
-                neighptr=rte_solver._neighptr,
-                treeptr=rte_solver._treeptr,             
-                shptr=rte_solver._shptr,
-                bcptr=rte_solver._bcptr,
-                cellflags=rte_solver._cellflags,
-                iphase=rte_solver._iphase[:rte_solver._npts],
-                deltam=rte_solver._deltam,
-                solarmu=rte_solver._solarmu,
-                solaraz=rte_solver._solaraz,
-                gndtemp=rte_solver._gndtemp,
-                gndalbedo=rte_solver._gndalbedo,
-                skyrad=rte_solver._skyrad,
-                waveno=rte_solver._waveno,
-                wavelen=rte_solver._wavelen,
-                mu=rte_solver._mu,
-                phi=rte_solver._phi.reshape(rte_solver._nmu, -1),
-                wtdo=rte_solver._wtdo.reshape(rte_solver._nmu, -1),
-                xgrid=rte_solver._xgrid,
-                ygrid=rte_solver._ygrid,
-                zgrid=rte_solver._zgrid,
-                gridpos=rte_solver._gridpos,
-                sfcgridparms=rte_solver._sfcgridparms,
-                bcrad=rte_solver._bcrad,
-                extinct=rte_solver._extinct[:rte_solver._npts],
-                albedo=rte_solver._albedo[:rte_solver._npts],
-                legen=rte_solver._legen,            
-                dirflux=rte_solver._dirflux,
-                fluxes=rte_solver._fluxes,
-                source=rte_solver._source,          
-                srctype=rte_solver._srctype,
-                sfctype=rte_solver._sfctype,
-                units=rte_solver._units,
-                total_ext=rte_solver._total_ext[:rte_solver._npts],
-                npart=rte_solver._npart
-            )
-            
+        else:      
+            stokes = [super(StokesSensor, self).render(rte_solver, projection) for rte_solver in rte_solvers]
+          
+        stokes = np.hstack(stokes)  
         # Split into Multiview, Multi-channel images (channel last)
         if multichannel:
             num_channels = rte_solvers.num_solvers
@@ -522,25 +330,40 @@ class Projection(object):
     Abstract Projection class to be inherited by the different types of projections.
     Each projection defines an arrays of pixel locations (x,y,z) in km and directions (phi, mu).
     """
-    def __init__(self):
-        self._x = None
-        self._y = None
-        self._z = None
-        self._mu = None
-        self._phi = None
+    def __init__(self, x=None, y=None, z=None, mu=None, phi=None):
+        self._x = x
+        self._y = y
+        self._z = z
+        self._mu = mu
+        self._phi = phi
         self._npix = None
+        if type(x)==type(y)==type(z)==type(mu)==type(phi)==np.ndarray:
+            assert x.size==y.size==z.size==mu.size==phi.size, 'All input arrays must be of equal size'
+            self._npix = x.size
         self._resolution = None
-     
+        
     def __getitem__(self, val):
-        projection = copy.copy(self)
-        projection._x = np.array(self._x[val])
-        projection._y = np.array(self._y[val])
-        projection._z = np.array(self._z[val])
-        projection._mu = np.array(self._mu[val])
-        projection._phi = np.array(self._phi[val])
-        projection._npix = projection.x.size
-        self._resolution = None
+        projection = Projection(
+            x=np.array(self._x[val]), 
+            y=np.array(self._y[val]),
+            z=np.array(self._z[val]), 
+            mu=np.array(self._mu[val]), 
+            phi=np.array(self._phi[val]),
+        )
         return projection
+    
+    def split(self, n_parts):
+        """TODO"""
+        x_split = np.array_split(self.x, n_parts) 
+        y_split = np.array_split(self.y, n_parts) 
+        z_split = np.array_split(self.z, n_parts) 
+        mu_split = np.array_split(self.mu, n_parts) 
+        phi_split = np.array_split(self.phi, n_parts)        
+        projections = [
+            Projection(x, y, z, mu, phi) for 
+            x, y, z, mu, phi in zip(x_split, y_split, z_split, mu_split, phi_split)
+        ]
+        return projections
     
     @property
     def x(self):
@@ -900,12 +723,16 @@ class HemisphericProjection(Projection):
 
 class Measurements(object):
     """
-    A Measurements object bundles together the Sensor geometry and radiance measurents for later optimization.
-    It can be initilized with sensors and images or radiances or alternatively is can be loaded from file.
-    When images exist, radiances are simply a flattened version of them.
+    A Measurements object bundles together the imaging geometry and radiance measurents for later optimization.
+    It can be initilized with a Camera and images or radiances. 
+    Alternatively is can be loaded from file.
+    
+    Notes
+    -----
+    When an images exist, radiances are simply a flattened version of the images.
     """
-    def __init__(self, sensors=None, **kwargs):
-        self._sensors = sensors
+    def __init__(self, camera=None, **kwargs):
+        self._camera = camera
         
         if kwargs.has_key('images'):
             self._images = kwargs['images']
@@ -951,8 +778,8 @@ class Measurements(object):
     
     
     @property
-    def sensors(self):
-        return self._sensors
+    def camera(self):
+        return self._camera
     
     @property
     def radiances(self):

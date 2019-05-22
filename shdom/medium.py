@@ -45,7 +45,7 @@ class Scatterer(object):
     @extinction.setter
     def extinction(self, val):
         if val is not None:
-            assert val.min_value >= 0.0, 'Extinction should be larger than 0.0'
+            assert val.min_value.astype(np.float32) >= 0.0, 'Extinction should be larger than 0.0'
         self._extinction = val
     
     @property
@@ -54,8 +54,8 @@ class Scatterer(object):
     
     @albedo.setter
     def albedo(self, val):
-        if val is not None:       
-            assert (val.max_value <= 1.0 and  val.min_value >= 0.0), 'Single scattering albedo should be in the range [0, 1]'
+        if val is not None: 
+            assert (val.max_value.astype(np.float32) <= 1.0 and  val.min_value.astype(np.float32) >= 0.0), 'Single scattering albedo should be in the range [0, 1]'
         self._albedo = val
         
     @property
@@ -92,10 +92,7 @@ class OpticalMedium(object):
         self._albedop = None
         self._iphasep = None
         self._legendre_table = None
-        self._maxleg = 0
-        self._numphase = 0
-        self._maxasym = 0.0
-        
+
         
     def set_grid(self, grid):
         """
@@ -109,6 +106,7 @@ class OpticalMedium(object):
         TODO
         """
         return self.scatterers[name]
+    
     
     def add_scatterer(self, scatterer, name=None):
         """
@@ -129,8 +127,8 @@ class OpticalMedium(object):
             name = 'scatterer{:d}'.format(self._num_scatterers)
         self.scatterers[name] = scatterer.resample(self.grid)
         
-        extinctp = self.scatterers[name].extinction.data.ravel()[...,np.newaxis]
-        albedop = self.scatterers[name].albedo.data.ravel()[...,np.newaxis]
+        extinctp = self.scatterers[name].extinction.data[...,np.newaxis]
+        albedop = self.scatterers[name].albedo.data[...,np.newaxis]
         legendre_table = self.scatterers[name].phase.legendre_table  
         iphasep = self.scatterers[name].phase.iphasep[...,np.newaxis]            
 
@@ -138,35 +136,15 @@ class OpticalMedium(object):
             self._extinctp = extinctp
             self._albedop = albedop
             self._legendre_table = legendre_table
-            self._iphasep = iphasep            
-        
+            self._iphasep = iphasep
+
         else:
             self._extinctp = np.append(self.extinctp, extinctp, axis=-1)
             self._albedop = np.append(self.albedop, albedop, axis=-1)
-           
-            nleg = legendre_table.shape[0] - 1
-            if self.maxleg > nleg :
-                legendre_table = np.pad(legendre_table, ((0, self.maxleg - nleg), (0,0)), 'constant')            
-            elif nleg > self.maxleg:
-                self._legendre_table = np.pad(self.legendre_table, ((0, nleg - self.maxleg), (0,0)), 'constant')            
-            self._legendre_table = np.append(self.legendre_table, legendre_table, axis=-1)
-            self._iphasep = np.append(self.iphasep, iphasep + self.numphase, axis=-1)   
-
-        self._maxasym = max(self.maxasym, self.scatterers[name].phase.maxasym)
-        self._maxleg = max(self.maxleg, self.scatterers[name].phase.maxleg)
-        self._numphase += self.scatterers[name].phase.numphase     
+            self._iphasep = np.append(self.iphasep, iphasep + self.legendre_table.numphase, axis=-1)
+            self._legendre_table.append(legendre_table)
+               
         
-        
-    def get_legenp(self, nleg):
-        """ 
-        TODO
-        legenp is without the zero order term which is 1.0 for normalized phase function
-        """
-        legenp = self.legendre_table[1:]
-        if nleg > self.maxleg:
-            legenp = np.pad(legenp, ((0, nleg - self.maxleg), (0,0)), 'constant')
-        return legenp.ravel(order='F') 
-    
     
     def save(self, path):
         """
@@ -235,18 +213,6 @@ class OpticalMedium(object):
     
 
     @property
-    def numphase(self):
-        return self._numphase
-    
-    @property
-    def maxleg(self):
-        return self._maxleg
-    
-    @property
-    def maxasym(self):
-        return self._maxasym
-    
-    @property
     def grid(self):
         return self._grid
     
@@ -257,7 +223,6 @@ class OpticalMedium(object):
     @property
     def albedop(self):
         return self._albedop
-    
     
     @property
     def iphasep(self):

@@ -11,7 +11,7 @@ The Generator defines the medium parameters: Grid, Extinction, Single Scattering
 Example usage:
   python scripts/render_radiance_toa.py experiments/single_voxel  --add_rayleigh\
           --generator SingleVoxel --extinction 10.0 --reff 10.0 --domain_size 1.0 \
-           --x_res 0.1 --y_res 0.1 --wavelength 0.672 --mie_table_path mie_tables/Water_672nm.scat \
+          --x_res 0.1 --y_res 0.1 --wavelength 0.672 --mie_table_path mie_tables/polydisperse/Water_672nm.scat \
           --azimuth 90 90 90 90 0 -90 -90 -90 -90 --zenith 70.5 60 45.6 26.1 0.0 26.1 45.6 60 70.5 
 
 For information about the command line flags see:
@@ -129,21 +129,17 @@ def generate_atmosphere(args, CloudGenerator, AirGenerator):
         
     Returns
     -------
-    cloud: shdom.Medium
-        The cloud Medium (used for later optimization)
-    atmosphere: shdom.Medium
+    atmosphere: shdom.OpticalMedium
         The atmospheric Medium (used for rendering)
     """
     cloud_generator = CloudGenerator(args)
-    cloud = cloud_generator.get_medium()
+    atmosphere = shdom.OpticalMedium(cloud_generator.grid)
+    atmosphere.add_scatterer(cloud_generator.get_scatterer(), 'cloud')
     
-    # Rayleigh scattering for air molecules
-    atmosphere = cloud
     if args.add_rayleigh:
         air_generator = AirGenerator(args)
-        atmosphere += air_generator.get_medium(phase_type=cloud.phase.type)   
-    
-    return cloud, atmosphere
+        atmosphere.add_scatterer(air_generator.get_scatterer(), 'air')
+    return atmosphere
 
 
 def solve_rte(args, atmosphere):
@@ -162,9 +158,9 @@ def solve_rte(args, atmosphere):
     rte_solver: shdom.RteSolver object
         A solver with the solution for the RTE
     """
-    scene_params = shdom.SceneParameters(source=shdom.SolarSource(azimuth=args.solar_azimuth, 
-                                                                  zenith=args.solar_zenith,
-                                                                  flux=3.14))
+    scene_params = shdom.SceneParameters(
+        source=shdom.SolarSource(args.solar_azimuth, args.solar_zenith,flux=3.14)
+    )
     numerical_params = shdom.NumericalParameters()
     rte_solver = shdom.RteSolver(scene_params, numerical_params)
     rte_solver.init_medium(atmosphere)
@@ -190,43 +186,32 @@ def render(args, bounding_box, rte_solver):
     measurments: shdom.Measurements object
         Encapsulates the radiances and the sensor geometry for later optimization
     """
-    sensors = [
-        shdom.OrthographicMonochromeSensor(
-            wavelength=args.wavelength,
-            bounding_box=bounding_box, 
-            x_resolution=args.x_res, 
-            y_resolution=args.y_res, 
-            azimuth=azimuth, 
-            zenith=zenith,
-            altitude='TOA'
-            ) for azimuth, zenith in zip(args.azimuth, args.zenith) 
-    ]
-
-    if len(sensors) > 1:
-        sensors = shdom.SensorArray(sensors)
-    else:
-        sensors = sensors[0]
-
-    if args.n_jobs == 1:
-        images = sensors.render(rte_solver)
-    elif args.n_jobs > 1:
-        images = sensors.par_render(rte_solver, n_jobs=args.n_jobs)
-    else:
-        raise AssertionError('[assert] Number of jobs is less than 1.')
-
-    measurements = shdom.Measurements(sensors, images=images)
     
+    projection = shdom.MultiViewProjection()
+    for azimuth, zenith in zip(args.azimuth, args.zenith):
+        projection.add_projection(
+            shdom.OrthographicProjection(
+                bounding_box=bounding_box, 
+                x_resolution=args.x_res, 
+                y_resolution=args.y_res, 
+                azimuth=azimuth, 
+                zenith=zenith,
+                altitude='TOA'))
+
+    camera = shdom.Camera(shdom.RadianceSensor(), projection)
+    images = camera.render(rte_solver, args.n_jobs)
+    measurements = shdom.Measurements(camera, images=images)
     return measurements
 
 
 if __name__ == "__main__":
     args, CloudGenerator, AirGenerator = argument_parsing()
-    cloud, atmosphere = generate_atmosphere(args, CloudGenerator, AirGenerator)
+    atmosphere = generate_atmosphere(args, CloudGenerator, AirGenerator)
     rte_solver = solve_rte(args, atmosphere)
-    measurements = render(args, cloud.bounding_box, rte_solver)
+    measurements = render(args, atmosphere.get_scatterer('cloud').bounding_box, rte_solver)
 
-    # Save measurements, groud-truth (cloud) medium and solver parameters
-    shdom.save_forward_model(args.output_dir, cloud, rte_solver, measurements)
+    # Save measurements, medium and solver parameters
+    shdom.save_forward_model(args.output_dir, atmosphere, rte_solver, measurements)
     
     
     

@@ -11,10 +11,108 @@ import numpy as np
 from scipy.interpolate import interp1d, RegularGridInterpolator
 import shdom
 
+
 def find_nearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return idx
+
+
+class LegendreTable(object):
+    """TODO"""
+    def __init__(self, table,  table_type='SCALAR'):
+        self._table_type = table_type
+        
+        # If table is comprised of a single phase entery
+        if ((table.ndim==1) and (table_type=='SCALAR')) or \
+           ((table.ndim==2) and (table_type=='VECTOR')):
+            table = table[...,np.newaxis]        
+
+        self._data = np.array(table, dtype=np.float32)
+        self._numphase = self.data.shape[-1]
+        self._maxleg = self.data.shape[-2] - 1
+        
+        # Asymetry parameter is proportional to the legendre series first coefficient 
+        if table_type=='SCALAR':
+            self._maxasym = self.data[1].max() / 3.0
+            self._nstleg = 1
+            
+        elif table_type=='VECTOR':
+            self._maxasym = self.data[0, 1].max() / 3.0        
+            self._nstleg = self.data.shape[0]
+
+
+    def append(self, table):
+        """
+        TODO
+        """
+        assert self.table_type==table.table_type, 'Cannot append new table of type {} '\
+               'to current table of type {}'.format(table.table_type, self.table_type)
+        
+        nleg = table.maxleg
+        table_data = table.data
+        curr_table_data = self.data
+        if self.table_type == 'SCALAR':
+            if self.maxleg > nleg :
+                table_data = np.pad(table_data, ((0, self.maxleg - nleg), (0,0)), 'constant')            
+            elif nleg > self.maxleg:
+                curr_table_data = np.pad(curr_table_data, ((0, nleg - self.maxleg), (0,0)), 'constant')            
+        
+        elif self.table_type == 'VECTOR':
+            if self.maxleg > nleg :
+                table_data = np.pad(table_data, ((0,0), (0, self.maxleg - nleg), (0,0)), 'constant')            
+            elif nleg > self.maxleg:
+                curr_table_data = np.pad(curr_table_data, ((0,0), (0, nleg - self.maxleg), (0,0)), 'constant')  
+        
+        self._data = np.append(curr_table_data, table_data, axis=-1)
+        self._maxasym = max(self.maxasym, table.maxasym)
+        self._maxleg = max(self.maxleg, table.maxleg)
+        self._numphase += table.numphase 
+        
+
+    def get_legenp(self, nleg):
+        """ 
+        TODO
+        legenp is without the zero order term which is 1.0 for normalized phase function
+        """
+        legenp = self.data
+        
+        # Scalar (unpolarized) table
+        if self.table_type=='SCALAR':
+            legenp = legenp[1:]
+            if nleg > self.maxleg:
+                legenp = np.pad(legenp, ((0, nleg - self.maxleg), (0,0)), 'constant')
+        
+        if (self.table_type=='VECTOR') and (nleg>self.maxleg):
+            legenp = np.pad(legenp, ((0,0), (0, nleg - self.maxleg), (0,0)) , 'constant')
+        
+        return legenp.ravel(order='F') 
+    
+    
+    @property
+    def data(self):
+        return self._data
+    
+    @property
+    def table_type(self):
+        return self._table_type
+    
+    @property
+    def numphase(self):
+        return self._numphase
+    
+    @property
+    def maxleg(self):
+        return self._maxleg
+    
+    @property
+    def maxasym(self):
+        return self._maxasym
+    
+    @property
+    def nstleg(self):
+        return self._nstleg      
+    
 
 class GridPhase(object):
     """
@@ -22,25 +120,16 @@ class GridPhase(object):
 
     Parameters
     ----------
-    legendre_table: np.array(shape=(nleg, numphase), dtype=np.float32)
-       The Legendre table.
+    legendre_table: shdom.LegendreTable
+       An object containing the Legendre table.
     index: shdom.GridData object
        A shdom.GridData object with dtype=int. This is a pointer to the enteries in the legendre_table.
     """
     def __init__(self, legendre_table, index):
-        if legendre_table.ndim == 1:
-            legendre_table = legendre_table[np.newaxis].T
-        self._legendre_table = np.array(legendre_table, dtype=np.float32)
+        self._legendre_table = legendre_table
         self._index = index
         self._grid = index.grid
-
-        self._numphase = legendre_table.shape[1]
-        self._iphasep = index.data.ravel()
-          
-        self._maxleg = legendre_table.shape[0] - 1
-        
-        # Asymetry parameter is proportional to the legendre series first coefficient 
-        self._maxasym = legendre_table[1].max() / 3.0
+        self._iphasep = index.data
 
     
     def resample(self, grid):
@@ -54,25 +143,9 @@ class GridPhase(object):
         return grid_phase     
     
     
-    @property 
-    def maxleg(self):
-        return self._maxleg
-    
-    @property 
-    def numphase(self):
-        return self._numphase  
-    
     @property
     def iphasep(self):
         return self._iphasep
-    
-    @property
-    def legen(self):
-        return self._legenp
-    
-    @property
-    def maxasym(self):
-        return self._maxasym    
     
     @property
     def grid(self):
@@ -80,190 +153,12 @@ class GridPhase(object):
     
     @property
     def legendre_table(self):
-        return self._legendre_table   
+        return self._legendre_table
     
     @property
     def index(self):
         return self._index
     
-
-
-class PhaseMatrix(object):
-    """
-    An abstract Phase Matirx object for polarized Muller matrices that is inherited by two types of Phase functions:
-      1. GridPhase: The phase function is specified at every point on the grid.
-      2. TabulatedPhase: A table of phase functions is saved with a pointer at every point on the grid.
-    
-    The TabulatedPhase is more efficient in memory and runtime.
-    """
-    def __init__(self):
-        super(PhaseMatrix, self).__init__()
-        self._type = 'AbstractPhaseMatrixObject'
-        self._nstleg = None
-        
-    def get_legenp(self, nleg):
-        """ 
-        TODO 
-        """
-        legenp = self.legendre_table
-        if nleg > self.maxleg:
-            legenp = np.pad(legenp, ((0,0), (0, nleg - self.maxleg), (0,0)) , 'constant')
-        return legenp.ravel(order='F')       
-
-    @property
-    def nstleg(self):
-        return self._nstleg
-    
-    
-    
-class GridPhaseMatrix(PhaseMatrix):
-    """
-    A GridPhaseMatrix object spefies the phase matrix (Muller) at every point in the grid. 
-    This is the equivalent of the shdom.GridData object for the phase matrix.
-    
-    Parameters
-    ----------
-    grid: shdom.Grid object
-        A shdom.Grid object of type '1D' or '3D'.
-    data: np.array
-        data contains the vector field (legendre coefficients).
-    """
-    def __init__(self, grid, data):
-        self._type = 'Grid'
-        self._data = data
-        self._grid = grid 
-        self._linear_interpolator1d = interp1d(grid.z, self.data, assume_sorted=True, copy=False, bounds_error=False, fill_value=0.0) 
-        if grid.type == '3D':
-            self._linear_interpolator3d = RegularGridInterpolator((grid.x, grid.y, grid.z), self.data.transpose([2, 3, 4, 1, 0]), bounds_error=False, fill_value=0.0)
-    
-        self._numphase = grid.num_points
-        self._iphasep = np.arange(1, grid.num_points+1, dtype=np.int32)
-        
-        self._legendre_table = data.reshape((data.shape[0], data.shape[1], -1), order='F')   
-        self._maxleg = data.shape[1] - 1
-        self._nstleg = data.shape[0]
-        
-        # Asymetry parameter is proportional to the legendre series first coefficient 
-        self._maxasym = data[0, 1,...].max() / 3.0
-
-
-    def __add__(self, other):
-        """Adding two GridPhaseMatrix objects by resampling to a common grid and padding with zeros to the larger legendre series."""
-        assert other.__class__ is shdom.GridPhaseMatrix, 'Only GridPhaseMatrix can be added to GridPhaseMatrix object'
-        assert self.nstleg == other.nstleg, 'Different number of stokes parameters.'
-        grid = self.grid + other.grid
-        self_data = self.resample(grid)
-        other_data = other.resample(grid)
-        depth_diff = self.maxleg - other.maxleg
-        if depth_diff > 0:
-            data = self_data + np.pad(other_data, ((0,0), (0, depth_diff), (0, 0), (0, 0), (0, 0)), 'constant')
-        elif depth_diff < 0:
-            data = other_data + np.pad(self_data, ((0,0), (0, -depth_diff), (0, 0), (0, 0), (0, 0)), 'constant')
-        return shdom.GridPhaseMatrix(grid, data)
-
-    
-    def __mul__(self, other):
-        """Multiplying a GridPhaseMatrix objects by a shdom.GridData object."""
-        assert other.__class__ is shdom.GridData, 'Only scalar field (shdom.GridData) can multiply a GridPhaseMatrix object'
-        assert self.nstleg == other.nstleg, 'Different number of stokes parameters.'
-        grid = self.grid + other.grid
-        other_data = other.resample(grid)
-        data = self.resample(grid) * other_data[np.newaxis, np.newaxis, ...]  
-        return GridPhaseMatrix(grid, data)
-    
-    
-    def __div__(self, other):  
-        """Dividing a GridPhaseMatrix objects by a shdom.GridData object."""
-        assert other.__class__ is shdom.GridData, 'Only scalar field (shdom.GridData) can divide a GridPhaseMatrix object'
-        assert self.nstleg == other.nstleg, 'Different number of stokes parameters.'
-        grid = self.grid + other.grid
-        other_data = other.resample(grid)        
-        data = self.resample(grid) / other_data[np.newaxis, np.newaxis, ...] 
-        return GridPhaseMatrix(grid, data)     
-    
-    
-    def resample(self, grid):
-        """Resample data to a new shdom.Grid."""
-        if self.grid.type == '1D':
-            if np.array_equiv(self.grid.z, grid.z):
-                return self.data
-            data = self._linear_interpolator1d(grid.z)
-        else:
-            if self.grid == grid:
-                return self.data
-            data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1)).transpose([4, 3, 0, 1, 2])
-        return data
-
-    
-    @property
-    def data(self):
-        return self._data
-    
-    
-class TabulatedPhaseMatrix(PhaseMatrix):
-    """
-    The TabulatedPhaseMatrix internally keeps a phase function matrix table and a pointer array for each grid point.
-    This could potentially be more efficient than GridPhase in memory and computation if the number of table entery is much smaller than number of grid points.
-    
-    Parameters
-    ----------
-    legendre_table: np.array(shape=(nstokes, nleg, numphase), dtype=np.float32)
-       The Legendre table.
-    index: shdom.GridData object
-       A shdom.GridData object with dtype=int. This is a pointer to the enteries in the legendre_table.
-    """
-    def __init__(self, legendre_table, index):
-        self._type = 'Tabulated'
-        self._legendre_table = np.array(legendre_table, dtype=np.float32)
-        self._index = index
-        self._grid = index.grid
-        self._nstleg = legendre_table.shape[0]
-        self._numphase = legendre_table.shape[2]
-        self._iphasep = index.data
-        
-        # Legenp is without the zero order term which is 1.0 for normalized phase function
-        self._legenp = legendre_table.ravel(order='F')        
-        self._maxleg = legendre_table.shape[1] - 1
-        
-        # Asymetry parameter is proportional to the legendre series first coefficient 
-        self._maxasym = legendre_table[0, 1].max() / 3.0
-
-    
-    def add_ambient(self, other):
-        """
-        Adding an ambient medium means that the AmientMedium will only `fill the holes`. 
-        This is an approximation which speeds up computations.
-        """
-        # Join the two tables
-        assert self.nstleg == other.nstleg, 'Different number of stokes parameters.'
-        
-        self_legendre_table = self.legendre_table
-        other_legendre_table = other.legendre_table
-        if self.maxleg > other.maxleg:
-            other_legendre_table = np.pad(other_legendre_table, ((0,0), (0, self.maxleg - other.maxleg), (0, 0)), 'constant')
-        elif other.maxleg > self.maxleg:
-            self_legendre_table = np.pad(self_legendre_table, ((0,0), (0, other.maxleg - self.maxleg), (0, 0)), 'constant')
-        legendre_table = np.concatenate((other_legendre_table, self_legendre_table), axis=2)        
-        
-        # Join the indices
-        grid = self.grid + other.grid 
-        self_index = self.index.resample(grid, method='nearest')
-        other_index = other.index.resample(grid, method='nearest')
-        self_index[self_index>0] += other_index.max()
-        self_index[self_index==0] = (self_index + other_index)[self_index==0]
-        index = shdom.GridData(grid, self_index.astype(np.int32))
-        
-        return TabulatedPhaseMatrix(legendre_table, index)  
-    
-    @property
-    def legendre_table(self):
-        return self._legendre_table
-    
-    @property
-    def index(self):
-        return self._index   
-   
-            
 
 
 class MieMonodisperse(object):
@@ -288,7 +183,8 @@ class MieMonodisperse(object):
             self._pardens = 1.0
         else:
             raise NotImplementedError('Particle type {} not supported'.format(particle_type))
-
+        
+        self._table_type = None        
         self._partype = particle_type
         self._wavelen1 = None
         self._wavelen2 = None
@@ -388,9 +284,9 @@ class MieMonodisperse(object):
         
         Notes
         -----
-        This is a time comsuming method.
+        This is a time consuming method.
         """    
-        self._extinct, self._scatter, self._nleg, self._legcoef = \
+        self._extinct, self._scatter, self._nleg, self._legcoef, self._table_type = \
             core.compute_mie_all_sizes(
                 nsize=self._nsize,
                 maxleg=self._maxleg,
@@ -404,7 +300,6 @@ class MieMonodisperse(object):
                 partype=self._partype
             )
         
-    
 
     def write_table(self, file_path): 
         """
@@ -438,6 +333,21 @@ class MieMonodisperse(object):
         )      
 
     
+    def read_table_header(self, file_path):
+        """
+        TODO
+        """        
+        wavelen1, wavelen2, deltawave = np.genfromtxt(file_path, max_rows=1, skip_header=1, usecols=(0, 1, 2), dtype=float)
+        pardens = np.genfromtxt(file_path, max_rows=1, skip_header=2, usecols=(0), dtype=float)
+        partype = np.asscalar(np.genfromtxt(file_path, max_rows=1, skip_header=2, usecols=(1), dtype=str))
+        rindex  = np.complex(np.genfromtxt(file_path, max_rows=1, skip_header=3, usecols=(0), dtype=float), 
+                             np.genfromtxt(file_path, max_rows=1, skip_header=3, usecols=(1), dtype=float))
+        nsize = np.genfromtxt(file_path, max_rows=1, skip_header=4, usecols=(0), dtype=int)
+        maxleg = np.genfromtxt(file_path, max_rows=1, skip_header=5, usecols=(0), dtype=int)
+
+        return wavelen1, wavelen2, deltawave, pardens, partype, rindex, nsize, maxleg
+        
+        
     def read_table(self, file_path): 
         """
         Read a pre-computed table from <file_path>. 
@@ -447,30 +357,18 @@ class MieMonodisperse(object):
         file_path: str
             Path to file.
         """   
-    
-        def read_table_header(file_path):
-            assert np.genfromtxt(file_path, max_rows=1, dtype=str)[1] == 'Polarized', 'Not a polarized table format'
-            wavelen1, wavelen2, deltawave = np.genfromtxt(file_path, max_rows=1, skip_header=1, usecols=(0, 1, 2), dtype=float)
-            pardens = np.genfromtxt(file_path, max_rows=1, skip_header=2, usecols=(0), dtype=float)
-            partype = np.asscalar(np.genfromtxt(file_path, max_rows=1, skip_header=2, usecols=(1), dtype=str))
-            rindex  = np.complex(np.genfromtxt(file_path, max_rows=1, skip_header=3, usecols=(0), dtype=float), 
-                                 np.genfromtxt(file_path, max_rows=1, skip_header=3, usecols=(1), dtype=float))
-            nsize = np.genfromtxt(file_path, max_rows=1, skip_header=4, usecols=(0), dtype=int)
-            maxleg = np.genfromtxt(file_path, max_rows=1, skip_header=5, usecols=(0), dtype=int)
-    
-            return wavelen1, wavelen2, deltawave, pardens, partype, rindex, nsize, maxleg
-    
+        
         print('Reading mie table from file: {}'.format(file_path))
         self._wavelen1, self._wavelen2, self._deltawave, self._pardens, \
-            self._partype, self._rindex, self._nsize, self._maxleg = read_table_header(file_path)
+            self._partype, self._rindex, self._nsize, self._maxleg = self.read_table_header(file_path)
     
-        self._radii, self._extinct, self._scatter, self._nleg, self._legcoef = \
+        self._radii, self._extinct, self._scatter, self._nleg, self._legcoef, self._table_type = \
             core.read_mono_table(
                 mietabfile=file_path,
                 nrtab=self._nsize,
                 maxleg=self._maxleg
             )
-                
+    
 
     @property
     def maxleg(self):
@@ -499,7 +397,10 @@ class MieMonodisperse(object):
     @property 
     def legcoef(self):
         return self._legcoef    
-
+    
+    @property 
+    def table_type(self):
+        return self._table_type     
 
 
 class SizeDistribution(object):
@@ -708,6 +609,7 @@ class MiePolydisperse(object):
        - notebooks/Make Mie Table Polarized.ipynb for usage examples. 
     """    
     def __init__(self, mono_disperse=MieMonodisperse(), size_distribution=SizeDistribution()):
+        self._table_type = None
         self.set_mono_disperse(mono_disperse)
         self.set_size_distribution(size_distribution)
         self._microphysical_medium = None
@@ -715,16 +617,19 @@ class MiePolydisperse(object):
         self._ssalb = None
         self._nleg = None
         self._maxleg = None
-        self._legcoef = None    
-        self._legcoef_2d = None
+        self._legendre_table = None    
+
 
     def set_mono_disperse(self, mono_disperse):
         """TODO"""
         self._mono_disperse = mono_disperse
-        
+        self._table_type = mono_disperse.table_type
+
+
     def set_size_distribution(self, size_distribution):
         """TODO"""
         self._size_distribution = size_distribution
+        
         
     def compute_table(self):
         """
@@ -750,24 +655,23 @@ class MiePolydisperse(object):
                 legcoef1=self.mono_disperse.legcoef)
         self.init_intepolators()
         
-        
-           
+
     def get_legendre(self, reff, veff):
         """
         TODO
         """
         reff_index = find_nearest(self.size_distribution.reff, reff)
         veff_index = find_nearest(self.size_distribution.veff, veff)
-        
+
         # Fortran style indexing
         index = veff_index*self.size_distribution.nvetab + reff_index
         return self.legcoef[..., index]
-    
-    
+
+
     def get_angular_scattering(self, reff, veff, angles, phase_element=1):
         """
         Transfrom the spectral representation into angular representation.
-    
+
         Parameters
         ----------
         reff: float
@@ -782,7 +686,7 @@ class MiePolydisperse(object):
             phase_element=4: P44
             phase_element=5: P12
             phase_element=6: P34
-            
+
         Returns
         -------
         phase: np.array(dtype=float, shape=(len(angles),))
@@ -792,7 +696,7 @@ class MiePolydisperse(object):
         veff_index = find_nearest(self.size_distribution.veff, veff)
         # Fortran style indexing
         index = veff_index*self.size_distribution.nvetab + reff_index        
-    
+
         phase = core.transform_leg_to_phase(
             maxleg=self.maxleg,
             nphasepol=6,
@@ -836,9 +740,9 @@ class MiePolydisperse(object):
             extinct=self.extinct,
             ssalb=self.ssalb,
             nleg=self.nleg,
-            legcoef=self.legcoef,
+            legcoef=self.legendre_table.data,
             ndist=self.size_distribution.ndist,
-            maxleg=self.maxleg,
+            maxleg=self.legendre_table.maxleg,
             gamma=self.size_distribution.gamma)
     
     
@@ -857,7 +761,7 @@ class MiePolydisperse(object):
         elif distribution == 'lognormal':
             distflag = 'L'
         else:
-            raise NotImplementedError('Distribution type {} not supported'.format(distibution))
+            raise NotImplementedError('Distribution type {} not supported'.format(distribution))
     
         nretab = np.genfromtxt(file_path, max_rows=1, skip_header=5, usecols=(0), dtype=int)
         nvetab = np.genfromtxt(file_path, max_rows=1, skip_header=6, usecols=(0), dtype=int)
@@ -887,13 +791,12 @@ class MiePolydisperse(object):
             self._maxleg = self.read_table_header(file_path)
 
         self.size_distribution.reff, self.size_distribution.veff, self._extinct, self._ssalb, \
-            self._nleg, self.legcoef = core.read_poly_table(
+            self._nleg, self.legcoef, self._table_type = core.read_poly_table(
                 mietabfile=file_path, 
                 nretab=self.size_distribution.nretab, 
                 nvetab=self.size_distribution.nvetab,
                 ndist=self.size_distribution.ndist,
-                maxleg=self.maxleg)
-        
+                maxleg=self.maxleg)           
         self.init_intepolators()
 
 
@@ -905,21 +808,16 @@ class MiePolydisperse(object):
         -----
         This function is ran after pre-computing/loading a scattering tables.
         """        
-        assert True not in (self.size_distribution.reff is None, 
-                            self.size_distribution.veff is None,
-                            self.extinct is None, 
-                            self.ssalb is None, 
-                            self.nleg is None, 
-                            self.legcoef is None), \
-               'Mie scattering table was not computed or read from file. Using compute_table() or read_table().'   
-    
-        # Truncate the legcoef (or wigcoef if polarized) 
-        self._maxleg = int(self._nleg.max())
-        if self.legcoef.ndim == 2:
-            self.legcoef = self.legcoef[:self.maxleg+1,:]
-        else:
-            self.legcoef = self.legcoef[:,:self.maxleg+1,:]
-            
+        
+        # Truncate the legcoef (or wigcoef if polarized)
+        self._maxleg = int(self.nleg.max())
+        if self.table_type == 'SCALAR':
+            self._legcoef = self.legcoef[:self._maxleg+1, :]
+        elif self.table_type == 'VECTOR':
+            self._legcoef = self.legcoef[:, :self._maxleg+1, :]
+
+        self._legendre_table = shdom.LegendreTable(self._legcoef, self.table_type)
+        
         method = 'nearest' if self.size_distribution.ndist==1 else 'linear'
         
         reff, veff = self.size_distribution.reff, self.size_distribution.veff
@@ -982,7 +880,7 @@ class MiePolydisperse(object):
         return albedo
 
 
-    def get_phase(self, reff, veff, squeeze_table=False):
+    def get_phase(self, reff, veff, squeeze_table=True):
         """
         Interpolate the phase function over a grid.
     
@@ -1003,7 +901,7 @@ class MiePolydisperse(object):
         """
         grid = veff.grid + reff.grid
         
-        data = self._legen_index_interpolator((reff.resample(grid).data, veff.resample(grid).data)).astype(np.int32)
+        index = self._legen_index_interpolator((reff.resample(grid).data, veff.resample(grid).data)).astype(np.int32)
         nre, nve = self.size_distribution.nretab, self.size_distribution.nvetab 
         
         # Clip table to make it compact
@@ -1012,18 +910,19 @@ class MiePolydisperse(object):
             max_ve_idx = min(nve-1, find_nearest(self.size_distribution.veff, veff.data.max()))
             min_re_idx = max(0, find_nearest(self.size_distribution.reff, reff.data[reff.data>0.0].min())-1)
             min_ve_idx = max(0, find_nearest(self.size_distribution.veff, veff.data[veff.data>0.0].min())-1)
-            legcoef = self.legcoef_2d[..., min_re_idx:max_re_idx, min_ve_idx:max_ve_idx]
+            legcoef = self.legcoef_2d[..., min_re_idx:max_re_idx+1, min_ve_idx:max_ve_idx+1]
             nre, nve = legcoef.shape[-2:]
             legcoef = legcoef.reshape(self.legcoef.shape[:-1] + (-1,), order='F')
-            data[...,0] -= min_re_idx
-            data[...,1] -= min_ve_idx
+            index[...,0] -= min_re_idx
+            index[...,1] -= min_ve_idx
             
         else:
             legcoef = self.legcoef
 
-        data = np.ravel_multi_index(np.rollaxis(data, axis=-1), dims=(nre, nve), order='F',  mode='clip') + 1
-        legen_index = shdom.GridData(grid, data.astype(np.int32))
-        phase = GridPhase(legcoef, legen_index)        
+        legen_table = shdom.LegendreTable(legcoef, self.table_type)
+        index = np.ravel_multi_index(np.rollaxis(index, axis=-1), dims=(nre, nve), order='F',  mode='clip') + 1
+        legen_index = shdom.GridData(grid, index.astype(np.int32))
+        phase = GridPhase(legen_table, legen_index)        
         return phase
 
         
@@ -1033,23 +932,22 @@ class MiePolydisperse(object):
         min_re = microphysical_medium.reff.data[microphysical_medium.reff.data>0.0].min()
         min_ve = microphysical_medium.veff.data[microphysical_medium.veff.data>0.0].min()
         
-        assert  max_re < self.size_distribution.reff.max(), \
+        assert  max_re < self.size_distribution.reff.max()+1e-3, \
                'Maximum medium effective radius [{:2.2f}] is larger than the pre-computed table maximum radius [{:2.2f}]. ' \
                'Recompute Mie table with larger maximum radius.'.format(max_re, self.size_distribution.reff.max())
-        assert  min_re > self.size_distribution.reff.min(), \
+        assert  min_re > self.size_distribution.reff.min()-1e-3, \
                'Minimum medium effective radius [{:2.2f}] is smaller than the pre-computed table minimum radius [{:2.2f}]. ' \
                'Recompute Mie table with smaller minimum radius.'.format(min_re, self.size_distribution.reff.min())
-        assert  max_ve < self.size_distribution.veff.max(), \
+        assert  max_ve < self.size_distribution.veff.max()+1e-3, \
                'Maximum medium effective variance [{:2.2f}] is larger than the pre-computed table maximum variance [{:2.2f}]. ' \
                'Recompute Mie table with larger maximum variance.'.format(max_ve, self.size_distribution.veff.max())
-        assert  min_ve > self.size_distribution.veff.min(), \
+        assert  min_ve > self.size_distribution.veff.min()-1e-3, \
                'Minimum medium effective variance [{:2.2f}] is smaller than the pre-computed table minimum variance [{:2.2f}]. ' \
                'Recompute Mie table with smaller minimum variance.'.format(min_ve, self.size_distribution.veff.min())
         
         self._microphysical_medium = microphysical_medium
 
-        
-        
+
     def get_scatterer(self, squeeze_table=True):
         """
         Interpolate optical quantities (extinction, ssa, phase function) over a grid.
@@ -1069,8 +967,8 @@ class MiePolydisperse(object):
         albedo = self.get_albedo(reff, veff)
         phase = self.get_phase(reff, veff, squeeze_table)
         return shdom.Scatterer(extinction, albedo, phase)
-
-
+    
+    
     @property
     def nleg(self):
         return self._nleg
@@ -1091,6 +989,10 @@ class MiePolydisperse(object):
     @property
     def legcoef_2d(self):
         return self._legcoef_2d    
+    
+    @property
+    def legendre_table(self):
+        return self._legendre_table 
             
     @property
     def extinct(self):
@@ -1099,6 +1001,10 @@ class MiePolydisperse(object):
     @property
     def ssalb(self):
         return self._ssalb 
+    
+    @property
+    def table_type(self):
+        return self._table_type
     
     @property
     def mono_disperse(self):
@@ -1111,6 +1017,7 @@ class MiePolydisperse(object):
     @property
     def microphysical_medium(self):
         return self._microphysical_medium    
+    
     
             
 class Rayleigh(object):
@@ -1143,19 +1050,43 @@ class Rayleigh(object):
         self._temperature_profile = None
         self._surface_pressure = None
         self._raylcoeff = None
-        self.init_ssalb()
-        self.init_phase()
+      
+    def get_extinction(self, grid):
+        ext_profile = core.rayleigh_extinct(
+            nzt=grid.nz,
+            zlevels=grid.z,
+            temp=self.temperature_profile.data,
+            raysfcpres=self.surface_pressure,
+            raylcoef=self.raylcoef
+        )        
+        return shdom.GridData(grid, ext_profile)
+    
         
-    def init_ssalb(self):
+    def get_albedo(self, grid):
         """TODO"""
-        self._ssalb = np.array([1.0], dtype=np.float32)
+        return shdom.GridData(grid, data=np.full(shape=grid.shape, fill_value=1.0, dtype=np.float32))
         
-    def init_phase(self):
+
+    def get_phase(self, grid):
         """TODO"""
-        self._phase = np.array([1.0, 0.0, 0.5], dtype=np.float32)
+        index = shdom.GridData(grid, data=np.ones(shape=grid.shape, dtype=np.int32))
+        table, table_type = core.rayleigh_phase_function(wavelen=self._wavelength)
+        table = LegendreTable(table.astype(np.float32), table_type) 
+        self._phase = GridPhase(table, index)        
+        return GridPhase(table, index)
+    
     
     def set_profile(self, temperature_profile, surface_pressure=1013.0):
-        """TODO""" 
+        """        
+        Set the tempertature profile and surface pressure and initialize optical fields.
+        
+        Parameters
+        ----------
+        temperature_profile: shdom.GridData 
+            a shdom.GridData object containing the altitude grid points in [km] and temperatures in [Kelvin].
+        surface_pressure: float
+            Surface pressure in units [mb] (default value is 1013.0)
+        """ 
         self._temperature_profile = temperature_profile
         self._surface_pressure = surface_pressure  
         self._grid = temperature_profile.grid
@@ -1165,43 +1096,24 @@ class Rayleigh(object):
         #   k = 0.03370*(p_sfc/1013.25)*tau_R  for k in K/(mb km)
         self._raylcoef = 0.03370 * (surface_pressure/1013.25) * 0.0021520 * \
             (1.0455996 - 341.29061/self.wavelength**2 - 0.90230850*self.wavelength**2) / (1 + 0.0027059889/self.wavelength**2 - 85.968563*self.wavelength**2)
-    
+        
+        self._extinction = self.get_extinction(self.grid)
+        self._albedo = self.get_albedo(self.grid)
+        self._phase = self.get_phase(self.grid)
+        
+        
     def get_scatterer(self):
         """
-        Interpolate Rayleigh extinction over a 1D grid (altitude).
-    
-        Parameters
-        ----------
-        temperature_profile: shdom.GridData 
-            a shdom.GridData object containing the altitude grid points in [km] and temperatures in [Kelvin].
-        surface_pressure: float
-            Surface pressure in units [mb] (default value is 1013.0)
-    
+        TODO
     
         Returns
         -------
-        extinction: shdom.GridData
-            A shdom.GridData object containting the extinction (1/km) on a 1D grid
-        albedo: shdom.GridData
-            A shdom.GridData object containting the single scattering albedo unitless in range [0, 1] on a 3D grid
-        phase: GridPhase 
-            A Phase object containting the phase function legendre table and index grid.
+        rayleigh: shdom.Scatterer
+            A shdom.Scatterer object containting the Rayleigh optical properties on a 1D grid.
         """
-        extinction_profile = core.rayleigh_extinct(
-            nzt=self.grid.nz,
-            zlevels=self.grid.z,
-            temp=self.temperature_profile.data,
-            raysfcpres=self.surface_pressure,
-            raylcoef=self.raylcoef
-        )
-        extinction = shdom.GridData(self.grid, extinction_profile)
-        albedo = shdom.GridData(grid=self.grid, 
-                                data=np.full(shape=(self.grid.nz,), fill_value=self.ssalb, dtype=np.float32))
-        
-        index = shdom.GridData(grid=self.grid,
-                               data=np.ones(shape=(self.grid.nz,), dtype=np.int32))
-        phase = GridPhase(self.phase, index)
-        return shdom.Scatterer(extinction, albedo, phase)
+        rayleigh = shdom.Scatterer(self.extinction, self.albedo, self.phase)
+        return rayleigh
+
 
     @property
     def wavelength(self):
@@ -1212,8 +1124,12 @@ class Rayleigh(object):
         return self._raylcoef
     
     @property
-    def ssalb(self):
-        return self._ssalb   
+    def extinction(self):
+        return self._extinction   
+    
+    @property
+    def albedo(self):
+        return self._albedo   
     
     @property
     def phase(self):
@@ -1230,6 +1146,7 @@ class Rayleigh(object):
     @property
     def surface_pressure(self):
         return self._surface_pressure  
+    
     
     
 class RayleighPolarized(Rayleigh):

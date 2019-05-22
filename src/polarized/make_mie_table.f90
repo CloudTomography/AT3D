@@ -365,7 +365,8 @@ END SUBROUTINE GET_REFRACT_INDEX
 
 SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
                                 PARTYPE, WAVELENCEN, RINDEX, NSIZE, RADII, &
-                                MAXLEG, EXTINCT1, SCATTER1, NLEG1, LEGCOEF1)
+                                MAXLEG, EXTINCT1, SCATTER1, NLEG1, LEGCOEF1,&
+				TABLE_TYPE)
  ! Does a Mie computation for each particle radius in RADII and returns the
  ! optical properties in arrays EXTINCT1, SCATTER1, NLEG1, and LEGCOEF1.
  ! For AVGFLAG='C' the computation is done at a single wavelength (WAVELENCEN),
@@ -387,13 +388,14 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
   INTEGER, INTENT(OUT) :: NLEG1(NSIZE)
   REAL,    INTENT(OUT) :: EXTINCT1(NSIZE), SCATTER1(NSIZE)
   REAL,    INTENT(OUT) :: LEGCOEF1(6,0:MAXLEG,NSIZE)
+  CHARACTER(LEN=6), INTENT(OUT) :: TABLE_TYPE
   INTEGER :: I, NL
   REAL    :: WAVECEN, WAVE, BBTEMP, PLANCK, SUMP, A
   REAL    :: MRE, MIM, EXT, SCAT, COEF(6,0:MAXLEG)
   COMPLEX :: REFIND
   
   WRITE(*,*) 'Computing mie scattering for all sizes, this may take a while...'
-
+  TABLE_TYPE = 'VECTOR'
   IF (AVGFLAG == 'C') THEN
      ! For using one central wavelength: just call Mie routine for each radius
     DO I = 1, NSIZE
@@ -588,35 +590,28 @@ END SUBROUTINE DO_SIZE_DIST
 
 
 
-SUBROUTINE WRITE_MIE_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
+SUBROUTINE WRITE_POLY_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
                             PARTYPE, PARDENS, RINDEX, &
-                            DISTFLAG, ALPHA, GAMMA, NRETAB, SRETAB, ERETAB, &
-                            REFF, EXTINCT, SSALB, NLEG, MAXLEG, LEGCOEF)
-			    
+                            DISTFLAG, ALPHA, GAMMA, NRETAB,&
+			    NVETAB, REFF, VEFF, EXTINCT, SSALB,&
+			    NLEG, LEGCOEF, NDIST, MAXLEG)
  ! Writes the table of Mie scattering properties as a function of 
  ! effective radius.  There are two types of tables output: 
  ! unpolarized with Legendre (Wigner d_l_00) series of a single phase 
  ! matrix element (P11) or polarized with six Wigner d-function series 
  ! of the Mie phase matrix elements.
   IMPLICIT NONE
-  INTEGER :: NRETAB
-  INTEGER, INTENT(IN) ::  MAXLEG, NLEG(NRETAB)
-  !  f2py intent(in)  ::  MAXLEG, NLEG
+  INTEGER, INTENT(IN) :: NRETAB, NVETAB, NDIST
+  INTEGER, INTENT(IN) :: MAXLEG, NLEG(NDIST)
   COMPLEX, INTENT(IN) :: RINDEX
-  !  f2py intent(in)  ::  RINDEX
   REAL,    INTENT(IN) :: WAVELEN1, WAVELEN2, DELTAWAVE
-  !  f2py intent(in)  ::  WAVELEN1, WAVELEN2, DELTAWAVE
-  REAL,    INTENT(IN) :: PARDENS, SRETAB, ERETAB, ALPHA, GAMMA
-  !  f2py intent(in)  :: PARDENS, SRETAB, ERETAB, ALPHA, GAMMA
-  REAL,    INTENT(IN) :: REFF(NRETAB), EXTINCT(NRETAB), SSALB(NRETAB)
-   !  f2py intent(in)  :: REFF(NRETAB), EXTINCT(NRETAB), SSALB(NRETAB)
-  REAL,    INTENT(IN) :: LEGCOEF(6,0:MAXLEG,NRETAB)
-   !  f2py intent(in)  :: LEGCOEF
+  REAL,    INTENT(IN) :: PARDENS, ALPHA(NVETAB), GAMMA
+  REAL,    INTENT(IN) :: REFF(NRETAB), VEFF(NVETAB), EXTINCT(NDIST)
+  REAL,    INTENT(IN) :: LEGCOEF(6,0:MAXLEG,NDIST), SSALB(NDIST)
   CHARACTER(LEN=1), INTENT(IN) :: PARTYPE, DISTFLAG
-   !  f2py intent(in)  :: PARTYPE, DISTFLAG
   CHARACTER(LEN=*), INTENT(IN) :: MIETABFILE
-   !  f2py intent(in)  :: MIETABFILE
-  INTEGER :: I, J, JP, K, L, NL, NPHASEPOL
+  INTEGER :: I, J, M, N, JP, K, L, NL, NPHASEPOL
+  
   OPEN (UNIT=3, FILE=MIETABFILE, STATUS='REPLACE')
   NPHASEPOL = 6
   WRITE (3,'(A)') '! Polarized Mie scattering table vs. effective radius (LWC=1 g/m^3)'
@@ -628,40 +623,50 @@ SUBROUTINE WRITE_MIE_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
   WRITE (3,'(1X,F5.3,2X,A1,A)') PARDENS, PARTYPE, '   particle density (g/cm^3) and type (Water, Ice, Aerosol)'
   WRITE (3,'(2(1X,E13.6),A)') RINDEX, '  particle index of refraction'
   IF (DISTFLAG == 'L') THEN
-    WRITE (3,'(F7.3,A)') ALPHA, '  lognormal log standard deviation'
-  ELSE IF (DISTFLAG == 'G') THEN
-    WRITE (3,'(F7.3,A)') ALPHA, ' gamma size distribution shape parameter'
-  ELSE IF (DISTFLAG == 'M') THEN
-    WRITE (3,'(2(1X,F7.3),A)') ALPHA, GAMMA, ' modified gamma size distribution shape parameters'
+    WRITE (3,'(A)') 'lognormal log standard deviation'
+  ELSE
+    WRITE (3,'(A)') 'gamma size distribution shape parameter'
   ENDIF
-  WRITE (3,'(1X,I3,2(1X,F8.3),A)') NRETAB, SRETAB, ERETAB, &
+  WRITE (3,'(1X,I3,2(1X,F8.3),A)') NRETAB,REFF(1),REFF(NRETAB),&
         '  number, starting, ending effective radius'
+  WRITE (3,'(1X,I3,2(1X,F8.3),A)') NVETAB,VEFF(1),VEFF(NVETAB),&
+        '  number, starting, ending effective variance'
+    WRITE (3,'(1X,I3,2(1X,F8.3),A)') NVETAB,ALPHA(1),ALPHA(NVETAB),&
+        '  number, starting, ending shape parameter alpha'
   WRITE (3,'(1X,I5,A)') MAXLEG, '  maximum rank allowed'
-  DO I = 1, NRETAB
-    WRITE (3,'(1X,F8.4,1X,E12.5,1X,F8.6,1X,I6,A)') &
-        REFF(I), EXTINCT(I), SSALB(I), NLEG(I), '  Reff  Ext  Alb  NLEG'
-    DO J = 1, NPHASEPOL
-    	WRITE (3,'(I1,1X,201(1X,F10.5))') J, (LEGCOEF(J,L,I), L=0,MIN(NLEG(I),200))
-      DO K = 200, NLEG(I)-1, 200
-        WRITE (3,'(2X,200(1X,F10.5))') (LEGCOEF(J,K+L,I),L=1,MIN(200,NLEG(I)-K))
+  DO N = 1, NVETAB
+    DO I = 1, NRETAB
+      M = (N-1)*NRETAB + I
+      WRITE (3,'(1X,F8.4,1X,F8 .4,1X,E12.5,1X,F8.6,1X,I6,A)') &
+        REFF(I), VEFF(N), EXTINCT(M), SSALB(M), NLEG(M),&
+			'  Reff	 Veff  Ext  Alb  Nleg'
+      DO K = 1, NPHASEPOL
+        WRITE (3,'(I1,1X,201(1X,F10.5))') K, (LEGCOEF(K,L,M), L=0,MIN(NLEG(M),200))
+      	DO J = 200, NLEG(M)-1, 200
+          WRITE (3,'(2X,200(1X,F10.5))') (LEGCOEF(K,J+L,M),L=1,MIN(200,NLEG(M)-J))
+      	ENDDO
       ENDDO
     ENDDO
   ENDDO
   CLOSE (3)
-END SUBROUTINE WRITE_MIE_TABLE
+END SUBROUTINE WRITE_POLY_TABLE
 
   
-SUBROUTINE READ_MIE_TABLE(MIETABFILE, NRETAB, REFF, EXTINCT, &
-                          SSALB, NLEG, LEGCOEF, MAXLEG) 
+SUBROUTINE READ_POLY_TABLE(MIETABFILE, NRETAB, NVETAB, NDIST, REFF, &
+                           VEFF, EXTINCT, SSALB, NLEG, LEGCOEF, MAXLEG,&
+			   TABLE_TYPE) 
   IMPLICIT NONE
   CHARACTER(LEN=*), INTENT(IN) :: MIETABFILE
-  INTEGER, INTENT(IN) :: NRETAB
-  REAL, INTENT(OUT) :: REFF(NRETAB), EXTINCT(NRETAB), SSALB(NRETAB)
-  INTEGER, INTENT(OUT) :: NLEG(NRETAB)
-  REAL, INTENT(OUT) :: LEGCOEF(6,0:MAXLEG,NRETAB)
+  INTEGER, INTENT(IN) :: NRETAB, NVETAB, NDIST
+  REAL, INTENT(OUT) :: REFF(NRETAB), VEFF(NVETAB) 
+  REAL, INTENT(OUT) :: EXTINCT(NDIST), SSALB(NDIST)
+  INTEGER, INTENT(OUT) :: NLEG(NDIST)
+  REAL, INTENT(OUT) :: LEGCOEF(6,0:MAXLEG,NDIST)
   INTEGER, INTENT(IN) :: MAXLEG
-  INTEGER :: I, J, L, M, K, NL, NPHASEPOL
+  CHARACTER(LEN=6), INTENT(OUT) :: TABLE_TYPE
+  INTEGER :: I, J, L, M, N, D, K, NL, NPHASEPOL
 
+  TABLE_TYPE = 'VECTOR'
   NPHASEPOL = 6
   OPEN (UNIT=1, FILE=MIETABFILE, STATUS='OLD')
     READ (1,*)
@@ -671,21 +676,25 @@ SUBROUTINE READ_MIE_TABLE(MIETABFILE, NRETAB, REFF, EXTINCT, &
     READ (1,*)
     READ (1,*)
     READ (1,*)
-    DO I = 1, NRETAB
-      READ (1,'(1X,F8.4,1X,E12.5,1X,F8.6,1X,I6,A)') &
-          REFF(I), EXTINCT(I), SSALB(I), NLEG(I)
-      DO J = 1, NPHASEPOL
-      	READ (1,'(I1,1X,201(1X,F10.5))'), M, (LEGCOEF(J,L,I), L=0,MIN(NLEG(I),200))
-        DO K = 200, NLEG(I)-1, 200
-          READ (1,'(2X,200(1X,F10.5))') (LEGCOEF(J,K+L,I),L=1,MIN(200,NLEG(I)-K))
+    READ (1,*)
+    READ (1,*)
+    DO N = 1, NVETAB
+      DO I = 1, NRETAB
+	M = (N-1)*NRETAB + I
+      	READ (1,'(1X,F8.4,1X,F8.4,1X,E12.5,1X,F8.6,1X,I6,A)') &
+          REFF(I), VEFF(N), EXTINCT(M), SSALB(M), NLEG(M)
+      	DO K = 1, NPHASEPOL
+      	  READ (1,'(I1,1X,201(1X,F10.5))'), D, (LEGCOEF(K,L,M), L=0,MIN(NLEG(M),200))
+          DO J = 200, NLEG(M)-1, 200
+            READ (1,'(2X,200(1X,F10.5))') (LEGCOEF(K,J+L,M),L=1,MIN(200,NLEG(M)-J))
+	  ENDDO
         ENDDO
       ENDDO
     ENDDO
   CLOSE (1)
-END SUBROUTINE READ_MIE_TABLE
-  
-  
-  
+END SUBROUTINE READ_POLY_TABLE
+
+
 SUBROUTINE TRANSFORM_LEG_TO_PHASE (MAXLEG, NPHASEPOL, &
 				   PELEM, NLEG, LEGCOEF, &
 				   NANGLE, ANGLE, PHASE)
@@ -800,17 +809,18 @@ END SUBROUTINE TRANSFORM_LEG_TO_PHASE
 
 
 SUBROUTINE READ_MONO_TABLE(MIETABFILE, NRTAB, RADIUS, EXTINCT, &
-			  SCATTER, NLEG, LEGCOEF, MAXLEG) 
+		     SCATTER, NLEG, LEGCOEF, MAXLEG, TABLE_TYPE) 
   IMPLICIT NONE
   CHARACTER(LEN=*), INTENT(IN) :: MIETABFILE
   INTEGER, INTENT(IN) :: NRTAB
   REAL, INTENT(OUT) :: RADIUS(NRTAB), EXTINCT(NRTAB), SCATTER(NRTAB)
   INTEGER, INTENT(OUT) :: NLEG(NRTAB)
   REAL, INTENT(OUT) :: LEGCOEF(6,0:MAXLEG,NRTAB)
+  CHARACTER(LEN=6), INTENT(OUT) :: TABLE_TYPE
   INTEGER, INTENT(IN) :: MAXLEG
-  
   INTEGER :: I, J, L, M, K, NL, NPHASEPOL
 
+  TABLE_TYPE = 'VECTOR'
   NPHASEPOL = 6
   OPEN (UNIT=1, FILE=MIETABFILE, STATUS='OLD')
     READ (1,*)
@@ -834,8 +844,8 @@ END SUBROUTINE READ_MONO_TABLE
 
 
 SUBROUTINE WRITE_MONO_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
-                            PARTYPE, PARDENS, RINDEX, NRTAB, &
-                            RADII, EXTINCT, SCATTER, NLEG, MAXLEG, LEGCOEF)
+			    PARTYPE, PARDENS, RINDEX, NRTAB, &
+			    RADII, EXTINCT, SCATTER, NLEG, MAXLEG, LEGCOEF)
 			    
  ! Writes the table of Mie monodisperse scattering properties as a function of 
  ! radius. 
@@ -853,7 +863,7 @@ SUBROUTINE WRITE_MONO_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
   INTEGER :: I, J, JP, K, L, NL, NPHASEPOL
   OPEN (UNIT=3, FILE=MIETABFILE, STATUS='REPLACE')
   NPHASEPOL = 6
-  WRITE (3,'(A)') '! Polarized monodisperse Mie scattering table vs. radius'
+  WRITE (3,'(A)') '! Polarized Monodisperse Mie scattering table vs. radius'
   IF (DELTAWAVE < 0.0) THEN
     WRITE (3,'(2(1X,F8.3),A)') WAVELEN1, WAVELEN2, '  wavelength range (micron)'
   ELSE
@@ -862,7 +872,7 @@ SUBROUTINE WRITE_MONO_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
   WRITE (3,'(1X,F5.3,2X,A1,A)') PARDENS, PARTYPE, '   particle density (g/cm^3) and type (Water, Ice, Aerosol)'
   WRITE (3,'(2(1X,E13.6),A)') RINDEX, '  particle index of refraction'
   WRITE (3,'(1X,I5,2(1X,F8.3),A)') NRTAB, RADII(1), RADII(NRTAB), &
-        '  number, starting, ending radius'
+	'  number, starting, ending radius'
   WRITE (3,'(1X,I5,A)') MAXLEG, '  maximum rank allowed'
   DO I = 1, NRTAB
     WRITE (3,'(1X,F8.4,1X,E12.5,1X,E12.5,1X,I6,A)') &
@@ -886,7 +896,7 @@ SUBROUTINE GET_POLY_TABLE (ND, NDIST, NSIZE, MAXLEG, NLEG1, EXTINCT1,&
   INTEGER, INTENT(IN) :: MAXLEG
   INTEGER, INTENT(IN) :: NLEG1(NSIZE)
   REAL, INTENT(IN) :: EXTINCT1(NSIZE), SCATTER1(NSIZE)
-  REAL, INTENT(IN) :: LEGCOEF1(6, 0:MAXLEG, NSIZE)
+  REAL, INTENT(IN) :: LEGCOEF1(6,0:MAXLEG, NSIZE)
   
   REAL, INTENT(OUT) :: EXTINCT(NDIST), SSALB(NDIST)
   REAL, INTENT(OUT) :: NLEG(NDIST), LEGCOEF(6,0:MAXLEG,NDIST)

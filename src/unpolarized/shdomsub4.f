@@ -2,43 +2,186 @@ C     This file containts subroutines that were modified from their original pur
 C     The original subroutines were written by Frank Evans for the Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer.
 C     The modified subroutines were written by Aviad Levis, Technion Institute of Technology, 2019
 
-
-      SUBROUTINE RAYLEIGH_EXTINCT (NZT, ZLEVELS,TEMP, RAYSFCPRES, 
-     .                             RAYLCOEF, EXTRAYL)
-C       Computes the molecular Rayleigh extinction profile EXTRAYL [/km]
-C     from the temperature profile TEMP [K] at ZLEVELS [km].  Assumes
-C     a linear lapse rate between levels to compute the pressure at
-C     each level.  The Rayleigh extinction is proportional to air
-C     density, with the coefficient RAYLCOEF in [K/(mb km)].
+      SUBROUTINE RENDER (NSTOKES, NX, NY, NZ, 
+     .             NPTS, NCELLS, ML, MM, NCS, NLM, NSTLEG, NLEG,  
+     .             NUMPHASE, NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
+     .             BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, 
+     .             SOLARAZ, SFCTYPE, NSFCPAR, SFCGRIDPARMS, 
+     .             MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD,
+     .             GNDTEMP, GNDALBEDO, SKYRAD, WAVENO, WAVELEN, 
+     .             UNITS, XGRID, YGRID, ZGRID, GRIDPOS, 
+     .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
+     .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, 
+     .             FLUXES, SHPTR, SOURCE, CAMX, CAMY, CAMZ, CAMMU,  
+     .             CAMPHI, NPIX, NPART, TOTAL_EXT, VISOUT)
+Cf2py threadsafe
       IMPLICIT NONE
-      INTEGER NZT
-Cf2py intent(in) :: NZT
-      REAL    ZLEVELS(NZT), TEMP(NZT), RAYSFCPRES, RAYLCOEF
-      REAL    EXTRAYL(NZT)
-Cf2py intent(in) :: ZLEVELS, TEMP, RAYSFCPRES, RAYLCOEF
-Cf2py intent(out) :: EXTRAYL
-      INTEGER I
-      REAL    PRES, LAPSE, TS, DZ
+      INTEGER NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
+Cf2py intent(in) :: NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
+      INTEGER ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE
+Cf2py intent(in) :: ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE
+      INTEGER NMU, NPHI0MAX, NPHI0(*)
+Cf2py intent(in) :: NMU, NPHI0MAX, NPHI0
+      INTEGER MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
+Cf2py intent(in) :: MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
+      INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
+Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
+      INTEGER SHPTR(*), BCPTR(MAXNBC,2)
+Cf2py intent(in) :: SHPTR, BCPTR
+      INTEGER*2 CELLFLAGS(*)
+      INTEGER IPHASE(NPTS,NPART)
+Cf2py intent(in) :: CELLFLAGS, IPHASE
+      LOGICAL DELTAM
+Cf2py intent(in) :: DELTAM
+      REAL    SOLARMU, SOLARAZ
+Cf2py intent(in) :: SOLARMU, SOLARAZ
+      REAL    GNDTEMP, GNDALBEDO, SKYRAD, WAVENO(2), WAVELEN
+Cf2py intent(in) :: GNDTEMP, GNDALBEDO, SKYRAD, WAVENO, WAVELEN
+      REAL    MU(*), PHI(NMU,*), WTDO(NMU,*)
+Cf2py intent(in) :: MU, PHI, WTDO
+      REAL    XGRID(*), YGRID(*), ZGRID(*), GRIDPOS(3,*)
+Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
+      REAL    SFCGRIDPARMS(*), BCRAD(*)
+Cf2py intent(in) :: SFCGRIDPARMS, BCRAD
+      REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
+      REAL    TOTAL_EXT(NPTS), LEGEN(0:NLEG,*)
+Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN, TOTAL_EXT
+      REAL    DIRFLUX(*), FLUXES(2,*), SOURCE(*)
+Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE
+      DOUBLE PRECISION  CAMX(*), CAMY(*), CAMZ(*)
+      REAL CAMMU(*), CAMPHI(*)
+Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
+      INTEGER  NPIX, NPART
+Cf2py intent(in) :: NPIX, NPART
+      REAL VISOUT(NPIX)
+Cf2py intent(out) :: VISOUT
+      CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
+Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
 
-C           Find surface pressure by integrating hydrostatic relation
-C           for a dry atmosphere up to surface height.
-      PRES = RAYSFCPRES
-      TS = TEMP(1)
-      LAPSE = 6.5*0.001
-      PRES = PRES*(TS/(TS+LAPSE*ZLEVELS(1)*1000.))**(9.8/(287.*LAPSE))
+      INTEGER NSCATANGLE, I, J, L, N
+      REAL    MURAY, PHIRAY, MU2, PHI2
+      DOUBLE PRECISION X0, Y0, Z0, X1, Y1, Z1, X2, Y2, Z2
+      DOUBLE PRECISION COSSCAT
+      DOUBLE PRECISION U, R, PI 
+      INTEGER MAXSCATANG
+      PARAMETER (MAXSCATANG=721)
+      REAL, ALLOCATABLE :: YLMSUN(:), PHASETAB(:,:)
+      REAL, ALLOCATABLE :: YLMDIR(:), SINGSCAT(:)
+      DOUBLE PRECISION, ALLOCATABLE :: SUNDIRLEG(:)
 
-C         Use layer mean temperature to compute fractional pressure change.
-      DO I = 1, NZT-1
-        EXTRAYL(I) = RAYLCOEF*PRES/TEMP(I)
-        DZ = 1000.*(ZLEVELS(I+1)-ZLEVELS(I))
-        LAPSE = (TEMP(I)-TEMP(I+1))/DZ
-        IF (ABS(LAPSE) .GT. 0.00001) THEN
-          PRES = PRES*(TEMP(I+1)/TEMP(I))**(9.8/(287.*LAPSE))
-        ELSE
-          PRES = PRES*EXP(-9.8*DZ/(287.*TEMP(I)))
+      ALLOCATE (YLMSUN(NLM), YLMDIR(NLM))
+      ALLOCATE (SUNDIRLEG(0:NLEG), SINGSCAT(NUMPHASE))
+       
+      IF (SRCTYPE .NE. 'T') THEN
+          CALL YLMALL (SOLARMU, SOLARAZ, ML, MM, NCS, YLMSUN)
+          IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
+              NSCATANGLE = MAX(36,MIN(MAXSCATANG,2*NLEG))
+              ALLOCATE (PHASETAB(NUMPHASE, MAXSCATANG))
+              CALL PRECOMPUTE_PHASE(NSCATANGLE, NUMPHASE, 
+     .                              ML, NLEG, LEGEN, PHASETAB)
+          ENDIF
+      ENDIF
+
+C         Make the isotropic radiances for the top boundary
+      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN, 
+     .                            UNITS, NTOPPTS, BCRAD(1))
+C         Make the bottom boundary radiances for the Lambertian surfaces.  
+C          Compute the upwelling bottom radiances using the downwelling fluxes.
+      IF (SFCTYPE .EQ. 'FL') THEN
+          CALL FIXED_LAMBERTIAN_BOUNDARY(NBOTPTS, BCPTR(1,2), DIRFLUX,
+     .                                   FLUXES, SRCTYPE, GNDTEMP,
+     .                                   GNDALBEDO, WAVENO, WAVELEN, 
+     .                                   UNITS, BCRAD(1+NTOPPTS))
+      ELSE IF (SFCTYPE .EQ. 'VL') THEN
+          CALL VARIABLE_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
+     .                                       DIRFLUX, FLUXES, SRCTYPE, 
+     .                                       NSFCPAR, SFCGRIDPARMS,
+     .                                       BCRAD(1+NTOPPTS))
+      ENDIF
+
+      PI = ACOS(-1.0D0)
+C         Loop over pixels in image
+      DO N = 1, NPIX
+        X0 = CAMX(N)
+        Y0 = CAMY(N)
+        Z0 = CAMZ(N)
+        MU2 = CAMMU(N)
+        PHI2 = CAMPHI(N)
+        MURAY = -MU2
+        PHIRAY = PHI2 - PI
+  
+C           Extrapolate ray to domain top if above
+        IF (Z0 .GT. ZGRID(NZ)) THEN
+          IF (MURAY .GE. 0.0) THEN
+              VISOUT(N) = 0.0
+              GOTO 900
+          ENDIF
+          R = (ZGRID(NZ) - Z0)/MURAY
+          X0 = X0 + R*SQRT(1-MURAY**2)*COS(PHIRAY)
+          Y0 = Y0 + R*SQRT(1-MURAY**2)*SIN(PHIRAY)
+          Z0 = ZGRID(NZ)
+        ELSE IF (Z0 .LT. ZGRID(1)) THEN
+          WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
+          STOP
         ENDIF
-      ENDDO  
-      EXTRAYL(NZT) = RAYLCOEF*PRES/TEMP(NZT)
+  
+        CALL YLMALL (MU2, PHI2, ML, MM, NCS, YLMDIR)
+  
+        IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
+            COSSCAT = SOLARMU*MU2 + SQRT((1.0-SOLARMU**2)*(1.0-MU2**2))
+     .               *COS(SOLARAZ-PHI2)
+            IF (NUMPHASE .GT. 0) THEN
+                U = (NSCATANGLE-1)*(ACOS(COSSCAT)/PI) + 1
+                J = MIN(NSCATANGLE-1,INT(U))
+                U = U - J
+                DO I = 1, NUMPHASE
+                    SINGSCAT(I)=(1-U)*PHASETAB(I,J)+U*PHASETAB(I,J+1)
+                ENDDO
+            ELSE
+                CALL LEGENDRE_ALL (COSSCAT, NLEG, SUNDIRLEG)
+                DO L = 0, NLEG
+                    SUNDIRLEG(L) = SUNDIRLEG(L)*(2*L+1)/(4*PI)
+                ENDDO
+            ENDIF
+        ENDIF
+
+        CALL INTEGRATE_1RAY (BCFLAG, IPFLAG, 
+     .                 NX, NY, NZ, NPTS, NCELLS, 
+     .                 GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
+     .                 XGRID, YGRID, ZGRID, GRIDPOS,
+     .                 ML, MM, NCS, NLM, NLEG, NUMPHASE,
+     .                 NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, 
+     .                 DELTAM, SRCTYPE, WAVELEN, SOLARMU,SOLARAZ,
+     .                 EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
+     .                 SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG,
+     .                 SINGSCAT, MAXNBC, NTOPPTS, NBOTPTS,
+     .                 BCPTR, BCRAD, SFCTYPE, NSFCPAR, 
+     .                 SFCGRIDPARMS,NPART, MURAY, PHIRAY, 
+     .                 MU2, PHI2, X0, Y0, Z0, 
+     .                 TOTAL_EXT, VISOUT(N))
+C       WRITE(*,*) N, VISOUT(N)
+  900   CONTINUE
+      ENDDO
+  
+      RETURN
+      END
+      
+      
+      
+      SUBROUTINE RAYLEIGH_PHASE_FUNCTION (WAVELEN, RAYLEGCOEF, 
+     .                                    TABLE_TYPE)
+      IMPLICIT NONE
+      REAL      WAVELEN
+Cf2py intent(in) :: WAVELEN
+      INTEGER   NCOEF
+      PARAMETER (NCOEF=2)
+      REAL      RAYLEGCOEF(0:NCOEF)
+Cf2py intent(out) :: RAYLEGCOEF
+      CHARACTER(LEN=6) :: TABLE_TYPE
+Cf2py intent(out) ::  TABLE_TYPE
+    
+      TABLE_TYPE = 'SCALAR'
+      RAYLEGCOEF = (/1.0, 0.0, 0.5/)
       
       RETURN
       END
@@ -762,171 +905,6 @@ C               source function because extinction is still scaled.
         ENDIF
       ENDDO
 
-      RETURN
-      END
-
-
-      SUBROUTINE RENDER (NX, NY, NZ, NPTS, NCELLS,
-     .             ML, MM, NCS, NLM, NLEG, NUMPHASE, 
-     .             NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
-     .             BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, SOLARAZ,
-     .             SFCTYPE, NSFCPAR, SFCGRIDPARMS, 
-     .             MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD,
-     .             GNDTEMP, GNDALBEDO, SKYRAD, WAVENO, WAVELEN, UNITS,
-     .             XGRID, YGRID, ZGRID, GRIDPOS, 
-     .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
-     .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, FLUXES,
-     .             SHPTR, SOURCE, CAMX, CAMY, CAMZ, CAMMU, CAMPHI, 
-     .             NPIX, NPART, TOTAL_EXT, VISOUT)
-Cf2py threadsafe
-      IMPLICIT NONE
-      INTEGER NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
-Cf2py intent(in) :: NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
-      INTEGER ML, MM, NCS, NLM, NLEG, NUMPHASE
-Cf2py intent(in) :: ML, MM, NCS, NLM, NLEG, NUMPHASE
-      INTEGER NMU, NPHI0MAX, NPHI0(*)
-Cf2py intent(in) :: NMU, NPHI0MAX, NPHI0
-      INTEGER MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
-Cf2py intent(in) :: MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
-      INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
-Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
-      INTEGER SHPTR(*), BCPTR(MAXNBC,2)
-Cf2py intent(in) :: SHPTR, BCPTR
-      INTEGER*2 CELLFLAGS(*)
-      INTEGER IPHASE(NPTS,NPART)
-Cf2py intent(in) :: CELLFLAGS, IPHASE
-      LOGICAL DELTAM
-Cf2py intent(in) :: DELTAM
-      REAL    SOLARMU, SOLARAZ
-Cf2py intent(in) :: SOLARMU, SOLARAZ
-      REAL    GNDTEMP, GNDALBEDO, SKYRAD, WAVENO(2), WAVELEN
-Cf2py intent(in) :: GNDTEMP, GNDALBEDO, SKYRAD, WAVENO, WAVELEN
-      REAL    MU(*), PHI(NMU,*), WTDO(NMU,*)
-Cf2py intent(in) :: MU, PHI, WTDO
-      REAL    XGRID(*), YGRID(*), ZGRID(*), GRIDPOS(3,*)
-Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
-      REAL    SFCGRIDPARMS(*), BCRAD(*)
-Cf2py intent(in) :: SFCGRIDPARMS, BCRAD
-      REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
-      REAL    TOTAL_EXT(NPTS), LEGEN(0:NLEG,*)
-Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN, TOTAL_EXT
-      REAL    DIRFLUX(*), FLUXES(2,*), SOURCE(*)
-Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE
-      DOUBLE PRECISION  CAMX(*), CAMY(*), CAMZ(*)
-      REAL CAMMU(*), CAMPHI(*)
-Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
-      INTEGER  NPIX, NPART
-Cf2py intent(in) :: NPIX, NPART
-      REAL VISOUT(NPIX)
-Cf2py intent(out) :: VISOUT
-      CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
-Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
-
-      INTEGER NSCATANGLE, I, J, L, N
-      REAL    MURAY, PHIRAY, MU2, PHI2
-      DOUBLE PRECISION X0, Y0, Z0, X1, Y1, Z1, X2, Y2, Z2
-      DOUBLE PRECISION COSSCAT
-      DOUBLE PRECISION U, R, PI 
-      INTEGER MAXSCATANG
-      PARAMETER (MAXSCATANG=721)
-      REAL, ALLOCATABLE :: YLMSUN(:), PHASETAB(:,:)
-      REAL, ALLOCATABLE :: YLMDIR(:), SINGSCAT(:)
-      DOUBLE PRECISION, ALLOCATABLE :: SUNDIRLEG(:)
-
-      ALLOCATE (YLMSUN(NLM), YLMDIR(NLM))
-      ALLOCATE (SUNDIRLEG(0:NLEG), SINGSCAT(NUMPHASE))
-       
-      IF (SRCTYPE .NE. 'T') THEN
-          CALL YLMALL (SOLARMU, SOLARAZ, ML, MM, NCS, YLMSUN)
-          IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
-              NSCATANGLE = MAX(36,MIN(MAXSCATANG,2*NLEG))
-              ALLOCATE (PHASETAB(NUMPHASE, MAXSCATANG))
-              CALL PRECOMPUTE_PHASE(NSCATANGLE, NUMPHASE, 
-     .                              ML, NLEG, LEGEN, PHASETAB)
-          ENDIF
-      ENDIF
-
-C         Make the isotropic radiances for the top boundary
-      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN, 
-     .                            UNITS, NTOPPTS, BCRAD(1))
-C         Make the bottom boundary radiances for the Lambertian surfaces.  
-C          Compute the upwelling bottom radiances using the downwelling fluxes.
-      IF (SFCTYPE .EQ. 'FL') THEN
-          CALL FIXED_LAMBERTIAN_BOUNDARY(NBOTPTS, BCPTR(1,2), DIRFLUX,
-     .                                   FLUXES, SRCTYPE, GNDTEMP,
-     .                                   GNDALBEDO, WAVENO, WAVELEN, 
-     .                                   UNITS, BCRAD(1+NTOPPTS))
-      ELSE IF (SFCTYPE .EQ. 'VL') THEN
-          CALL VARIABLE_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
-     .                                       DIRFLUX, FLUXES, SRCTYPE, 
-     .                                       NSFCPAR, SFCGRIDPARMS,
-     .                                       BCRAD(1+NTOPPTS))
-      ENDIF
-
-      PI = ACOS(-1.0D0)
-C         Loop over pixels in image
-      DO N = 1, NPIX
-        X0 = CAMX(N)
-        Y0 = CAMY(N)
-        Z0 = CAMZ(N)
-        MU2 = CAMMU(N)
-        PHI2 = CAMPHI(N)
-        MURAY = -MU2
-        PHIRAY = PHI2 - PI
-  
-C           Extrapolate ray to domain top if above
-        IF (Z0 .GT. ZGRID(NZ)) THEN
-          IF (MURAY .GE. 0.0) THEN
-              VISOUT(N) = 0.0
-              GOTO 900
-          ENDIF
-          R = (ZGRID(NZ) - Z0)/MURAY
-          X0 = X0 + R*SQRT(1-MURAY**2)*COS(PHIRAY)
-          Y0 = Y0 + R*SQRT(1-MURAY**2)*SIN(PHIRAY)
-          Z0 = ZGRID(NZ)
-        ELSE IF (Z0 .LT. ZGRID(1)) THEN
-          WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
-          STOP
-        ENDIF
-  
-        CALL YLMALL (MU2, PHI2, ML, MM, NCS, YLMDIR)
-  
-        IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
-            COSSCAT = SOLARMU*MU2 + SQRT((1.0-SOLARMU**2)*(1.0-MU2**2))
-     .               *COS(SOLARAZ-PHI2)
-            IF (NUMPHASE .GT. 0) THEN
-                U = (NSCATANGLE-1)*(ACOS(COSSCAT)/PI) + 1
-                J = MIN(NSCATANGLE-1,INT(U))
-                U = U - J
-                DO I = 1, NUMPHASE
-                    SINGSCAT(I)=(1-U)*PHASETAB(I,J)+U*PHASETAB(I,J+1)
-                ENDDO
-            ELSE
-                CALL LEGENDRE_ALL (COSSCAT, NLEG, SUNDIRLEG)
-                DO L = 0, NLEG
-                    SUNDIRLEG(L) = SUNDIRLEG(L)*(2*L+1)/(4*PI)
-                ENDDO
-            ENDIF
-        ENDIF
-
-        CALL INTEGRATE_1RAY (BCFLAG, IPFLAG, 
-     .                 NX, NY, NZ, NPTS, NCELLS, 
-     .                 GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
-     .                 XGRID, YGRID, ZGRID, GRIDPOS,
-     .                 ML, MM, NCS, NLM, NLEG, NUMPHASE,
-     .                 NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, 
-     .                 DELTAM, SRCTYPE, WAVELEN, SOLARMU,SOLARAZ,
-     .                 EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
-     .                 SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG,
-     .                 SINGSCAT, MAXNBC, NTOPPTS, NBOTPTS,
-     .                 BCPTR, BCRAD, SFCTYPE, NSFCPAR, 
-     .                 SFCGRIDPARMS,NPART, MURAY, PHIRAY, 
-     .                 MU2, PHI2, X0, Y0, Z0, 
-     .                 TOTAL_EXT, VISOUT(N))
-C       WRITE(*,*) N, VISOUT(N)
-  900   CONTINUE
-      ENDDO
-  
       RETURN
       END
       

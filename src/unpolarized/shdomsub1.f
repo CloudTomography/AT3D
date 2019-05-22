@@ -115,7 +115,8 @@ Cf2py intent(in) :: NPX, NPY, NPZ, NPART
 Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
 Cf2py intent(in) :: ZLEVELS
-      REAL TEMPP(*), EXTINCTP(NPTS,NPART), ALBEDOP(NPTS,NPART)
+      REAL TEMPP(*), EXTINCTP(NPTS,NPART)
+      REAL ALBEDOP(NPTS,NPART)
 Cf2py intent(in) :: TEMPP, EXTINCTP, ALBEDOP
       REAL LEGENP(*), EXTDIRP(*)
 Cf2py intent(in) :: LEGENP, EXTDIRP
@@ -229,11 +230,11 @@ C             base grid points
 C           Initialize the source function from the radiance field
       
         CALL COMPUTE_SOURCE (ML,MM, NCS, NLM, NLEG, NUMPHASE, NPTS,
-     .           FIXSH, SRCTYPE, SOLARMU, YLMSUN, ALBEDO(:NPTS,:),
-     .           LEGEN, IPHASE(:NPTS,:),PLANCK,DIRFLUX,SHACC,MAXIV,
-     .           RSHPTR, RADIANCE, SHPTR, SOURCE, OSHPTR, DELSOURCE, 
-     .           .TRUE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
-     .           NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS))
+     .        FIXSH, SRCTYPE, SOLARMU, YLMSUN, ALBEDO(:NPTS,:),
+     .        LEGEN, IPHASE(:NPTS,:),PLANCK(:NPTS,:) ,DIRFLUX,SHACC,
+     .        MAXIV,RSHPTR, RADIANCE, SHPTR, SOURCE, OSHPTR, DELSOURCE, 
+     .        .TRUE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
+     .        NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS))
       ENDIF
       IF (ACCELFLAG) THEN
         OSHPTR(1:NPTS+1) = SHPTR(1:NPTS+1)
@@ -375,8 +376,8 @@ C              the solution criterion, and dot products for acceleration.
         IF (SOLCRIT .LT. ENDADAPTSOL .OR. ITER .GT. 30)  FIXSH = .TRUE.
         CALL COMPUTE_SOURCE (ML,MM, NCS, NLM, NLEG, NUMPHASE, NPTS,
      .      FIXSH, SRCTYPE, SOLARMU, YLMSUN, ALBEDO(:NPTS,:),
-     .      LEGEN, IPHASE(:NPTS,:), PLANCK, DIRFLUX, SHACC, MAXIV,
-     .      RSHPTR, RADIANCE, SHPTR, SOURCE, OSHPTR, DELSOURCE, 
+     .      LEGEN, IPHASE(:NPTS,:), PLANCK(:NPTS,:), DIRFLUX, SHACC, 
+     .      MAXIV, RSHPTR, RADIANCE, SHPTR, SOURCE, OSHPTR, DELSOURCE, 
      .      .FALSE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .      NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS))
 C           Calculate the acceleration parameter and solution criterion
@@ -3223,6 +3224,7 @@ C             Compute the new Planck source function (if needed)
               PLANCK(IP,IPA) = (1.0-ALBEDO(IP,IPA))*BB
             ENDIF
           ENDDO
+          
 C             Compute the new direct beam flux (if needed)
           IF (SRCTYPE .NE. 'T') THEN
             IF (BTEST(BCFLAG,2) .OR. BTEST(BCFLAG,3)) THEN

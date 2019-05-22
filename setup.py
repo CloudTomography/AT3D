@@ -91,6 +91,7 @@ F2PY_CORE_API = [
     'read_poly_table',
     'transform_leg_to_phase',
     'rayleigh_extinct',
+    'rayleigh_phase_function',
     'start_mpi',
     'end_shdom_mpi',
     'check_input_parmeters',
@@ -105,8 +106,9 @@ F2PY_CORE_API = [
     'space_carve'
 ]
 
-if POLARIZED_SHDOM:
-    F2PY_CORE_API.extend(['rayleigh_phase_function'])
+
+#if POLARIZED_SHDOM:
+    #F2PY_CORE_API.extend([])
 
 
 def _run_command(cmd):

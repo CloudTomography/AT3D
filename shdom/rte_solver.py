@@ -11,7 +11,7 @@ import sys, os
 import dill as pickle
 from joblib import Parallel, delayed
 
-class BoundaryCondition(Enum):
+class BC(Enum):
     open = 1       # open boundary conditions mean that exiting radiance is lost.
     periodic = 2   # periodic boundary conditions mean that exiting radiance returns from the opposite side.
     
@@ -63,7 +63,6 @@ class SolarSource(object):
                                                                     self.flux, 
                                                                     self.azimuth, 
                                                                     self.zenith)  
-        
 class Surface(object):
     """ 
     An abstract sufrace class to be inhirted by different surface types.
@@ -181,7 +180,7 @@ class SceneParameters(object):
     wavelength: wavelength in microns for 'R' units; WAVELEN not needed for solar sources.
     surface: A Surface object.
     source: A Source object.
-    boundary_conditions: a dictionary with BoundaryCondition.open/periodic for 'x' and 'y'.
+    boundary_conditions: a dictionary with BC.open/periodic for 'x' and 'y'.
     info: prints out all the properties as a string.
     
     Notes
@@ -192,9 +191,7 @@ class SceneParameters(object):
                  wavelength=0.672, 
                  surface=LambertianSurface(albedo=0.05), 
                  source=SolarSource(azimuth=0.0, zenith=180.0),
-                 boundary_conditions={'x': BoundaryCondition.open,
-                                      'y': BoundaryCondition.open}
-                 ): 
+                 boundary_conditions={'x': BC.open, 'y': BC.open}): 
         self.wavelength = wavelength
         self.surface = surface
         self.source = source
@@ -269,14 +266,31 @@ class RteSolver(object):
       2. Attach the solver to a medium object RteSolver.init_medium(Medium)
       3. Run solution iterations with RteSolver.solve(maxiter)
     
+    Parameters
+    ----------
+    scene_params: shdom.SceneParameters
+        An object specifying scene parameters (solar direction, ground albedo...)
+    numerical_params: shdom.NumericalParameters
+        An object specifying numerical parameters (number of discrete ordinates, solution accuracy...)
+    num_stokes: int
+        The number of stokes for which to solve the RTE can be 1, 3, or 4. 
+        num_stokes=1 means unpolarized.
+        num_stokes=3 means linear polarization.
+        num_stokes=4 means full polarization.
+        
     Notes
     -----
     k-distribution not supported.
     """
     
-    def __init__(self, scene_params=None, numerical_params=None):
+    def __init__(self, scene_params=None, numerical_params=None, num_stokes=1):
         
-        self._type = 'Radiance'
+        assert num_stokes in [1, 3, 4], 'num_stokes should be {1, 3, 4}'
+        if num_stokes==1:
+            self._type = 'Radiance'
+        else:
+            self._type = 'Polarization'
+        self._nstokes = num_stokes
         
         # Start mpi (if available).
         self._masterproc = core.start_mpi()
@@ -373,9 +387,9 @@ class RteSolver(object):
     
         # Boundary conditions
         self._bcflag = 0
-        if scene_params.boundary_conditions['x'] == BoundaryCondition.open:
+        if scene_params.boundary_conditions['x'] == BC.open:
             self._bcflag += 1
-        if scene_params.boundary_conditions['y'] == BoundaryCondition.open:
+        if scene_params.boundary_conditions['y'] == BC.open:
             self._bcflag += 2
         
         # Independent pixel not supported yet
@@ -451,31 +465,46 @@ class RteSolver(object):
         ----------
         medium: shdom.OpticalMedium
             an OpticalMedium object contains legenp,iphasep properties
-            
         """
-        self._pa.iphasep = medium.iphasep.astype(np.int32)
-        self._pa.numphase = medium.numphase
+        
+        iphasep = medium.iphasep.astype(np.int32)
+        if self._bcflag == 0:
+            iphasep = np.pad(iphasep, ((0,1),(0,1),(0,0),(0,0)), 'wrap')
+        elif self._bcflag == 1:
+            iphasep = np.pad(iphasep, ((0,0),(0,1),(0,0),(0,0)), 'wrap')
+        elif self._bcflag == 2:
+            iphasep = np.pad(iphasep, ((0,1),(0,0),(0,0),(0,0)), 'wrap')
+        self._pa.iphasep = iphasep.reshape((-1, self._npart))
+        self._pa.numphase = medium.legendre_table.numphase
         
         # Determine the number of legendre coefficient for a given angular resolution
         if self._deltam:
             self._nleg = self._mm+1
         else:
             self._nleg = self._mm
-        self._nleg = self._maxleg = max(medium.maxleg, self._nleg)
+        self._nleg = self._maxleg = max(medium.legendre_table.maxleg, self._nleg)
         
         # Legenp is without the zero order term which is 1.0 for normalized phase function
-        self._pa.legenp = medium.get_legenp(self._nleg).astype(np.float32)
-        self._maxasym = medium.maxasym
-        self._maxpgl = medium.grid.num_points * medium.maxleg         
+        self._pa.legenp = medium.legendre_table.get_legenp(self._nleg).astype(np.float32)
+        self._maxasym = medium.legendre_table.maxasym
+        self._maxpgl = medium.grid.num_points * medium.legendre_table.maxleg         
 
-        if medium.numphase > 0:
-            self._maxigl = medium.numphase*(medium.maxleg + 1)
+        if medium.legendre_table.numphase > 0:
+            self._maxigl = medium.legendre_table.numphase*(medium.legendre_table.maxleg + 1)
         else:
-            self._maxigl = self._maxig*(medium.maxleg + 1)
+            self._maxigl = self._maxig*(medium.legendre_table.maxleg + 1)
     
         self._iphase = np.empty(shape=(self._maxig, self._npart), dtype=np.int32, order='F')
-        self._legen = np.empty(shape=(self._maxigl,), dtype=np.float32, order='F')        
-        self._ylmsun = np.empty(shape=(self._nlm, ), dtype=np.float32, order='F') 
+        
+        self._nstleg = medium.legendre_table.nstleg
+        
+        if medium.legendre_table.table_type == 'VECTOR':
+            self._legen = np.empty(shape=(self._nstleg, self._maxigl,), dtype=np.float32, order='F')        
+            self._ylmsun = np.empty(shape=(self._nstleg, self._nlm), dtype=np.float32, order='F') 
+       
+        elif medium.legendre_table.table_type == 'SCALAR':
+            self._legen = np.empty(shape=(self._maxigl,), dtype=np.float32, order='F')        
+            self._ylmsun = np.empty(shape=(self._nlm, ), dtype=np.float32, order='F') 
                    
 
     def set_albedo(self, medium):
@@ -486,8 +515,15 @@ class RteSolver(object):
         ----------
         medium: shdom.OpticalMedium
             an OpticalMedium object contains albedop property
-        """
-        self._pa.albedop = medium.albedop.astype(np.float32)
+        """        
+        albedop = medium.albedop.astype(np.float32)
+        if self._bcflag == 0:
+            albedop = np.pad(albedop, ((0,1),(0,1),(0,0),(0,0)), 'wrap')
+        elif self._bcflag == 1:
+            albedop = np.pad(albedop, ((0,0),(0,1),(0,0),(0,0)), 'wrap')
+        elif self._bcflag == 2:
+            albedop = np.pad(albedop, ((0,1),(0,0),(0,0),(0,0)), 'wrap')
+        self._pa.albedop = albedop.reshape((-1, self._npart))
         
         
     def set_extinction(self, medium):
@@ -499,9 +535,16 @@ class RteSolver(object):
         medium: shdom.OpticalMedium
             an OpticalMedium object contains extinctp property
         """
-        self._pa.extinctp = medium.extinctp.astype(np.float32)
-    
-    
+        extinctp = medium.extinctp.astype(np.float32)
+        if self._bcflag == 0:
+            extinctp = np.pad(extinctp, ((0,1),(0,1),(0,0),(0,0)), 'wrap')
+        elif self._bcflag == 1:
+            extinctp = np.pad(extinctp, ((0,0),(0,1),(0,0),(0,0)), 'wrap')
+        elif self._bcflag == 2:
+            extinctp = np.pad(extinctp, ((0,1),(0,0),(0,0),(0,0)), 'wrap')
+        self._pa.extinctp = extinctp.reshape((-1, self._npart))
+            
+ 
     def set_grid(self, grid):
         """
         set the base grid for SHDOM.
@@ -602,8 +645,6 @@ class RteSolver(object):
         # for NCS=1 (cosine modes only) NPHI0=INT((NPHI+2)/2),
         # otherwise NPHI0=NPHI.
         self._ncs = 2
-        self._nstokes = 1
-        self._nstleg = 1
         self._ml = self._nmu - 1
         self._mm = max(0, int(self._nphi / 2) - 1)
         self._nlm = (2 * self._mm + 1) * (self._ml + 1) - self._mm * (self._mm + 1)
@@ -625,8 +666,9 @@ class RteSolver(object):
             self._big_arrays = 2        
     
         wantmem = self._adapt_grid_factor * self._nbpts * (
-            28 + 16.5 * self._cell_to_point_ratio + self._nphi0max + self._num_sh_term_factor * self._nlm * self._big_arrays)                
-    
+            28 + 16.5 * self._cell_to_point_ratio + \
+            self._nphi0max*self._nstokes + self._num_sh_term_factor*self._nstokes*self._nlm*self._big_arrays)                
+        
         REDUCE = min(1.0, ((self._max_total_mb * 1024**2) / 4 - self._memword) / wantmem)
         self._adapt_grid_factor *= REDUCE
         assert self._adapt_grid_factor > 1.0, 'max_total_mb memory limit exceeded with just base grid.'
@@ -641,7 +683,7 @@ class RteSolver(object):
         self._maxiv = int(self._num_sh_term_factor*self._nlm*self._maxig)
         self._maxido = self._maxig*self._nphi0max
     
-        assert 4.0*(self._maxiv+self._maxig) < sys.maxsize, 'size of big sh arrays (maxiv) probably exceeds max integer number of bytes: %d' % self._maxiv
+        assert 4.0*(self._maxiv+self._maxig)*self._nstokes < sys.maxsize, 'size of big sh arrays (maxiv) probably exceeds max integer number of bytes: %d' % self._maxiv
         assert 4.0*8.0*self._maxic <= sys.maxsize, 'size of gridptr array (8*maxic) probably exceeds max integer number of bytes: %d' % 8*self._maxic
     
         self._maxnbc = int(self._maxig*3/self._nz)
@@ -651,11 +693,9 @@ class RteSolver(object):
         else:
             self._maxbcrad = int((2+self._nmu*self._nphi0max/2)*self._maxnbc)
     
+        # Array allocation
         self._sfcgridparms = np.empty(self._maxsfcpars*self._maxnbc,dtype=np.float32)               
         self._bcptr = np.empty(shape=(self._maxnbc, 2), dtype=np.int32, order='F')
-        self._bcrad = np.empty(shape=(self._maxbcrad,), dtype=np.float32, order='F')
-    
-        # Array allocation
         self._total_ext = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
         self._extinct = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
         self._albedo = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
@@ -673,17 +713,29 @@ class RteSolver(object):
         self._rshptr = np.empty(shape=(self._maxig+2,), dtype=np.int32, order='F')
         self._shptr = np.empty(shape=(self._maxig+1,), dtype=np.int32, order='F')
         self._oshptr = np.empty(shape=(self._maxig+1,), dtype=np.int32, order='F')
-        self._radiance = np.empty(shape=(self._maxiv+self._maxig,), dtype=np.float32, order='F')
-        self._source = np.empty(shape=(self._maxiv,), dtype=np.float32, order='F')
-        self._delsource = np.empty(shape=(self._maxiv,), dtype=np.float32, order='F')
         self._fluxes = np.empty(shape=(2, self._maxig,), dtype=np.float32, order='F')
         self._fluxes1 = np.empty(shape=(4, self._maxig,), dtype=np.float32, order='F')
         self._dirflux = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
         self._pa.extdirp = np.empty(shape=(self._maxpg,), dtype=np.float32, order='F')
-        self._work = np.empty(shape=(self._maxido,), dtype=np.float32, order='F')
         self._work1 = np.empty(shape=(8*self._maxig,), dtype=np.int32, order='F')
-        self._work2 = np.empty(shape=(self._maxig), dtype=np.float32, order='F')        
-           
+        
+        if self._nstokes == 1:
+            self._bcrad = np.empty(shape=(self._maxbcrad,), dtype=np.float32, order='F')
+            self._radiance = np.empty(shape=(self._maxiv+self._maxig,), dtype=np.float32, order='F')
+            self._source = np.empty(shape=(self._maxiv,), dtype=np.float32, order='F')
+            self._delsource = np.empty(shape=(self._maxiv,), dtype=np.float32, order='F')
+            self._work = np.empty(shape=(self._maxido,), dtype=np.float32, order='F')
+            self._work2 = np.empty(shape=(self._maxig), dtype=np.float32, order='F')        
+        
+        else:
+            self._bcrad = np.empty(shape=(self._nstokes,self._maxbcrad), dtype=np.float32, order='F')
+            self._radiance = np.empty(shape=(self._nstokes, self._maxiv+self._maxig), dtype=np.float32, order='F')
+            self._source = np.empty(shape=(self._nstokes, self._maxiv), dtype=np.float32, order='F')
+            self._delsource = np.empty(shape=(self._nstokes, self._maxiv), dtype=np.float32, order='F')
+            self._work = np.empty(shape=(self._nstokes*self._maxido,), dtype=np.float32, order='F')
+            self._work2 = np.empty(shape=(self._nstokes*self._maxig), dtype=np.float32, order='F')        
+            
+            
     def solve(self, maxiter, verbose=True):
         """
         Main solver routine.
@@ -823,168 +875,6 @@ class RteSolver(object):
         return self._scene_parameters.info + os.linesep + self._numerical_parameters.info
     
     
-    
-class RteSolverPolarized(RteSolver):
-    """
-    Polarized Radiative Trasnfer solver object. 
-    This object contains the interface to SHDOM internal structures and methods.
-    To solve the RTE:
-      1. Set the solver parameters with RteSolverPolarized.set_parameters(scene_parameters, numerical_parameters)
-      2. Attach the solver to a medium object RteSolverPolarized.init_medium(Medium)
-      3. Run solution iterations with RteSolverPolarized.solve(maxiter)
-    
-    Parameters
-    ----------
-    num_stokes: int
-        The number of stokes for which to solve the RTE can be 1, 3, or 4. 
-        num_stokes=1 means unpolarized.
-        num_stokes=3 means linear polarization.
-        num_stokes=4 means full polarization.
-        
-    Notes
-    -----
-    k-distribution not supported.
-    """
-    
-    def __init__(self, num_stokes, scene_params=None, numerical_params=None):
-        super(RteSolverPolarized, self).__init__(scene_params, numerical_params)
-        self._type = 'Polarization'
-        assert num_stokes in [1, 3, 4], 'num_stokes should be {1, 3, 4}'
-        self._nstokes = num_stokes
-        
-
-    def set_phase(self, phase):
-        """
-        set the phase function internal SHDOM parameters
-        
-        Parameters
-        ----------
-        phase: shdom.Phase
-          TabulatedPhase or GridPhase object.
-            
-        """
-        self._pa.iphasep = phase.iphasep.ravel()
-        self._pa.numphase = phase.numphase   
-        
-        # Determine the number of legendre coefficient for a given angular resolution
-        if self._deltam:
-            self._nleg = self._mm+1
-        else:
-            self._nleg = self._mm
-        self._nleg = self._maxleg = max(phase.maxleg, self._nleg)
-
-        # Legenp is without the zero order term which is 1.0 for normalized phase function
-        self._pa.legenp = phase.get_legenp(self._nleg)
-
-        self._maxasym = phase.maxasym
-        self._maxpgl = phase.grid.num_points * phase.maxleg         
-
-        if phase.numphase > 0:
-            self._maxigl = phase.numphase*(phase.maxleg + 1)
-        else:
-            self._maxigl = self._maxig*(phase.maxleg + 1)
-    
-        self._iphase = np.empty(shape=(self._maxig, self._npart), dtype=np.int32, order='F')
-        self._legen = np.empty(shape=(phase.nstleg, self._maxigl,), dtype=np.float32, order='F')        
-
-        if self._nstokes == 1:
-            self._nstleg = 1
-        else:
-            self._nstleg = phase.nstleg
-            
-        self._ylmsun = np.empty(shape=(self._nstleg, self._nlm), dtype=np.float32, order='F') 
-           
-
-
-    def init_memory(self):
-        """A utility function to initialize internal memory structures and parameters."""
-        
-        # Make ml and mm from nmu and nphi
-        # ML is the maximum meridional mode, MM is the maximum azimuthal mode,
-        # nphi0max: The maximum number of azimuth angles actually used
-        self._ncs = 2
-        self._ml = self._nmu - 1
-        self._mm = max(0, int(self._nphi / 2) - 1)
-        self._nlm = (2 * self._mm + 1) * (self._ml + 1) - self._mm * (self._mm + 1)
-    
-        self._nphi0max = self._nphi
-        self._memword = self._nmu*(2 + 2 * self._nphi + 2 * self._nlm + 2 * 33 *32)
-    
-        # Guess maximum number of grid points, cells, SH vector size needed
-        # but don't let MAX_TOTAL_MB be exceeded
-        if self._max_total_mb*1024**2 > 1.75*sys.maxsize:
-            self._max_total_mb > 1.75*sys.maxsize/1024**2 
-            print 'MAX_TOTAL_MB reduced to fit memory model: ', self._max_total_mb
-    
-        if self._splitacc < 0.0:
-            self._adapt_grid_factor = 1.0
-    
-        self._big_arrays = 3
-        if not self._accelflag:
-            self._big_arrays = 2        
-    
-        wantmem = self._adapt_grid_factor * self._nbpts * (
-            28 + 16.5 * self._cell_to_point_ratio + \
-            self._nphi0max*self._nstokes + self._num_sh_term_factor*self._nstokes*self._nlm*self._big_arrays)                
-    
-        REDUCE = min(1.0, ((self._max_total_mb * 1024**2) / 4 - self._memword) / wantmem)
-        self._adapt_grid_factor *= REDUCE
-        assert self._adapt_grid_factor > 1.0, 'max_total_mb memory limit exceeded with just base grid.'
-    
-        if REDUCE < 1.0:
-            print 'adapt_grid_factor reduced to ', self._adapt_grid_factor
-    
-        wantmem *= REDUCE
-        assert wantmem < sys.maxsize, 'number of words of memory exceeds max integer size: %d'% wantmem
-        self._maxig = int(self._adapt_grid_factor*self._nbpts)
-        self._maxic = int(self._cell_to_point_ratio*self._maxig)
-        self._maxiv = int(self._num_sh_term_factor*self._nlm*self._maxig)
-        self._maxido = self._maxig*self._nphi0max
-    
-        assert 4.0*(self._maxiv+self._maxig)*self._nstokes < sys.maxsize, 'size of big sh arrays (maxiv) probably exceeds max integer number of bytes: %d' % self._maxiv
-        assert 4.0*8.0*self._maxic <= sys.maxsize, 'size of gridptr array (8*maxic) probably exceeds max integer number of bytes: %d' % 8*self._maxic
-    
-        self._maxnbc = int(self._maxig*3/self._nz)
-        self._maxsfcpars = 4
-        if self._sfctype.endswith('L'):
-            self._maxbcrad = 2*self._maxnbc
-        else:
-            self._maxbcrad = int((2+self._nmu*self._nphi0max/2)*self._maxnbc)
-    
-        self._sfcgridparms = np.empty(self._maxsfcpars*self._maxnbc,dtype=np.float32)               
-        self._bcptr = np.empty(shape=(self._maxnbc, 2), dtype=np.int32, order='F')
-        self._bcrad = np.empty(shape=(self._nstokes,self._maxbcrad), dtype=np.float32, order='F')
-
-        # Array allocation
-        self._extinct = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
-        self._albedo = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
-        self._mu = np.empty(shape=(self._nmu,), dtype=np.float32, order='F')
-        self._wtdo = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
-        self._phi = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
-        self._phi0 = np.empty(shape=(self._nmu,), dtype=np.int32, order='F')
-        self._temp = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
-        self._planck = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
-        self._gridptr = np.empty(shape=(8, self._maxic), dtype=np.int32, order='F')
-        self._neighptr = np.empty(shape=(6, self._maxic), dtype=np.int32, order='F')
-        self._treeptr = np.empty(shape=(2, self._maxic), dtype=np.int32, order='F')
-        self._cellflags = np.empty(shape=(self._maxic,), dtype=np.int16, order='F')
-        self._gridpos = np.empty(shape=(3, self._maxig), dtype=np.float32, order='F')
-        self._rshptr = np.empty(shape=(self._maxig+2,), dtype=np.int32, order='F')
-        self._shptr = np.empty(shape=(self._maxig+1,), dtype=np.int32, order='F')
-        self._oshptr = np.empty(shape=(self._maxig+1,), dtype=np.int32, order='F')
-        self._radiance = np.empty(shape=(self._nstokes, self._maxiv+self._maxig), dtype=np.float32, order='F')
-        self._source = np.empty(shape=(self._nstokes, self._maxiv), dtype=np.float32, order='F')
-        self._delsource = np.empty(shape=(self._nstokes, self._maxiv), dtype=np.float32, order='F')
-        self._fluxes = np.empty(shape=(2, self._maxig,), dtype=np.float32, order='F')
-        self._fluxes1 = np.empty(shape=(4, self._maxig,), dtype=np.float32, order='F')
-        self._dirflux = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
-        self._pa.extdirp = np.empty(shape=(self._maxpg,), dtype=np.float32, order='F')
-        self._work = np.empty(shape=(self._nstokes*self._maxido,), dtype=np.float32, order='F')
-        self._work1 = np.empty(shape=(8*self._maxig,), dtype=np.int32, order='F')
-        self._work2 = np.empty(shape=(self._nstokes*self._maxig), dtype=np.float32, order='F')        
-        
-
-    
 class RteSolverArray(object):
     """
     An RteSolverArray object encapsulate several solvers e.g. for multiple spectral imaging
@@ -1050,8 +940,14 @@ class RteSolverArray(object):
         output_arguments = \
             Parallel(n_jobs=self.num_solvers, backend="threading")(
                 delayed(core.solve_rte, check_pickle=False)(
-                    nstleg=rte_solver._nstleg,
+                    npart=rte_solver._npart,
+                    extinctp=rte_solver._pa.extinctp,
+                    albedop=rte_solver._pa.albedop,
+                    planck=rte_solver._planck,
+                    iphase=rte_solver._iphase,
+                    iphasep=rte_solver._pa.iphasep,                
                     nstokes=rte_solver._nstokes,
+                    nstleg=rte_solver._nstleg,
                     npx=rte_solver._pa.npx,
                     npy=rte_solver._pa.npy,
                     npz=rte_solver._pa.npz,
@@ -1060,15 +956,12 @@ class RteSolverArray(object):
                     xstart=rte_solver._pa.xstart,
                     ystart=rte_solver._pa.ystart,
                     zlevels=rte_solver._pa.zlevels,             
-                    tempp=rte_solver._pa.tempp,
-                    extinctp=rte_solver._pa.extinctp,
-                    albedop=rte_solver._pa.albedop,
+                    tempp=rte_solver._pa.tempp,          
                     legenp=rte_solver._pa.legenp,
-                    extdirp=rte_solver._pa.extdirp,
-                    iphasep=rte_solver._pa.iphasep,
+                    extdirp=rte_solver._pa.extdirp,                            
                     nzckd=rte_solver._pa.nzckd,
                     zckd=rte_solver._pa.zckd,
-                    gasabs=rte_solver._pa.gasabs,
+                    gasabs=rte_solver._pa.gasabs,                
                     solcrit=rte_solver._solcrit,
                     nx=rte_solver._nx,
                     ny=rte_solver._ny,
@@ -1117,11 +1010,9 @@ class RteSolverArray(object):
                     ygrid=rte_solver._ygrid,
                     zgrid=rte_solver._zgrid,
                     temp=rte_solver._temp,
-                    planck=rte_solver._planck,
-                    iphase=rte_solver._iphase,
                     maxbcrad=rte_solver._maxbcrad,
                     bcptr=rte_solver._bcptr,
-                    bcrad=rte_solver._bcrad,            
+                    bcrad=rte_solver._bcrad,
                     npts=rte_solver._npts,
                     gridpos=rte_solver._gridpos,
                     ncells=rte_solver._ncells,
@@ -1147,7 +1038,7 @@ class RteSolverArray(object):
                     maxido=rte_solver._maxido,
                     verbose=verbose,
                     oldnpts=rte_solver._oldnpts,
-                    ylmsun=rte_solver._ylmsun
+                    ylmsun=rte_solver._ylmsun                    
                     ) for rte_solver in self.solver_list)
      
         # Update solvers internal structures
@@ -1155,8 +1046,8 @@ class RteSolverArray(object):
             solver._nang, solver._nphi0, solver._mu, solver._phi, solver._wtdo, solver._sfcgridparms, solver._solcrit, \
                 iters, solver._temp, solver._planck, solver._extinct, solver._albedo, solver._legen, solver._iphase, \
                 solver._ntoppts, solver._nbotpts, solver._bcptr, solver._bcrad, solver._npts, solver._gridpos, solver._ncells, solver._gridptr, \
-                solver._neighptr, solver._treeptr, solver._cellflags, solver._rshptr, solver._shptr, solver._oshptr,\
-                solver._source, solver._delsource, solver._radiance, solver._fluxes, solver._dirflux, solver._ylmsun, solver._oldnpts = \
+                solver._neighptr, solver._treeptr, solver._cellflags, solver._rshptr, solver._shptr, solver._oshptr, solver._source, \
+                solver._delsource, solver._radiance, solver._fluxes, solver._dirflux, solver._ylmsun, solver._oldnpts, solver._total_ext = \
                 output_arguments[i]
             solver._iters += iters
             solver._inradflag = True 
