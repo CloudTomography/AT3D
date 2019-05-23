@@ -229,17 +229,17 @@ class SingleVoxel(Generator):
     @classmethod
     def update_parser(self, parser):
         parser.add_argument('--nx', 
-                            default=3,
+                            default=10,
                             type=int, 
                             help='(default value: %(default)s) Number of grid cell in x (North) direction')
         
         parser.add_argument('--ny', 
-                            default=3,
+                            default=10,
                             type=int, 
                             help='(default value: %(default)s) Number of grid cell in y (East) direction')
     
         parser.add_argument('--nz', 
-                            default=3,
+                            default=10,
                             type=int, 
                             help='(default value: %(default)s) Number of grid cell in z (Up) direction')
     

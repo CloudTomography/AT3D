@@ -1,7 +1,6 @@
 """
 Optimization and related objects to monitor and log the optimization proccess.
 """
-
 import shdom
 import numpy as np
 import core, time, os
@@ -10,7 +9,7 @@ from shdom import GridData
 import dill as pickle
 import cv2
 
-        
+    
 class SummaryWriter(object):
     """
     A wrapper for tensorboardX summarywriter with some basic summary writing implementation.

@@ -58,77 +58,85 @@ class Grid(object):
     """    
     
     def __init__(self, **kwargs):
-        
-        # 3D grid with grids
-        if kwargs.has_key('x') and kwargs.has_key('y') and kwargs.has_key('z'):
-            self._type = '3D'
-            self.x = kwargs['x']
-            self.y = kwargs['y']
-            self.z = kwargs['z']
-            self._bounding_box = BoundingBox(self.xmin, self.ymin, self.zmin, self.xmax, self.ymax, self.zmax)
-            
-        # 3D grid with bounding box
-        elif kwargs.has_key('bounding_box') and kwargs.has_key('nx') and kwargs.has_key('ny'):
-            self._type = '3D'
-            bb = kwargs['bounding_box']
-            self._bounding_box = bb
-            nx, ny = kwargs['nx'], kwargs['ny']
-            self.x = np.linspace(bb.xmin, bb.xmax, nx)
-            self.y = np.linspace(bb.ymin, bb.ymax, ny)
+        self._type = self.get_grid_type(kwargs)
+        if self.type == '3D':
             if kwargs.has_key('z'):
                 self.z = kwargs['z']
-            elif kwargs.has_key('nz'):
-                nz = kwargs['nx']
-                self.z = np.linspace(bb.zmin, bb.zmax, nz)
             else:
-                raise AttributeError('z or nz are missing')
-            
-        # 1D grid 
-        elif kwargs.has_key('z'):
-            self._type = '1D'
+                self.z = np.linspace(bounding_box.zmin, bounding_box.zmax, kwargs['nz'])
+                
+            if kwargs.has_key('x') and kwargs.has_key('y'):
+                self.x = kwargs['x']
+                self.y = kwargs['y']
+                self._bounding_box = BoundingBox(self.xmin, self.ymin, self.zmin, self.xmax, self.ymax, self.zmax)
+            else:
+                self._bounding_box = kwargs['bounding_box']
+                self.x = np.linspace(kwargs['bounding_box'].xmin, kwargs['bounding_box'].xmax, kwargs['nx'])
+                self.y = np.linspace(kwargs['bounding_box'].ymin, kwargs['bounding_box'].ymax, kwargs['ny'])
+
+        elif self.type == '1D':
             self.z = kwargs['z']
+            self._bounding_box = kwargs['bounding_box']
             self._nx = self._ny = 1
-            self._x = self._y = self._bounding_box = None
-         
+            self._x = self._y = None
+        
+        elif self.type == 'Homogeneous':
+            self._bounding_box = kwargs['bounding_box']
+            self._nx = self._ny = self._nz = 1
+            self._x = self._y = self._z = None         
+            
+
+    
+    def get_grid_type(self, kwargs):
+        """TODO"""
+        if kwargs.has_key('x') and kwargs.has_key('y') and kwargs.has_key('z') or \
+           kwargs.has_key('nx') and kwargs.has_key('ny') and kwargs.has_key('nz') and kwargs.has_key('bounding_box') or \
+           kwargs.has_key('nx') and kwargs.has_key('ny') and kwargs.has_key('z'):
+            grid_type = '3D'
+        
+        elif kwargs.has_key('z') and kwargs.has_key('bounding_box'): 
+            grid_type = '1D'
+            
+        elif kwargs.has_key('bounding_box'):
+            grid_type = 'Homogeneous'
+            
         else:
-            raise AttributeError('kwargs in Grid initialization are not defined')
-    
-    
-    def get_common_x_grid(self, other):
+            raise AttributeError('Error inputs for grid definition')      
+        
+        return grid_type
+            
+
+    def get_common_x(self, other):
         """
-        Find the common x grid which maintains a the minimum dx (distance between two grid points).
+        Find the common x which maintains a the minimum dx (distance between two grid points).
         
         Parameters
         ----------
         other: Grid object
-           The other grid for which to find a common x grid.
+           The other for which to find a common x.
            
         Returns
         -------
         x: np.array(dtype=np.float32)
             The common x Grid.
         """
-        if self.type == '1D' and other.type == '1D':
-            return None       
-        if self.type == '3D' and other.type == '1D':
-            return self.x
-        if self.type == '1D' and other.type == '3D':
+        if other.type == '1D' or other.type == 'Homogeneous' or np.array_equiv(self.x, other.x):
+            return self.x       
+        elif self.type == '1D' or self.type == 'Homogeneous':
             return other.x
-        
-        if np.array_equiv(self.x, other.x):
-            return self.x
+
 
         xmax = max(self.xmax, other.xmax)
         xmin = min(self.xmin, other.xmin) 
         x_size = xmax - xmin      
         dx = min(self.dx, other.dx)
-        nx = int(y_size / dx)        
+        nx = int(x_size / dx)        
         return np.linspace(xmin, xmax, nx, dtype=np.float32)  
     
     
-    def get_common_y_grid(self, other):
+    def get_common_y(self, other):
         """
-        Find the common y grid which maintains a the minimum dy (distance between two grid points).
+        Find the common y which maintains a the minimum dy (distance between two grid points).
         
         Parameters
         ----------
@@ -138,13 +146,11 @@ class Grid(object):
         Returns
         -------
         y: np.array(dtype=np.float32)
-            The common y Grid.
-        """
-        if self.type == '1D' and other.type == '1D':
-            return None       
-        if self.type == '3D' and other.type == '1D':
-            return self.y
-        if self.type == '1D' and other.type == '3D':
+            The common y.
+        """        
+        if other.type == '1D' or other.type == 'Homogeneous' or np.array_equiv(self.y, other.y):
+            return self.y       
+        elif self.type == '1D' or self.type == 'Homogeneous':
             return other.y
         
         if np.array_equiv(self.y, other.y):
@@ -158,9 +164,9 @@ class Grid(object):
         return np.linspace(ymin, ymax, ny, dtype=np.float32)              
        
         
-    def get_common_z_grid(self, other):
+    def get_common_z(self, other):
         """
-        Find the common z grid which maintains a the high resolution z grid.
+        Find the common z which maintains a the high resolution z grid.
         
         Parameters
         ----------
@@ -170,11 +176,12 @@ class Grid(object):
         Returns
         -------
         z: np.array(dtype=np.float32)
-            The common z Grid.
+            The common z.
         """        
-        
-        if np.array_equiv(self.z, other.z):
-            return self.z
+        if other.type == '1D' or other.type == 'Homogeneous' or np.array_equiv(self.z, other.z):
+            return self.z  
+        elif self.type == '1D' or self.type == 'Homogeneous':
+            return other.z
         
         # Bottom part of the atmosphere (no grid intersection)
         if self.zmin < other.zmin:
@@ -214,17 +221,23 @@ class Grid(object):
     
         return np.concatenate((z_bottom, z_middle, z_top))      
 
+
     def __add__(self, other):
         """
         Add two grids by finding the common grid which maintains the higher resolution grid.
         """
-        x_grid = self.get_common_x_grid(other)
-        y_grid = self.get_common_y_grid(other)
-        z_grid = self.get_common_z_grid(other)
-        if x_grid is not None and y_grid is not None:
+        x_grid = self.get_common_x(other)
+        y_grid = self.get_common_y(other)
+        z_grid = self.get_common_z(other)
+        
+        if x_grid is not None and y_grid is not None and z_grid is not None:
             grid = Grid(x=x_grid, y=y_grid, z=z_grid)
         else:
-            grid = Grid(z=z_grid)
+            bounding_box = self.bounding_box + other.bounding_box
+            if x_grid is None and y_grid is None and z_grid is not None:
+                grid = Grid(bounding_box=bounding_box, z=z_grid)
+            elif x_grid is None and y_grid is None and z_grid is None:
+                grid = Grid(bounding_box=bounding_box)
         return grid
     
     
@@ -291,7 +304,9 @@ class Grid(object):
 
     @property
     def shape(self):
-        if self.type == '1D':
+        if self.type == 'Homogeneous':
+            return ()
+        elif self.type == '1D':
             return (self.nz,)
         else:
             return (self.nx, self.ny, self.nz)
@@ -351,9 +366,11 @@ class GridData(object):
     def __init__(self, grid, data):
         self._type = grid.type
         self._grid = grid
-        self._data = data
+        self._data = np.array(data)
         self._shape = self._data.shape[:3]
-        self._ndim = self._data.ndim        
+        self._ndim = self._data.ndim    
+        if self.type == 'Homogeneous' and self.ndim is not 0:
+            raise AttributeError('Grid is Homogeneous but data dimension is:{}'.format(self.ndim))
         if self.type == '1D' and self.ndim is not 1:
             raise AttributeError('Grid is 1D but data dimension is:{}'.format(self.ndim))
         if self.type == '3D' and self.ndim < 3:
@@ -361,8 +378,9 @@ class GridData(object):
         
         assert self.shape == grid.shape, 'Data shape is {}, grid shape is {}'.format(self.shape, grid.shape)
 
-        self._linear_interpolator1d = interp1d(grid.z, self.data, assume_sorted=True, copy=False, bounds_error=False, fill_value=0.0) 
-        self._nearest_interpolator1d = interp1d(grid.z, self.data, assume_sorted=True, kind='nearest', copy=False, bounds_error=False, fill_value=0)
+        if self.type != 'Homogeneous':
+            self._linear_interpolator1d = interp1d(grid.z, self.data, assume_sorted=True, copy=False, bounds_error=False, fill_value=0.0) 
+            self._nearest_interpolator1d = interp1d(grid.z, self.data, assume_sorted=True, kind='nearest', copy=False, bounds_error=False, fill_value=0)
         if self.type == '3D':
             self._linear_interpolator3d = RegularGridInterpolator((grid.x, grid.y, grid.z), self.data, bounds_error=False, fill_value=0.0)
             self._nearest_interpolator3d = RegularGridInterpolator((grid.x, grid.y, grid.z), self.data, method='nearest', bounds_error=False, fill_value=0)
@@ -402,25 +420,52 @@ class GridData(object):
         return GridData(grid, data) 
     
     
-    
+    def squeeze_dims(self):
+        """TODO"""
+        grid = self.grid
+        data = self.data
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)        
+            if self.type == '3D':
+                std_x = np.nanstd(data, axis=0, ddof=-1) 
+                std_y = np.nanstd(data, axis=1, ddof=-1)
+                if (np.nanmax(std_x) < 1e-5 and np.nanmax(std_y) < 1e-5):
+                    std_z = np.nanstd(data, axis=2, ddof=-1)
+                    if np.nanmax(std_z) < 1e-5:
+                        data = np.nanmean(data)
+                        grid = shdom.Grid(bounding_box=grid.bounding_box)
+                    else:
+                        data = np.nanmean(np.nanmean(data, axis=0), axis=0)
+                        grid = shdom.Grid(bounding_box=grid.bounding_box, z=grid.z)
+            elif self.type == '1D':
+                std = np.nanstd(data, ddof=-1)
+                if np.nanmax(std) < 1e-5: 
+                    data = np.nanmean(data)
+                    grid = shdom.Grid(bounding_box=grid.bounding_box)   
+        return GridData(grid, np.nan_to_num(data))
+
+        
     def resample(self, grid, method='linear'):
         """Resample data to a new Grid."""
         if self.grid == grid:
             return self        
         else:
-            if self.type == '1D':
+            if self.type =='Homogeneous':
+                data = self.data
+            elif self.type == '1D':
                 if method == 'linear':
                     data = self._linear_interpolator1d(grid.z)
                 elif method == 'nearest':
                     data = self._nearest_interpolator1d(grid.z)
                 if grid.type == '3D':
                     data = np.tile(data[np.newaxis, np.newaxis, :], (grid.nx, grid.ny, 1))
-            else:
+            elif self.type == '3D':
                 if method == 'linear':
                     data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1))
                 elif method == 'nearest':
                     data = self._nearest_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1)) 
         return GridData(grid, data.astype(self.data.dtype))
+    
     
     @property
     def grid(self):
@@ -491,48 +536,12 @@ class BoundingBox(object):
     
     
     def __add__(self, other):
-        xmin = self.xmin
-        if np.isfinite(other.xmin):
-            if np.isfinite(xmin):
-                xmin = min(xmin, other.xmin)
-            else:
-                xmin = other.xmin
-            
-        ymin = self.ymin
-        if np.isfinite(other.ymin):
-            if np.isfinite(ymin):
-                ymin = min(ymin, other.ymin)
-            else:
-                ymin = other.ymin
-                
-        zmin = self.zmin
-        if np.isfinite(other.zmin):
-            if np.isfinite(zmin):
-                zmin = min(zmin, other.zmin)
-            else:
-                zmin = other.zmin
-        
-        xmax = self.xmax
-        if np.isfinite(other.xmax):
-            if np.isfinite(xmax):
-                xmax = max(xmax, other.xmax)
-            else:
-                xmax = other.xmax
-            
-        ymax = self.ymax
-        if np.isfinite(other.ymax):
-            if np.isfinite(ymax):
-                ymax = max(ymax, other.ymax)
-            else:
-                ymax = other.ymax
-                
-        zmax = self.zmax
-        if np.isfinite(other.zmax):
-            if np.isfinite(zmax):
-                zmax = min(zmax, other.zmax)
-            else:
-                zmax = other.zmax
-                
+        xmin = min(self.xmin, other.xmin)
+        ymin = min(self.ymin, other.ymin)
+        zmin = min(self.zmin, other.zmin)
+        xmax = max(self.xmax, other.xmax)
+        ymax = max(self.ymax, other.ymax)
+        zmax = max(self.zmax, other.zmax)
         return BoundingBox(xmin, ymin, zmin, xmax, ymax, zmax)
 
  
@@ -600,7 +609,7 @@ def load_forward_model(directory):
     # Load the ground truth medium for error analysis and ground-truth known phase and albedo
     medium_path = os.path.join(directory, 'ground_truth_medium')
     if os.path.exists(medium_path):
-        medium = shdom.Medium()
+        medium = shdom.OpticalMedium()
         medium.load(path=medium_path)   
     else: 
         medium = None

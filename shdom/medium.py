@@ -84,7 +84,7 @@ class OpticalMedium(object):
     The OpticalMedium object encapsulates an atmospheric optical medium with multiple Scatterers.
     This means specifying extinction, single scattering albedo and phase function at every point in the domain for every scatterer.
     """
-    def __init__(self, grid):
+    def __init__(self, grid=None):
         self._scatterers = OrderedDict()
         self._num_scatterers = 0
         self.set_grid(grid)
@@ -251,38 +251,37 @@ class MicrophysicalMedium(object):
         A grid for the microphysical medium.
     """
     def __init__(self, grid=None):
-        self.set_grid(grid)
+        self._grid = grid
         self._lwc = None
         self._reff = None
         self._veff = None
-        
-        
+    
+    def set_grid(self, grid):
+        """
+        TODO
+        """
+        self._grid = grid       
+
     def set_lwc(self, lwc):
         """
         TODO
         """
-        self._lwc = lwc.resample(self.grid)
+        self._lwc = lwc
 
 
     def set_reff(self, reff):
         """
         TODO
         """
-        self._reff = reff.resample(self.grid)
+        self._reff = reff
         
         
     def set_veff(self, veff):
         """
         TODO
         """
-        self._veff = veff.resample(self.grid)
+        self._veff = veff
 
-
-    def set_grid(self, grid):
-        """
-        TODO
-        """
-        self._grid = grid  
 
 
     def load_grid(self, path):
@@ -381,7 +380,7 @@ class MicrophysicalMedium(object):
         .
         ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]  veff[ix, iy, iz](optional)
         """ 
-        self.set_grid(self.load_grid(path))
+        grid = self.load_grid(path)
         data = np.genfromtxt(path, skip_header=3)
         
         grid_index = data[:, :3].astype(int)
@@ -392,18 +391,19 @@ class MicrophysicalMedium(object):
         else:
             veff = veff * np.ones_like(reff)
         
-        particle_levels = np.array([z in grid_index[:, 2] for z in range(self.grid.nz)], dtype=int)
-        lwc_data  = np.zeros(shape=(self.grid.nx, self.grid.ny, self.grid.nz), dtype=np.float32)
-        reff_data = np.zeros(shape=(self.grid.nx, self.grid.ny, self.grid.nz), dtype=np.float32)
-        veff_data = np.zeros(shape=(self.grid.nx, self.grid.ny, self.grid.nz), dtype=np.float32)
+        particle_levels = np.array([z in grid_index[:, 2] for z in range(grid.nz)], dtype=int)
+        lwc_data  = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=np.nan)
+        reff_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=np.nan)
+        veff_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=np.nan)
         lwc_data[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]]  = lwc
         reff_data[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]] = reff
         veff_data[grid_index[:, 0], grid_index[:, 1], grid_index[:, 2]] = veff
         
-        self.set_lwc(shdom.GridData(self.grid, lwc_data))
-        self.set_reff(shdom.GridData(self.grid, reff_data))
-        self.set_veff(shdom.GridData(self.grid, veff_data))
-
+        self.set_lwc(shdom.GridData(grid, lwc_data).squeeze_dims())
+        self.set_reff(shdom.GridData(grid, reff_data).squeeze_dims())
+        self.set_veff(shdom.GridData(grid, veff_data).squeeze_dims())
+        self.set_grid(grid)
+        
     @property
     def grid(self):
         return self._grid

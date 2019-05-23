@@ -126,20 +126,23 @@ def init_atmosphere(args, CloudGenerator, AirGenerator):
     else:
         cloud_generator.init_grid()
 
+    cloud_generator.init_extinction()
+    
     # Define the known albedo and phase (either ground-truth or specified, but it is not optimized)
     if args.use_forward_albedo:
-        cloud_generator.set_albedo(medium_gt.albedo)
+        cloud_generator.set_albedo(medium_gt.get_scatterer('cloud').albedo)
     else:
         cloud_generator.init_albedo()
         
     if args.use_forward_phase:
-        cloud_generator.set_phase(medium_gt.phase)
+        cloud_generator.set_phase(medium_gt.get_scatterer('cloud').phase)
     else:
         cloud_generator.init_phase()
-        
-    # Define an unknown extinction field to recover
-    cloud_generator.init_extinction()
-    extinction = shdom.Parameters.Extinction()
+           
+    cloud = shdom.UnknownScatterer(extinction=cloud_generator.extinction,
+                                   albedo=cloud_generator.albedo,
+                                   phase=cloud_generator.phase)
+    
     extinction.initialize(cloud_generator.extinction, 
                           min_bound=0.0,
                           max_bound=None)
@@ -175,14 +178,6 @@ if __name__ == "__main__":
     # Load forward model
     medium_gt, rte_solver, measurements = shdom.load_forward_model(args.input_dir)
     
-    # Multi-band optimization currently not supported
-    if measurements.sensors.type == 'SensorArray':
-        wavelengths = map(lambda x: x.wavelength, measurements.sensors.sensor_list)
-        assert np.all(np.isclose(np.diff(wavelengths), 0.0)), 'Multi-band optimization currently not supported.'
-        args.wavelength = wavelengths[0]
-    else:
-        args.wavelength = measurements.sensors.wavelength
-        
     # Init medium and solver
     medium, mask, extinction, air = init_atmosphere(args, CloudGenerator, AirGenerator)
     rte_solver.init_medium(medium)
