@@ -401,6 +401,7 @@ class RteSolver(object):
         self._delg = np.ones(1, order='F')
         self._pa.nzckd = 0
         self._baseout = False
+        self._npart = 1
 
 
     def set_numerics(self, numerical_params):
@@ -474,7 +475,7 @@ class RteSolver(object):
             iphasep = np.pad(iphasep, ((0,0),(0,1),(0,0),(0,0)), 'wrap')
         elif self._bcflag == 2:
             iphasep = np.pad(iphasep, ((0,1),(0,0),(0,0),(0,0)), 'wrap')
-        self._pa.iphasep = iphasep.reshape((-1, self._npart))
+        self._pa.iphasep = iphasep.reshape((-1, medium.num_scatterers))
         self._pa.numphase = medium.legendre_table.numphase
         
         # Determine the number of legendre coefficient for a given angular resolution
@@ -523,7 +524,7 @@ class RteSolver(object):
             albedop = np.pad(albedop, ((0,0),(0,1),(0,0),(0,0)), 'wrap')
         elif self._bcflag == 2:
             albedop = np.pad(albedop, ((0,1),(0,0),(0,0),(0,0)), 'wrap')
-        self._pa.albedop = albedop.reshape((-1, self._npart))
+        self._pa.albedop = albedop.reshape((-1, medium.num_scatterers))
         
         
     def set_extinction(self, medium):
@@ -542,7 +543,7 @@ class RteSolver(object):
             extinctp = np.pad(extinctp, ((0,0),(0,1),(0,0),(0,0)), 'wrap')
         elif self._bcflag == 2:
             extinctp = np.pad(extinctp, ((0,1),(0,0),(0,0),(0,0)), 'wrap')
-        self._pa.extinctp = extinctp.reshape((-1, self._npart))
+        self._pa.extinctp = extinctp.reshape((-1, medium.num_scatterers))
             
  
     def set_grid(self, grid):
@@ -692,7 +693,7 @@ class RteSolver(object):
             self._maxbcrad = 2*self._maxnbc
         else:
             self._maxbcrad = int((2+self._nmu*self._nphi0max/2)*self._maxnbc)
-    
+        
         # Array allocation
         self._sfcgridparms = np.empty(self._maxsfcpars*self._maxnbc,dtype=np.float32)               
         self._bcptr = np.empty(shape=(self._maxnbc, 2), dtype=np.int32, order='F')

@@ -17,10 +17,6 @@ from collections import OrderedDict
 class Scatterer(object):
     """TODO"""
     def __init__(self, extinction=None, albedo=None, phase=None):
-        
-        assert extinction.grid == albedo.grid == phase.grid, \
-               'Different grids for phase, albedo and extinction is not supported.'        
-        
         self.grid = extinction.grid
         self.extinction = extinction
         self.albedo = albedo
@@ -29,15 +25,30 @@ class Scatterer(object):
         
     def resample(self, grid):
         """TODO"""
-        if self.grid == grid:
-            return self
-        else:
-            extinction = self.extinction.resample(grid)
-            albedo = self.albedo.resample(grid)
-            phase = self.phase.resample(grid)            
-            return shdom.Scatterer(extinction, albedo, phase)
+        extinction = self.extinction.resample(grid)
+        albedo = self.albedo.resample(grid)
+        phase = self.phase.resample(grid)            
+        return shdom.Scatterer(extinction, albedo, phase)
         
+
+    def get_mask(self, threshold):
+        """
+        Get a mask based on the optical extinction.
         
+        Parameters
+        ----------
+        threshold: float
+            A threshold which above this value it is considered a populated voxel.
+        
+        Returns
+        -------
+        mask: shdom.GridData object
+            A boolean mask with True for dense voxels and False for optically thin regions.
+        """
+        data = self.extinction.data > threshold
+        return shdom.GridData(self.grid, data) 
+    
+    
     @property
     def extinction(self):
         return self._extinction
@@ -125,12 +136,13 @@ class OpticalMedium(object):
         self._num_scatterers += 1
         if name is None:
             name = 'scatterer{:d}'.format(self._num_scatterers)
-        self.scatterers[name] = scatterer.resample(self.grid)
+        self.scatterers[name] = scatterer
         
-        extinctp = self.scatterers[name].extinction.data[...,np.newaxis]
-        albedop = self.scatterers[name].albedo.data[...,np.newaxis]
-        legendre_table = self.scatterers[name].phase.legendre_table  
-        iphasep = self.scatterers[name].phase.iphasep[...,np.newaxis]            
+        resampled_scatterer = scatterer.resample(self.grid)
+        extinctp = resampled_scatterer.extinction.data[...,np.newaxis]
+        albedop = resampled_scatterer.albedo.data[...,np.newaxis]
+        legendre_table = resampled_scatterer.phase.legendre_table  
+        iphasep = resampled_scatterer.phase.iphasep[...,np.newaxis]            
 
         if first_particle: 
             self._extinctp = extinctp
@@ -174,43 +186,6 @@ class OpticalMedium(object):
         file.close()
         self.__dict__ = pickle.loads(data)    
 
-
-    def get_mask(self, threshold):
-        """
-        Get a cloud mask based on the optical extinction.
-        
-        Parameters
-        ----------
-        threshold: float
-            A threshold which above this value it is considered a cloudy voxel.
-        
-        Returns
-        -------
-        mask: shdom.GridData object
-            A boolean mask with True making cloudy voxels and False marking non-cloud region.
-        """
-        data = self.extinction.data > threshold
-        return GridData(self.grid, data)
-    
-    
-    def apply_mask(self, mask):
-        """
-        Zero down the medium properties where the cloud mask is False.
-        
-        Parameters
-        ----------
-        mask: shdom.GridData object
-            A boolean mask with True making cloudy voxels and False marking non-cloud region.    
-        """
-        mask_data = np.array(mask.resample(self.grid, method='nearest'), dtype=np.float)
-        mask = shdom.GridData(self.grid, mask_data)
-        self.extinction *= mask
-        self.albedo *= mask
-        if self.phase.type == 'Tabulated':
-            self.phase._index *= mask
-        elif self.phase.type == 'Grid':
-            self.phase * mask
-    
 
     @property
     def grid(self):

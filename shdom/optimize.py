@@ -9,7 +9,212 @@ from shdom import GridData
 import dill as pickle
 import cv2
 
+
+class GridPhaseEstimator(shdom.GridPhase):
+    """TODO"""
+    def __init__(self, legendre_table, index):
+        super(GridPhaseEstimator, self).__init__(legendre_table, index)
+
+   
+class GridDataEstimator(shdom.GridData):
+    """TODO"""
+    def __init__(self, grid_data, min_bound=None, max_bound=None):
+        super(GridDataEstimator, self).__init__(grid_data.grid, grid_data.data)
+        self._min_bound = min_bound
+        self._max_bound = max_bound
+        self._mask = None
+        self._num_parameters = self.init_num_parameters()
+             
+              
+    def set_state(self, state):
+        """TODO"""
+        if self.mask is None:
+            self._data = np.reshape(state, (self.shape))
+        else:
+            self._data[self.mask.data] = state
+        
+        
+    def get_state(self):
+        """TODO"""
+        if self.mask is None:
+            return self.data.ravel()
+        else:
+            return self.data[self.mask.data]
     
+    
+    def init_num_parameters(self):
+        """TODO"""
+        if self.mask is None:
+            num_parameters = self.data.size
+        else:
+            num_parameters = np.count_nonzero(self.mask.data)
+        return num_parameters
+
+
+    def set_mask(self, mask):
+        """
+        TODO
+        
+        Parameters
+        ----------
+        mask: shdom.GridData object
+            A boolean mask with True making cloudy voxels and False marking non-cloud region.     
+        """
+        self._mask = mask.resample(self.grid, method='nearest')
+        self._num_parameters = self.init_num_parameters()
+        
+        
+    def get_bounds(self):
+        """TODO
+        bounds to a list of bounds that the scipy minimize expects."""
+        return [(self.min_bound, self.max_bound)] * self.num_parameters  
+    
+    
+    @property
+    def mask(self):
+        return self._mask
+    
+    @property
+    def num_parameters(self):
+        return self._num_parameters
+    
+    @property
+    def min_bound(self):
+        return self._min_bound
+    
+    @property
+    def max_bound(self):
+        return self._max_bound
+    
+    
+class ScattererEstimator(shdom.Scatterer):
+    """TODO"""
+    def __init__(self, extinction=None, albedo=None, phase=None):
+        super(ScattererEstimator, self).__init__(extinction, albedo, phase)
+        self._mask = None
+        self._estimators = self.init_estimators()
+        self._num_parameters = self.init_num_parameters()
+    
+    def init_estimators(self):
+        """TODO"""
+        estimators = []
+        if self.extinction.__class__ == shdom.GridDataEstimator:
+            estimators.append(self.extinction)
+        if self.albedo.__class__ == shdom.GridDataEstimator:
+            raise NotImplementedError("Albedo estimation not implemented")
+        if self.phase.__class__ == shdom.GridPhaseEstimator:
+            raise NotImplementedError("Phase estimation not implemented")           
+        return estimators
+
+    
+    def init_num_parameters(self):
+        """TODO"""
+        num_parameters = 0
+        for estimator in self.estimators:
+            num_parameters += estimator.num_parameters
+        return num_parameters
+
+
+    def set_mask(self, mask):
+        """
+        TODO
+        
+        Parameters
+        ----------
+        mask: shdom.GridData object
+            A boolean mask with True making cloudy voxels and False marking non-cloud region.     
+        """
+        self._mask = mask.resample(self.grid, method='nearest')
+        for estimator in self.estimators:
+            estimator.set_mask(mask)
+        self._num_parameters = self.init_num_parameters()
+       
+       
+    def set_state(self, state):
+        """TODO"""
+        for estimator in self.estimators:
+            estimator.set_state(state)        
+        
+        
+    def get_state(self):
+        """
+        TODO
+        """
+        state = np.empty(shape=(0), dtype=np.float64)
+        for estimator in self.estimators:
+            state = np.concatenate((state, estimator.get_state()))
+        return state
+
+
+    def get_bounds(self):
+        """TODO
+        bounds to a list of bounds that the scipy minimize expects."""
+        bounds = []
+        for estimator in self.estimators:
+            bounds.extend(estimator.get_bounds())
+        return bounds
+    
+    
+    @property
+    def estimators(self):
+        return self._estimators
+    
+    @property
+    def num_parameters(self):
+        return self._num_parameters
+
+    @property
+    def mask(self):
+        return self._mask
+    
+    
+class OpticalMediumEstimator(shdom.OpticalMedium):
+    """TODO"""
+    def __init__(self, grid=None):
+        super(OpticalMediumEstimator, self).__init__(grid)
+        self._estimators = []
+        self._num_parameters = []
+        
+    def add_scatterer(self, scatterer, name=None):
+        """TODO"""
+        super(OpticalMediumEstimator, self).add_scatterer(scatterer, name)
+        if scatterer.__class__ == shdom.ScattererEstimator:
+            self._estimators.append(scatterer)
+            self._num_parameters.append(scatterer.num_parameters)
+            
+            
+    def set_state(self, state):
+        """TODO"""
+        states = np.split(state, np.cumsum(self.num_parameters[:-1]))
+        for estimator, state in zip(self.estimators, states):
+            estimator.set_state(state)
+    
+    
+    def get_state(self):
+        """TODO"""
+        state = np.empty(shape=(0),dtype=np.float64)
+        for estimator in self.estimators:
+            state = np.concatenate((state, estimator.get_state()))
+        return state
+
+
+    def get_bounds(self):
+        """TODO
+        bounds to a list of bounds that the scipy minimize expects."""
+        bounds = []
+        for estimator in self.estimators:
+            bounds.extend(estimator.get_bounds())
+        return bounds
+    
+    
+    @property
+    def estimators(self):
+        return self._estimators
+    
+    @property
+    def num_parameters(self):
+        return self._num_parameters
+        
 class SummaryWriter(object):
     """
     A wrapper for tensorboardX summarywriter with some basic summary writing implementation.
@@ -115,8 +320,6 @@ class SummaryWriter(object):
         return self._tf_writer
     
     
-        
-
 class SpaceCarver(object):
     """
     SpaceCarver object recovers the convex hull of the cloud based on multi-view sensor geometry.
@@ -132,14 +335,14 @@ class SpaceCarver(object):
         
         self._measurements = measurements
         
-        if measurements.sensors.type == 'SensorArray':
-            self._sensors = measurements.sensors.sensor_list
+        if measurements.camera.projection.__class__ == shdom.MultiViewProjection:
+            self._projections = measurements.camera.projection.projection_list
         else:
-            self._sensors = [measurements.sensors]
+            self._projections = [measurements.camera.projection]
         self._images = measurements.images
         
         
-    def carve(self, grid, agreement=0.75):
+    def carve(self, grid, threshold=None, agreement=0.75):
         """
         Carves out the cloud geometry on the grid. 
         A threshold on the radiances is found by a cv2 adaptive image threshold.
@@ -148,7 +351,11 @@ class SpaceCarver(object):
         ----------
         grid: shdom.Grid
             A grid object.
-        agreement: the precentage of pixels that should agree on a cloudy voxels to set it to True in the mask
+        threshold: float
+            A threshold on the image radiances for cloud masking. 
+            If not specified and adaptive threshold is used.
+        agreement: float
+            the precentage of pixels that should agree on a cloudy voxels to set it to True in the mask
         
         Returns
         -------
@@ -159,12 +366,16 @@ class SpaceCarver(object):
         self._rte_solver.set_grid(grid)
         volume = np.zeros((grid.nx, grid.ny, grid.nz))
         
-        for sensor, image in zip(self._sensors, self._images):
-            uint8 = np.uint8(255*image/image.max())
-            threshold = cv2.threshold(uint8, 0, 1, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]           
-
+        for projection, image in zip(self._projections, self._images):
+            
+            if threshold is None:
+                uint8 = np.uint8(255*image/image.max())
+                image_mask = cv2.threshold(uint8, 0, 1, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]           
+            else:
+                image_mask = image > threshold
+                
             radiance = image.ravel(order='F')
-            sensor = sensor[threshold.ravel(order='F') == 1]
+            projection = projection[image_mask.ravel(order='F') == 1]
             
             carved_volume = core.space_carve(
                 nx=grid.nx,
@@ -182,12 +393,12 @@ class SpaceCarver(object):
                 ygrid=self._rte_solver._ygrid,
                 zgrid=self._rte_solver._zgrid,
                 gridpos=self._rte_solver._gridpos,
-                camx=sensor.x,
-                camy=sensor.y,
-                camz=sensor.z,
-                cammu=sensor.mu,
-                camphi=sensor.phi,
-                npix=sensor.npix,
+                camx=projection.x,
+                camy=projection.y,
+                camz=projection.z,
+                cammu=projection.mu,
+                camphi=projection.phi,
+                npix=projection.npix,
             )
             volume += carved_volume.reshape(grid.nx, grid.ny, grid.nz)
         
@@ -207,26 +418,17 @@ class Optimizer(object):
     To run the optimization the following methods should be called:
        [required] optimizer.set_measurements()
        [required] optimizer.set_rte_solver()
-       [optional] optimizer.set_cloud_mask()
-       [required] optimizer.add_parameter(parameter) 
-       [optional] optimizer.set_known_medium(air)
-       [optional] optimizer.set_writer(writer) 
+       [required] optimizer.set_medium() 
+       [optional] optimizer.set_writer() 
     
     Notes
     -----
     Currently only Extinction optimization is supported.
     """
     def __init__(self):
-        self._parameters = []
-        self._known_medium = None
+        self._medium = None
         self._rte_solver = None
         self._measurements = None
-        self._cloud_mask = None
-        self._gradient_mask = None
-        self._num_parameters = 0
-        self._extinction_dependency = False
-        self._albedo_dependency = False
-        self._phase_dependency = False 
         self._writer = None
         self._images = None
         self._iteration = 0
@@ -244,44 +446,28 @@ class Optimizer(object):
             A measurements object storing the images and sensor geometry
         """
         self._measurements = measurements
+    
+    def set_medium_estimator(self, medium):
+        """
+        Set the MediumEstimator for the optimizer.
         
-        
+        Parameters
+        ----------
+        medium: shdom.MediumEstimator
+            The MediumEstimator
+        """
+        self._medium = medium       
+
     def set_rte_solver(self, rte_solver):
         """
         Set the RteSolver for the SHDOM iterations.
         
         Parameters
         ----------
-        rte_solver: shdom.RteSolver object
-            The RteSolver initialized to the medium (RteSolver.init_medium() method).
+        rte_solver: shdom.RteSolver
+            The RteSolver
         """
         self._rte_solver = rte_solver
-
-    def set_cloud_mask(self, cloud_mask):
-        """
-        Set the cloud mask for the gradient descent.
-        
-        Parameters
-        ----------
-        cloud_mask: shdom.GridData object
-            A boolean mask with True making cloudy voxels and False marking non-cloud region.
-        
-        Notes
-        -----
-        A None cloud mask means no mask
-        """
-        self._cloud_mask = cloud_mask  
-    
-    def set_known_medium(self, medium):
-        """
-        The known medium (e.g. known molecular scattering) is not optimized for but is accounted for in the forward model.
-        
-        Parameters
-        ----------
-        medium: shdom.Medium
-            A medium object.
-        """
-        self._known_medium = medium
 
 
     def set_writer(self, writer):
@@ -294,29 +480,8 @@ class Optimizer(object):
             Wrapper for the tensorboardX summary writer.
         """
         self._writer = writer
-        self._writer.attach_optimizer(self)
-        
-        
-    def add_parameter(self, parameter):
-        """
-        Add a Parameter to optimize for. 
-        
-        Parameters
-        ----------
-        parameter: shdom.Parameter
-            A parameter for the optimization.
-        
-        Notes
-        -----
-        Currently only Extinction is supported.
-        """
-        if parameter.__class__ is not shdom.parameters.Extinction:
-            raise NotImplementedError('Only Extinction optimization is supported.')
-        
-        self._parameters.append(parameter)
-        self._extinction_dependency = self.extinction_dependency or parameter.extinction_dependency
-        self._albedo_dependency = self.albedo_dependency or parameter.albedo_dependency
-        self._phase_dependency = self.phase_dependency or parameter.phase_dependency
+        if writer is not None:
+            self._writer.attach_optimizer(self)
         
         
     def update_rte_solver(self, state):
@@ -485,24 +650,6 @@ class Optimizer(object):
         if (self.ckpt_period is not None) and (time_passed > self.ckpt_period):        
             self.save_ckpt()
         
-        
-    def init_minimization(self):
-        """Initilize internal structures (masks) before starting the optimization process"""
-        # Init masks for parameters
-        self._num_parameters = []
-        for param in self.parameters:
-            if self.cloud_mask:
-                param.set_mask(self.cloud_mask)
-                self._num_parameters.append(param.num_parameters)
-    
-        # Init mask for gradient 
-        if self.cloud_mask:
-            if self.known_medium:
-                grid = self.known_medium.grid + self.cloud_mask.grid
-                self._gradient_mask = np.array(self.cloud_mask.resample(grid, method='nearest'), dtype=np.bool).ravel()
-            else:
-                self._gradient_mask = self.cloud_mask.data.ravel()
-            
 
     def minimize(self, options, ckpt_period=None, method='L-BFGS-B'):
         """
@@ -531,39 +678,20 @@ class Optimizer(object):
             raise NotImplementedError('Optimization method not implemented')
         
         if self.iteration == 0:
-            self.init_minimization() 
+            self.rte_solver.init_medium(self.medium)
+            self._num_parameters = self.medium.num_parameters
 
-        initial_state = self.parameters_to_state()
+        initial_state = self.medium.get_state()
+        bounds = self.medium.get_bounds()
         result = minimize(fun=self.objective_fun, 
                           x0=initial_state, 
                           method=method, 
                           jac=self.gradient,
-                          bounds=self.get_bounds(),
+                          bounds=self.medium.get_bounds(),
                           options=options,
                           callback=self.callback)
         return result
     
-    
-    def parameters_to_state(self):
-        """
-        Transform parameters into a state by concatination
-        
-        Returns
-        -------
-        state: np.array()
-            The state vector.
-        """
-        state = np.concatenate(map(lambda param: param.data[param.mask].ravel(), self.parameters))
-        return state
-    
-    
-    def get_bounds(self):
-        """Transform shdom.Parameter bounds to a list of bounds that the scipy minimize expects."""
-        bounds = []
-        for param in self.parameters:
-            bounds.extend(param.bounds)
-        return bounds
-
 
     def save(self, path):
         """
@@ -610,6 +738,10 @@ class Optimizer(object):
         return self._rte_solver
     
     @property
+    def medium(self):
+        return self._medium    
+    
+    @property
     def radiances(self):
         return self._measurements.radiances
     
@@ -617,38 +749,11 @@ class Optimizer(object):
     def sensors(self):
         return self._measurements.sensors
     
-    @property
-    def parameters(self):
-        return self._parameters
-    
-    @property
-    def cloud_mask(self):
-        return self._cloud_mask    
-    
-    @property
-    def gradient_mask(self):
-        return self._gradient_mask  
+   
     
     @property
     def num_parameters(self):
-        return self._num_parameters       
-    
-    @property
-    def extinction_dependency(self):
-        return self._extinction_dependency    
-    
-    @property
-    def albedo_dependency(self):
-        return self._albedo_dependency    
-
-    @property
-    def phase_dependency(self):
-        return self._phase_dependency   
-    
-    @property
-    def known_medium(self):
-        return self._known_medium
-    
+        return self._num_parameters
 
     @property
     def writer(self):

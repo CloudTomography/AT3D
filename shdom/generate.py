@@ -154,7 +154,10 @@ class Air(Generator):
                             default=20,
                             type=int,
                             help='(default value: %(default)s) Number of altitude grid points for the air volume.')
-        
+        parser.add_argument('--wavelength', 
+                            default=0.672,
+                            type=np.float32, 
+                            help='(default value: %(default)s) Wavelength [micron].')        
         return parser        
     
     def set_temperature_profile(self, temperature_profile):

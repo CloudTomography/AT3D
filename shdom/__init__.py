@@ -59,29 +59,32 @@ class Grid(object):
     
     def __init__(self, **kwargs):
         self._type = self.get_grid_type(kwargs)
+        
+        if kwargs.has_key('bounding_box'):
+            self._bounding_box = kwargs['bounding_box']
+        else: 
+            self._bounding_box = None
+            
         if self.type == '3D':
             if kwargs.has_key('z'):
                 self.z = kwargs['z']
             else:
-                self.z = np.linspace(bounding_box.zmin, bounding_box.zmax, kwargs['nz'])
+                self.z = np.linspace(kwargs['bounding_box'].zmin, kwargs['bounding_box'].zmax, kwargs['nz'])
                 
             if kwargs.has_key('x') and kwargs.has_key('y'):
                 self.x = kwargs['x']
                 self.y = kwargs['y']
                 self._bounding_box = BoundingBox(self.xmin, self.ymin, self.zmin, self.xmax, self.ymax, self.zmax)
             else:
-                self._bounding_box = kwargs['bounding_box']
                 self.x = np.linspace(kwargs['bounding_box'].xmin, kwargs['bounding_box'].xmax, kwargs['nx'])
                 self.y = np.linspace(kwargs['bounding_box'].ymin, kwargs['bounding_box'].ymax, kwargs['ny'])
 
         elif self.type == '1D':
             self.z = kwargs['z']
-            self._bounding_box = kwargs['bounding_box']
             self._nx = self._ny = 1
             self._x = self._y = None
         
         elif self.type == 'Homogeneous':
-            self._bounding_box = kwargs['bounding_box']
             self._nx = self._ny = self._nz = 1
             self._x = self._y = self._z = None         
             
@@ -94,15 +97,11 @@ class Grid(object):
            kwargs.has_key('nx') and kwargs.has_key('ny') and kwargs.has_key('z'):
             grid_type = '3D'
         
-        elif kwargs.has_key('z') and kwargs.has_key('bounding_box'): 
+        elif kwargs.has_key('z'): 
             grid_type = '1D'
             
-        elif kwargs.has_key('bounding_box'):
+        else: 
             grid_type = 'Homogeneous'
-            
-        else:
-            raise AttributeError('Error inputs for grid definition')      
-        
         return grid_type
             
 
@@ -124,7 +123,6 @@ class Grid(object):
             return self.x       
         elif self.type == '1D' or self.type == 'Homogeneous':
             return other.x
-
 
         xmax = max(self.xmax, other.xmax)
         xmin = min(self.xmin, other.xmin) 
@@ -178,9 +176,9 @@ class Grid(object):
         z: np.array(dtype=np.float32)
             The common z.
         """        
-        if other.type == '1D' or other.type == 'Homogeneous' or np.array_equiv(self.z, other.z):
+        if other.type == 'Homogeneous' or np.array_equiv(self.z, other.z):
             return self.z  
-        elif self.type == '1D' or self.type == 'Homogeneous':
+        elif self.type == 'Homogeneous':
             return other.z
         
         # Bottom part of the atmosphere (no grid intersection)
@@ -226,17 +224,17 @@ class Grid(object):
         """
         Add two grids by finding the common grid which maintains the higher resolution grid.
         """
-        x_grid = self.get_common_x(other)
-        y_grid = self.get_common_y(other)
-        z_grid = self.get_common_z(other)
+        x = self.get_common_x(other)
+        y = self.get_common_y(other)
+        z = self.get_common_z(other)
         
-        if x_grid is not None and y_grid is not None and z_grid is not None:
-            grid = Grid(x=x_grid, y=y_grid, z=z_grid)
+        if x is not None and y is not None and z is not None:
+            grid = Grid(x=x, y=y, z=z)
         else:
             bounding_box = self.bounding_box + other.bounding_box
-            if x_grid is None and y_grid is None and z_grid is not None:
-                grid = Grid(bounding_box=bounding_box, z=z_grid)
-            elif x_grid is None and y_grid is None and z_grid is None:
+            if x is None and y is None and z is not None:
+                grid = Grid(bounding_box=bounding_box, z=z)
+            elif x is None and y is None and z is None:
                 grid = Grid(bounding_box=bounding_box)
         return grid
     
@@ -448,22 +446,34 @@ class GridData(object):
     def resample(self, grid, method='linear'):
         """Resample data to a new Grid."""
         if self.grid == grid:
-            return self        
+            return self   
+        
         else:
             if self.type =='Homogeneous':
-                data = self.data
+                data = np.full(shape=grid.shape, fill_value=self.data)
+            
             elif self.type == '1D':
-                if method == 'linear':
-                    data = self._linear_interpolator1d(grid.z)
-                elif method == 'nearest':
-                    data = self._nearest_interpolator1d(grid.z)
-                if grid.type == '3D':
-                    data = np.tile(data[np.newaxis, np.newaxis, :], (grid.nx, grid.ny, 1))
+                if grid.type == 'Homogeneous':
+                    data = np.mean(self.data)
+                else:
+                    if method == 'linear':
+                        data = self._linear_interpolator1d(grid.z)
+                    elif method == 'nearest':
+                        data = self._nearest_interpolator1d(grid.z)
+                    if grid.type == '3D':
+                        data = np.tile(data[np.newaxis, np.newaxis, :], (grid.nx, grid.ny, 1))
+                    
             elif self.type == '3D':
-                if method == 'linear':
-                    data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1))
-                elif method == 'nearest':
-                    data = self._nearest_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1)) 
+                if grid.type == 'Homogeneous':
+                    data = np.mean(self.data)
+                elif grid.type == '1D':
+                    data = np.mean(np.mean(self.data, axis=0), axis=0)
+                else:
+                    if method == 'linear':
+                        data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1))
+                    elif method == 'nearest':
+                        data = self._nearest_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1)) 
+        
         return GridData(grid, data.astype(self.data.dtype))
     
     

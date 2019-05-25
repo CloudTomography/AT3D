@@ -12,7 +12,7 @@ The phase function, albedo and rayleigh scattering are assumed known.
 Example usage:
   python scripts/optimize_extinction.py --input_dir DIRECTORY --mie_table_path TABLE_PATH \
          --use_forward_grid --use_forward_albedo --use_forward_phase \
-         --init Homogeneous --extinction 0.01 --add_rayleigh --log LOGDIR
+         --init Homogeneous --extinction 0.01 --add_rayleigh --wavelength 0.672 --log LOGDIR
   
 For information about the command line flags see:
   python scripts/optimize/extinction.py --help
@@ -104,18 +104,12 @@ def init_atmosphere(args, CloudGenerator, AirGenerator):
     AirGenerator: a shdom.Air class object
         Creates the scattering due to air molecules
     measurements: shdom.Measurements object
-        Used for space-carving out a mask if args.use_forward_mask is False
+        Used for space-carving a mask if args.use_forward_mask is False
         
     Returns
     -------
-    medium: shdom.Medium
-        The medium initialization.
-    mask: shdom.GridData
-        A mask of cloudy voxels, either by space-carving or from ground-truth
-    extinction: shdom.Parameters.Extinction object
-        The unknown parameters to recover
-    air: shdom.Medium
-        A known medium of air which overlays the atmosphere.
+    medium: shdom.OpticalMediumEstimator
+        An OpticalMediumEstimator object.
     """
     
     cloud_generator = CloudGenerator(args)
@@ -139,36 +133,28 @@ def init_atmosphere(args, CloudGenerator, AirGenerator):
     else:
         cloud_generator.init_phase()
            
-    cloud = shdom.UnknownScatterer(extinction=cloud_generator.extinction,
-                                   albedo=cloud_generator.albedo,
-                                   phase=cloud_generator.phase)
+    cloud = shdom.ScattererEstimator(
+        extinction=shdom.GridDataEstimator(cloud_generator.extinction, min_bound=0.0),
+        albedo=cloud_generator.albedo,
+        phase=cloud_generator.phase
+    )
     
-    extinction.initialize(cloud_generator.extinction, 
-                          min_bound=0.0,
-                          max_bound=None)
-    
-    # Initilize the Medium and RTE solver    
-    medium = shdom.Medium()
-    medium.set_optical_properties(extinction, 
-                                  cloud_generator.albedo,
-                                  cloud_generator.phase)
-    
-    # Apply a cloud mask for non-cloudy voxels 
+    # Set a cloud mask for non-cloudy voxels
     if args.use_forward_mask:
-        mask = medium_gt.get_mask(threshold=1.0)
+        mask = medium_gt.get_scatterer('cloud').get_mask(threshold=1.0)
     else:
         carver = shdom.SpaceCarver(measurements)
-        mask = carver.carve(medium.grid, agreement=0.7)
-    medium.apply_mask(mask)
+        mask = carver.carve(cloud.grid, agreement=0.7)
+    cloud.set_mask(mask)
     
-    air = None
+    medium = shdom.OpticalMediumEstimator(cloud.grid)
+    medium.add_scatterer(cloud, name='cloud estimator')
+    
     if args.add_rayleigh:
         air_generator = AirGenerator(args)
-        air = air_generator.get_medium(phase_type=medium.phase.type)   
-        medium += air
-       
-    
-    return medium, mask, extinction, air
+        medium.add_scatterer(air_generator.get_scatterer(), 'air')        
+
+    return medium
 
 
 if __name__ == "__main__":
@@ -179,8 +165,7 @@ if __name__ == "__main__":
     medium_gt, rte_solver, measurements = shdom.load_forward_model(args.input_dir)
     
     # Init medium and solver
-    medium, mask, extinction, air = init_atmosphere(args, CloudGenerator, AirGenerator)
-    rte_solver.init_medium(medium)
+    medium = init_atmosphere(args, CloudGenerator, AirGenerator)
     
     # Define a summary writer
     writer = None
@@ -204,9 +189,7 @@ if __name__ == "__main__":
     
     optimizer.set_measurements(measurements)
     optimizer.set_rte_solver(rte_solver)
-    optimizer.set_cloud_mask(mask)
-    optimizer.add_parameter(extinction)
-    optimizer.set_known_medium(air)
+    optimizer.set_medium_estimator(medium)
     optimizer.set_writer(writer)
 
     # Optimization process

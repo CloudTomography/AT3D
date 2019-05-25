@@ -54,11 +54,6 @@ def argument_parsing():
                         default=0.0,
                         type=np.float32,
                         help='(default value: %(default)s) Solar azimuth [deg]. This is the direction of the photons')
-    parser.add_argument('--wavelength', 
-                        default=0.672,
-                        type=np.float32, 
-                        help='(default value: %(default)s) Wavelength [micron]. It is used to compute a Mie table if one \
-                              is not specified and to compute rayleigh scattering if --add_rayleigh flag is specified')
     parser.add_argument('--x_res',
                         default=0.01,
                         type=np.float32,

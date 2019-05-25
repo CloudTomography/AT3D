@@ -852,7 +852,7 @@ class MiePolydisperse(object):
         extinction: shdom.GridData object
             A shdom.GridData3D object containting the extinction (1/km) on a 3D grid
         """
-        grid = veff.grid + reff.grid
+        grid = lwc.grid + veff.grid + reff.grid
         data = self._ext_interpolator((reff.resample(grid).data, veff.resample(grid).data))
         extinction = lwc.resample(grid) * shdom.GridData(grid, data)     
         return extinction  

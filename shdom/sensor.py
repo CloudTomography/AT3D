@@ -827,9 +827,6 @@ class Camera(object):
     def sensor(self):
         return self._sensor   
 
-    @property
-    def type(self):
-        return (self.sensor.type, self.projection.type)
     
     
 
