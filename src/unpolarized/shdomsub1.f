@@ -31,8 +31,8 @@
      .               RSHPTR, SHPTR, OSHPTR, WORK, WORK1, WORK2,
      .               SOURCE, DELSOURCE, RADIANCE, FLUXES, DIRFLUX, 
      .               YLMSUN, VERBOSE, 
-     .               NPX, NPY, NPZ, DELX, DELY,
-     .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
+     .               NPX, NPY, NPZ, DELX, DELY, XSTART, YSTART,
+     .               ZLEVELS, TEMPP, EXTINCTP, NBPTS,
      .               ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .               ZCKD, GASABS, OLDNPTS, NPART, TOTAL_EXT)
 Cf2py threadsafe
@@ -109,18 +109,18 @@ Cf2py intent(in) :: VERBOSE
       REAL    YLMSUN(*)
 Cf2py intent(in, out) :: YLMSUN
 
-      INTEGER NPX, NPY, NPZ, NPART
-Cf2py intent(in) :: NPX, NPY, NPZ, NPART
+      INTEGER NPX, NPY, NPZ, NPART, NBPTS
+Cf2py intent(in) :: NPX, NPY, NPZ, NPART, NBPTS
       REAL DELX, DELY, XSTART, YSTART
 Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
 Cf2py intent(in) :: ZLEVELS
-      REAL TEMPP(*), EXTINCTP(NPTS,NPART)
-      REAL ALBEDOP(NPTS,NPART)
+      REAL TEMPP(*), EXTINCTP(NBPTS,NPART)
+      REAL ALBEDOP(NBPTS,NPART)
 Cf2py intent(in) :: TEMPP, EXTINCTP, ALBEDOP
       REAL LEGENP(*), EXTDIRP(*)
 Cf2py intent(in) :: LEGENP, EXTDIRP
-      INTEGER IPHASEP(NPTS,NPART)
+      INTEGER IPHASEP(NBPTS,NPART)
 Cf2py intent(in) :: IPHASEP
       INTEGER NZCKD
 Cf2py intent(in) :: NZCKD
@@ -138,7 +138,7 @@ Cf2py intent(in,out) :: OLDNPTS
       DOUBLE PRECISION UNIFORMZLEV, DELXD,DELYD
       INTEGER IX, IY, IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ
       
-      INTEGER NPHI0MAX, I, ORDINATESET, NBPTS, NBCELLS
+      INTEGER NPHI0MAX, I, ORDINATESET, NBCELLS
       INTEGER MAXNANGBND, NANGBND(4,2), IPA
       LOGICAL FIXSH, SPLITTESTING, DOSPLIT, OUTOFMEM, LAMBERTIAN
 
@@ -167,7 +167,7 @@ C           Transfer the medium properties to the internal grid and add gas abs
      .        DELY, XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .        ALBEDOP, LEGENP, EXTDIRP, 
      .        IPHASEP,NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
-     .        NPART, TOTAL_EXT(:NPTS))
+     .        NPART, TOTAL_EXT(:NPTS), NBPTS)
      
 C         If Delta-M then scale the extinction, albedo, and Legendre terms.
 C         Put the Planck blackbody source in PLANCK.
@@ -194,7 +194,7 @@ C           Precompute Ylm's for solar direction
      .             ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .             CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		   NPART)
+     .		   NPART, NBPTS)
         ENDIF
         CALL YLMALL (SOLARMU, SOLARAZ, ML, MM, NCS, YLMSUN)
       ENDIF
@@ -222,7 +222,6 @@ C             two-stream plane-parallel
 
 C           Interpolate the radiance on the non-base grid points from the 
 C             base grid points
-        NBPTS = NX1*NY1*NZ
         NBCELLS = (NZ-1)*(NX+IBITS(BCFLAG,0,1)-IBITS(BCFLAG,2,1))
      .                  *(NY+IBITS(BCFLAG,1,1)-IBITS(BCFLAG,3,1))
         CALL INTERP_RADIANCE (NBPTS, NPTS, RSHPTR, RADIANCE,

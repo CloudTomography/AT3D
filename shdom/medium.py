@@ -134,8 +134,7 @@ class OpticalMedium(object):
         first_particle = True if self.num_scatterers==0 else False
         
         self._num_scatterers += 1
-        if name is None:
-            name = 'scatterer{:d}'.format(self._num_scatterers)
+        name = 'scatterer{:d}'.format(self._num_scatterers) if name is None else name
         self.scatterers[name] = scatterer
         
         resampled_scatterer = scatterer.resample(self.grid)
@@ -157,7 +156,22 @@ class OpticalMedium(object):
             self._legendre_table.append(legendre_table)
                
         
-    
+    def update_scatterer(self, name, scatterer):
+        """TODO"""
+        scatterer_index = self.scatterers.keys().index(name)
+        iphasep_offset = 0
+        if scatterer_index > 0: 
+            iphasep_offset = np.cumsum([
+                scatterer.phase.legendre_table.numphase 
+                for scatterer in self.scatterers.itervalues()
+            ])[scatterer_index-1]
+        
+        resampled_scatterer = scatterer.resample(self.grid)        
+        self._extinctp[...,scatterer_index] = resampled_scatterer.extinction.data
+        self._albedop[...,scatterer_index] = resampled_scatterer.albedo.data
+        self._iphasep[...,scatterer_index] = resampled_scatterer.phase.iphasep + iphasep_offset
+   
+   
     def save(self, path):
         """
         Save Medium to file.

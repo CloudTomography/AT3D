@@ -102,7 +102,7 @@ F2PY_CORE_API = [
     'compute_top_radiances',
     'fixed_lambertian_boundary',
     'variable_lambertian_boundary',
-    'ext_gradient',
+    'gradient',
     'space_carve'
 ]
 

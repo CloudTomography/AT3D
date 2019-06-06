@@ -760,6 +760,7 @@ class RteSolver(object):
             self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr, self._source, \
             self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun, self._oldnpts, self._total_ext = \
             core.solve_rte(
+                nbpts=self._nbpts,
                 npart=self._npart,
                 extinctp=self._pa.extinctp,
                 albedop=self._pa.albedop,

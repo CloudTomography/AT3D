@@ -370,12 +370,12 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .                ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .                CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .                XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		      NPART)
+     .		      NPART, NBPTS)
 C       Makes the direct beam solar flux for the internal base grid.
 C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
       IMPLICIT NONE
-      INTEGER NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEG
+      INTEGER NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, NBPTS
       LOGICAL DELTAM
       REAL    SOLARFLUX, SOLARMU, SOLARAZ
       REAL    GRIDPOS(3,NPTS), DIRFLUX(NPTS)
@@ -387,9 +387,9 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
       INTEGER NUMPHASE
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
-      REAL TEMPP(*), EXTINCTP(NPTS,NPART), ALBEDOP(NPTS,NPART)
-      REAL LEGENP(NPTS,NPART), EXTDIRP(*)
-      INTEGER IPHASEP(NPTS,NPART)
+      REAL TEMPP(*), EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
+      REAL LEGENP(*), EXTDIRP(*)
+      INTEGER IPHASEP(NBPTS,NPART)
       INTEGER NZCKD, NPART
       REAL ZCKD(*), GASABS(*)
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
@@ -408,7 +408,7 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, 
-     .	          NPART, NPTS)
+     .	          NPART, NBPTS)
 
       DO IP = 1, NPTS
         DIRPATH = 0.0
@@ -423,7 +423,7 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, 
-     .		  NPART, NPTS)
+     .		  NPART, NBPTS)
       ENDDO
       RETURN
       END

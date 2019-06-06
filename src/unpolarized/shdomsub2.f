@@ -306,11 +306,11 @@ C               Base grid cells have no parents or children
      .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .               ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
      .               ZCKD, GASABS, EXTMIN, SCATMIN,NPART, 
-     .		     TOTAL_EXT)
+     .		     TOTAL_EXT, NBPTS)
 C       Calls TRILIN_INTERP_PROP to interpolate the input arrays from 
 C     the property grid to each internal grid point. 
       IMPLICIT NONE
-      INTEGER NPTS, NLEG, NPART
+      INTEGER NPTS, NLEG, NPART, NBPTS
       INTEGER IPHASE(NPTS,NPART)  
       REAL    GRIDPOS(3,NPTS), TOTAL_EXT(NPTS)
       REAL    TEMP(*), EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
@@ -321,9 +321,9 @@ C     the property grid to each internal grid point.
       INTEGER NUMPHASE
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
-      REAL TEMPP(*), EXTINCTP(NPTS,NPART), ALBEDOP(NPTS,NPART)
+      REAL TEMPP(*), EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
       REAL LEGENP(*), EXTDIRP(*)
-      INTEGER IPHASEP(NPTS,NPART)
+      INTEGER IPHASEP(NBPTS,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
       DOUBLE PRECISION EXTMIN, SCATMIN
@@ -369,12 +369,12 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .               ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .               CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .               XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		     NPART)
+     .		     NPART, NBPTS)
 C       Makes the direct beam solar flux for the internal base grid.
 C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
       IMPLICIT NONE
-      INTEGER NPTS, BCFLAG, IPFLAG, ML, NLEG
+      INTEGER NPTS, BCFLAG, IPFLAG, ML, NLEG, NBPTS
       LOGICAL DELTAM
       REAL    SOLARFLUX, SOLARMU, SOLARAZ
       REAL    GRIDPOS(3,NPTS), DIRFLUX(NPTS)
@@ -386,9 +386,9 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
       INTEGER NUMPHASE
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
-      REAL TEMPP(*), EXTINCTP(NPTS,NPART), ALBEDOP(NPTS,NPART)
-      REAL LEGENP(NPTS,NPART), EXTDIRP(*)
-      INTEGER IPHASEP(NPTS,NPART)
+      REAL TEMPP(*), EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
+      REAL LEGENP(*), EXTDIRP(*)
+      INTEGER IPHASEP(NBPTS,NPART)
       INTEGER NZCKD, NPART
       REAL ZCKD(*), GASABS(*)
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
@@ -405,7 +405,7 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
      .         ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .         CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .         XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, 
-     .	       NPART, NPTS)
+     .	       NPART, NBPTS)
 
       DO IP = 1, NPTS
         DIRPATH = 0.0
@@ -420,7 +420,7 @@ C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, 
-     .		  NPART, NPTS)
+     .		  NPART, NBPTS)
       ENDDO
       RETURN
       END

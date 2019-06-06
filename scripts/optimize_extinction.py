@@ -12,7 +12,7 @@ The phase function, albedo and rayleigh scattering are assumed known.
 Example usage:
   python scripts/optimize_extinction.py --input_dir DIRECTORY --mie_table_path TABLE_PATH \
          --use_forward_grid --use_forward_albedo --use_forward_phase \
-         --init Homogeneous --extinction 0.01 --add_rayleigh --wavelength 0.672 --log LOGDIR
+         --init Homogeneous --extinction 0.0 --add_rayleigh --wavelength 0.672 --log test
   
 For information about the command line flags see:
   python scripts/optimize/extinction.py --help
@@ -144,7 +144,7 @@ def init_atmosphere(args, CloudGenerator, AirGenerator):
         mask = medium_gt.get_scatterer('cloud').get_mask(threshold=1.0)
     else:
         carver = shdom.SpaceCarver(measurements)
-        mask = carver.carve(cloud.grid, agreement=0.7)
+        mask = carver.carve(cloud.grid, agreement=0.7, thresholds=0.05)
     cloud.set_mask(mask)
     
     medium = shdom.OpticalMediumEstimator(cloud.grid)
@@ -174,7 +174,7 @@ if __name__ == "__main__":
         writer = shdom.SummaryWriter(log_dir)
         writer.monitor_loss()
         writer.monitor_images(acquired_images=measurements.images)
-        writer.monitor_parameter_error(ground_truth_params=[medium_gt.extinction])
+        writer.monitor_parameter_error(ground_truth=medium_gt.get_scatterer('cloud').extinction)
         
     optimizer = shdom.Optimizer()
         
@@ -195,6 +195,7 @@ if __name__ == "__main__":
     # Optimization process
     result = optimizer.minimize(ckpt_period=30*60, options=options)
     print('\n------------------ Optimization Finished ------------------\n')
+    print(result)
     print('Success: {}'.format(result.success))
     print('Message: {}'.format(result.message))
     print('Final loss: {}'.format(result.fun))
