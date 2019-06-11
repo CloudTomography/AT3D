@@ -100,23 +100,17 @@ class GridDataEstimator(shdom.GridData):
     
 class ScattererEstimator(shdom.Scatterer):
     """TODO"""
-    def __init__(self, extinction=None, albedo=None, phase=None):
+    def __init__(self, extinction, albedo, phase):
         super(ScattererEstimator, self).__init__(extinction, albedo, phase)
         self._mask = None
         self._estimators = self.init_estimators()
         self._num_parameters = self.init_num_parameters()
-    
+
+
     def init_estimators(self):
         """TODO"""
-        estimators = []
-        if self.extinction.__class__ == shdom.GridDataEstimator:
-            estimators.append(self.extinction)
-        if self.albedo.__class__ == shdom.GridDataEstimator:
-            raise NotImplementedError("Albedo estimation not implemented")
-        if self.phase.__class__ == shdom.GridPhaseEstimator:
-            raise NotImplementedError("Phase estimation not implemented")           
-        return estimators
-
+        return None
+    
     
     def init_num_parameters(self):
         """TODO"""
@@ -186,8 +180,65 @@ class ScattererEstimator(shdom.Scatterer):
     def mask(self):
         return self._mask
     
+
+class ScattererOpticalEstimator(shdom.ScattererEstimator):
+    """TODO"""
+    def __init__(self, extinction, albedo, phase):
+        super(ScattererOpticalEstimator, self).__init__(extinction, albedo, phase)
+        
+    def init_estimators(self):
+        """TODO"""
+        estimators = []
+        if self.extinction.__class__ == shdom.GridDataEstimator:
+            estimators.append(self.extinction)
+        if self.albedo.__class__ == shdom.GridDataEstimator:
+            raise NotImplementedError("Albedo estimation not implemented")
+        if self.phase.__class__ == shdom.GridPhaseEstimator:
+            raise NotImplementedError("Phase estimation not implemented")           
+        return estimators
+
+
+class ScattererMicrophysicalEstimator(shdom.ScattererEstimator):
+    """TODO"""
+    def __init__(self, mie, lwc, reff, veff):
+        self._mie = mie
+        self._lwc = lwc
+        self._reff = reff
+        self._veff = veff
+        super(ScattererMicrophysicalEstimator, self).__init__(
+            extinction=mie.get_extinction(lwc, reff, veff), 
+            albedo=mie.get_albedo(reff, veff), 
+            phase=mie.get_phase(reff, veff, squeeze_table=True)
+        )
     
+    def init_estimators(self):
+        """TODO"""
+        estimators = []
+        if self.lwc.__class__ == shdom.GridDataEstimator:
+            estimators.append(self.lwc)
+        if self.reff.__class__ == shdom.GridDataEstimator:
+            estimators.append(self.reff)
+        if self.veff.__class__ == shdom.GridDataEstimator:
+            estimators.append(self.veff)   
+        return estimators
     
+    @property
+    def mie(self):
+        return self._mie
+    
+    @property
+    def lwc(self):
+        return self._lwc
+    
+    @property
+    def reff(self):
+        return self._reff   
+
+    @property
+    def veff(self):
+        return self._veff  
+
+
 class OpticalMediumEstimator(shdom.OpticalMedium):
     """TODO"""
     def __init__(self, grid=None):
@@ -246,8 +297,8 @@ class OpticalMediumEstimator(shdom.OpticalMedium):
         gradient, loss, radiance = core.gradient(
             partder=self.unknown_scatterers_indices,
             numder=self.num_unknown_scatterers,
-            extflag=True,
-            phaseflag=False,
+            extflag=self.extflag,
+            phaseflag=self.phaseflag,
             phaseder=np.zeros_like(rte_solver._legen),             
             nstokes=rte_solver._nstokes,
             nstleg=rte_solver._nstleg,
@@ -441,7 +492,7 @@ class SummaryWriter(object):
             est_param = self.optimizer.medium.get_scatterer('cloud estimator').extinction
             gt_param = self._ground_truth_params
             delta = (np.linalg.norm(est_param.data.ravel(),1) - np.linalg.norm(gt_param.data.ravel(),1)) / np.linalg.norm(gt_param.data.ravel(),1)
-            epsilon = np.linalg.norm((est_param - gt_param).data.ravel(),1) / np.linalg.norm(gt_param.data.ravel(),1)
+            epsilon = np.linalg.norm((est_param - gt_param).data.ravel(), 1) / np.linalg.norm(gt_param.data.ravel(),1)
             self.tf_writer.add_scalar('delta', delta, self.optimizer.iteration)
             self.tf_writer.add_scalar('epsilon', epsilon, self.optimizer.iteration)           
     
@@ -514,7 +565,6 @@ class SpaceCarver(object):
             
             image_mask = image > threshold
                 
-            radiance = image.ravel(order='F')
             projection = projection[image_mask.ravel(order='F') == 1]
             
             carved_volume = core.space_carve(
@@ -625,106 +675,6 @@ class Optimizer(object):
         if writer is not None:
             self._writer.attach_optimizer(self)
         
-        
-            
-    def extinction_gradient_cost(self):
-        """
-        Gradient and cost computation by ray tracing the domain (see shdomsub4.f).
-        Additionally the synthetic images produces by the sensors at the current state are saved (for logging/visualization)
-        
-        Returns
-        -------
-        gradient: np.array(dtype=float64)
-            The gradient of the objective function at the current state.
-        cost: float
-            The objective function (cost) evaluated at the current state
-        
-        Notes
-        -----
-        Currently the forward SHDOM solution is invoked at every gradient computation. 
-        """ 
-        self.rte_solver.solve(maxiter=100, verbose=False)   
-        gradient, cost, images = core.ext_gradient(
-            nx=self.rte_solver._nx,
-            ny=self.rte_solver._ny,
-            nz=self.rte_solver._nz,
-            bcflag=self.rte_solver._bcflag,
-            ipflag=self.rte_solver._ipflag,   
-            npts=self.rte_solver._npts,
-            nbpts=self._rte_solver._nbpts,
-            ncells=self.rte_solver._ncells,
-            nbcells=self.rte_solver._nbcells,
-            ml=self.rte_solver._ml,
-            mm=self.rte_solver._mm,
-            ncs=self.rte_solver._ncs,
-            nlm=self.rte_solver._nlm,
-            numphase=self.rte_solver._pa.numphase,
-            nmu=self.rte_solver._nmu,
-            nphi0max=self.rte_solver._nphi0max,
-            nphi0=self.rte_solver._nphi0,
-            maxnbc=self.rte_solver._maxnbc,
-            ntoppts=self.rte_solver._ntoppts,
-            nbotpts=self.rte_solver._nbotpts,
-            nsfcpar=self.rte_solver._nsfcpar,
-            gridptr=self.rte_solver._gridptr,
-            neighptr=self.rte_solver._neighptr,
-            treeptr=self.rte_solver._treeptr,             
-            shptr=self.rte_solver._shptr,
-            bcptr=self.rte_solver._bcptr,
-            cellflags=self.rte_solver._cellflags,
-            iphase=self.rte_solver._iphase,
-            deltam=self.rte_solver._deltam,
-            solarmu=self.rte_solver._solarmu,
-            solaraz=self.rte_solver._solaraz,
-            gndtemp=self.rte_solver._gndtemp,
-            gndalbedo=self.rte_solver._gndalbedo,
-            skyrad=self.rte_solver._skyrad,
-            waveno=self.rte_solver._waveno,
-            wavelen=self.rte_solver._wavelen,
-            mu=self.rte_solver._mu,
-            phi=self.rte_solver._phi.reshape(self.rte_solver._nmu, -1),
-            wtdo=self.rte_solver._wtdo.reshape(self.rte_solver._nmu, -1),
-            xgrid=self.rte_solver._xgrid,
-            ygrid=self.rte_solver._ygrid,
-            zgrid=self.rte_solver._zgrid,
-            gridpos=self.rte_solver._gridpos,
-            sfcgridparms=self.rte_solver._sfcgridparms,
-            bcrad=self.rte_solver._bcrad,
-            extinct=self.rte_solver._extinct,
-            albedo=self.rte_solver._albedo,
-            legen=self.rte_solver._legen.reshape(self.rte_solver._nleg+1, -1),            
-            dirflux=self.rte_solver._dirflux,
-            fluxes=self.rte_solver._fluxes,
-            source=self.rte_solver._source,
-            camx=self.sensors.x,
-            camy=self.sensors.y,
-            camz=self.sensors.z,
-            cammu=self.sensors.mu,
-            camphi=self.sensors.phi,
-            npix=np.sum(self.sensors.npix),          
-            srctype=self.rte_solver._srctype,
-            sfctype=self.rte_solver._sfctype,
-            units=self.rte_solver._units,
-            measurements=self.radiances,
-            rshptr=self.rte_solver._rshptr,
-            radiance=self.rte_solver._radiance
-        )
-        
-        # Split images into different sensor images
-        if self.sensors.type == 'SensorArray':
-            image_list = np.split(images, np.cumsum(self.sensors.npix[:-1]))
-            sensor_list = self.sensors.sensor_list
-        else:
-            image_list = [images]
-            sensor_list = [self.sensors]
-            
-        for i in range(len(image_list)):
-            if hasattr(sensor_list[i], 'resolution'):
-                image_list[i] = image_list[i].reshape(sensor_list[i].resolution, order='F')
-        self._images = image_list
-        
-        return gradient, cost
-    
    
     def objective_fun(self, state):
         """The objective function (cost) at the current state"""
@@ -794,14 +744,11 @@ class Optimizer(object):
         if self.iteration == 0:
             self.rte_solver.init_medium(self.medium)
             self._num_parameters = self.medium.num_parameters
-
-        loss = lambda state: self.objective_fun(state)[0]
-        jac  = lambda state: self.objective_fun(state)[1]
-        
-        result = minimize(fun=loss, 
+            
+        result = minimize(fun=self.objective_fun, 
                           x0=self.get_state(), 
                           method=method, 
-                          jac=jac,
+                          jac=True,
                           bounds=self.get_bounds(),
                           options=options,
                           callback=self.callback)
@@ -821,9 +768,7 @@ class Optimizer(object):
     def set_state(self, state):
         """TODO"""
         self.medium.set_state(state)
-        self.rte_solver.set_extinction(self.medium)
-        self.rte_solver.set_albedo(self.medium)
-        self.rte_solver.set_phase(self.medium)
+        self.rte_solver.init_medium(self.medium)
         
         
     def save(self, path):

@@ -42,7 +42,7 @@ source activate pyshdom
 
 Install required packages
 ```
-conda install numpy scipy matplotlib dill joblib opencv
+conda install numpy scipy matplotlib dill joblib opencv scikit-image
 ```
 
 Install jupyter notebook and extentions

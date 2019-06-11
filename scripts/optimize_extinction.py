@@ -10,9 +10,10 @@ Measurements are either:
 The phase function, albedo and rayleigh scattering are assumed known.
 
 Example usage:
-  python scripts/optimize_extinction.py --input_dir DIRECTORY --mie_table_path TABLE_PATH \
-         --use_forward_grid --use_forward_albedo --use_forward_phase \
-         --init Homogeneous --extinction 0.0 --add_rayleigh --wavelength 0.672 --log test
+  python scripts/optimize_extinction.py --input_dir experiments/single_voxel \
+         --mie_table_path mie_tables/polydisperse/Water_672nm.scat --use_forward_grid  \
+         --use_forward_albedo --use_forward_phase --use_forward_mask \
+         --init Homogeneous --extinction 0.01 --add_rayleigh --wavelength 0.672 --radiance_threshold 0.051
   
 For information about the command line flags see:
   python scripts/optimize/extinction.py --help
@@ -59,6 +60,12 @@ def argument_parsing():
                         action='store_true',
                         help='Use the ground-truth cloud mask. This is an inverse crime which is \
                               usefull for debugging/development.')
+    parser.add_argument('--radiance_threshold',
+                        default=[0.05],
+                        nargs='+',
+                        type=np.float32,
+                        help='(default value: %(default)s) Threshold for the radiance to create a cloud mask.' \
+                        'Threshold is either a scalar or a list of length of measurements.')    
     
     # Additional arguments to the parser
     subparser = argparse.ArgumentParser(add_help=False)
@@ -144,7 +151,9 @@ def init_atmosphere(args, CloudGenerator, AirGenerator):
         mask = medium_gt.get_scatterer('cloud').get_mask(threshold=1.0)
     else:
         carver = shdom.SpaceCarver(measurements)
-        mask = carver.carve(cloud.grid, agreement=0.7, thresholds=0.05)
+        mask = carver.carve(cloud.grid, 
+                            agreement=0.95, 
+                            thresholds=args.radiance_threshold)
     cloud.set_mask(mask)
     
     medium = shdom.OpticalMediumEstimator(cloud.grid)

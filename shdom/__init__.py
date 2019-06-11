@@ -399,7 +399,7 @@ class GridData(object):
         """Subtract two GridData objects by resampling to a common grid."""
         if self.grid == other.grid:
             grid = self.grid
-            data = self.data * other.data
+            data = self.data - other.data
         else:
             grid = self.grid + other.grid
             data = self.resample(grid).data - other.resample(grid).data

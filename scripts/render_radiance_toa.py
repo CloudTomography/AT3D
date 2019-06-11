@@ -9,11 +9,11 @@ As with all `render` scripts a `generator` needs to be specified using the gener
 The Generator defines the medium parameters: Grid, Extinction, Single Scattering Albedo and Phase function with it's own set of command-line flags.
 
 Example usage:
-  python scripts/render_radiance_toa.py experiments/single_voxel  --add_rayleigh\
+  python scripts/render_radiance_toa.py experiments/single_voxel \
           --generator SingleVoxel --extinction 10.0 --reff 10.0 --domain_size 1.0 \
-          --x_res 0.1 --y_res 0.1 --nx 10 --ny 10 --nz 10 --wavelength 0.672  \
+          --x_res 0.1 --y_res 0.1 --nx 10 --ny 10 --nz 10  \
           --azimuth 90 90 90 90 0 -90 -90 -90 -90 --zenith 70.5 60 45.6 26.1 0.0 26.1 45.6 60 70.5 \
-          --mie_table_path mie_tables/polydisperse/Water_672nm.scat
+          --mie_table_path mie_tables/polydisperse/Water_672nm.scat --add_rayleigh --wavelength 0.672
 
 For information about the command line flags see:
   python scripts/render/render_radiance_toa.py --help
@@ -47,11 +47,11 @@ def argument_parsing():
                         help='Path to an output directory where the measureents and model parameters will be saved. \
                               If the folder doesnt exist, it will be created.')
     parser.add_argument('--solar_zenith', 
-                        default=180.0,
+                        default=165.0,
                         type=np.float32, 
                         help='(default value: %(default)s) Solar zenith [deg]. This is the direction of the photons in range (90, 180]')
     parser.add_argument('--solar_azimuth', 
-                        default=0.0,
+                        default=25.0,
                         type=np.float32,
                         help='(default value: %(default)s) Solar azimuth [deg]. This is the direction of the photons')
     parser.add_argument('--x_res',
