@@ -2,18 +2,24 @@
 Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer.
 Here all the necessary functions used to solve the RT using SHDOM are wrapped.
 """
-
 import core
 import numpy as np
 from enum import Enum
 import warnings
-import sys, os
+import sys, os, copy
 import dill as pickle
 from joblib import Parallel, delayed
+import shdom 
+
 
 class BC(Enum):
-    open = 1       # open boundary conditions mean that exiting radiance is lost.
-    periodic = 2   # periodic boundary conditions mean that exiting radiance returns from the opposite side.
+    """
+    Two types of boundary conditions:
+      1. open - exiting radiance is lost.
+      2. periodic - exiting radiance returns from the opposite side.
+    """
+    open = 1 
+    periodic = 2 
     
 
 class SolarSource(object):
@@ -283,7 +289,7 @@ class RteSolver(object):
     k-distribution not supported.
     """
     
-    def __init__(self, scene_params=None, numerical_params=None, num_stokes=1):
+    def __init__(self, scene_params=None, numerical_params=None, num_stokes=1, name=None):
         
         assert num_stokes in [1, 3, 4], 'num_stokes should be {1, 3, 4}'
         if num_stokes==1:
@@ -291,6 +297,7 @@ class RteSolver(object):
         else:
             self._type = 'Polarization'
         self._nstokes = num_stokes
+        
         
         # Start mpi (if available).
         self._masterproc = core.start_mpi()
@@ -303,10 +310,13 @@ class RteSolver(object):
         if numerical_params:
             self.set_numerics(numerical_params)
         
-    
+        # Default name
+        if name is None:
+            self._name = '{} {} micron'.format(self._type, round(self._wavelen, 3))
+            
     def save_params(self, path):
         """
-        Save RteSolver parameters from file.
+        Save RteSolver parameters to file.
     
         Parameters
         ----------
@@ -440,13 +450,10 @@ class RteSolver(object):
         ----------
         medium: shdom.Medium
             Initilize the RTE solver to a Medium object.
-
         """
         self._npart = medium.num_scatterers
         self.set_grid(medium.grid)
-        self.set_extinction(medium)
-        self.set_albedo(medium)
-        self.set_phase(medium)
+        self.set_medium(medium)
         
         # Temperature is used for thermal radiation. Not supported yet.
         self._pa.tempp = np.zeros(shape=(self._maxpg,), dtype=np.float32)
@@ -458,92 +465,82 @@ class RteSolver(object):
         self._oldnpts = 0
 
 
-    def set_phase(self, medium):
+    def set_medium(self, medium):
         """
-        set the phase function internal SHDOM parameters
+        set the optical medium properties.
         
         Parameters
         ----------
-        medium: shdom.OpticalMedium
-            an OpticalMedium object contains legenp,iphasep properties
+        medium: shdom.Medium
+            an Medium object contains extinctp property
         """
-        
-        iphasep = medium.iphasep.astype(np.int32)
-        if self._bcflag == 0:
-            iphasep = np.pad(iphasep, ((0,1),(0,1),(0,0),(0,0)), 'wrap')
-        elif self._bcflag == 1:
-            iphasep = np.pad(iphasep, ((0,0),(0,1),(0,0),(0,0)), 'wrap')
-        elif self._bcflag == 2:
-            iphasep = np.pad(iphasep, ((0,1),(0,0),(0,0),(0,0)), 'wrap')
-        self._pa.iphasep = iphasep.reshape((-1, medium.num_scatterers))
-        self._pa.numphase = medium.legendre_table.numphase
-        
+        self._pa.extinctp = np.zeros(shape=[self._nbpts, medium.num_scatterers], dtype=np.float32)
+        self._pa.albedop = np.zeros(shape=[self._nbpts, medium.num_scatterers], dtype=np.float32)
+        self._pa.iphasep = np.zeros(shape=[self._nbpts, medium.num_scatterers], dtype=np.float32)
+       
+        for i, scatterer in enumerate(medium.scatterers.itervalues()):
+            
+            if isinstance(scatterer, shdom.MicrophysicalScatterer) or isinstance(scatterer, shdom.MultispectralScatterer):
+                scatterer = scatterer.get_optical_scatterer(self._wavelen)
+            resampled_scatterer = scatterer.resample(medium.grid)
+            
+            extinction = resampled_scatterer.extinction.data
+            albedo = resampled_scatterer.albedo.data
+            iphase = resampled_scatterer.phase.iphasep
+            
+            if self._bcflag == 0:
+                extinction = np.pad(extinction, ((0,1),(0,1),(0,0), 'wrap'))
+                albedo = np.pad(albedo, ((0,1),(0,1),(0,0), 'wrap'))
+                iphase = np.pad(iphase, ((0,1),(0,1),(0,0), 'wrap'))
+            elif self._bcflag == 1:
+                extinction = np.pad(extinction, ((0,0),(0,1),(0,0), 'wrap'))
+                albedo = np.pad(albedo, ((0,0),(0,1),(0,0), 'wrap'))
+                iphase = np.pad(iphase, ((0,0),(0,1),(0,0), 'wrap'))
+            elif self._bcflag == 2:
+                extinction = np.pad(extinction, ((0,1),(0,0),(0,0), 'wrap'))
+                albedo = np.pad(albedo, ((0,1),(0,0),(0,0), 'wrap'))
+                iphase = np.pad(iphase, ((0,1),(0,0),(0,0), 'wrap'))
+                
+            self._pa.extinctp[:,i] = extinction.ravel()
+            self._pa.albedop[:,i] = albedo.ravel()
+            self._pa.iphasep[:,i] = iphase.ravel()
+            
+            scat_table = copy.deepcopy(resampled_scatterer.phase.legendre_table)
+            if i == 0:
+                legendre_table = scat_table
+            else:
+                legendre_table.append(scat_table)
+
+        self._pa.numphase = legendre_table.numphase
+                    
         # Determine the number of legendre coefficient for a given angular resolution
         if self._deltam:
             self._nleg = self._mm+1
         else:
             self._nleg = self._mm
-        self._nleg = self._maxleg = max(medium.legendre_table.maxleg, self._nleg)
+        self._nleg = self._maxleg = max(legendre_table.maxleg, self._nleg)
         
         # Legenp is without the zero order term which is 1.0 for normalized phase function
-        self._pa.legenp = medium.legendre_table.get_legenp(self._nleg).astype(np.float32)
-        self._maxasym = medium.legendre_table.maxasym
-        self._maxpgl = medium.grid.num_points * medium.legendre_table.maxleg         
+        self._pa.legenp = legendre_table.get_legenp(self._nleg).astype(np.float32)
+        self._maxasym = legendre_table.maxasym
+        self._maxpgl = medium.grid.num_points * legendre_table.maxleg         
 
-        if medium.legendre_table.numphase > 0:
-            self._maxigl = medium.legendre_table.numphase*(medium.legendre_table.maxleg + 1)
+        if legendre_table.numphase > 0:
+            self._maxigl = legendre_table.numphase*(legendre_table.maxleg + 1)
         else:
-            self._maxigl = self._maxig*(medium.legendre_table.maxleg + 1)
+            self._maxigl = self._maxig*(legendre_table.maxleg + 1)
     
         self._iphase = np.empty(shape=(self._maxig, self._npart), dtype=np.int32, order='F')
         
-        self._nstleg = medium.legendre_table.nstleg
+        self._nstleg = legendre_table.nstleg
         
-        if medium.legendre_table.table_type == 'VECTOR':
+        if legendre_table.table_type == 'VECTOR':
             self._legen = np.empty(shape=(self._nstleg, self._maxigl,), dtype=np.float32, order='F')        
             self._ylmsun = np.empty(shape=(self._nstleg, self._nlm), dtype=np.float32, order='F') 
        
-        elif medium.legendre_table.table_type == 'SCALAR':
+        elif legendre_table.table_type == 'SCALAR':
             self._legen = np.empty(shape=(self._maxigl,), dtype=np.float32, order='F')        
             self._ylmsun = np.empty(shape=(self._nlm, ), dtype=np.float32, order='F') 
-                   
-
-    def set_albedo(self, medium):
-        """
-        set the single scattering albedo
-        
-        Parameters
-        ----------
-        medium: shdom.OpticalMedium
-            an OpticalMedium object contains albedop property
-        """        
-        albedop = medium.albedop.astype(np.float32)
-        if self._bcflag == 0:
-            albedop = np.pad(albedop, ((0,1),(0,1),(0,0),(0,0)), 'wrap')
-        elif self._bcflag == 1:
-            albedop = np.pad(albedop, ((0,0),(0,1),(0,0),(0,0)), 'wrap')
-        elif self._bcflag == 2:
-            albedop = np.pad(albedop, ((0,1),(0,0),(0,0),(0,0)), 'wrap')
-        self._pa.albedop = albedop.reshape((-1, medium.num_scatterers))
-        
-        
-    def set_extinction(self, medium):
-        """
-        set the optical extinction.
-        
-        Parameters
-        ----------
-        medium: shdom.OpticalMedium
-            an OpticalMedium object contains extinctp property
-        """
-        extinctp = medium.extinctp.astype(np.float32)
-        if self._bcflag == 0:
-            extinctp = np.pad(extinctp, ((0,1),(0,1),(0,0),(0,0)), 'wrap')
-        elif self._bcflag == 1:
-            extinctp = np.pad(extinctp, ((0,0),(0,1),(0,0),(0,0)), 'wrap')
-        elif self._bcflag == 2:
-            extinctp = np.pad(extinctp, ((0,1),(0,0),(0,0),(0,0)), 'wrap')
-        self._pa.extinctp = extinctp.reshape((-1, medium.num_scatterers))
             
  
     def set_grid(self, grid):
@@ -859,7 +856,8 @@ class RteSolver(object):
                 maxido=self._maxido,
                 verbose=verbose,
                 oldnpts=self._oldnpts,
-                ylmsun=self._ylmsun
+                ylmsun=self._ylmsun,
+                runname=self._name
             )
         self._iters += iters
         self._inradflag = True
@@ -889,16 +887,70 @@ class RteSolverArray(object):
     def __init__(self, solver_list=None):
         self._num_solvers = 0
         self._solver_list = []
-        self._names = []
         self._solver_type = None
-        if solver_list:
+        if solver_list is not None:
             for solver in solver_list:
                 self.add_solver(solver)
         
+    def init_medium(self, medium):
+        """TODO"""
+        solver_wavelengths = [round(solver._wavelen, 3) for solver in self.solver_list]
+        assert medium.wavelength == solver_wavelengths, 'medium wavelength {} differs from solver wavelengh {}'.format(medium.wavelength, solver_wavelengths)
+        for solver in self.solver_list:
+            solver.init_medium(medium)
+
+    def save_params(self, path):
+        """
+        Save RteSolverArray parameters to file.
+    
+        Parameters
+        ----------
+        path: str,
+            Full path to file. 
+        """
+        param_dict = {}
+        for key, param in self.__dict__.iteritems():
+            if key != '_solver_list':
+                param_dict[key] = param
+            else:
+                param_dict['solver_parameters'] = []
+                for solver in param:
+                    solver_param_dict = {'scene_params': solver._scene_parameters,
+                                         'numerical_params': solver._numerical_parameters}                    
+                    param_dict['solver_parameters'].append(solver_param_dict)
+        file = open(path,'w')
+        file.write(pickle.dumps(param_dict, -1))
+        file.close()            
+        
+        
+    def load_params(self, path):
+        """
+        Load RteSolverArray parameters from file.
+
+        Parameters
+        ----------
+        path: str,
+            Full path to file. 
+        """        
+        file = open(path, 'r')
+        data = file.read()
+        file.close()
+        params = pickle.loads(data)
+        num_stokes = 1 if params['_solver_type'] == 'Radiance' else 3
+        for key, param in params.iteritems():
+            if key != 'solver_parameters':
+                setattr(self, key, param)
+            else:
+                for solver_params in param:
+                    rte_solver = shdom.RteSolver(scene_params=solver_params['scene_params'], 
+                                                 numerical_params=solver_params['numerical_params'],
+                                                 num_stokes=num_stokes)
+                    self.add_solver(rte_solver)
+
     def __getitem__(self, val):
         return self.solver_list[val]
     
-    def add_solver(self, rte_solver, name=None):
+    def add_solver(self, rte_solver):
         """
         Add a rte_solver to the RteSolverArray
         
@@ -906,8 +958,6 @@ class RteSolverArray(object):
         ----------
         rte_solver: RteSolver object
             A RteSolver object to add to the RteSolverArray
-        name: str, optional
-            An ID for the solver. 
         """
         
         if self.solver_type is None:
@@ -918,12 +968,7 @@ class RteSolverArray(object):
             
         self._solver_list.append(rte_solver)
         self._num_solvers += 1
-        if name is None:
-            self._names.append('Solver{:d}'.format(self.num_solvers))
-        else:
-            self._names.append(name)
-
-
+      
     def solve(self, maxiter, verbose=True):
         """
         Parallel solving of all solvers.
@@ -1040,7 +1085,8 @@ class RteSolverArray(object):
                     maxido=rte_solver._maxido,
                     verbose=verbose,
                     oldnpts=rte_solver._oldnpts,
-                    ylmsun=rte_solver._ylmsun                    
+                    ylmsun=rte_solver._ylmsun,
+                    runname=rte_solver._name
                     ) for rte_solver in self.solver_list)
      
         # Update solvers internal structures
@@ -1062,11 +1108,7 @@ class RteSolverArray(object):
     @property
     def num_solvers(self):
         return self._num_solvers
-    
-    @property
-    def names(self):
-        return self._names  
-    
+
     @property
     def solver_type(self):
         return self._solver_type

@@ -67,7 +67,8 @@ class LegendreTable(object):
         self._data = np.append(curr_table_data, table_data, axis=-1)
         self._maxasym = max(self.maxasym, table.maxasym)
         self._maxleg = max(self.maxleg, table.maxleg)
-        self._numphase += table.numphase 
+        self._numphase += table.numphase
+         
         
 
     def get_legenp(self, nleg):
@@ -141,7 +142,6 @@ class GridPhase(object):
             index._data = index.data.clip(1)
             grid_phase = shdom.GridPhase(self.legendre_table, index)
         return grid_phase     
-    
     
     @property
     def iphasep(self):
@@ -361,7 +361,12 @@ class MieMonodisperse(object):
         print('Reading mie table from file: {}'.format(file_path))
         self._wavelen1, self._wavelen2, self._deltawave, self._pardens, \
             self._partype, self._rindex, self._nsize, self._maxleg = self.read_table_header(file_path)
-    
+        
+        self._wavelencen = core.get_center_wavelen(
+            wavelen1=self._wavelen1, 
+            wavelen2=self._wavelen2
+        )        
+
         self._radii, self._extinct, self._scatter, self._nleg, self._legcoef, self._table_type = \
             core.read_mono_table(
                 mietabfile=file_path,
@@ -612,13 +617,11 @@ class MiePolydisperse(object):
         self._table_type = None
         self.set_mono_disperse(mono_disperse)
         self.set_size_distribution(size_distribution)
-        self._microphysical_medium = None
         self._extinct = None
         self._ssalb = None
         self._nleg = None
         self._maxleg = None
-        self._legendre_table = None    
-
+        self._legendre_table = None 
 
     def set_mono_disperse(self, mono_disperse):
         """TODO"""
@@ -785,11 +788,16 @@ class MiePolydisperse(object):
 
         """   
         print('Reading mie table from file: {}'.format(file_path))
-        self.mono_disperse._wavelen1, self.mono_disperse._wavelen2, self.mono_disperse._deltawave, \
-            self.mono_disperse._pardens, self.mono_disperse._partype, self.mono_disperse._rindex, \
-            self.mono_disperse._distflag, self.size_distribution._nretab, self.size_distribution._nvetab, \
+        self._mono_disperse._wavelen1, self._mono_disperse._wavelen2, self._mono_disperse._deltawave, \
+            self._mono_disperse._pardens, self._mono_disperse._partype, self._mono_disperse._rindex, \
+            self._mono_disperse._distflag, self.size_distribution._nretab, self.size_distribution._nvetab, \
             self._maxleg = self.read_table_header(file_path)
-
+        
+        self._mono_disperse._wavelencen = core.get_center_wavelen(
+            wavelen1=self.mono_disperse._wavelen1, 
+            wavelen2=self.mono_disperse._wavelen2
+        )
+        
         self.size_distribution.reff, self.size_distribution.veff, self._extinct, self._ssalb, \
             self._nleg, self.legcoef, self._table_type = core.read_poly_table(
                 mietabfile=file_path, 
@@ -925,50 +933,7 @@ class MiePolydisperse(object):
         phase = GridPhase(legen_table, legen_index)        
         return phase
 
-        
-    def set_microphysical_medium(self, microphysical_medium):
-        max_re = microphysical_medium.reff.max_value
-        max_ve = microphysical_medium.veff.max_value
-        min_re = microphysical_medium.reff.data[microphysical_medium.reff.data>0.0].min()
-        min_ve = microphysical_medium.veff.data[microphysical_medium.veff.data>0.0].min()
-        
-        assert  max_re < self.size_distribution.reff.max()+1e-3, \
-               'Maximum medium effective radius [{:2.2f}] is larger than the pre-computed table maximum radius [{:2.2f}]. ' \
-               'Recompute Mie table with larger maximum radius.'.format(max_re, self.size_distribution.reff.max())
-        assert  min_re > self.size_distribution.reff.min()-1e-3, \
-               'Minimum medium effective radius [{:2.2f}] is smaller than the pre-computed table minimum radius [{:2.2f}]. ' \
-               'Recompute Mie table with smaller minimum radius.'.format(min_re, self.size_distribution.reff.min())
-        assert  max_ve < self.size_distribution.veff.max()+1e-3, \
-               'Maximum medium effective variance [{:2.2f}] is larger than the pre-computed table maximum variance [{:2.2f}]. ' \
-               'Recompute Mie table with larger maximum variance.'.format(max_ve, self.size_distribution.veff.max())
-        assert  min_ve > self.size_distribution.veff.min()-1e-3, \
-               'Minimum medium effective variance [{:2.2f}] is smaller than the pre-computed table minimum variance [{:2.2f}]. ' \
-               'Recompute Mie table with smaller minimum variance.'.format(min_ve, self.size_distribution.veff.min())
-        
-        self._microphysical_medium = microphysical_medium
 
-
-    def get_scatterer(self, squeeze_table=True):
-        """
-        Interpolate optical quantities (extinction, ssa, phase function) over a grid.
-        All optical quantities are a function of the effective radius.
-        The optical extinction also scales with liquid water content.
-    
-        Returns
-        -------
-        medium: shdom.OpticalMedium object
-            An OpticalMedium object encapsulating the the extinction, single scattering albedo and phase function on a 3D grid
-        """   
-        lwc = self.microphysical_medium.lwc
-        reff = self.microphysical_medium.reff
-        veff = self.microphysical_medium.veff
-        
-        extinction = self.get_extinction(lwc, reff, veff)
-        albedo = self.get_albedo(reff, veff)
-        phase = self.get_phase(reff, veff, squeeze_table)
-        return shdom.Scatterer(extinction, albedo, phase)
-    
-    
     @property
     def nleg(self):
         return self._nleg
@@ -1015,11 +980,12 @@ class MiePolydisperse(object):
         return self._size_distribution
     
     @property
-    def microphysical_medium(self):
-        return self._microphysical_medium    
+    def wavelength(self):
+        if self.mono_disperse._wavelencen is None:
+            return None
+        else:
+            return round(self.mono_disperse._wavelencen, 3)
     
-    
-            
 class Rayleigh(object):
     """
     Rayleigh scattering for temperature profile.
@@ -1111,7 +1077,7 @@ class Rayleigh(object):
         rayleigh: shdom.Scatterer
             A shdom.Scatterer object containting the Rayleigh optical properties on a 1D grid.
         """
-        rayleigh = shdom.Scatterer(self.extinction, self.albedo, self.phase)
+        rayleigh = shdom.OpticalScatterer(self.wavelength, self.extinction, self.albedo, self.phase)
         return rayleigh
 
 

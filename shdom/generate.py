@@ -6,18 +6,13 @@ import os
 import numpy as np
 import argparse
 import shdom
+import copy
+from collections import OrderedDict
 
 class Generator(object):
     """
-    A generation object has the following components:
-
-    1. update_parser(parser) class method used for argparsing
-    2. init_grid() method
-    3. init_extinction() method
-    4. init_albedo() method
-    5. init_phase() method
-    6. get_scatterer() method
-    
+    TODO 
+       
     Parameters
     ----------
     args: arguments from argparse.ArgumentParser()
@@ -25,11 +20,6 @@ class Generator(object):
     """
     def __init__(self, args):
         self._args = args
-        self._grid = None
-        self._extinction = None
-        self._albedo = None
-        self._phase = None
-        
         
     @classmethod
     def update_parser(self, parser): 
@@ -48,100 +38,137 @@ class Generator(object):
         """
         return parser
     
-    def set_grid(self, grid):
+    def get_grid(self):
         """
-        This method sets the atmospheric grid.
+        This method gets the atmospheric grid.
         """
-        self._grid = grid
+        return None
         
-    def init_grid(self):
+    def get_extinction(self, grid=None):
         """
-        This method generates the atmospheric grid.
+        This method gets the atmospheric extinction.
         """
-        self._grid = None
-    
-    def set_extinction(self, extinction):
-        """
-        This method sets the atmospheric extinction.
-        """
-        self._extinction = extinction    
+        return None
         
-    def init_extinction(self):
+    def get_albedo(self, grid=None):
         """
-        Initialize the optical extinction field.
-        """
-        self._extinction = None
-        
-    def set_albedo(self, albedo):
-        """
-        This method sets the atmospheric albedo.
+        This method gets the atmospheric albedo.
         """
         self._albedo = albedo
-        
-    def init_albedo(self):
-        """
-        Initialize the single scattering albedo field.
-        """
-        self._albedo = None
     
-    def set_phase(self, phase):
+    def get_phase(self, grid=None):
         """
-        This method sets the atmospheric phase.
+        This method gets the atmospheric phase.
         """
-        self._phase = phase    
-        
-    def init_phase(self):
-        """
-        Initialize the phase function field.
-        """
-        self._phase = None
+        return None  
+   
     
     def get_scatterer(self):
         """
-        Return a shdom.Scatterer object with the optical properties on a grid.
+        This method gets a shdom.Scatterer object.
         """
-        return shdom.Scatterer(self.extinction, self.albedo, self.phase)
+        return None
     
     @property
     def args(self):
         return self._args
-    
-    @property
-    def grid(self):
-        if self._grid is None:
-            self.init_grid()
-        return self._grid
-    
-    @property
-    def extinction(self):
-        if self._extinction is None:
-            self.init_extinction()
-        return self._extinction
-    
-    @property
-    def albedo(self):
-        if self._albedo is None:
-            self.init_albedo()
-        return self._albedo
-    
-    @property
-    def phase(self):
-        if self._phase is None:
-            self.init_phase()
-        return self._phase    
 
     
-class Air(Generator):
+class CloudGenerator(Generator):
+    """TODO"""
+    def __init__(self, args):
+        super(CloudGenerator, self).__init__(args)
+        self._mie = OrderedDict()
+        
+    def add_mie(self, table_path):
+        mie = shdom.MiePolydisperse()
+        mie.read_table(table_path)
+        self._mie[mie.wavelength] = copy.deepcopy(mie)
+        
+    def get_lwc(self, grid=None):
+        """
+        This method gets the lwc.
+        """
+        return None     
+      
+    def get_reff(self, grid=None):
+        """
+        This method gets the reff.
+        """
+        return None          
+
+    def get_veff(self, grid=None):
+        """
+        This method gets the veff.
+        """
+        return None
+    
+    def get_albedo(self, wavelength, grid=None):
+        if grid is None:
+            grid = self.get_grid()
+        reff = self.get_reff(grid)
+        veff = self.get_veff(grid)        
+        return self.mie[wavelength].get_albedo(reff, veff)
+    
+    def get_phase(self, wavelength, grid=None):
+        if grid is None:
+            grid = self.get_grid()  
+        reff = self.get_reff(grid)
+        veff = self.get_veff(grid)          
+        return self.mie[wavelength].get_phase(reff, veff)
+    
+    def get_scatterer(self):
+        """
+        Return a shdom.Scatterer object
+        """
+        lwc = self.get_lwc()
+        reff = self.get_reff()
+        veff = self.get_veff()
+        if (lwc is not None) and (reff is not None) and (veff is not None):
+            scatterer = shdom.MicrophysicalScatterer(lwc, reff, veff)
+            for mie in self.mie.itervalues():
+                scatterer.add_mie(mie)
+        
+        else:
+            if len(self.mie) == 1:
+                wavelength = self.mie.keys()[0]
+                scatterer = shdom.Scatterer(
+                    wavelength, 
+                    self.get_extinction(wavelength), 
+                    self.get_albedo(wavelength), 
+                    self.get_phase(wavelength)
+                )
+            
+            else:
+                scatterer = shdom.MultispectralScatterer()
+                for wavelength in self.mie.iterkeys():
+                    scatterer.add_scatterer(shdom.Scatterer(
+                        wavelength, 
+                        self.get_extinction(wavelength), 
+                        self.get_albedo(wavelength), 
+                        self.get_phase(wavelength)
+                    ))
+                                 
+        return scatterer    
+
+    @property
+    def mie(self):
+        return self._mie    
+
+
+class AirGenerator(Generator):
     """
     Generate air optical properties according to rayleigh molecular scattering.
     
     Parameters
     ----------
     args: arguments from argparse.ArgumentParser()
-        The arguments requiered for this generator. 
+        The arguments requiered for this generator.
+    wavelength: float,
+        The wavelength in [microns]
     """
     def __init__(self, args):
-        super(Air, self).__init__(args)
+        super(AirGenerator, self).__init__(args)
         
     @classmethod
     def update_parser(self, parser): 
@@ -153,39 +180,52 @@ class Air(Generator):
         parser.add_argument('--air_num_points',
                             default=20,
                             type=int,
-                            help='(default value: %(default)s) Number of altitude grid points for the air volume.')
-        parser.add_argument('--wavelength', 
-                            default=0.672,
-                            type=np.float32, 
-                            help='(default value: %(default)s) Wavelength [micron].')        
+                            help='(default value: %(default)s) Number of altitude grid points for the air volume.')     
         return parser        
     
     def set_temperature_profile(self, temperature_profile):
-        self._temperature_profile = temperature_profile
-        self._rayleigh = shdom.Rayleigh(self.args.wavelength)
-        self.rayleigh.set_profile(temperature_profile)        
+        self._temperature_profile = temperature_profile     
         
-    def get_scatterer(self):
+    def get_scatterer(self, wavelength):
+        """
+        Parameters
+        -----------
+        wavelength: float or list,
+            The wavelength or wavelength list in [microns] 
+            
+        Returns
+        -------
+        scatterer: shdom.Scatterer or shdom.MultispectralScatterer
+        """
         altitudes = shdom.Grid(z=np.linspace(0.0, self.args.air_max_alt, self.args.air_num_points))       
-        return self.rayleigh.get_scatterer()
-
+        wavelengths = np.array(wavelength)
+        num_bands = wavelengths.size
+        
+        if  num_bands == 1:
+            rayleigh = shdom.Rayleigh(wavelength)
+            rayleigh.set_profile(self.temperature_profile)
+            scatterer = rayleigh.get_scatterer()
+        else:
+            scatterer = shdom.MultispectralScatterer()
+            for i in range(num_bands):
+                rayleigh = shdom.Rayleigh(wavelength[i])
+                rayleigh.set_profile(self.temperature_profile)
+                scatterer.add_scatterer(rayleigh.get_scatterer())   
+        return scatterer
+    
     @property
     def temperature_profile(self):
         return self._temperature_profile    
     
-    @property
-    def rayleigh(self):
-        return self._rayleigh  
     
-    
-class AFGLSummerMidLatAir(Air):
+class AFGLSummerMidLatAir(AirGenerator):
     """
     Temperature profile is taken from AFGL measurements of summer mid-lat.
     
     Parameters
     ----------
     args: arguments from argparse.ArgumentParser()
-        The arguments requiered for this generator.    
+        The arguments requiered for this generator.   
     """
     def __init__(self, args):
         super(AFGLSummerMidLatAir, self).__init__(args)
@@ -197,7 +237,7 @@ class AFGLSummerMidLatAir(Air):
         self.set_temperature_profile(temperature_profile)
        
         
-class SingleVoxel(Generator):
+class SingleVoxel(CloudGenerator):
     """
     Define a Medium with a single voxel in center of the grid. 
     It is useful for developing and debugging of derivatives and sensitivity analysis.
@@ -209,25 +249,6 @@ class SingleVoxel(Generator):
     """
     def __init__(self, args):
         super(SingleVoxel, self).__init__(args)
-        self._mie = shdom.MiePolydisperse()
-        if args.mie_table_path:
-            self._mie.read_table(args.mie_table_path)
-        else:
-            raise AttributeError('Missing mie_table_path argument') 
-        
-        lwc = args.lwc
-        if lwc is not None:
-            lwc_data = np.zeros(shape=(args.nx, args.ny, args.nz), dtype=np.float32)
-            lwc_data[args.nx/2, args.ny/2, args.nz/2] = lwc 
-            lwc = shdom.GridData(self.grid, lwc_data)
-
-        reff_data = np.zeros(shape=(args.nx, args.ny, args.nz), dtype=np.float32)
-        reff_data[args.nx/2, args.ny/2, args.nz/2] = args.reff
-        veff_data = np.zeros(shape=(args.nx, args.ny, args.nz), dtype=np.float32)
-        veff_data[args.nx/2, args.ny/2, args.nz/2] = args.veff        
-        self._reff = shdom.GridData(self.grid, reff_data)
-        self._veff = shdom.GridData(self.grid, veff_data)
-        self._lwc = lwc
 
     @classmethod
     def update_parser(self, parser):
@@ -235,68 +256,87 @@ class SingleVoxel(Generator):
                             default=10,
                             type=int, 
                             help='(default value: %(default)s) Number of grid cell in x (North) direction')
-        
         parser.add_argument('--ny', 
                             default=10,
                             type=int, 
                             help='(default value: %(default)s) Number of grid cell in y (East) direction')
-    
         parser.add_argument('--nz', 
                             default=10,
                             type=int, 
                             help='(default value: %(default)s) Number of grid cell in z (Up) direction')
-    
         parser.add_argument('--domain_size', 
                             default=1.0,
                             type=float, 
                             help='(default value: %(default)s) Cubic domain size [km]')
-    
         parser.add_argument('--extinction', 
                             default=10.0,
                             type=np.float32, 
                             help='(default value: %(default)s) Extinction of the center voxel [km^-1]')
-    
-        parser.add_argument('--lwc', 
+        parser.add_argument('--lwc',
                             default=None,
                             type=np.float32, 
-                            help='(default value: %(default)s) Liquid water content of the center voxel [g/m^3]. If specified, extinction flag is ignored.')
-    
+                            help='(default value: %(default)s) Liquid water content of the center voxel [g/m^3]. If specified, extinction argument is ignored.')
         parser.add_argument('--reff', 
                             default=10.0,
                             type=np.float32, 
                             help='(default value: %(default)s) Effective radius of the center voxel [micron]')
-    
         parser.add_argument('--veff', 
                             default=0.1,
                             type=np.float32, 
                             help='(default value: %(default)s) Effective variance of the center voxel')
-    
         parser.add_argument('--mie_table_path',
                             help='Path to a precomputed Mie scattering table. \
                                   See notebooks/Make Mie Table.ipynb for more details')
-        return parser        
+        return parser      
 
 
-    def init_grid(self):
+    def get_grid(self):
         bb = shdom.BoundingBox(0.0, 0.0, 0.0, self.args.domain_size, self.args.domain_size, self.args.domain_size)
-        self._grid = shdom.Grid(bounding_box=bb, nx=self.args.nx, ny=self.args.ny, nz=self.args.nz) 
-        
-    def init_extinction(self):
-        if self._lwc is None:
-            ext_data = np.zeros(shape=(self.grid.nx, self.grid.ny, self.grid.nz), dtype=np.float32)
-            ext_data[self.grid.nx/2, self.grid.ny/2, self.grid.nz/2] = self.args.extinction
-            extinction = shdom.GridData(self.grid, ext_data)
+        return shdom.Grid(bounding_box=bb, nx=self.args.nx, ny=self.args.ny, nz=self.args.nz)
+            
+    def get_extinction(self, wavelength=None, grid=None):
+        if grid is None:
+            grid = self.get_grid()
+            
+        if self.args.lwc is None:
+            ext_data = np.zeros(shape=(grid.nx, grid.ny, grid.nz), dtype=np.float32)
+            ext_data[grid.nx/2, grid.ny/2, grid.nz/2] = self.args.reff
+            extinction = shdom.GridData(grid, ext_data)
         else:
-            extinction = self._mie.get_extinction(self._lwc, self._reff, self._veff)
-        self._extinction = extinction
-    
-    def init_albedo(self):   
-        self._albedo = self._mie.get_albedo(self._reff, self._veff)
-    def init_phase(self):
-        self._phase = self._mie.get_phase(self._reff, self._veff)
+            assert wavelength is not None, 'No wavelength provided'
+            lwc = self.get_lwc(grid)
+            reff = self.get_reff(grid)
+            veff = self.get_veff(grid)
+            extinction = self.mie[wavelength].get_extinction(lwc, reff, veff)
+        return extinction
+
+    def get_lwc(self, grid=None):
+        if grid is None:
+            grid = self.get_grid()
+            
+        lwc = self.args.lwc
+        if lwc is not None:
+            lwc_data = np.zeros(shape=(grid.nx, grid.ny, grid.nz), dtype=np.float32)
+            lwc_data[grid.nx/2, grid.ny/2, grid.nz/2] = self.args.lwc 
+            lwc = shdom.GridData(grid, lwc_data)        
+        return lwc
         
-    
-class Homogeneous(Generator):
+    def get_reff(self, grid=None):
+        if grid is None:
+            grid = self.get_grid()        
+        reff_data = np.zeros(shape=(grid.nx, grid.ny, grid.nz), dtype=np.float32)
+        reff_data[grid.nx/2, grid.ny/2, grid.nz/2] = self.args.reff 
+        return shdom.GridData(grid, reff_data)
+        
+    def get_veff(self, grid=None):
+        if grid is None:
+            grid = self.get_grid()        
+        veff_data = np.zeros(shape=(grid.nx, grid.ny, grid.nz), dtype=np.float32)
+        veff_data[grid.nx/2, grid.ny/2, grid.nz/2] = self.args.veff    
+        return shdom.GridData(grid, veff_data)    
+
+
+class Homogeneous(CloudGenerator):
     """
     Define a homogeneous Medium. 
 
@@ -307,29 +347,19 @@ class Homogeneous(Generator):
     """
     def __init__(self, args):
         super(Homogeneous, self).__init__(args)
-        self._mie = shdom.MiePolydisperse()
-        if args.mie_table_path:
-            self._mie.read_table(args.mie_table_path)
-        else:
-            raise AttributeError('Missing mie_table_path argument') 
-        
-        reff_data = np.full(shape=(args.nx, args.ny, args.nz), fill_value=args.reff, dtype=np.float32)        
-        veff_data = np.full(shape=(args.nx, args.ny, args.nz), fill_value=args.veff, dtype=np.float32)        
-        self._reff = shdom.GridData(self.grid, reff_data)
-        self._veff = shdom.GridData(self.grid, veff_data)   
-        
+   
     @classmethod
     def update_parser(self, parser):
         parser.add_argument('--nx', 
-                            default=3,
+                            default=10,
                             type=int, 
                             help='(default value: %(default)s) Number of grid cell in x (North) direction')
         parser.add_argument('--ny', 
-                            default=3,
+                            default=10,
                             type=int, 
                             help='(default value: %(default)s) Number of grid cell in y (East) direction')
         parser.add_argument('--nz', 
-                            default=3,
+                            default=10,
                             type=int, 
                             help='(default value: %(default)s) Number of grid cell in z (Up) direction')
         parser.add_argument('--domain_size', 
@@ -340,6 +370,10 @@ class Homogeneous(Generator):
                             default=1.0,
                             type=np.float32, 
                             help='(default value: %(default)s) Extinction [km^-1]')  
+        parser.add_argument('--lwc', 
+                            default=None,
+                            type=np.float32, 
+                            help='(default value: %(default)s) Liquid water content of the center voxel [g/m^3]. If specified, extinction argument is ignored.')
         parser.add_argument('--reff', 
                             default=10.0,
                             type=np.float32, 
@@ -353,49 +387,61 @@ class Homogeneous(Generator):
                                   See notebooks/Make Mie Table.ipynb for more details')    
         return parser        
 
-    def init_grid(self):
+    def get_grid(self):
         bb = shdom.BoundingBox(0.0, 0.0, 0.0, self.args.domain_size, self.args.domain_size, self.args.domain_size)
-        self._grid = shdom.Grid(bounding_box=bb, nx=self.args.nx, ny=self.args.ny, nz=self.args.nz)
+        return shdom.Grid(bounding_box=bb, nx=self.args.nx, ny=self.args.ny, nz=self.args.nz)
         
-    def init_extinction(self): 
-        ext_data = np.full(shape=(self.grid.nx, self.grid.ny, self.grid.nz), fill_value=self.args.extinction, dtype=np.float32)
-        self._extinction = shdom.GridData(self.grid, ext_data)
-    
-    def init_albedo(self):   
-        self._albedo = self._mie.get_albedo(self._reff, self._veff)
-    
-    def init_phase(self):
-        self._phase = self._mie.get_phase(self._reff, self._veff)
+    def get_extinction(self, wavelength=None, grid=None):
+        if grid is None:
+            grid = self.get_grid()
+            
+        if self.args.lwc is None:
+            ext_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=self.args.extinction, dtype=np.float32)  
+            extinction = shdom.GridData(grid, ext_data)
+        else:
+            assert wavelength is not None, 'No wavelength provided'
+            lwc = self.get_lwc(grid)
+            reff = self.get_reff(grid)
+            veff = self.get_veff(grid)
+            extinction = self.mie[wavelength].get_extinction(lwc, reff, veff)
+        return extinction
+        
+    def get_lwc(self, grid=None):
+        if grid is None:
+            grid = self.get_grid()
+            
+        lwc = self.args.lwc
+        if lwc is not None:
+            lwc_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=lwc, dtype=np.float32)        
+            lwc = shdom.GridData(grid, lwc_data)        
+        return lwc
+        
+    def get_reff(self, grid=None):
+        if grid is None:
+            grid = self.get_grid()     
+        reff_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=self.args.reff, dtype=np.float32)
+        return shdom.GridData(grid, reff_data)
+        
+    def get_veff(self, grid=None):
+        if grid is None:
+            grid = self.get_grid()        
+        veff_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=self.args.veff, dtype=np.float32)    
+        return shdom.GridData(grid, veff_data)
         
         
-        
-class LesFile(Generator):
+class LesFile(CloudGenerator):
     """
-    Generate an optical medium from an LES file which contains
-    a table with: lwc, reff, veff (optional).
+    Generate an optical medium from an LES file which contains a table with: lwc, reff, veff (optional).
     
     Parameters
     ----------
     args: arguments from argparse.ArgumentParser()
         The arguments requiered for this generator.
-        
-    Notes
-    -----
-    veff in table not supported yet.
     """
     def __init__(self, args):
         super(LesFile, self).__init__(args)
-        self._mie = shdom.MiePolydisperse()
-        if args.mie_table_path:
-            self._mie.read_table(args.mie_table_path)
-        else:
-            raise AttributeError('Missing mie_table_path argument') 
-
-        droplets = shdom.MicrophysicalMedium()
-        droplets.load_from_csv(args.path, args.veff)
-        self.set_grid(droplets.grid)
-        self._mie.set_microphysical_medium(droplets)
-        
+        self._droplets = shdom.MicrophysicalScatterer()
+        self._droplets.load_from_csv(args.path, args.veff)
         
     @classmethod
     def update_parser(self, parser): 
@@ -410,6 +456,10 @@ class LesFile(Generator):
                                   See notebooks/Make Mie Table.ipynb for more details')    
         return parser
     
+    def get_grid(self):
+        return self._droplets.grid
     
     def get_scatterer(self):
-        return self._mie.get_scatterer()
+        for mie in self.mie.itervalues():
+            self._droplets.add_mie(mie)
+        return self._droplets

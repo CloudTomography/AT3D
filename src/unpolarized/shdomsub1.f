@@ -30,7 +30,7 @@
      .               NCELLS, GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .               RSHPTR, SHPTR, OSHPTR, WORK, WORK1, WORK2,
      .               SOURCE, DELSOURCE, RADIANCE, FLUXES, DIRFLUX, 
-     .               YLMSUN, VERBOSE, 
+     .               YLMSUN, VERBOSE, RUNNAME, 
      .               NPX, NPY, NPZ, DELX, DELY, XSTART, YSTART,
      .               ZLEVELS, TEMPP, EXTINCTP, NBPTS,
      .               ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
@@ -104,6 +104,8 @@ Cf2py intent(in) :: WORK, WORK2
 Cf2py intent(in) :: SRCTYPE, UNITS, SFCTYPE
       LOGICAL VERBOSE
 Cf2py intent(in) :: VERBOSE
+      CHARACTER(LEN=*) :: RUNNAME
+Cf2py intent(in) :: RUNNAME     
       INTEGER MAXNLM, MAXNMU, MAXNPHI
 
       REAL    YLMSUN(*)
@@ -287,7 +289,8 @@ C         as long as SPLITTESTING is true.
       A = 0.0
       
       IF (VERBOSE) THEN
-        WRITE (6,*) '! Iter Log(Sol)  SplitCrit  Npoints  Nsh(avg)'
+        WRITE (6,*) ' ! Iter Log(Sol)  SplitCrit  Npoints  Nsh(avg)', 
+     .              '   [', RUNNAME,']'
       ENDIF
  
 C         Main solution loop
@@ -394,17 +397,17 @@ C           If it is a not scattering medium then do only one iteration
         IF (VERBOSE) THEN
 C           Print out the log solution criterion, number of points, 
 C             and average SH truncation.
-          WRITE (6,'(2X,I4,F8.3,1X,E10.3,1X,I8,1X,F8.2,1X,F6.3)') 
-     .          ITER, LOG10(MAX(SOLCRIT,1.0E-20)), SPLITCRIT,
-     .          NPTS, FLOAT(SHPTR(NPTS+1))/NPTS, 
-     .          FLOAT(SHPTR(NPTS+1))/(NPTS*NLM)
+          WRITE (6,'(2X,I4,F8.3,1X,E10.3,1X,I8,1X,F8.2,1X,F6.3,A,A,A)') 
+     .          ITER, LOG10(MAX(SOLCRIT,1.0E-20)), 
+     .          SPLITCRIT, NPTS, FLOAT(SHPTR(NPTS+1))/NPTS, 
+     .          FLOAT(SHPTR(NPTS+1))/(NPTS*NLM), '   [', RUNNAME,']'
         ENDIF
         
       ENDDO
       
       IF (VERBOSE) THEN
-        WRITE (6,'(1X,A,I6,A,F9.6)') '! Iterations: ', ITER,
-     .                   '     Final Criterion: ', SOLCRIT
+        WRITE (6,'(1X,A,I6,A,F9.6,A,A,A)') '! Iterations: ',
+     .    ITER, '     Final Criterion: ', SOLCRIT, '   [', RUNNAME,']'
       ENDIF
 
 C          Comment in for GLE graphics output of cell structure (see routine)

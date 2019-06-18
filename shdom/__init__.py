@@ -231,7 +231,12 @@ class Grid(object):
         if x is not None and y is not None and z is not None:
             grid = Grid(x=x, y=y, z=z)
         else:
-            bounding_box = self.bounding_box + other.bounding_box
+            if self.bounding_box is None:
+                bounding_box = other.bounding_box
+            elif other.bounding_box is None:
+                bounding_box = self.bounding_box
+            else:
+                bounding_box = self.bounding_box + other.bounding_box
             if x is None and y is None and z is not None:
                 grid = Grid(bounding_box=bounding_box, z=z)
             elif x is None and y is None and z is None:
@@ -240,8 +245,11 @@ class Grid(object):
     
     
     def __eq__(self, other) : 
-        for item1, item2 in zip(self.__dict__.itervalues(), other.__dict__.itervalues()):
-            if not np.array_equiv(np.nan_to_num(item1), np.nan_to_num(item2)):
+        for key, item in self.__dict__.iteritems():
+            other_item = None
+            if other.__dict__.has_key(key):
+                other_item = other.__dict__[key]
+            if not np.array_equiv(np.nan_to_num(item), np.nan_to_num(other_item)):
                 return False
         return True      
 
@@ -364,7 +372,7 @@ class GridData(object):
     def __init__(self, grid, data):
         self._type = grid.type
         self._grid = grid
-        self._data = np.array(data)
+        self._data = np.array(data).squeeze()
         self._shape = self._data.shape[:3]
         self._ndim = self._data.ndim    
         if self.type == 'Homogeneous' and self.ndim is not 0:
@@ -382,8 +390,14 @@ class GridData(object):
         if self.type == '3D':
             self._linear_interpolator3d = RegularGridInterpolator((grid.x, grid.y, grid.z), self.data, bounds_error=False, fill_value=0.0)
             self._nearest_interpolator3d = RegularGridInterpolator((grid.x, grid.y, grid.z), self.data, method='nearest', bounds_error=False, fill_value=0)
-    
-    
+       
+    def __eq__(self, other):
+        """check if two GridData objects are equal"""
+        if np.allclose(self.data, other.data) and self.grid == other.grid:
+            return True
+        else:
+            return False
+        
     def __add__(self, other):
         """Add two GridData objects by resampling to a common grid."""
         if self.grid == other.grid:
@@ -542,8 +556,7 @@ class BoundingBox(object):
         self.zmax = zmax
         
     def __eq__(self, other) : 
-        return self.__dict__ == other.__dict__    
-    
+        return self.__dict__ == other.__dict__
     
     def __add__(self, other):
         xmin = min(self.xmin, other.xmin)
@@ -615,11 +628,10 @@ def load_forward_model(directory):
     -----
     The ground-truth medium is used for evaulation of the recovery.
     """  
-    
     # Load the ground truth medium for error analysis and ground-truth known phase and albedo
     medium_path = os.path.join(directory, 'ground_truth_medium')
     if os.path.exists(medium_path):
-        medium = shdom.OpticalMedium()
+        medium = shdom.Medium()
         medium.load(path=medium_path)   
     else: 
         medium = None
@@ -632,11 +644,11 @@ def load_forward_model(directory):
     
     # Load RteSolver according to numerical and scene parameters
     solver_path = os.path.join(directory, 'solver_parameters')
-    solver = shdom.RteSolver()
+    if np.array(medium.wavelength).size == 1:
+        solver = shdom.RteSolver()
+    else:
+        solver = shdom.RteSolverArray()
     if os.path.exists(solver_path):
         solver.load_params(path=os.path.join(directory, 'solver_parameters'))   
-    else:
-        numerical_params = shdom.NumericalParameters()
-        solver.set_numerics(numerical_params)
-
+        
     return medium, solver, measurements

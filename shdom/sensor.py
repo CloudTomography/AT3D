@@ -138,8 +138,8 @@ class RadianceSensor(Sensor):
         -----
         For a small amout of pixels parallel rendering is slower due to communication overhead.
         """
-        multiview = projection.__class__ is shdom.sensor.MultiViewProjection
-        multichannel = rte_solver.__class__ is shdom.rte_solver.RteSolverArray
+        multiview = isinstance(projection, shdom.MultiViewProjection)
+        multichannel = isinstance(rte_solver, shdom.RteSolverArray)
         
         # If rendering several atmospheres (e.g. multi-spectral rendering)
         rte_solvers = rte_solver if multichannel else [rte_solver]
@@ -223,8 +223,8 @@ class StokesSensor(Sensor):
         -----
         For a small amout of pixels parallel rendering is slower due to communication overhead.
         """
-        multiview = projection.__class__ is shdom.sensor.MultiViewProjection
-        multichannel = rte_solver.__class__ is shdom.rte_solver.RteSolverArray
+        multiview = isinstance(projection, shdom.MultiViewProjection)
+        multichannel = isinstance(rte_solver, shdom.RteSolverArray)
         
         # If rendering several atmospheres (e.g. multi-spectral rendering)
         rte_solvers = rte_solver if multichannel else [rte_solver]
@@ -733,7 +733,6 @@ class Measurements(object):
     """
     def __init__(self, camera=None, **kwargs):
         self._camera = camera
-        
         if kwargs.has_key('images'):
             self._images = kwargs['images']
             if type(self.images) is not list:

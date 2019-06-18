@@ -624,7 +624,7 @@ Cf2py intent(in) :: MEASUREMENTS
 Cf2py intent(out) :: GRADOUT, COST, VISOUT
       CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
 Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
-      LOGICAL   EXTFLAG, PHASEFLAG
+      LOGICAL   EXTFLAG(NUMDER), PHASEFLAG(NUMDER)
 Cf2py intent(in) :: EXTFLAG, PHASEFLAG
       INTEGER NUMDER, PARTDER(NUMDER)
 Cf2py intent(in) :: NUMDER, PARTDER
@@ -752,7 +752,9 @@ C             Extrapolate ray to domain top if above
 
         GRAD = GRAD + PIXEL_ERROR*RAYGRAD
         COST = COST + 0.5*PIXEL_ERROR**2
+C        WRITE(*,*) N, VISOUT(N), MEASUREMENTS(N), COST
       ENDDO
+      
       
       DO ND = 1, NUMDER
         CALL BASE_GRID_PROJECTION(NBCELLS, NCELLS, NBPTS, 
@@ -809,7 +811,7 @@ C     outgoing radiance (RAD) at the point X0,Y0,Z0.
       REAL    MURAY, PHIRAY, MU2, PHI2, RADOUT
       DOUBLE PRECISION X0, Y0, Z0
       CHARACTER SRCTYPE*1, SFCTYPE*2
-      LOGICAL   EXTFLAG, PHASEFLAG
+      LOGICAL   EXTFLAG(NUMDER), PHASEFLAG(NUMDER)
       REAL      PHASEDER(0:NLEG,*)
       INTEGER   PARTDER(NUMDER), NUMDER
       INTEGER BITX, BITY, BITZ, IOCT, ICELL, INEXTCELL, IFACE
@@ -1225,7 +1227,7 @@ C     for unscaled untruncated phase function.
       REAL    DIRFLUX(NPTS), RADIANCE(*), SOURCE(*)
       REAL    YLMDIR(NLM), YLMSUN(NLM), SINGSCAT(NUMPHASE)
       REAL    GRADFIELD8(8,NUMDER), OGRADFIELD8(8,NUMDER)
-      LOGICAL EXTFLAG, PHASEFLAG
+      LOGICAL EXTFLAG(NUMDER), PHASEFLAG(NUMDER)
       REAL    PHASEDER(0:NLEG,*), EXT
       INTEGER IPA, LOFJ(NLM), IDR, PARTDER(NUMDER)
       DOUBLE PRECISION SUNDIRLEG(0:NLEG), W
@@ -1266,13 +1268,13 @@ C             Sum over the spherical harmonic series of the source function
           
             DO J = 1, RNS
             
-              IF (EXTFLAG) THEN
+              IF (EXTFLAG(IDR)) THEN
                 GRADFIELD8(N,IDR) = GRADFIELD8(N,IDR) + 
      .	          (ALBEDO(IP,IPA)*LEGEN(LOFJ(J),K)-1.0)*
      .	            RADIANCE(RIS+J)*YLMDIR(J)
               ENDIF
               
-              IF (PHASEFLAG) THEN
+              IF (PHASEFLAG(IDR)) THEN
               ENDIF
           
             ENDDO

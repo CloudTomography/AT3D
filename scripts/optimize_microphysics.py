@@ -1,24 +1,23 @@
 """ 
-Optimize: Extinction
---------------------
-
-Optimize for the extinction coefficient based on radiance measurements.
+Optimize: Microphysics
+----------------------
+ 
+Optimize for the microphysics based on radiance measurements.
 Measurements are either:
-  1. Simulated measurements using a forward rendering script (e.g. in scripts/render/).
+  1. Simulated measurements using a forward rendering script (e.g. in scripts/render_radiance_toa.py).
   2. Real radiance measurements
-
-The phase function, albedo and rayleigh scattering are assumed known.
 
 For example usage see the README.md
 
 For information about the command line flags see:
-  python scripts/optimize_extinction.py --help
+  python scripts/optimize_microphysics.py --help
 """
 
 import os, time
 import numpy as np
 import argparse
 import shdom
+
 
 def argument_parsing():
     """
@@ -45,12 +44,9 @@ def argument_parsing():
                         action='store_true',
                         help='Use the same grid for the reconstruction. This is a sort of inverse crime which is \
                               usefull for debugging/development.')
-    parser.add_argument('--use_forward_albedo',
+    parser.add_argument('--use_forward_veff',
                         action='store_true',
-                        help='Use the ground truth albedo.')
-    parser.add_argument('--use_forward_phase',
-                        action='store_true',
-                        help='Use the ground-truth phase reconstruction.')
+                        help='Use the ground-truth effective variance.')
     parser.add_argument('--use_forward_mask',
                         action='store_true',
                         help='Use the ground-truth cloud mask. This is an inverse crime which is \
@@ -93,52 +89,49 @@ def argument_parsing():
     return args, CloudGenerator, AirGenerator
 
 
-def init_medium_estimation(wavelength):
+def init_atmosphere_estimation():
     """
-    Initilize the medium for optimization.
-    
-    Parameters
-    ----------
-    wavelength: float,
-        The wavelength for the optimization
-    """    
+    Initilize the atmosphere for optimization.
+    """
     cloud_generator = CloudGenerator(args)
-
+    
     # Define the grid for reconstruction
     if args.use_forward_grid:
-        grid = cloud_gt.grid
-    else: 
-        grid = cloud_generator.grid
-    
-    # Define the known albedo and phase 
-    # Either ground-truth or specified, but it is not optimized
-    if args.use_forward_albedo:
-        albedo = cloud_gt.albedo
+        lwc_grid = cloud_gt.lwc.grid
+        reff_grid = cloud_gt.reff.grid
+        veff_grid = cloud_gt.reff.grid
     else:
-        albedo = cloud_generator.get_albedo(grid=grid)
-    if args.use_forward_phase:
-        phase = cloud_gt.phase
+        lwc_grid = reff_grid = veff_grid = cloud_generator.grid
+   
+    # Define the Microphysical parameters
+    # Effective variance is either initialized (optimized) or ground-truth (not optimized)    
+    lwc = shdom.GridDataEstimator(cloud_generator.get_lwc(lwc_grid), min_bound=0.0)
+    reff = shdom.GridDataEstimator(cloud_generator.get_reff(reff_grid),
+                                   max_bound=cloud_gt.max_reff, 
+                                   min_bound=cloud_gt.min_reff)
+    if args.use_forward_veff:
+        veff = cloud_gt.veff
     else:
-        phase = cloud_generator.get_phase(grid=grid)
-    
-    extinction = shdom.GridDataEstimator(cloud_generator.get_extinction(grid=grid), min_bound=0.0)
-    cloud_estimator = shdom.OpticalScattererEstimator(wavelength, extinction, albedo, phase)
+        veff = shdom.GridDataEstimator(cloud_generator.get_veff(veff_grid), 
+                                       max_bound=cloud_gt.max_veff,
+                                       min_bound=cloud_gt.min_veff)
+        
+    cloud_estimator = shdom.MicrophysicalScattererEstimator(lwc, reff, veff)
+    cloud_estimator.add_mie(cloud_gt.mie)
     
     # Set a cloud mask for non-cloudy voxels
     if args.use_forward_mask:
-        mask = cloud_gt.get_mask(threshold=1.0)
+        mask = cloud_gt.get_mask(threshold=0.001)
     else:
         carver = shdom.SpaceCarver(measurements)
-        mask = carver.carve(cloud_estimator.grid, 
-                            agreement=0.95, 
-                            thresholds=args.radiance_threshold)
+        mask = carver.carve(grid, agreement=0.95, thresholds=args.radiance_threshold)
     cloud_estimator.set_mask(mask)
-    
+
     # Create a medium estimator object (optional Rayleigh scattering)
     medium_estimator = shdom.MediumEstimator()
     if args.add_rayleigh:
         air_generator = AirGenerator(args)
-        air = air_generator.get_scatterer(wavelength)   
+        air = air_generator.get_scatterer(cloud_estimator.wavelength)   
         medium_estimator.set_grid(cloud_estimator.grid + air.grid)
         medium_estimator.add_scatterer(air, 'air') 
     else:
@@ -155,14 +148,11 @@ if __name__ == "__main__":
     # Load forward model
     medium_gt, rte_solver, measurements = shdom.load_forward_model(args.input_dir)
     
-    # Get optical medium ground-truth
+    # Get micro-physical medium ground-truth and mie tables
     cloud_gt = medium_gt.get_scatterer('cloud')
-    wavelength = cloud_gt.wavelength
-    if isinstance(cloud_gt, shdom.MicrophysicalScatterer):
-        cloud_gt = cloud_gt.get_optical_scatterer(wavelength)
     
     # Init medium estimator
-    medium_estimator = init_medium_estimation(wavelength)
+    medium_estimator = init_atmosphere_estimation()
     
     # Define a summary writer
     writer = None
@@ -171,8 +161,7 @@ if __name__ == "__main__":
         writer = shdom.SummaryWriter(log_dir)
         writer.monitor_loss()
         writer.monitor_images(acquired_images=measurements.images)
-        writer.monitor_scatterer_error(estimated_scatterer_name='cloud estimator',
-                                       ground_truth_scatterer=cloud_gt)
+        writer.monitor_parameter_error(ground_truth=medium_gt.get_scatterer('cloud').extinction)
         
     optimizer = shdom.Optimizer()
         
@@ -181,8 +170,8 @@ if __name__ == "__main__":
         'maxiter': 1000,
         'maxls': 100,
         'disp': True,
-        'gtol': 1e-16,
-        'ftol': 1e-16 
+        'gtol': 1e-18,
+        'ftol': 1e-18 
     }
     
     optimizer.set_measurements(measurements)
