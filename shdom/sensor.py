@@ -1,7 +1,6 @@
 """
 Camera, Sensor and Projection related objects used for rendering.
 """
-
 import core
 import numpy as np
 import shdom 
@@ -138,12 +137,15 @@ class RadianceSensor(Sensor):
         -----
         For a small amout of pixels parallel rendering is slower due to communication overhead.
         """
-        multiview = isinstance(projection, shdom.MultiViewProjection)
-        multichannel = isinstance(rte_solver, shdom.RteSolverArray)
         
         # If rendering several atmospheres (e.g. multi-spectral rendering)
-        rte_solvers = rte_solver if multichannel else [rte_solver]
-        
+        if isinstance(rte_solver, shdom.RteSolverArray):
+            num_channels = rte_solver.num_solvers  
+            rte_solvers = rte_solver
+        else:
+            num_channels = 1
+            rte_solvers = [rte_solver]
+            
         # Parallel rendering using multithreading (threadsafe Fortran)
         if n_jobs > 1:
             radiance = Parallel(n_jobs=n_jobs, backend="threading", verbose=verbose)(
@@ -157,10 +159,20 @@ class RadianceSensor(Sensor):
             radiance = [super(RadianceSensor, self).render(rte_solver, projection) for rte_solver in rte_solvers]
 
         radiance = np.concatenate(radiance) 
-        # Split into Multiview, Multi-channel images (channel last)
+        images = self.make_images(radiance, projection, num_channels)
+        return images
+            
+        
+    def make_images(self, radiance, projection, num_channels):
+        """
+        Split into Multiview, Multi-channel images (channel last)
+        TODO
+        """
+        multiview = isinstance(projection, shdom.MultiViewProjection)
+        multichannel = num_channels > 1
+        
         if multichannel:
-            num_channels = rte_solvers.num_solvers
-            radiance = np.array(np.split(radiance, num_channels)).T.squeeze()      
+            radiance = np.array(np.split(radiance, num_channels)).T     
             
         if multiview: 
             split_indices = np.cumsum(projection.npix[:-1])        
@@ -199,7 +211,7 @@ class StokesSensor(Sensor):
         The source code for this function is in src/polarized/shdomsub4.f. 
         It is a modified version of the original SHDOM visualize_radiance subroutine in src/polarized/shdomsub2.f.
         
-        If n_jobs>1 than parallel rendering is used where all pixels are distributed amongst all workers
+        If n_jobs > 1 than parallel rendering is used where all pixels are distributed amongst all workers
         
         Parameters
         ----------
@@ -241,10 +253,19 @@ class StokesSensor(Sensor):
         else:      
             stokes = [super(StokesSensor, self).render(rte_solver, projection) for rte_solver in rte_solvers]
           
-        stokes = np.hstack(stokes)  
-        # Split into Multiview, Multi-channel images (channel last)
+        stokes = np.hstack(stokes) 
+        images = make_images(stokes, projection, num_channels)
+        return images
+        
+    def make_images(self, stokes, projection, num_channels):
+        """
+        TODO 
+        Split into Multiview, Multi-channel images (channel last)
+        """
+        multiview = isinstance(projection, shdom.MultiViewProjection)
+        multichannel = num_channels > 1        
+
         if multichannel:
-            num_channels = rte_solvers.num_solvers
             stokes = np.array(np.split(stokes, num_channels, axis=-1)).transpose([1, 2, 0]).squeeze()      
     
         if multiview: 
@@ -265,7 +286,7 @@ class StokesSensor(Sensor):
             new_shape =  [stokes.shape[0]] + projection.resolution
             if multichannel:
                 new_shape.append(num_channels)       
-            stokes = stokes.reshape(new_shape, order='F')
+            stokes = stokes.reshape(new_shape, order='F')        
             
         return stokes
 
@@ -731,17 +752,20 @@ class Measurements(object):
     -----
     When an images exist, radiances are simply a flattened version of the images.
     """
-    def __init__(self, camera=None, **kwargs):
+    def __init__(self, camera=None, images=None, radiances=None):
         self._camera = camera
-        if kwargs.has_key('images'):
-            self._images = kwargs['images']
-            if type(self.images) is not list:
-                self._images = [self._images]
-            self._radiances = np.concatenate(map(lambda img: img.ravel(order='F'), self.images))
-
-        if kwargs.has_key('radiances'):
-            self._radiances = kwargs['radiances']
-        
+        self._images = images
+        self._radiances = radiances
+        if images is not None: 
+            if type(images) is not list:
+                self._images = [images]
+            
+            #Check if images have the same number of channels
+            num_channels_array = np.array(map(lambda img: img.shape[2] if img.ndim>2 else 1, self.images))
+            if all([elem == num_channels_array[0] for elem in num_channels_array]):
+                num_channels = num_channels_array[0]
+            self._radiances = np.concatenate([image.reshape((-1, num_channels), order='F') for image in self.images])
+             
     def save(self, path):
         """
         Save Measurements to file.
@@ -770,11 +794,19 @@ class Measurements(object):
         file.close()
         self.__dict__ = pickle.loads(data)     
     
+    def split(self, n_parts):
+        """TODO"""
+        projections = self.camera.projection.split(n_parts)
+        radiances = np.array_split(self.radiances, n_parts) 
+        measurements = [shdom.Measurements(
+            camera=shdom.Camera(self.camera.sensor, projection), 
+            radiances=radiance) for  projection, radiance in zip(projections, radiances)
+        ]
+        return measurements
     
     def add_noise(self):
         """Add sensor modeled noise to the radiances"""
         raise NotImplemented
-    
     
     @property
     def camera(self):
@@ -787,10 +819,7 @@ class Measurements(object):
     @property
     def images(self):
         return self._images
-    
-    @property
-    def wavelength(self):
-        return self._wavelength
+
     
     
 class Camera(object):

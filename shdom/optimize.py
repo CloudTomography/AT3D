@@ -8,6 +8,8 @@ from scipy.optimize import minimize
 from shdom import GridData
 import dill as pickle
 import cv2
+import itertools
+from joblib import Parallel, delayed
 from collections import OrderedDict
 
 
@@ -253,7 +255,7 @@ class MediumEstimator(shdom.Medium):
             self._num_derivatives += num_estimators
             self._extflag = np.concatenate((self.extflag, scatterer.extflag))
             self._phaseflag = np.concatenate((self.phaseflag, scatterer.phaseflag))
-            
+
     def set_state(self, state):
         """TODO"""
         states = np.split(state, np.cumsum(self.num_parameters[:-1]))
@@ -278,16 +280,16 @@ class MediumEstimator(shdom.Medium):
         return bounds
     
     
-    def compute_gradient(self, rte_solver, projection, measurements):
-        """The objective function (cost) at the current state"""
-        
-        multiview = isinstance(projection, shdom.MultiViewProjection)
+    def core_grad(self, rte_solver, projection, radiance):
+        """
+        TODO
+        """
         
         if isinstance(projection.npix, list):
             total_pix = np.sum(projection.npix)
         else:
             total_pix = projection.npix
-    
+            
         gradient, loss, radiance = core.gradient(
             partder=self.unknown_scatterers_indices,
             numder=self.num_derivatives,
@@ -356,29 +358,68 @@ class MediumEstimator(shdom.Medium):
             srctype=rte_solver._srctype,
             sfctype=rte_solver._sfctype,
             units=rte_solver._units,
-            measurements=measurements,
+            measurements=radiance,
             rshptr=rte_solver._rshptr,
             radiance=rte_solver._radiance,
-            total_ext=rte_solver._total_ext[:rte_solver._npts])       
+            total_ext=rte_solver._total_ext[:rte_solver._npts]
+        )
+        
+        return gradient, loss, radiance
+        
+    def compute_gradient(self, rte_solver, measurements, n_jobs):
+        """
+        The objective function (cost) and gradient at the current state.
+        
+        TODO 
+        
+        Parameters
+        ----------
+        n_jobs: int,
+            The number of jobs to divide the gradient computation into.     
+        """
+                
+        # If rendering several atmospheres (e.g. multi-spectral rendering)
+        if isinstance(rte_solver, shdom.RteSolverArray):
+            num_channels = rte_solver.num_solvers
+            rte_solvers = rte_solver
+        else:
+            num_channels = 1
+            rte_solvers = [rte_solver]
+        
+        projection = measurements.camera.projection
+        sensor = measurements.camera.sensor
+        radiances = measurements.radiances
+        
+        # Sequential or parallel processing using multithreading (threadsafe Fortran)
+        if n_jobs > 1:           
+            output = Parallel(n_jobs=n_jobs, backend="threading", verbose=0)(
+                delayed(self.core_grad, check_pickle=False)(
+                    rte_solver=rte_solvers[channel],
+                    projection=projection,
+                    radiance=spectral_radiance[..., channel]) for channel, (projection, spectral_radiance) in 
+                itertools.product(range(num_channels), zip(projection.split(n_jobs), np.array_split(radiances, n_jobs)))
+            )
+        else:
+            output = [self.core_grad(rte_solvers[channel], projection, radiances[...,channel]) for channel in range(num_channels)]
+        
+        # Sum over all the losses of the different channels
+        loss = np.sum(map(lambda x: x[1], output))
         
         # Project rte_solver base grid gradient to the state space
+        gradient = sum(map(lambda x: x[0], output))
         gradient = gradient.reshape(self.grid.shape + tuple([self.num_derivatives]))
+        images = sensor.make_images(np.concatenate(map(lambda x: x[2], output)), projection, num_channels)
+        
         state_gradient = np.empty(shape=(0), dtype=np.float64)
         for i, estimator in enumerate(self.estimators.values()):
             state_gradient = np.concatenate(
                 (state_gradient, estimator.project_gradient(GridData(self.grid, gradient[...,i])))
             )
-
-        # Split images into different sensor images
-        if multiview:
-            split_indices = np.cumsum(projection.npix[:-1])        
-            images = np.split(radiance, split_indices)
-            images = [
-                image.reshape(resolution, order='F') 
-                for image, resolution in zip(images, projection.resolution) 
-            ]  
             
+        images = sensor.make_images(np.concatenate(map(lambda x: x[2], output)), projection, num_channels)
+        
         return state_gradient, loss, images
+
 
     @property
     def estimators(self):
@@ -426,7 +467,6 @@ class SummaryWriter(object):
         self._callback_fns = []
         self._optimizer = None
         
-        
     def attach_optimizer(self, optimizer):
         self._optimizer = optimizer
     
@@ -444,11 +484,28 @@ class SummaryWriter(object):
         self._image_ckpt_period = ckpt_period
         self._image_ckpt_time = time.time()
         self._image_vmax = []
-        for i, image in enumerate(acquired_images):
-            self._image_vmax.append(image.max() * 1.25)
-            self.tf_writer.add_image(tag='Acquiered Image{}'.format(i), 
-                                     img_tensor=(image / self._image_vmax[i]),
-                                     dataformats='HW')        
+        i = 0
+        for view, image in enumerate(acquired_images):
+            
+            # for multispectral images
+            if image.ndim == 3:
+                for channel in range(image.shape[2]):
+                    self._image_vmax.append(image[...,channel].max() * 1.25)
+                    self.tf_writer.add_image(
+                        tag='Acquiered Image: view {}, channel {}'.format(view, channel), 
+                        img_tensor=(image[...,channel] / self._image_vmax[i]),
+                        dataformats='HW'
+                    )
+                    i += 1
+            # for single wavelength       
+            else:
+                self._image_vmax.append(image.max() * 1.25)
+                self.tf_writer.add_image(
+                    tag='Acquiered Image: view {}'.format(view), 
+                    img_tensor=(image / self._image_vmax[i]),
+                    dataformats='HW'
+                )
+                i += 1
         self._callback_fns.append(self.images)
     
     
@@ -457,13 +514,29 @@ class SummaryWriter(object):
         time_passed = time.time() - self._image_ckpt_time 
         if time_passed > self._image_ckpt_period:
             self._image_ckpt_time  = time.time()
-            for i, image in enumerate(self.optimizer.images):
-                self.tf_writer.add_image(tag='Retrieval Image{}'.format(i), 
-                                         img_tensor=(image / self._image_vmax[i]), 
-                                         global_step=self.optimizer.iteration,
-                                         dataformats='HW')
-        
-        
+            
+            i = 0
+            for view, image in enumerate(self.optimizer.images):
+                
+                # for multispectral images
+                if image.ndim == 3:
+                    for channel in range(image.shape[2]):
+                        self.tf_writer.add_image(
+                            tag='Retrieval Image: view {}, channel {}'.format(view, channel), 
+                            img_tensor=(image[...,channel] / self._image_vmax[i]),
+                            dataformats='HW'
+                        )
+                        i +=1
+                # for single wavelength    
+                else:
+                    self.tf_writer.add_image(
+                        tag='Retrieval Image: view {}'.format(view), 
+                        img_tensor=(image / self._image_vmax[i]),
+                        dataformats='HW'
+                    ) 
+                    i += 1
+
+
     def monitor_loss(self):
         """Monitor the loss at every iteration."""
         self._callback_fns.append(self.loss)
@@ -697,9 +770,11 @@ class Optimizer(object):
         """The objective function (cost) at the current state"""
         self.set_state(state)
         self.rte_solver.solve(maxiter=100, verbose=False)
-        gradient, loss, images = self.medium.compute_gradient(rte_solver=self.rte_solver, 
-                                                              projection=self.projection, 
-                                                              measurements=self.radiances)
+        gradient, loss, images = self.medium.compute_gradient(
+            rte_solver=self.rte_solver,
+            measurements=self.measurements,
+            n_jobs=self._n_jobs
+        )
         self._loss = loss
         self._images = images
         return loss, gradient
@@ -732,7 +807,7 @@ class Optimizer(object):
             self.save_ckpt()
         
 
-    def minimize(self, options, ckpt_period=None, method='L-BFGS-B'):
+    def minimize(self, options, ckpt_period=None, method='L-BFGS-B', n_jobs=1):
         """
         Minimize the cost function with respect to the parameters defined.
         
@@ -744,6 +819,8 @@ class Optimizer(object):
             Time in seconds between saving checkpoints. None means no checkpoints will be saved.
         method: str
             The optimization method.
+        n_jobs: int, default=1
+            The number of jobs to divide the gradient computation into.
         
         Notes
         -----
@@ -754,7 +831,7 @@ class Optimizer(object):
         """
         
         self._ckpt_period = ckpt_period
-        
+        self._n_jobs = n_jobs
         if method != 'L-BFGS-B':
             raise NotImplementedError('Optimization method not implemented')
         
@@ -837,13 +914,8 @@ class Optimizer(object):
         return self._medium    
     
     @property
-    def radiances(self):
-        return self._measurements.radiances
-    
-    @property
-    def projection(self):
-        return self._measurements.camera.projection
-    
+    def measurements(self):
+        return self._measurements
     
     @property
     def num_parameters(self):

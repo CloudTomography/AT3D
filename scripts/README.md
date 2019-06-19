@@ -41,16 +41,16 @@ Examples:
 python scripts/optimize_extinction.py \
         --input_dir experiments/rico32x36x25/monochromatic --add_rayleigh \
         --use_forward_grid  --use_forward_albedo --use_forward_phase  --use_forward_mask \
-        --init Homogeneous --extinction 0.01 --log log_name
+        --init Homogeneous --extinction 0.01 --log log_name --n_jobs 40 
         
 2. Optimize extinction with the ground truth phase function and grid for precomputed measurements. Keep a tensorboard log.
 python scripts/optimize_extinction.py \
         --input_dir experiments/rico32x36x25/monochromatic --add_rayleigh \
         --use_forward_grid  --use_forward_albedo --use_forward_phase   \
-        --init Homogeneous --extinction 0.01 --radiance_threshold 0.055 --log log_name
+        --init Homogeneous --extinction 0.01 --radiance_threshold 0.055 --log log_name --n_jobs 40 
 
 3. Optimize microphysics with ground-truth effective variance and grid for precomputed measurements. Keep a tensorboard log.
-python scripts/optimize_extinction.py \
+python scripts/optimize_microphysics.py \
         --input_dir experiments/rico32x36x25/polychromatic --add_rayleigh\
         --use_forward_grid  --use_forward_veff  --use_forward_mask \
-        --init Homogeneous --lwc 0.001  --reff 15.0 --log log_name
+        --init Homogeneous --lwc 0.001  --reff 15.0 --log log_name --n_jobs 40 

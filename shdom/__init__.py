@@ -481,13 +481,13 @@ class GridData(object):
                 if grid.type == 'Homogeneous':
                     data = np.mean(self.data)
                 elif grid.type == '1D':
-                    data = np.mean(np.mean(self.data, axis=0), axis=0)
+                    data = self._linear_interpolator1d(grid.z)
+                    data = np.mean(np.mean(data, axis=0), axis=0)
                 else:
                     if method == 'linear':
                         data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1))
                     elif method == 'nearest':
                         data = self._nearest_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1)) 
-        
         return GridData(grid, data.astype(self.data.dtype))
     
     

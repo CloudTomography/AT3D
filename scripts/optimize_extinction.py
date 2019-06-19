@@ -61,6 +61,10 @@ def argument_parsing():
                         type=np.float32,
                         help='(default value: %(default)s) Threshold for the radiance to create a cloud mask.' \
                         'Threshold is either a scalar or a list of length of measurements.')    
+    parser.add_argument('--n_jobs',
+                        default=1,
+                        type=int,
+                        help='(default value: %(default)s) Number of jobs for parallel rendering. n_jobs=1 uses no parallelization')
     
     # Additional arguments to the parser
     subparser = argparse.ArgumentParser(add_help=False)
@@ -191,7 +195,7 @@ if __name__ == "__main__":
     optimizer.set_writer(writer)
 
     # Optimization process
-    result = optimizer.minimize(ckpt_period=30*60, options=options)
+    result = optimizer.minimize(ckpt_period=30*60, options=options, n_jobs=args.n_jobs)
     print('\n------------------ Optimization Finished ------------------\n')
     print('Success: {}'.format(result.success))
     print('Message: {}'.format(result.message))

@@ -291,6 +291,8 @@ class RteSolver(object):
     
     def __init__(self, scene_params=None, numerical_params=None, num_stokes=1, name=None):
         
+        self._name = name 
+        
         assert num_stokes in [1, 3, 4], 'num_stokes should be {1, 3, 4}'
         if num_stokes==1:
             self._type = 'Radiance'
@@ -309,10 +311,6 @@ class RteSolver(object):
             self.set_scene(scene_params)
         if numerical_params:
             self.set_numerics(numerical_params)
-        
-        # Default name
-        if name is None:
-            self._name = '{} {} micron'.format(self._type, round(self._wavelen, 3))
             
     def save_params(self, path):
         """
@@ -413,6 +411,9 @@ class RteSolver(object):
         self._baseout = False
         self._npart = 1
 
+        # Set a default name for the solver
+        if self._name is None:
+            self._name = '{} {} micron'.format(self._type, round(self._wavelen, 3))        
 
     def set_numerics(self, numerical_params):
         """
@@ -863,6 +864,14 @@ class RteSolver(object):
         self._inradflag = True
     
     @property
+    def name(self):
+        return self._name    
+
+    @property
+    def wavelength(self):
+        return self._wavelen    
+
+    @property
     def type(self):
         return self._type
     
@@ -887,11 +896,12 @@ class RteSolverArray(object):
     def __init__(self, solver_list=None):
         self._num_solvers = 0
         self._solver_list = []
+        self._name = []
         self._solver_type = None
         if solver_list is not None:
             for solver in solver_list:
                 self.add_solver(solver)
-        
+                
     def init_medium(self, medium):
         """TODO"""
         solver_wavelengths = [round(solver._wavelen, 3) for solver in self.solver_list]
@@ -937,15 +947,11 @@ class RteSolverArray(object):
         file.close()
         params = pickle.loads(data)
         num_stokes = 1 if params['_solver_type'] == 'Radiance' else 3
-        for key, param in params.iteritems():
-            if key != 'solver_parameters':
-                setattr(self, key, param)
-            else:
-                for solver_params in param:
-                    rte_solver = shdom.RteSolver(scene_params=solver_params['scene_params'], 
-                                                 numerical_params=solver_params['numerical_params'],
-                                                 num_stokes=num_stokes)
-                    self.add_solver(rte_solver)
+        for solver_params in params['solver_parameters']:
+            rte_solver = shdom.RteSolver(scene_params=solver_params['scene_params'], 
+                                         numerical_params=solver_params['numerical_params'],
+                                         num_stokes=num_stokes)
+            self.add_solver(rte_solver)
 
     def __getitem__(self, val):
         return self.solver_list[val]
@@ -967,6 +973,7 @@ class RteSolverArray(object):
                    '[add_solver] Assert: RteSolverArray is of type {} and new solver is of type {}'.format(self.solver_type, rte_solver.type)
             
         self._solver_list.append(rte_solver)
+        self._name.append(rte_solver.name)
         self._num_solvers += 1
       
     def solve(self, maxiter, verbose=True):
@@ -1100,7 +1107,12 @@ class RteSolverArray(object):
             solver._iters += iters
             solver._inradflag = True 
             
-            
+       
+    
+    @property
+    def name(self):
+        return self._name    
+
     @property
     def solver_list(self):
         return self._solver_list

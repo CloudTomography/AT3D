@@ -148,7 +148,6 @@ class MicrophysicalScatterer(Scatterer):
         data = self.lwc.data > threshold
         return shdom.GridData(self.grid, data)    
 
-
     def set_microphysics(self, lwc, reff, veff):
         """TODO"""
         self.lwc = lwc
