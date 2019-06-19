@@ -307,6 +307,8 @@ class RteSolver(object):
         # Link to the properties array module.
         self._pa = ShdomPropertyArrays()
         
+        self._name = name
+        
         if scene_params:
             self.set_scene(scene_params)
         if numerical_params:
@@ -364,6 +366,10 @@ class RteSolver(object):
         
         # Wavelength
         self._wavelen = scene_params.wavelength
+        
+        # Default name
+        if self._name is None:
+            self._name = '{} {} micron'.format(self._type, round(self._wavelen, 3))
         
         # Source parameters
         if scene_params.source.type == 'Solar':
