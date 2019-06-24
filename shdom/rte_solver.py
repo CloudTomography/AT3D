@@ -496,17 +496,17 @@ class RteSolver(object):
             iphase = resampled_scatterer.phase.iphasep
             
             if self._bcflag == 0:
-                extinction = np.pad(extinction, ((0,1),(0,1),(0,0), 'wrap'))
-                albedo = np.pad(albedo, ((0,1),(0,1),(0,0), 'wrap'))
-                iphase = np.pad(iphase, ((0,1),(0,1),(0,0), 'wrap'))
+                extinction = np.pad(extinction, ((0,1),(0,1),(0,0)), 'wrap')
+                albedo = np.pad(albedo, ((0,1),(0,1),(0,0)), 'wrap')
+                iphase = np.pad(iphase, ((0,1),(0,1),(0,0)), 'wrap')
             elif self._bcflag == 1:
-                extinction = np.pad(extinction, ((0,0),(0,1),(0,0), 'wrap'))
-                albedo = np.pad(albedo, ((0,0),(0,1),(0,0), 'wrap'))
-                iphase = np.pad(iphase, ((0,0),(0,1),(0,0), 'wrap'))
+                extinction = np.pad(extinction, ((0,0),(0,1),(0,0)), 'wrap')
+                albedo = np.pad(albedo, ((0,0),(0,1),(0,0)), 'wrap')
+                iphase = np.pad(iphase, ((0,0),(0,1),(0,0)), 'wrap')
             elif self._bcflag == 2:
-                extinction = np.pad(extinction, ((0,1),(0,0),(0,0), 'wrap'))
-                albedo = np.pad(albedo, ((0,1),(0,0),(0,0), 'wrap'))
-                iphase = np.pad(iphase, ((0,1),(0,0),(0,0), 'wrap'))
+                extinction = np.pad(extinction, ((0,1),(0,0),(0,0)), 'wrap')
+                albedo = np.pad(albedo, ((0,1),(0,0),(0,0)), 'wrap')
+                iphase = np.pad(iphase, ((0,1),(0,0),(0,0)), 'wrap')
                 
             self._pa.extinctp[:,i] = extinction.ravel()
             self._pa.albedop[:,i] = albedo.ravel()
