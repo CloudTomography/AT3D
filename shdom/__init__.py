@@ -652,3 +652,81 @@ def load_forward_model(directory):
         solver.load_params(path=os.path.join(directory, 'solver_parameters'))   
         
     return medium, solver, measurements
+
+class SolarSpectrum(object):
+    """
+    Loads and interpolates the solar spectrum from ../ancillary_data/SpectralSolar_MODWehrli_1985_WMO.npz.
+    Returns the solar spectral irradiance at specified monochromatic wavelengths. Database is valid for  
+    wavelengths in the range 0.2 - 200.0 micrometers. Note that thermal emission becomes substantial beyond 3.0 micrometers
+    and dominates at longer wavelengths.
+    
+    The database has high <.04 nm resolution in the visible range so monochromatic solar irradiances
+    may differ substantially from band averaged quantities where the solarspectrum is more variable (at shorter wavelengths).
+    
+    Parameters
+    ----------
+    filename: str
+        Directory path to the Solar Spectral Irradiance database.
+        Default: '../ancillary_data/SpectralSolar_MODWehrli_1985_WMO.npz'
+    """
+    def __init__(self, filename='../ancillary_data/SpectralSolar_MODWehrli_1985_WMO.npz'):
+        
+        self.filename = filename
+        self._load()
+        self._interpolate()
+    
+    def _load(self):
+        """
+        Read Spectral Irradiance Data from .npz file
+        """
+        dataset = np.load(self.filename)
+        self.wavelengths = dataset['Wavelengths']
+        self.Spectral_Irradiance = dataset['SolarSpectralIrradiance']
+        self.description = dataset['description']
+        self.source = dataset['source']
+        self.wavelength_units = dataset['wavelength_units']
+        self.Spectral_Irradiance_units = dataset['solarspectralirradiance_units']
+    
+    
+    def _interpolate(self):
+        """
+        Interpolates the Spectrum so it can be retrieved at any wavelength
+        """
+        self.interpolater = interp1d(self.wavelengths, self.Spectral_Irradiance)
+    
+    def get_monochrome_solar_flux(self, wavelengths, Units = 'Micrometers'):
+        """
+        Returns the Solar Spectral Irradiance interpolated to the provided wavelengths.
+        
+        Parameters
+        ----------
+        wavelengths: array_like
+            Wavelengths in units of micrometers. Must be in the range 0.2 - 200.0 micrometers.
+            Note that thermal emission is significant beyond 3.0 micrometers and dominates at
+            longer wavelengths.
+            
+        Returns
+        -------
+        Interpolated_Spectral_Irradiance: np.array 
+            The Solar Flux interpolated to each of the input wavelengths.
+        """
+        
+        if type(wavelengths) == list:
+            wavelengths = np.array(wavelengths)
+        
+        if Units == 'Micrometers':
+            wavelengths = wavelengths * 1000.0
+        else:
+            print('Wavelength units not supported')
+        
+        if np.any(wavelengths <= np.min(self.wavelengths)) or np.any(wavelengths >=np.max(self.wavelengths)):
+            print('Wavelengths must be in Range {} - {} Micrometer'.format(np.round(np.min(self.wavelengths)/1000.0,6),np.max(self.wavelengths)/1000.0))
+            
+            return
+        
+        elif np.any((wavelengths > 3000.0) & (wavelengths <np.max(self.wavelengths))):
+            print('Warning: Accurate Modelling of TOA radiances (> 3.0 micrometer) requires consideration of terrestrial thermal emission')
+        
+        Interpolated_Spectral_Irradiance = self.interpolater(wavelengths)
+        
+        return Interpolated_Spectral_Irradiance
