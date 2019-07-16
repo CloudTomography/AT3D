@@ -81,9 +81,9 @@ def argument_parsing():
 def get_file_paths(wavelength, args):
     """TODO"""
     if not os.path.exists(args.mono_dir):
-        os.makedirs(args.mono_path)    
+        os.makedirs(args.mono_dir)    
     if not os.path.exists(args.poly_dir):
-        os.makedirs(args.poly_path)   
+        os.makedirs(args.poly_dir)   
     file_name = 'Water_{:3d}nm.scat'.format(int(np.round(wavelength*1000)))
     if args.polarized:
         file_name += 'pol'
