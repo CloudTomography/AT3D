@@ -574,7 +574,7 @@ from sensor import *
 from rte_solver import *
 from optimize import *
 import generate as Generate
-import parameters as Parameters
+
 
 
 def save_forward_model(directory, medium, solver, measurements):
