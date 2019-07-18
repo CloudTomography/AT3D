@@ -526,7 +526,8 @@ class RteSolver(object):
         else:
             self._nleg = self._mm
         self._nleg = self._maxleg = max(legendre_table.maxleg, self._nleg)
-        
+        self._nscatangle = max(36, min(721, 2*self._nleg))
+           
         # Legenp is without the zero order term which is 1.0 for normalized phase function
         self._pa.legenp = legendre_table.get_legenp(self._nleg).astype(np.float32)
         self._maxasym = legendre_table.maxasym
@@ -544,10 +545,12 @@ class RteSolver(object):
         if legendre_table.table_type == 'VECTOR':
             self._legen = np.empty(shape=(self._nstleg, self._maxigl,), dtype=np.float32, order='F')        
             self._ylmsun = np.empty(shape=(self._nstleg, self._nlm), dtype=np.float32, order='F') 
-       
+            self._phasetab = np.empty(shape=(self._nstokes, self._pa.numphase, self._nscatangle), dtype=np.float32, order='F') 
+        
         elif legendre_table.table_type == 'SCALAR':
             self._legen = np.empty(shape=(self._maxigl,), dtype=np.float32, order='F')        
             self._ylmsun = np.empty(shape=(self._nlm, ), dtype=np.float32, order='F') 
+            self._phasetab = np.empty(shape=(self._pa.numphase, self._nscatangle), dtype=np.float32, order='F') 
             
  
     def set_grid(self, grid):
@@ -1112,9 +1115,8 @@ class RteSolverArray(object):
                 output_arguments[i]
             solver._iters += iters
             solver._inradflag = True 
-            
-       
-    
+                 
+
     @property
     def name(self):
         return self._name    

@@ -10,7 +10,7 @@ import core
 import numpy as np
 from scipy.interpolate import interp1d, RegularGridInterpolator
 import shdom
-
+import copy
 
 def find_nearest(array, value):
     array = np.asarray(array)
@@ -424,7 +424,7 @@ class SizeDistribution(object):
       r - droplet radius.
       a, b, alpha - gamma distribution parameters. 
     
-    log-normal:
+    lognormal:
       n(r) = a/r exp( -[ln(r/r0)]^2 / (2*alpha^2) ).
       r0 - logarithmic mode.
       alpha - standard deviation of the log. 
@@ -520,7 +520,6 @@ class SizeDistribution(object):
     
     def get_nd(self, reff, veff):
         return self._nd_interpolator((reff, veff)).T
-    
     
     @property
     def radii(self):
@@ -643,8 +642,7 @@ class MiePolydisperse(object):
           4. Number of Legendre coefficients for each scattering phase function. 
         """
         if self.size_distribution.nd is None:
-            self.size_distribution.compute_nd(self.mono_disperse.radii, 
-                                              self.size_distribution.pardens)
+            self.size_distribution.compute_nd(self.mono_disperse.radii, self.mono_disperse.pardens)
 
         self._extinct, self._ssalb, self._nleg, self.legcoef = \
             core.get_poly_table(
@@ -658,7 +656,61 @@ class MiePolydisperse(object):
                 legcoef1=self.mono_disperse.legcoef)
         self.init_intepolators()
         
-
+        
+    def get_re_derivative(self):
+        """TODO"""
+        extinct = self.extinct.reshape((self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
+        ssalb = self.ssalb.reshape((self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
+        if self.table_type == 'SCALAR':
+            legcoef = self.legcoef.reshape((self.maxleg+1, self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
+        elif self.table_type == 'VECTOR':
+            legcoef = self.legcoef.reshape((-1, self.maxleg+1, self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
+        
+        dre = np.diff(self.size_distribution.reff)        
+        dextinct = np.diff(extinct, axis=0) / dre[:,np.newaxis]
+        dssalb = np.diff(ssalb, axis=0) / dre[:,np.newaxis]
+        dlegcoef = np.diff(legcoef, axis=-2) / dre[:,np.newaxis]
+        
+        # Define a derivative Mie object, last derivative is duplicated
+        derivative = copy.deepcopy(self)
+        derivative._extinct = np.vstack((dextinct, dextinct[-1])).ravel(order='F')
+        derivative._ssalb = np.vstack((dssalb, dssalb[-1])).ravel(order='F')
+        if self.table_type == 'SCALAR':
+            derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-2).reshape((self.maxleg+1, -1), order='F')
+        elif self.table_type == 'VECTOR':
+            derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-2).reshape((6, self.maxleg+1, -1), order='F')
+        
+        derivative.init_intepolators()
+        return derivative
+        
+        
+    def compute_ve_derivative(self):
+        """TODO"""
+        extinct = self.extinct.reshape((self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
+        ssalb = self.ssalb.reshape((self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
+        if self.table_type == 'SCALAR':
+            legcoef = self.legcoef.reshape((self.maxleg+1, self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
+        elif self.table_type == 'VECTOR':
+            legcoef = self.legcoef.reshape((-1, self.maxleg+1, self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
+        
+        dve = np.diff(self.size_distribution.veff)        
+        dextinct = np.diff(extinct, axis=1) / dve[:,np.newaxis]
+        dssalb = np.diff(ssalb, axis=1) / dve[:,np.newaxis]
+        dlegcoef = np.diff(legcoef, axis=-1) / dve[:,np.newaxis]
+        
+        # Define a derivative Mie object, last derivative is duplicated
+        derivative = copy.deepcopy(self)
+        derivative._extinct = np.hstack((dextinct, dextinct[-1])).ravel(order='F')
+        derivative._ssalb = np.hstack((dssalb, dssalb[-1])).ravel(order='F')
+        if self.table_type == 'SCALAR':
+            derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-1).reshape((self.maxleg+1, -1), order='F')
+        elif self.table_type == 'VECTOR':
+            derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-1).reshape((6, self.maxleg+1, -1), order='F')
+        
+        derivative.init_intepolators()
+        return derivative        
+    
+    
     def get_legendre(self, reff, veff):
         """
         TODO

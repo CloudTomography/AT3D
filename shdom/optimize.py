@@ -1,9 +1,10 @@
 """
 Optimization and related objects to monitor and log the optimization proccess.
 """
+
 import shdom
 import numpy as np
-import core, time, os
+import core, time, os, copy
 from scipy.optimize import minimize
 from shdom import GridData
 import dill as pickle
@@ -11,8 +12,87 @@ import cv2
 import itertools
 from joblib import Parallel, delayed
 from collections import OrderedDict
+from scipy.interpolate import RegularGridInterpolator
 
 
+class SizeDistributionDerivative(shdom.SizeDistribution):
+    """TODO"""
+    def __init__(self, type='gamma'):
+        super(SizeDistributionDerivative, self).__init__(type)
+        
+    def compute_nd(self, type, radii, particle_density=1.0):
+        """TODO"""
+        self._radii = radii
+        self._nsize = radii.shape[0]           
+        self._pardens = particle_density        
+          
+        if type=='reff':
+            self._nd = self._compute_re_derivative()
+        elif type=='veff':
+            self._nd = self._compute_ve_derivative()
+        else:
+            raise AttributeError('Derivative type is either reff or veff')
+        
+        nd = self.nd.T.reshape((self.nretab, self.nvetab, self.nsize), order='F')
+        self._nd_interpolator = RegularGridInterpolator(
+            (self.reff, self.veff), nd, bounds_error=False, fill_value=0.0)
+        
+    def _compute_re_derivative(self):
+        """TODO"""
+        reff, alpha = np.meshgrid(self.reff, self.alpha)  
+        eps = 1e-5
+        nd1 = core.make_multi_size_dist(
+            distflag=self.distflag,
+            pardens=self.pardens,
+            nsize=self.nsize,
+            radii=self.radii,
+            reff=reff.ravel(),
+            alpha=alpha.ravel(),
+            gamma=self.gamma,
+            ndist=reff.size)
+        nd2 = core.make_multi_size_dist(
+            distflag=self.distflag,
+            pardens=self.pardens,
+            nsize=self.nsize,
+            radii=self.radii,
+            reff=reff.ravel() + eps,
+            alpha=alpha.ravel(),
+            gamma=self.gamma,
+            ndist=reff.size)
+        return (nd2 - nd1) / eps
+        
+    def _compute_ve_derivative(self):
+        """TODO"""
+        reff, veff = np.meshgrid(self.reff, self.veff)  
+        eps = 1e-5
+        
+        if self.distflag == 'G':
+            alpha1 = 1.0 / veff.ravel() - 3.0
+            alpha2 = 1.0 / (veff.ravel() + eps) - 3.0
+        if self.distflag == 'L':
+            alpha1 = np.sqrt(np.log(veff.ravel() + 1.0))
+            alpha2 = np.sqrt(np.log(veff.ravel() + eps + 1.0))
+            
+        nd1 = core.make_multi_size_dist(
+            distflag=self.distflag,
+            pardens=self.pardens,
+            nsize=self.nsize,
+            radii=self.radii,
+            reff=reff.ravel(),
+            alpha=alpha1,
+            gamma=self.gamma,
+            ndist=reff.size)
+        nd2 = core.make_multi_size_dist(
+            distflag=self.distflag,
+            pardens=self.pardens,
+            nsize=self.nsize,
+            radii=self.radii,
+            reff=reff.ravel(),
+            alpha=alpha2,
+            gamma=self.gamma,
+            ndist=reff.size)
+        return (nd2 - nd1) / eps
+    
 class GridPhaseEstimator(shdom.GridPhase):
     """TODO"""
     def __init__(self, legendre_table, index):
@@ -102,16 +182,19 @@ class GridDataEstimator(shdom.GridData):
 class ScattererEstimator(object):
     """TODO"""
     def __init__(self):      
-        self._mask = None
-        self._extflag = np.empty(shape=(0),dtype=np.bool)
-        self._phaseflag = np.empty(shape=(0),dtype=np.bool)         
+        self._mask = None         
         self._estimators = self.init_estimators()
+        self._derivatives = self.init_derivatives()
         self._num_parameters = self.init_num_parameters()
         
     def init_estimators(self):
         """TODO"""
         return OrderedDict()
     
+    def init_derivatives(self):
+        """TODO"""
+        return OrderedDict()    
+
     def init_num_parameters(self):
         """TODO"""
         num_parameters = []
@@ -148,6 +231,7 @@ class ScattererEstimator(object):
             state = np.concatenate((state, estimator.get_state()))
         return state
 
+
     def get_bounds(self):
         """TODO
         bounds to a list of bounds that the scipy minimize expects."""
@@ -155,6 +239,7 @@ class ScattererEstimator(object):
         for estimator in self.estimators.itervalues():
             bounds.extend(estimator.get_bounds())
         return bounds
+        
         
     def project_gradient(self, gradient):
         """TODO"""
@@ -169,20 +254,17 @@ class ScattererEstimator(object):
         return self._estimators
     
     @property
+    def derivatives(self):
+        return self._derivatives    
+    
+    @property
     def num_parameters(self):
         return self._num_parameters
 
     @property
     def mask(self):
         return self._mask
-    
-    @property
-    def extflag(self):
-        return self._extflag
-    
-    @property
-    def phaseflag(self):
-        return self._phaseflag
+
     
     
 class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
@@ -196,13 +278,26 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         estimators = OrderedDict()
         if isinstance(self.extinction, shdom.GridDataEstimator):
             estimators['extinction'] = self.extinction
-            self._extflag = np.append(self.extflag, True)
-            self._phaseflag = np.append(self.phaseflag, False)
         if isinstance(self.albedo, shdom.GridDataEstimator):
             raise NotImplementedError("Albedo estimation not implemented")
         if isinstance(self.phase, shdom.GridPhaseEstimator):
             raise NotImplementedError("Phase estimation not implemented")           
         return estimators
+
+    def init_derivatives(self):
+        """TODO"""
+        derivatives = OrderedDict()
+        if isinstance(self.extinction, shdom.GridDataEstimator):
+            extinction = shdom.GridData(self.extinction.grid, np.ones_like(self.extinction.data))
+            albedo = shdom.GridData(self.albedo.grid, np.zeros_like(self.albedo.data))
+            legen_table = shdom.LegendreTable(np.zeros((self.phase.legendre_table.maxleg+1), dtype=np.float32), table_type=self.phase.legendre_table.table_type)
+            phase = shdom.GridPhase(legen_table, shdom.GridData(self.phase.index.grid, np.ones_like(self.phase.index.data)))
+            derivatives['extinction'] = shdom.OpticalScatterer(self.wavelength, extinction, albedo, phase)
+        if isinstance(self.albedo, shdom.GridDataEstimator):
+            raise NotImplementedError("Albedo estimation not implemented")
+        if isinstance(self.phase, shdom.GridPhaseEstimator):
+            raise NotImplementedError("Phase estimation not implemented")           
+        return derivatives
 
 
 class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEstimator):
@@ -210,26 +305,46 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
     def __init__(self, lwc, reff, veff):
         shdom.MicrophysicalScatterer.__init__(self, lwc, reff, veff)
         ScattererEstimator.__init__(self)
-    
+        self._re_derivative = OrderedDict()
+        self._ve_derivative = OrderedDict()
+        
     def init_estimators(self):
         """TODO"""
         estimators = OrderedDict()
         if isinstance(self.lwc, shdom.GridDataEstimator):
             estimators['lwc'] = self.lwc
-            self._extflag = np.append(self.extflag, True)
-            self._phaseflag = np.append(self.phaseflag, False)
         if isinstance(self.reff, shdom.GridDataEstimator):
             estimators['reff'] = self.reff
-            self._extflag = np.append(self.extflag, True)
-            self._phaseflag = np.append(self.phaseflag, True)
         if isinstance(self.veff, shdom.GridDataEstimator):
             estimators['veff'] = self.veff
-            self._extflag = np.append(self.extflag, True)
-            self._phaseflag = np.append(self.phaseflag, True)
         return estimators
     
+    
+    def add_mie(self, mie):
+        """TODO"""
+        super(MicrophysicalScattererEstimator, self).add_mie(mie)
+        if self.estimators.has_key('reff'):
+            self.add_re_derivative(mie)
+        if self.estimators.has_key('veff'):
+            self.add_ve_derivative(mie)
+        
+        
+    def add_re_derivative(self, mie):
+        """TODO"""
+        if isinstance(mie, shdom.MiePolydisperse):
+            mie_list = [mie]
+        elif isinstance(mie, dict):
+            mie_list = mie.values()
+        
+        for mie in mie_list:
+            self._re_derivative[mie.wavelength] = mie.get_re_derivative()
 
 
+    def add_ve_derivative(self, mie):
+        """TODO"""
+        raise NotImplementedError
+    
+        
 class MediumEstimator(shdom.Medium):
     """TODO"""
     def __init__(self, grid=None):
@@ -238,8 +353,6 @@ class MediumEstimator(shdom.Medium):
         self._num_parameters = []
         self._unknown_scatterers_indices =  np.empty(shape=(0),dtype=np.int32)
         self._num_derivatives = 0
-        self._extflag = np.empty(shape=(0),dtype=np.bool)
-        self._phaseflag = np.empty(shape=(0),dtype=np.bool)
         
     def add_scatterer(self, scatterer, name=None):
         """TODO"""
@@ -253,15 +366,14 @@ class MediumEstimator(shdom.Medium):
                 self.unknown_scatterers_indices, 
                 np.full(num_estimators, self.num_scatterers, dtype=np.int32)))
             self._num_derivatives += num_estimators
-            self._extflag = np.concatenate((self.extflag, scatterer.extflag))
-            self._phaseflag = np.concatenate((self.phaseflag, scatterer.phaseflag))
-
+                 
     def set_state(self, state):
         """TODO"""
         states = np.split(state, np.cumsum(self.num_parameters[:-1]))
         for (name, estimator), state in zip(self.estimators.iteritems(), states):
             estimator.set_state(state)
-            self.update_scatterer(name, estimator)
+            self.scatterers[name] = estimator
+    
     
     def get_state(self):
         """TODO"""
@@ -280,6 +392,58 @@ class MediumEstimator(shdom.Medium):
         return bounds
     
     
+    def get_derivatives(self, rte_solver):
+        """TODO"""
+        dext = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.float32)
+        dalb = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.float32)
+        diphase = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.float32)
+    
+        i=0
+        for estimator in self.estimators.itervalues():
+            for derivative in estimator.derivatives.itervalues():
+                if isinstance(derivative, shdom.MicrophysicalScatterer) or isinstance(derivative, shdom.MultispectralScatterer):
+                    derivative = derivative.get_optical_scatterer(rte_solver._wavelen)            
+                resampled_derivative = derivative.resample(self.grid)
+                extinction = resampled_derivative.extinction.data
+                albedo = resampled_derivative.albedo.data
+                iphase = resampled_derivative.phase.iphasep                
+                if rte_solver._bcflag == 0:
+                    extinction = np.pad(extinction, ((0,1),(0,1),(0,0)), 'wrap')
+                    albedo = np.pad(albedo, ((0,1),(0,1),(0,0)), 'wrap')
+                    iphase = np.pad(iphase, ((0,1),(0,1),(0,0)), 'wrap')
+                elif rte_solver._bcflag == 1:
+                    extinction = np.pad(extinction, ((0,0),(0,1),(0,0)), 'wrap')
+                    albedo = np.pad(albedo, ((0,0),(0,1),(0,0)), 'wrap')
+                    iphase = np.pad(iphase, ((0,0),(0,1),(0,0)), 'wrap')
+                elif rte_solver._bcflag == 2:
+                    extinction = np.pad(extinction, ((0,1),(0,0),(0,0)), 'wrap')
+                    albedo = np.pad(albedo, ((0,1),(0,0),(0,0)), 'wrap')
+                    iphase = np.pad(iphase, ((0,1),(0,0),(0,0)), 'wrap')            
+    
+                dext[:,i] = extinction.ravel()
+                dalb[:,i] = albedo.ravel()
+                diphase[:,i] = iphase.ravel()      
+    
+                if i == 0:
+                    leg_table = copy.deepcopy(resampled_derivative.phase.legendre_table)
+                else:
+                    leg_table.append(copy.deepcopy(resampled_derivative.phase.legendre_table))                
+                i += 1
+                
+        dleg = leg_table.data  
+        dnumphase= leg_table.numphase
+        dphasetab = core.precompute_phase_check(
+            nscatangle=rte_solver._nscatangle,
+            numphase=dnumphase,
+            ml=rte_solver._ml,
+            nlm=rte_solver._nlm,
+            nleg=rte_solver._nleg,
+            legen=dleg,
+            deltam=False
+        )                
+        return dext, dalb, diphase, dleg, dphasetab, dnumphase
+                 
+                    
     def core_grad(self, rte_solver, projection, radiance):
         """
         TODO
@@ -289,13 +453,19 @@ class MediumEstimator(shdom.Medium):
             total_pix = np.sum(projection.npix)
         else:
             total_pix = projection.npix
-            
+
         gradient, loss, radiance = core.gradient(
             partder=self.unknown_scatterers_indices,
             numder=self.num_derivatives,
-            extflag=self.extflag,
-            phaseflag=self.phaseflag,
-            phaseder=np.zeros_like(rte_solver._legen),             
+            dext=rte_solver._dext,
+            dalb=rte_solver._dalb,
+            diphase=rte_solver._diphase,
+            dleg=rte_solver._dleg,
+            dphasetab=rte_solver._dphasetab,
+            dnumphase=rte_solver._dnumphase,
+            nscatangle=rte_solver._nscatangle,
+            phasetab=rte_solver._phasetab,
+            ylmsun=rte_solver._ylmsun,
             nstokes=rte_solver._nstokes,
             nstleg=rte_solver._nstleg,
             nx=rte_solver._nx,
@@ -386,6 +556,27 @@ class MediumEstimator(shdom.Medium):
             num_channels = 1
             rte_solvers = [rte_solver]
         
+        # Pre-computation of phase-function and derivatives for all solvers.
+        for rte_solver in rte_solvers:
+            rte_solver._phasetab = core.precompute_phase_check(
+                nscatangle=rte_solver._nscatangle,
+                numphase=rte_solver._pa.numphase,
+                ml=rte_solver._ml,
+                nlm=rte_solver._nlm,
+                nleg=rte_solver._nleg,
+                legen=rte_solver._legen.reshape(rte_solver._nleg+1, -1),
+                deltam=rte_solver._deltam
+            )
+            rte_solver._dext, rte_solver._dalb, rte_solver._diphase, \
+                rte_solver._dleg, rte_solver._dphasetab, rte_solver._dnumphase = self.get_derivatives(rte_solver)
+            
+            for estimator in self.estimators.itervalues():
+                for derivative in estimator.derivatives.itervalues():
+                    if isinstance(derivative, shdom.MicrophysicalScatterer) or isinstance(derivative, shdom.MultispectralScatterer):
+                        derivative = derivative.get_optical_scatterer(wavelength)                    
+                        
+                        
+                
         projection = measurements.camera.projection
         sensor = measurements.camera.sensor
         radiances = measurements.radiances
@@ -436,15 +627,7 @@ class MediumEstimator(shdom.Medium):
     @property
     def unknown_scatterers_indices(self):
         return self._unknown_scatterers_indices
-    
-    @property
-    def extflag(self):
-        return self._extflag
-    
-    @property
-    def phaseflag(self):
-        return self._phaseflag
-    
+
     @property
     def num_derivatives(self):
         return self._num_derivatives 
@@ -492,7 +675,7 @@ class SummaryWriter(object):
                 for channel in range(image.shape[2]):
                     self._image_vmax.append(image[...,channel].max() * 1.25)
                     self.tf_writer.add_image(
-                        tag='Acquiered Image: view {}, channel {}'.format(view, channel), 
+                        tag='Acquiered Image view {} channel {}'.format(view, channel), 
                         img_tensor=(image[...,channel] / self._image_vmax[i]),
                         dataformats='HW'
                     )
@@ -501,7 +684,7 @@ class SummaryWriter(object):
             else:
                 self._image_vmax.append(image.max() * 1.25)
                 self.tf_writer.add_image(
-                    tag='Acquiered Image: view {}'.format(view), 
+                    tag='Acquiered Image view {}'.format(view), 
                     img_tensor=(image / self._image_vmax[i]),
                     dataformats='HW'
                 )
@@ -522,7 +705,7 @@ class SummaryWriter(object):
                 if image.ndim == 3:
                     for channel in range(image.shape[2]):
                         self.tf_writer.add_image(
-                            tag='Retrieval Image: view {}, channel {}'.format(view, channel), 
+                            tag='Retrieval Image view {} channel {}'.format(view, channel), 
                             img_tensor=(image[...,channel] / self._image_vmax[i]),
                             dataformats='HW'
                         )
@@ -530,7 +713,7 @@ class SummaryWriter(object):
                 # for single wavelength    
                 else:
                     self.tf_writer.add_image(
-                        tag='Retrieval Image: view {}'.format(view), 
+                        tag='Retrieval Image view {}'.format(view), 
                         img_tensor=(image / self._image_vmax[i]),
                         dataformats='HW'
                     ) 
@@ -836,8 +1019,7 @@ class Optimizer(object):
             raise NotImplementedError('Optimization method not implemented')
         
         if self.iteration == 0:
-            self.rte_solver.init_medium(self.medium)
-            self._num_parameters = self.medium.num_parameters
+            self.init_optimizer()
             
         result = minimize(fun=self.objective_fun, 
                           x0=self.get_state(), 
@@ -849,6 +1031,11 @@ class Optimizer(object):
         return result
     
     
+    def init_optimizer(self):
+        """TODO"""
+        self.rte_solver.init_medium(self.medium)
+        self._num_parameters = self.medium.num_parameters   
+        
     def get_bounds(self):
         """TODO"""
         return self.medium.get_bounds()

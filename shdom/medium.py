@@ -162,6 +162,7 @@ class MicrophysicalScatterer(Scatterer):
             mie_list = [mie]
         elif isinstance(mie, dict):
             mie_list = mie.values()
+            
         for mie in mie_list:
             self._mie[mie.wavelength] = mie
             self._wavelength.append(mie.wavelength)
@@ -480,24 +481,7 @@ class Medium(object):
         self._num_scatterers += 1
         name = 'scatterer{:d}'.format(self._num_scatterers) if name is None else name
         self.scatterers[name] = scatterer
-        
-    def update_scatterer(self, name, scatterer):
-        """TODO"""
-        self.scatterers[name] = scatterer
-        """
-        scatterer_index = s``elf.scatterers.keys().index(name)
-        iphasep_offset = 0
-        if scatterer_index > 0: 
-            iphasep_offset = np.cumsum([
-                scatterer.phase.legendre_table.numphase 
-                for scatterer in self.scatterers.itervalues()
-            ])[scatterer_index-1]
-        
-        resampled_scatterer = scatterer.resample(self.grid)
-        self._extinctp[...,scatterer_index] = resampled_scatterer.extinction.data
-        self._albedop[...,scatterer_index] = resampled_scatterer.albedo.data
-        self._iphasep[...,scatterer_index] = resampled_scatterer.phase.iphasep + iphasep_offset
-        """
+   
    
     def save(self, path):
         """

@@ -29,6 +29,9 @@ class Sensor(object):
             total_pix = projection.npix 
             
         output = core.render(
+            ylmsun=rte_solver._ylmsun,
+            phasetab=rte_solver._phasetab,
+            nscatangle=rte_solver._nscatangle,
             ncs=rte_solver._ncs,
             nstokes=rte_solver._nstokes,
             nstleg=rte_solver._nstleg,
@@ -146,6 +149,17 @@ class RadianceSensor(Sensor):
             num_channels = 1
             rte_solvers = [rte_solver]
             
+        # Pre-computation of phase-function for all solvers.
+        for rte_solver in rte_solvers:
+            rte_solver._phasetab = core.precompute_phase_check(
+                nscatangle=rte_solver._nscatangle,
+                numphase=rte_solver._pa.numphase,
+                ml=rte_solver._ml,
+                nlm=rte_solver._nlm,
+                nleg=rte_solver._nleg,
+                legen=rte_solver._legen.reshape(rte_solver._nleg+1, -1),
+                deltam=rte_solver._deltam
+            )            
         # Parallel rendering using multithreading (threadsafe Fortran)
         if n_jobs > 1:
             radiance = Parallel(n_jobs=n_jobs, backend="threading", verbose=verbose)(
@@ -241,6 +255,18 @@ class StokesSensor(Sensor):
         # If rendering several atmospheres (e.g. multi-spectral rendering)
         rte_solvers = rte_solver if multichannel else [rte_solver]
         
+        # Pre-computation of phase-function for all solvers.
+        for rte_solver in rte_solvers:
+            rte_solver._phasetab = core.precompute_phase_check(
+                nscatangle=rte_solver._nscatangle,
+                numphase=rte_solver._pa.numphase,
+                ml=rte_solver._ml,
+                nlm=rte_solver._nlm,
+                nleg=rte_solver._nleg,
+                legen=rte_solver._legen.reshape(rte_solver._nleg+1, -1),
+                deltam=rte_solver._deltam
+            )
+            
         # Parallel rendering using multithreading (threadsafe Fortran)
         if n_jobs > 1:
             stokes = Parallel(n_jobs=n_jobs, backend="threading", verbose=verbose)(
