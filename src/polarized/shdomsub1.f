@@ -96,8 +96,8 @@ Cf2py intent(in) :: VERBOSE
       REAL    YLMSUN(NSTLEG,*)
 Cf2py intent(in,out) :: YLMSUN
 
-      INTEGER NPX, NPY, NPZ, NPART
-Cf2py intent(in) :: NPX, NPY, NPZ, NPART
+      INTEGER NPX, NPY, NPZ, NPART, NBPTS
+Cf2py intent(in) :: NPX, NPY, NPZ, NPART, NBPTS
       REAL DELX, DELY, XSTART, YSTART
 Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
