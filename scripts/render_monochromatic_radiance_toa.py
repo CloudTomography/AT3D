@@ -148,7 +148,7 @@ def solve_rte(atmosphere):
     )
     numerical_params = shdom.NumericalParameters()
     rte_solver = shdom.RteSolver(scene_params, numerical_params)
-    rte_solver.init_medium(atmosphere)
+    rte_solver.set_medium(atmosphere)
     rte_solver.solve(maxiter=100) 
     return rte_solver
     

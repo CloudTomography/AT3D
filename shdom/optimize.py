@@ -442,19 +442,66 @@ class MediumEstimator(shdom.Medium):
             deltam=False
         )                
         return dext, dalb, diphase, dleg, dphasetab, dnumphase
+              
                  
-                    
+    def compute_direct_derivative(self, rte_solver):
+        """TODO"""
+        self._direct_derivative_path, self._direct_derivative_ptr = \
+            core.make_direct_derivative(
+                dirflux=rte_solver._dirflux, 
+                extdirp=rte_solver._pa.extdirp,                
+                npts=rte_solver._npts,
+                bcflag=rte_solver._bcflag,
+                ipflag=rte_solver._ipflag,
+                deltam=rte_solver._deltam,
+                ml=rte_solver._ml,
+                nleg=rte_solver._nleg,
+                solarflux=rte_solver._solarflux,
+                solarmu=rte_solver._solarmu,
+                solaraz=rte_solver._solaraz,
+                gridpos=rte_solver._gridpos,
+                npx=rte_solver._pa.npx,
+                npy=rte_solver._pa.npy,
+                npz=rte_solver._pa.npz,
+                numphase=rte_solver._pa.numphase,
+                delx=rte_solver._pa.delx,
+                dely=rte_solver._pa.dely,
+                xstart=rte_solver._pa.xstart,
+                ystart=rte_solver._pa.ystart,
+                zlevels=rte_solver._pa.zlevels,
+                tempp=rte_solver._pa.tempp,
+                extinctp=rte_solver._pa.extinctp,
+                albedop=rte_solver._pa.albedop,
+                legenp=rte_solver._pa.legenp,
+                iphasep=rte_solver._pa.iphasep,
+                nzckd=rte_solver._pa.nzckd,
+                zckd=rte_solver._pa.zckd,
+                gasabs=rte_solver._pa.gasabs
+            )       
+        
     def core_grad(self, rte_solver, projection, radiance):
         """
         TODO
         """
-        
+        # projection = projection.projection_list[4][4020]
         if isinstance(projection.npix, list):
             total_pix = np.sum(projection.npix)
         else:
             total_pix = projection.npix
 
         gradient, loss, radiance = core.gradient(
+            dpath=self._direct_derivative_path, 
+            dptr=self._direct_derivative_ptr,
+            npx=rte_solver._pa.npx,
+            npy=rte_solver._pa.npy,
+            npz=rte_solver._pa.npz,
+            delx=rte_solver._pa.delx,
+            dely=rte_solver._pa.dely,                
+            xstart=rte_solver._pa.xstart,
+            ystart=rte_solver._pa.ystart,
+            zlevels=rte_solver._pa.zlevels, 
+            extdirp=rte_solver._pa.extdirp,
+            uniformzlev=rte_solver._uniformzlev,
             partder=self.unknown_scatterers_indices,
             numder=self.num_derivatives,
             dext=rte_solver._dext,
@@ -497,6 +544,7 @@ class MediumEstimator(shdom.Medium):
             cellflags=rte_solver._cellflags,
             iphase=rte_solver._iphase[:rte_solver._npts],
             deltam=rte_solver._deltam,
+            solarflux=rte_solver._solarflux,
             solarmu=rte_solver._solarmu,
             solaraz=rte_solver._solaraz,
             gndtemp=rte_solver._gndtemp,
@@ -534,6 +582,27 @@ class MediumEstimator(shdom.Medium):
             total_ext=rte_solver._total_ext[:rte_solver._npts]
         )
         
+        
+        #g0 = gradient.reshape((32, 36,49))
+        #g1 = g1.reshape((32,36,49))
+        
+        #import matplotlib.pyplot as plt
+        
+        #plt.figure()
+        #ax1 = plt.subplot(121)
+        #ax1.imshow(g0[:,32,:]);
+        #ax2 = plt.subplot(122)
+        #ax2.imshow(g1[:,32,:]); 
+        #plt.show()
+        
+        #cells_passed = np.zeros((32*36*49,))
+        #cells_passed[rte_solver._dptr[:25,45620-1]] = 1        
+        #ax2 = plt.subplot(132)
+        #ax2.imshow(cells_passed.reshape(32,36,49)[:,32,:])
+        #ax3 = plt.subplot(133)
+        #ax3.imshow(cells_passed.reshape(32,36,49)[:,32,:] * g1[:,32,:])        
+        #plt.imshow(g1.sum(axis=0)); plt.show();
+        #plt.imshow(g1.sum(axis=1)); plt.show();
         return gradient, loss, radiance
         
     def compute_gradient(self, rte_solver, measurements, n_jobs):
@@ -574,9 +643,7 @@ class MediumEstimator(shdom.Medium):
                 for derivative in estimator.derivatives.itervalues():
                     if isinstance(derivative, shdom.MicrophysicalScatterer) or isinstance(derivative, shdom.MultispectralScatterer):
                         derivative = derivative.get_optical_scatterer(wavelength)                    
-                        
-                        
-                
+  
         projection = measurements.camera.projection
         sensor = measurements.camera.sensor
         radiances = measurements.radiances
@@ -650,8 +717,46 @@ class SummaryWriter(object):
         self._callback_fns = []
         self._optimizer = None
         
+        
     def attach_optimizer(self, optimizer):
         self._optimizer = optimizer
+    
+    
+    def write_image_list(self, images, titles, vmax=None):
+        """
+        Write an image list to tensorboardX.
+
+        Parameters
+        ----------
+        images: list
+            List of images to be logged onto tensorboard.
+        titles: list
+            List of strings that will title the corresponding images on tensorboard.
+        vmax: list or scalar, optional
+            List or a single of scaling factor for the image contrast equalization
+        """
+
+        if np.isscalar(vmax) or vmax is None:
+            vmax = [vmax]*len(images)        
+
+        assert len(images) == len(titles), 'len(images) != len(titles): {} != {}'.format(len(images), len(titles))
+        assert len(vmax) == len(titles), 'len(vmax) != len(images): {} != {}'.format(len(vmax), len(times))
+
+        for image, title, vm in zip(images, titles, vmax):
+            # for polychromatic
+            if image.ndim == 3:
+                self.tf_writer.add_images(
+                    tag=title, 
+                    img_tensor=(image / vm),
+                    dataformats='HWC'
+                )
+            # for monochromatic
+            else:
+                self.tf_writer.add_image(
+                    tag=title, 
+                    img_tensor=(image / vm),
+                    dataformats='HW'
+                ) 
     
     def monitor_images(self, acquired_images, ckpt_period=-1):
         """
@@ -664,71 +769,39 @@ class SummaryWriter(object):
         ckpt_period: float
            time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
         """
+        num_images = len(acquired_images)
         self._image_ckpt_period = ckpt_period
         self._image_ckpt_time = time.time()
-        self._image_vmax = []
-        i = 0
-        for view, image in enumerate(acquired_images):
-            
-            # for multispectral images
-            if image.ndim == 3:
-                for channel in range(image.shape[2]):
-                    self._image_vmax.append(image[...,channel].max() * 1.25)
-                    self.tf_writer.add_image(
-                        tag='Acquiered Image view {} channel {}'.format(view, channel), 
-                        img_tensor=(image[...,channel] / self._image_vmax[i]),
-                        dataformats='HW'
-                    )
-                    i += 1
-            # for single wavelength       
-            else:
-                self._image_vmax.append(image.max() * 1.25)
-                self.tf_writer.add_image(
-                    tag='Acquiered Image view {}'.format(view), 
-                    img_tensor=(image / self._image_vmax[i]),
-                    dataformats='HW'
-                )
-                i += 1
-        self._callback_fns.append(self.images)
+        self._image_vmax = [image.max() * 1.25 for image in acquired_images]
+        self._image_titles = ['Retrieval Image {}'.format(view) for view in range(num_images)]
+        acq_titles = ['Acquiered Image {}'.format(view) for view in range(num_images)]
+        self.write_image_list(acquired_images, acq_titles, vmax=self._image_vmax)
+        self._callback_fns.append(self.estimated_images)
     
     
-    def images(self):
+    def estimated_images(self):
         """Callback function the is called every optimizer iteration image monitoring is set."""
         time_passed = time.time() - self._image_ckpt_time 
         if time_passed > self._image_ckpt_period:
             self._image_ckpt_time  = time.time()
+            self.write_image_list(self.optimizer.images, self._image_titles, self._image_vmax)
             
-            i = 0
-            for view, image in enumerate(self.optimizer.images):
-                
-                # for multispectral images
-                if image.ndim == 3:
-                    for channel in range(image.shape[2]):
-                        self.tf_writer.add_image(
-                            tag='Retrieval Image view {} channel {}'.format(view, channel), 
-                            img_tensor=(image[...,channel] / self._image_vmax[i]),
-                            dataformats='HW'
-                        )
-                        i +=1
-                # for single wavelength    
-                else:
-                    self.tf_writer.add_image(
-                        tag='Retrieval Image view {}'.format(view), 
-                        img_tensor=(image / self._image_vmax[i]),
-                        dataformats='HW'
-                    ) 
-                    i += 1
-
 
     def monitor_loss(self):
-        """Monitor the loss at every iteration."""
+        """Monitor the loss."""
         self._callback_fns.append(self.loss)
-    
-    
+                           
     def loss(self):
-        """Callback function the is called every optimizer iteration loss monitoring is set."""
+        """Callback function that is called (every optimizer iteration) for loss monitoring."""
         self.tf_writer.add_scalar('loss', self.optimizer.loss, self.optimizer.iteration)
         
+    def monitor_shdom_iterations(self):
+        """Monitor the number of SHDOM iterations"""
+        self._callback_fns.append(self.shdom_iterations)
+        
+    def shdom_iterations(self):
+        """Callback function that is called (every optimizer iteration) for shdom iteration monitoring"""
+        self.tf_writer.add_scalar('total shdom iterations', self.optimizer.rte_solver.num_iterations, self.optimizer.iteration)       
         
     def monitor_scatterer_error(self, estimated_scatterer_name, ground_truth_scatterer, ckpt_period=-1):
         """
@@ -946,13 +1019,11 @@ class Optimizer(object):
         """
         self._writer = writer
         if writer is not None:
-            self._writer.attach_optimizer(self)
+            self._writer.attach_optimizer(self)        
         
-   
     def objective_fun(self, state):
         """The objective function (cost) at the current state"""
         self.set_state(state)
-        self.rte_solver.solve(maxiter=100, verbose=False)
         gradient, loss, images = self.medium.compute_gradient(
             rte_solver=self.rte_solver,
             measurements=self.measurements,
@@ -1033,7 +1104,9 @@ class Optimizer(object):
     
     def init_optimizer(self):
         """TODO"""
-        self.rte_solver.init_medium(self.medium)
+        self.rte_solver.set_medium(self.medium)
+        self.rte_solver.init_solution()
+        self.medium.compute_direct_derivative(self.rte_solver)
         self._num_parameters = self.medium.num_parameters   
         
     def get_bounds(self):
@@ -1045,12 +1118,12 @@ class Optimizer(object):
         """TODO"""
         return self.medium.get_state()
     
-    
     def set_state(self, state):
         """TODO"""
         self.medium.set_state(state)
-        self.rte_solver.init_medium(self.medium)
-        
+        self.rte_solver.set_medium(self.medium)
+        self.rte_solver.make_direct()
+        self.rte_solver.solve(maxiter=100, verbose=False)        
         
     def save(self, path):
         """

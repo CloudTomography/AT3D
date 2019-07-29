@@ -173,7 +173,7 @@ def solve_rte(atmospheres):
             source=shdom.SolarSource(args.solar_azimuth, args.solar_zenith, flux=solar_flux)
         )
         rte_solver = shdom.RteSolver(scene_params, numerical_params)
-        rte_solver.init_medium(atmospheres)
+        rte_solver.set_medium(atmospheres)
         rte_solvers.add_solver(rte_solver)
 
     rte_solvers.solve(maxiter=100) 

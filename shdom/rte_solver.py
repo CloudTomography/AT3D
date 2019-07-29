@@ -420,7 +420,10 @@ class RteSolver(object):
         # Set a default name for the solver
         if self._name is None:
             self._name = '{} {} micron'.format(self._type, round(self._wavelen, 3))        
-
+        
+        # No iterations have taken place
+        self._iters = 0
+        
     def set_numerics(self, numerical_params):
         """
         Set the numerical parameters of the SHDOM forward solver.
@@ -447,44 +450,31 @@ class RteSolver(object):
         self._shacc               = numerical_params.spherical_harmonics_accuracy
         self._solacc              = numerical_params.solution_accuracy
         self._highorderrad        = numerical_params.high_order_radiance
-    
-    
-    def init_medium(self, medium):
-        """
-        Initilize SHDOM internal grid structures according to the Medium.
-    
-        Parameters
-        ----------
-        medium: shdom.Medium
-            Initilize the RTE solver to a Medium object.
-        """
-        self._npart = medium.num_scatterers
-        self.set_grid(medium.grid)
-        self.set_medium(medium)
-        
-        # Temperature is used for thermal radiation. Not supported yet.
-        self._pa.tempp = np.zeros(shape=(self._maxpg,), dtype=np.float32)
-        
-        # Zero itertions so far
-        self._iters = 0
-        self._solcrit = 1.0
-        self._inradflag = False 
-        self._oldnpts = 0
-
+            
 
     def set_medium(self, medium):
         """
-        set the optical medium properties.
+        Set the property array optical medium properties.
+        Initialize an internal grid and transfer the property array to it.
         
         Parameters
         ----------
         medium: shdom.Medium
             an Medium object contains extinctp property
+            
+        Notes
+        -----
+        Temperature is not supported (set to zero).
         """
+        self.set_grid(medium.grid)
+        
+        # Temperature is used for thermal radiation. Not supported yet.
+        self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32)     
+        
         self._pa.extinctp = np.zeros(shape=[self._nbpts, medium.num_scatterers], dtype=np.float32)
         self._pa.albedop = np.zeros(shape=[self._nbpts, medium.num_scatterers], dtype=np.float32)
         self._pa.iphasep = np.zeros(shape=[self._nbpts, medium.num_scatterers], dtype=np.float32)
-       
+        
         for i, scatterer in enumerate(medium.scatterers.itervalues()):
             
             if isinstance(scatterer, shdom.MicrophysicalScatterer) or isinstance(scatterer, shdom.MultispectralScatterer):
@@ -519,7 +509,7 @@ class RteSolver(object):
                 legendre_table.append(scat_table)
 
         self._pa.numphase = legendre_table.numphase
-                    
+                 
         # Determine the number of legendre coefficient for a given angular resolution
         if self._deltam:
             self._nleg = self._mm+1
@@ -538,21 +528,45 @@ class RteSolver(object):
         else:
             self._maxigl = self._maxig*(legendre_table.maxleg + 1)
     
+        self._npart = medium.num_scatterers
         self._iphase = np.empty(shape=(self._maxig, self._npart), dtype=np.int32, order='F')
-        
         self._nstleg = legendre_table.nstleg
         
-        if legendre_table.table_type == 'VECTOR':
-            self._legen = np.empty(shape=(self._nstleg, self._maxigl,), dtype=np.float32, order='F')        
-            self._ylmsun = np.empty(shape=(self._nstleg, self._nlm), dtype=np.float32, order='F') 
-            self._phasetab = np.empty(shape=(self._nstokes, self._pa.numphase, self._nscatangle), dtype=np.float32, order='F') 
+        self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
+            self._total_ext, self._extmin, self._scatmin, self._albmax = core.transfer_pa_to_grid(
+                npart=self._npart,
+                extinctp=self._pa.extinctp,
+                albedop=self._pa.albedop,
+                iphasep=self._pa.iphasep,                
+                delx=self._pa.delx,
+                dely=self._pa.dely,                
+                xstart=self._pa.xstart,
+                ystart=self._pa.ystart,
+                zlevels=self._pa.zlevels,             
+                tempp=self._pa.tempp,          
+                legenp=self._pa.legenp,                           
+                nzckd=self._pa.nzckd,
+                zckd=self._pa.zckd,
+                gasabs=self._pa.gasabs, 
+                ml=self._ml,
+                mm=self._mm,
+                numphase=self._pa.numphase,
+                deltam=self._deltam,
+                units=self._units,
+                waveno=self._waveno,
+                wavelen=self._wavelen,
+                gridpos=self._gridpos,
+                nleg=self._nleg,
+                maxig=self._maxig,
+                npx=self._pa.npx,
+                npy=self._pa.npy,
+                npz=self._pa.npz,
+                srctype=self._srctype,
+                npts=self._npts)
         
-        elif legendre_table.table_type == 'SCALAR':
-            self._legen = np.empty(shape=(self._maxigl,), dtype=np.float32, order='F')        
-            self._ylmsun = np.empty(shape=(self._nlm, ), dtype=np.float32, order='F') 
-            self._phasetab = np.empty(shape=(self._pa.numphase, self._nscatangle), dtype=np.float32, order='F') 
-            
- 
+        # Restart solution criteria
+        self._solcrit = 1.0
+        
     def set_grid(self, grid):
         """
         set the base grid for SHDOM.
@@ -623,6 +637,8 @@ class RteSolver(object):
         
         self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
             self._treeptr, self._cellflags = core.init_cell_structure(
+                maxig=self._maxig, 
+                maxic=self._maxic,
                 bcflag=self._bcflag,
                 ipflag=self._ipflag,
                 nx=self._nx,
@@ -632,12 +648,7 @@ class RteSolver(object):
                 ny1=self._ny1,
                 xgrid=self._xgrid,
                 ygrid=self._ygrid,
-                zgrid=self._zgrid,
-                gridpos=self._gridpos,
-                gridptr=self._gridptr,
-                neighptr=self._neighptr,
-                treeptr=self._treeptr,
-                cellflags=self._cellflags
+                zgrid=self._zgrid
             )
         self._nbcells = self._ncells
         
@@ -700,118 +711,42 @@ class RteSolver(object):
             self._maxbcrad = 2*self._maxnbc
         else:
             self._maxbcrad = int((2+self._nmu*self._nphi0max/2)*self._maxnbc)
-        
-        # Array allocation
-        self._sfcgridparms = np.empty(self._maxsfcpars*self._maxnbc,dtype=np.float32)               
-        self._bcptr = np.empty(shape=(self._maxnbc, 2), dtype=np.int32, order='F')
-        self._total_ext = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
-        self._extinct = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
-        self._albedo = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
-        self._mu = np.empty(shape=(self._nmu,), dtype=np.float32, order='F')
-        self._wtdo = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
-        self._phi = np.empty(shape=(self._nmu*self._nphi,), dtype=np.float32, order='F')
-        self._phi0 = np.empty(shape=(self._nmu,), dtype=np.int32, order='F')
-        self._temp = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
-        self._planck = np.empty(shape=(self._maxig, self._npart), dtype=np.float32, order='F')
-        self._gridptr = np.empty(shape=(8, self._maxic), dtype=np.int32, order='F')
-        self._neighptr = np.empty(shape=(6, self._maxic), dtype=np.int32, order='F')
-        self._treeptr = np.empty(shape=(2, self._maxic), dtype=np.int32, order='F')
-        self._cellflags = np.empty(shape=(self._maxic,), dtype=np.int16, order='F')
-        self._gridpos = np.empty(shape=(3, self._maxig), dtype=np.float32, order='F')
-        self._rshptr = np.empty(shape=(self._maxig+2,), dtype=np.int32, order='F')
-        self._shptr = np.empty(shape=(self._maxig+1,), dtype=np.int32, order='F')
-        self._oshptr = np.empty(shape=(self._maxig+1,), dtype=np.int32, order='F')
-        self._fluxes = np.empty(shape=(2, self._maxig,), dtype=np.float32, order='F')
-        self._fluxes1 = np.empty(shape=(4, self._maxig,), dtype=np.float32, order='F')
-        self._dirflux = np.empty(shape=(self._maxig,), dtype=np.float32, order='F')
-        self._pa.extdirp = np.empty(shape=(self._maxpg,), dtype=np.float32, order='F')
-        self._work1 = np.empty(shape=(8*self._maxig,), dtype=np.int32, order='F')
-        
-        if self._nstokes == 1:
-            self._bcrad = np.empty(shape=(self._maxbcrad,), dtype=np.float32, order='F')
-            self._radiance = np.empty(shape=(self._maxiv+self._maxig,), dtype=np.float32, order='F')
-            self._source = np.empty(shape=(self._maxiv,), dtype=np.float32, order='F')
-            self._delsource = np.empty(shape=(self._maxiv,), dtype=np.float32, order='F')
-            self._work = np.empty(shape=(self._maxido,), dtype=np.float32, order='F')
-            self._work2 = np.empty(shape=(self._maxig), dtype=np.float32, order='F')        
-        
-        else:
-            self._bcrad = np.empty(shape=(self._nstokes,self._maxbcrad), dtype=np.float32, order='F')
-            self._radiance = np.empty(shape=(self._nstokes, self._maxiv+self._maxig), dtype=np.float32, order='F')
-            self._source = np.empty(shape=(self._nstokes, self._maxiv), dtype=np.float32, order='F')
-            self._delsource = np.empty(shape=(self._nstokes, self._maxiv), dtype=np.float32, order='F')
-            self._work = np.empty(shape=(self._nstokes*self._maxido,), dtype=np.float32, order='F')
-            self._work2 = np.empty(shape=(self._nstokes*self._maxig), dtype=np.float32, order='F')        
-            
-            
-    def solve(self, maxiter, verbose=True):
-        """
-        Main solver routine.
 
-        Performs the SHDOM solution procedure.
 
-        Parameters
-        ----------
-        maxiter: integer
-            Maximum number of iterations for the iterative solution.
-        verbose: verbosity
-            True will output solution iteration information into stdout.
-            
-        Returns
-        -------
-        None
-        """
-        self._nang, self._nphi0, self._mu, self._phi, self._wtdo, self._sfcgridparms, self._solcrit, \
-            iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
-            self._ntoppts, self._nbotpts, self._bcptr, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
-            self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr, self._source, \
-            self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun, self._oldnpts, self._total_ext = \
-            core.solve_rte(
-                nbpts=self._nbpts,
-                npart=self._npart,
-                extinctp=self._pa.extinctp,
-                albedop=self._pa.albedop,
-                planck=self._planck,
-                iphase=self._iphase,
-                iphasep=self._pa.iphasep,                
-                nstokes=self._nstokes,
-                nstleg=self._nstleg,
-                npx=self._pa.npx,
-                npy=self._pa.npy,
-                npz=self._pa.npz,
-                delx=self._pa.delx,
-                dely=self._pa.dely,                
-                xstart=self._pa.xstart,
-                ystart=self._pa.ystart,
-                zlevels=self._pa.zlevels,             
-                tempp=self._pa.tempp,          
-                legenp=self._pa.legenp,
-                extdirp=self._pa.extdirp,                            
-                nzckd=self._pa.nzckd,
-                zckd=self._pa.zckd,
-                gasabs=self._pa.gasabs,                
-                solcrit=self._solcrit,
+    def init_solution(self):
+        """TODO"""
+        self._oldnpts = 0
+        self._solcrit = 1.0
+        self._nang, self._nphi0, self._mu, self._phi, self._wtdo,  \
+            self._sfcgridparms, self._ntoppts, self._nbotpts, self._bcptr, self._rshptr, self._shptr, self._oshptr, \
+            self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun, self._uniformzlev, \
+            self._pa.extdirp, self._bcrad, self._cx, self._cy, self._cz, self._cxinv, self._cyinv, self._czinv, \
+            self._ipdirect, self._di, self._dj, self._dk, self._epss, self._epsz, self._xdomain, self._ydomain,  \
+            self._delxd, self._delyd, self._deljdot, self._deljold, self._deljnew, self._jnorm, self._fftflag, \
+            self._cmu1, self._cmu2, self._wtmu, self._cphi1, self._cphi2, self._wphisave, self._work, self._work1, \
+            self._work2 = core.init_solution(
                 nx=self._nx,
                 ny=self._ny,
+                nz=self._nz,
                 nx1=self._nx1,
                 ny1=self._ny1,
-                nz=self._nz,
                 ml=self._ml,
-                mm=self._mm,
+                mm=self._mm, 
+                maxiv=self._maxiv,
+                maxic=self._maxic,
+                maxig=self._maxig,
+                maxido=self._maxido, 
+                shacc=self._shacc,
                 ncs=self._ncs,
                 nlm=self._nlm,
                 nmu=self._nmu,
                 nphi=self._nphi,
-                numphase=self._pa.numphase,
-                mu=self._mu,
-                phi=self._phi,
-                wtdo=self._wtdo,
-                inradflag=self._inradflag,
+                nleg=self._nleg,
+                numphase=self._pa.numphase,  
                 bcflag=self._bcflag,
                 ipflag=self._ipflag,
                 deltam=self._deltam,
                 srctype=self._srctype,
-                highorderrad=self._highorderrad,
                 solarflux=self._solarflux,
                 solarmu=self._solarmu,
                 solaraz=self._solaraz,
@@ -825,52 +760,280 @@ class RteSolver(object):
                 delysfc=self._delysfc,
                 nsfcpar=self._nsfcpar,
                 sfcparms=self._sfcparms,
-                sfcgridparms=self._sfcgridparms,
                 units=self._units,
                 waveno=self._waveno,
                 wavelen=self._wavelen,
                 accelflag=self._accelflag,
-                solacc=self._solacc,
-                maxiter=maxiter,
-                splitacc=self._splitacc,
-                shacc=self._shacc,
                 xgrid=self._xgrid,
                 ygrid=self._ygrid,
                 zgrid=self._zgrid,
                 temp=self._temp,
+                planck=self._planck,
+                extinct=self._extinct,
+                albedo=self._albedo,
+                legen=self._legen,
+                iphase=self._iphase,
+                maxnbc=self._maxnbc,
                 maxbcrad=self._maxbcrad,
-                bcptr=self._bcptr,
-                bcrad=self._bcrad,
                 npts=self._npts,
                 gridpos=self._gridpos,
                 ncells=self._ncells,
                 gridptr=self._gridptr,
-                neighptr=self._neighptr,
-                treeptr=self._treeptr,
-                cellflags=self._cellflags,
-                rshptr=self._rshptr,
-                shptr=self._shptr,
-                oshptr=self._oshptr,
-                work=self._work,
-                work1=self._work1,
-                work2=self._work2,
-                source=self._source,
-                delsource=self._delsource,
-                radiance=self._radiance,
-                fluxes=self._fluxes,
-                dirflux=self._dirflux,
-                nleg=self._nleg,
-                maxiv=self._maxiv,
-                maxic=self._maxic,
-                maxig=self._maxig,
-                maxido=self._maxido,
-                verbose=verbose,
-                oldnpts=self._oldnpts,
-                ylmsun=self._ylmsun,
-                runname=self._name
+                treeptr=self._treeptr,                
+                npx=self._pa.npx,
+                npy=self._pa.npy,
+                npz=self._pa.npz,   
+                delx=self._pa.delx,
+                dely=self._pa.dely,                
+                xstart=self._pa.xstart,
+                ystart=self._pa.ystart,
+                zlevels=self._pa.zlevels,             
+                tempp=self._pa.tempp,
+                extinctp=self._pa.extinctp,
+                nbpts=self._nbpts,
+                albedop=self._pa.albedop,
+                legenp=self._pa.legenp,
+                iphasep=self._pa.iphasep,
+                nzckd=self._pa.nzckd,
+                zckd=self._pa.zckd,
+                gasabs=self._pa.gasabs,                 
+                npart=self._npart,
+                total_ext=self._total_ext,
+                nbcells=self._nbcells,
+                maxsfcpars=self._maxsfcpars,
+                nphi0max=self._nphi0max
             )
-        self._iters += iters
-        self._inradflag = True
+        
+                
+    def solution_iterations(self, maxiter, verbose=True):
+        """
+        Run SHDOM solution iterations.
+
+        Parameters
+        ----------
+        maxiter: integer
+            Maximum number of iterations for the iterative solution.
+        verbose: verbosity
+            True will output solution iteration information into stdout.
+            
+        Returns
+        -------
+        output_arguments: tuple,
+            A tuple containing all the output arguments, see: update_solution_arguments().
+        """  
+        output_arguments = core.solution_iterations(
+            work=self._work,
+            work1=self._work1,
+            work2=self._work2,
+            bcrad=self._bcrad,
+            fluxes=self._fluxes,
+            nang=self._nang,
+            nphi0=self._nphi0,
+            maxnbc=self._maxnbc,
+            ntoppts=self._ntoppts,
+            nbotpts=self._nbotpts,
+            uniformzlev=self._uniformzlev,
+            extmin=self._extmin, 
+            scatmin=self._scatmin, 
+            cx=self._cx, 
+            cy=self._cy, 
+            cz=self._cz, 
+            cxinv=self._cxinv,
+            cyinv=self._cyinv, 
+            czinv=self._czinv, 
+            ipdirect=self._ipdirect, 
+            di=self._di, 
+            dj=self._dj, 
+            dk=self._dk, 
+            nphi0max=self._nphi0max, 
+            epss=self._epss, 
+            epsz=self._epsz,
+            xdomain=self._xdomain, 
+            ydomain=self._ydomain, 
+            delxd=self._delxd, 
+            delyd=self._delyd, 
+            albmax=self._albmax, 
+            deljdot=self._deljdot, 
+            deljold=self._deljold, 
+            deljnew=self._deljnew, 
+            jnorm=self._jnorm,                
+            fftflag=self._fftflag,
+            cmu1=self._cmu1,
+            cmu2=self._cmu2,
+            wtmu=self._wtmu,
+            cphi1=self._cphi1,
+            cphi2=self._cphi2,
+            wphisave=self._wphisave,
+            nbpts=self._nbpts,
+            npart=self._npart,
+            extinct=self._extinct,
+            albedo=self._albedo, 
+            legen=self._legen, 
+            total_ext=self._total_ext,
+            extinctp=self._pa.extinctp,
+            albedop=self._pa.albedop,
+            planck=self._planck,
+            iphase=self._iphase,
+            iphasep=self._pa.iphasep,                
+            nstokes=self._nstokes,
+            nstleg=self._nstleg,
+            npx=self._pa.npx,
+            npy=self._pa.npy,
+            npz=self._pa.npz,
+            delx=self._pa.delx,
+            dely=self._pa.dely,                
+            xstart=self._pa.xstart,
+            ystart=self._pa.ystart,
+            zlevels=self._pa.zlevels,             
+            tempp=self._pa.tempp,          
+            legenp=self._pa.legenp,
+            extdirp=self._pa.extdirp,                            
+            nzckd=self._pa.nzckd,
+            zckd=self._pa.zckd,
+            gasabs=self._pa.gasabs,                
+            solcrit=self._solcrit,
+            nx=self._nx,
+            ny=self._ny,
+            nx1=self._nx1,
+            ny1=self._ny1,
+            nz=self._nz,
+            ml=self._ml,
+            mm=self._mm,
+            ncs=self._ncs,
+            nlm=self._nlm,
+            nmu=self._nmu,
+            nphi=self._nphi,
+            numphase=self._pa.numphase,
+            mu=self._mu,
+            phi=self._phi,
+            wtdo=self._wtdo,
+            bcflag=self._bcflag,
+            ipflag=self._ipflag,
+            deltam=self._deltam,
+            srctype=self._srctype,
+            highorderrad=self._highorderrad,
+            solarflux=self._solarflux,
+            solarmu=self._solarmu,
+            solaraz=self._solaraz,
+            skyrad=self._skyrad,
+            sfctype=self._sfctype,
+            gndtemp=self._gndtemp,
+            gndalbedo=self._gndalbedo,
+            nxsfc=self._nxsfc,
+            nysfc=self._nysfc,
+            delxsfc=self._delxsfc,
+            delysfc=self._delysfc,
+            nsfcpar=self._nsfcpar,
+            sfcparms=self._sfcparms,
+            sfcgridparms=self._sfcgridparms,
+            units=self._units,
+            waveno=self._waveno,
+            wavelen=self._wavelen,
+            accelflag=self._accelflag,
+            solacc=self._solacc,
+            maxiter=maxiter,
+            splitacc=self._splitacc,
+            shacc=self._shacc,
+            xgrid=self._xgrid,
+            ygrid=self._ygrid,
+            zgrid=self._zgrid,
+            temp=self._temp,
+            maxbcrad=self._maxbcrad,
+            bcptr=self._bcptr,
+            npts=self._npts,
+            gridpos=self._gridpos,
+            ncells=self._ncells,
+            gridptr=self._gridptr,
+            neighptr=self._neighptr,
+            treeptr=self._treeptr,
+            cellflags=self._cellflags,
+            rshptr=self._rshptr,
+            shptr=self._shptr,
+            oshptr=self._oshptr,
+            source=self._source,
+            delsource=self._delsource,
+            radiance=self._radiance,
+            dirflux=self._dirflux,
+            nleg=self._nleg,
+            maxiv=self._maxiv,
+            maxic=self._maxic,
+            maxig=self._maxig,
+            maxido=self._maxido,
+            verbose=verbose,
+            oldnpts=self._oldnpts,
+            ylmsun=self._ylmsun,
+            runname=self._name
+        )
+        return output_arguments
+        
+    
+    def make_direct(self):
+        """TODO"""
+        self._dirflux, self._pa.extdirp, self._cx, self._cy, self._cz, self._cxinv, self._cyinv, self._czinv, \
+            self._di, self._dj, self._dk, self._ipdirect, self._delxd, self._delyd, self._xdomain, self._ydomain, \
+            self._epss, self._epsz, self._uniformzlev = \
+            core.make_direct(
+                dirflux=self._dirflux, 
+                extdirp=self._pa.extdirp,
+                npts=self._npts,
+                bcflag=self._bcflag,
+                ipflag=self._ipflag,
+                deltam=self._deltam,
+                ml=self._ml,
+                nleg=self._nleg,
+                solarflux=self._solarflux,
+                solarmu=self._solarmu,
+                solaraz=self._solaraz,
+                gridpos=self._gridpos,
+                npx=self._pa.npx,
+                npy=self._pa.npy,
+                npz=self._pa.npz,
+                numphase=self._pa.numphase,
+                delx=self._pa.delx,
+                dely=self._pa.dely,
+                xstart=self._pa.xstart,
+                ystart=self._pa.ystart,
+                zlevels=self._pa.zlevels,
+                tempp=self._pa.tempp,
+                extinctp=self._pa.extinctp,
+                albedop=self._pa.albedop,
+                legenp=self._pa.legenp,
+                iphasep=self._pa.iphasep,
+                nzckd=self._pa.nzckd,
+                zckd=self._pa.zckd,
+                gasabs=self._pa.gasabs
+            )
+        
+        
+    def update_solution_arguments(self, solution_arguments):
+        """TODO"""
+        self._sfcgridparms, self._solcrit, \
+            self._iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
+            self._ntoppts, self._nbotpts, self._bcptr, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
+            self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr, self._source, \
+            self._delsource, self._radiance, self._fluxes, self._dirflux, self._uniformzlev, self._pa.extdirp, \
+            self._oldnpts, self._total_ext, self._deljdot, self._deljold, self._deljnew, self._jnorm, \
+            self._work, self._work1, self._work2 = solution_arguments 
+          
+    def solve(self, maxiter, init_solution=False, verbose=True):
+        """
+        Main solver routine.
+
+        Parameters
+        ----------
+        maxiter: integer
+            Maximum number of iterations for the iterative solution.
+        init_solution: boolean
+            True will re-initialize a precomputed solution.
+        verbose: boolean
+            True will output solution iteration information into stdout.
+        """
+        if self.num_iterations == 0 or init_solution:
+            self.init_solution()
+
+        solution_arguments = self.solution_iterations(maxiter, verbose)
+        self.update_solution_arguments(solution_arguments)
+    
     
     @property
     def name(self):
@@ -985,7 +1148,7 @@ class RteSolverArray(object):
         self._name.append(rte_solver.name)
         self._num_solvers += 1
       
-    def solve(self, maxiter, verbose=True):
+    def solve(self, maxiter, init_solution=False, verbose=True):
         """
         Parallel solving of all solvers.
 
@@ -993,6 +1156,8 @@ class RteSolverArray(object):
         ----------
         maxiter: integer
             Maximum number of iterations for the iterative solution.
+        init_solution: boolean
+            True will re-initialize a precomputed solution.
         verbose: verbosity
             True will output solution iteration information into stdout.
             
@@ -1000,122 +1165,18 @@ class RteSolverArray(object):
         -------
         None
         """
+        for solver in self.solver_list:
+            if init_solution or solver.num_iterations == 0:
+                solver.init_solution()        
+
         output_arguments = \
             Parallel(n_jobs=self.num_solvers, backend="threading")(
-                delayed(core.solve_rte, check_pickle=False)(
-                    npart=rte_solver._npart,
-                    extinctp=rte_solver._pa.extinctp,
-                    albedop=rte_solver._pa.albedop,
-                    planck=rte_solver._planck,
-                    iphase=rte_solver._iphase,
-                    iphasep=rte_solver._pa.iphasep,                
-                    nstokes=rte_solver._nstokes,
-                    nstleg=rte_solver._nstleg,
-                    npx=rte_solver._pa.npx,
-                    npy=rte_solver._pa.npy,
-                    npz=rte_solver._pa.npz,
-                    delx=rte_solver._pa.delx,
-                    dely=rte_solver._pa.dely,                
-                    xstart=rte_solver._pa.xstart,
-                    ystart=rte_solver._pa.ystart,
-                    zlevels=rte_solver._pa.zlevels,             
-                    tempp=rte_solver._pa.tempp,          
-                    legenp=rte_solver._pa.legenp,
-                    extdirp=rte_solver._pa.extdirp,                            
-                    nzckd=rte_solver._pa.nzckd,
-                    zckd=rte_solver._pa.zckd,
-                    gasabs=rte_solver._pa.gasabs,                
-                    solcrit=rte_solver._solcrit,
-                    nx=rte_solver._nx,
-                    ny=rte_solver._ny,
-                    nx1=rte_solver._nx1,
-                    ny1=rte_solver._ny1,
-                    nz=rte_solver._nz,
-                    ml=rte_solver._ml,
-                    mm=rte_solver._mm,
-                    ncs=rte_solver._ncs,
-                    nlm=rte_solver._nlm,
-                    nmu=rte_solver._nmu,
-                    nphi=rte_solver._nphi,
-                    numphase=rte_solver._pa.numphase,
-                    mu=rte_solver._mu,
-                    phi=rte_solver._phi,
-                    wtdo=rte_solver._wtdo,
-                    inradflag=rte_solver._inradflag,
-                    bcflag=rte_solver._bcflag,
-                    ipflag=rte_solver._ipflag,
-                    deltam=rte_solver._deltam,
-                    srctype=rte_solver._srctype,
-                    highorderrad=rte_solver._highorderrad,
-                    solarflux=rte_solver._solarflux,
-                    solarmu=rte_solver._solarmu,
-                    solaraz=rte_solver._solaraz,
-                    skyrad=rte_solver._skyrad,
-                    sfctype=rte_solver._sfctype,
-                    gndtemp=rte_solver._gndtemp,
-                    gndalbedo=rte_solver._gndalbedo,
-                    nxsfc=rte_solver._nxsfc,
-                    nysfc=rte_solver._nysfc,
-                    delxsfc=rte_solver._delxsfc,
-                    delysfc=rte_solver._delysfc,
-                    nsfcpar=rte_solver._nsfcpar,
-                    sfcparms=rte_solver._sfcparms,
-                    sfcgridparms=rte_solver._sfcgridparms,
-                    units=rte_solver._units,
-                    waveno=rte_solver._waveno,
-                    wavelen=rte_solver._wavelen,
-                    accelflag=rte_solver._accelflag,
-                    solacc=rte_solver._solacc,
-                    maxiter=maxiter,
-                    splitacc=rte_solver._splitacc,
-                    shacc=rte_solver._shacc,
-                    xgrid=rte_solver._xgrid,
-                    ygrid=rte_solver._ygrid,
-                    zgrid=rte_solver._zgrid,
-                    temp=rte_solver._temp,
-                    maxbcrad=rte_solver._maxbcrad,
-                    bcptr=rte_solver._bcptr,
-                    bcrad=rte_solver._bcrad,
-                    npts=rte_solver._npts,
-                    gridpos=rte_solver._gridpos,
-                    ncells=rte_solver._ncells,
-                    gridptr=rte_solver._gridptr,
-                    neighptr=rte_solver._neighptr,
-                    treeptr=rte_solver._treeptr,
-                    cellflags=rte_solver._cellflags,
-                    rshptr=rte_solver._rshptr,
-                    shptr=rte_solver._shptr,
-                    oshptr=rte_solver._oshptr,
-                    work=rte_solver._work,
-                    work1=rte_solver._work1,
-                    work2=rte_solver._work2,
-                    source=rte_solver._source,
-                    delsource=rte_solver._delsource,
-                    radiance=rte_solver._radiance,
-                    fluxes=rte_solver._fluxes,
-                    dirflux=rte_solver._dirflux,
-                    nleg=rte_solver._nleg,
-                    maxiv=rte_solver._maxiv,
-                    maxic=rte_solver._maxic,
-                    maxig=rte_solver._maxig,
-                    maxido=rte_solver._maxido,
-                    verbose=verbose,
-                    oldnpts=rte_solver._oldnpts,
-                    ylmsun=rte_solver._ylmsun,
-                    runname=rte_solver._name
-                    ) for rte_solver in self.solver_list)
+                delayed(rte_solver.solution_iterations, check_pickle=False)(
+                    maxiter, verbose) for rte_solver in self.solver_list)
      
-        # Update solvers internal structures
-        for i, solver in enumerate(self.solver_list):
-            solver._nang, solver._nphi0, solver._mu, solver._phi, solver._wtdo, solver._sfcgridparms, solver._solcrit, \
-                iters, solver._temp, solver._planck, solver._extinct, solver._albedo, solver._legen, solver._iphase, \
-                solver._ntoppts, solver._nbotpts, solver._bcptr, solver._bcrad, solver._npts, solver._gridpos, solver._ncells, solver._gridptr, \
-                solver._neighptr, solver._treeptr, solver._cellflags, solver._rshptr, solver._shptr, solver._oshptr, solver._source, \
-                solver._delsource, solver._radiance, solver._fluxes, solver._dirflux, solver._ylmsun, solver._oldnpts, solver._total_ext = \
-                output_arguments[i]
-            solver._iters += iters
-            solver._inradflag = True 
-                 
+        for solver, arguments in zip(self.solver_list, output_arguments):
+            solver.update_solution_arguments(arguments)
+
 
     @property
     def name(self):

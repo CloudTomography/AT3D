@@ -174,7 +174,8 @@ if __name__ == "__main__":
         log_dir = os.path.join(args.input_dir, 'logs', args.log + '-' + time.strftime("%Y%m%d-%H%M%S"))
         writer = shdom.SummaryWriter(log_dir)
         writer.monitor_loss()
-        writer.monitor_images(acquired_images=measurements.images)
+        writer.monitor_shdom_iterations()
+        writer.monitor_images(acquired_images=measurements.images, ckpt_period=5*60)
         writer.monitor_scatterer_error(estimated_scatterer_name='cloud estimator',
                                        ground_truth_scatterer=cloud_gt)
         

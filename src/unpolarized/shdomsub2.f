@@ -69,12 +69,9 @@ C           Only Even allowed horizontally
       END
 
 
-
-
-
-      SUBROUTINE INIT_CELL_STRUCTURE (BCFLAG, IPFLAG, 
-     .                     NX, NY, NZ, NX1, NY1, NPTS, NCELLS,  
-     .                     XGRID, YGRID, ZGRID, GRIDPOS,
+      SUBROUTINE INIT_CELL_STRUCTURE (BCFLAG, IPFLAG, NX, NY,
+     .                     NZ, NX1, NY1, NPTS, NCELLS, XGRID,  
+     .                     YGRID, ZGRID, GRIDPOS, MAXIC, MAXIG, 
      .                     GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS)
 C     Make the initial grid cell data structure for the base grid.
 C     For periodic boundary conditions there are NX*NY*(NZ-1) grid cells 
@@ -128,15 +125,16 @@ C                       2,3 Direction cell is split (0=no split, 1=X, 2=Y, 3=Z)
 C        IP is a grid point index, IC is a cell index.
       IMPLICIT NONE
       INTEGER IPFLAG, BCFLAG, NX, NY, NZ, NX1, NY1, NPTS, NCELLS
-Cf2py intent(in) :: IPFLAG, BCFLAG, NX, NY, NZ, NX1, NY1
+      INTEGER MAXIC, MAXIG
+Cf2py intent(in) :: IPFLAG, BCFLAG, NX, NY, NZ, NX1, NY1, MAXIC, MAXIG
 Cf2py intent(out) :: NPTS, NCELLS
-      INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
-Cf2py intent(in, out) :: GRIDPTR, NEIGHPTR, TREEPTR
-      INTEGER*2 CELLFLAGS(*)
-Cf2py intent(in, out) :: CELLFLAGS
-      REAL    XGRID(NX1), YGRID(NY1), ZGRID(NZ), GRIDPOS(3,*)
+      INTEGER GRIDPTR(8,MAXIC), NEIGHPTR(6,MAXIC), TREEPTR(2,MAXIC)
+Cf2py intent(out) :: GRIDPTR, NEIGHPTR, TREEPTR
+      INTEGER*2 CELLFLAGS(MAXIC)
+Cf2py intent(out) :: CELLFLAGS
+      REAL    XGRID(NX1), YGRID(NY1), ZGRID(NZ), GRIDPOS(3,MAXIG)
 Cf2py intent(in) :: XGRID, YGRID, ZGRID
-Cf2py intent(in, out) :: GRIDPOS
+Cf2py intent(out) :: GRIDPOS
       INTEGER IX, IY, IZ, IX0, IX1, IY0, IY1, I, NXC, NYC
       LOGICAL BTEST
 
@@ -304,7 +302,7 @@ C               Base grid cells have no parents or children
      .               TEMP, EXTINCT, ALBEDO, LEGEN, IPHASE, 
      .               NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
-     .               ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
+     .               ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .               ZCKD, GASABS, EXTMIN, SCATMIN,NPART, 
      .		     TOTAL_EXT, NBPTS)
 C       Calls TRILIN_INTERP_PROP to interpolate the input arrays from 
@@ -322,7 +320,7 @@ C     the property grid to each internal grid point.
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
       REAL TEMPP(*), EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
-      REAL LEGENP(*), EXTDIRP(*)
+      REAL LEGENP(*)
       INTEGER IPHASEP(NBPTS,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
@@ -332,10 +330,10 @@ C         Initialize: transfer the tabulated phase functions
       CALL TRILIN_INTERP_PROP (0.0, 0.0, 0.0, .TRUE., NLEG, 
      .                         TEMP, EXTINCT, ALBEDO, 
      .                         LEGEN(0,1), IPHASE, 
-     .                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
-     .                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
-     .                      ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
-     .                      ZCKD, GASABS, EXTMIN, SCATMIN)
+     .                         NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
+     .                         XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
+     .                         ALBEDOP, LEGENP, IPHASEP, NZCKD,
+     .                         ZCKD, GASABS, EXTMIN, SCATMIN)
 
 C         Trilinearly interpolate from the property grid to the adaptive grid
       TOTAL_EXT(:NPTS) = 0.0
@@ -347,7 +345,7 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .            ALBEDO(IP,IPA), LEGEN(0,IP), IPHASE(IP,IPA), 
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP(:,IPA),
-     .            ALBEDOP(:,IPA),LEGENP,EXTDIRP,IPHASEP(:,IPA),
+     .            ALBEDOP(:,IPA),LEGENP, IPHASEP(:,IPA),
      .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN)
 	  TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
 	ENDDO
@@ -375,27 +373,38 @@ C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
       IMPLICIT NONE
       INTEGER NPTS, BCFLAG, IPFLAG, ML, NLEG, NBPTS
+Cf2py intent(in) :: NPTS, BCFLAG, IPFLAG, ML, NLEG, NBPTS
       LOGICAL DELTAM
-      REAL    SOLARFLUX, SOLARMU, SOLARAZ
-      REAL    GRIDPOS(3,NPTS), DIRFLUX(NPTS)
+Cf2py intent(in) :: DELTAM
+      REAL    SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS(3,*)
+Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS
+      INTEGER NPX, NPY, NPZ, NPART, NUMPHASE
+Cf2py intent(in) :: NPX, NPY, NPZ, NPART, NUMPHASE
+      REAL DELX, DELY, XSTART, YSTART
+Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
+      REAL ZLEVELS(*), TEMPP(*)
+      REAL EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
+Cf2py intent(in) :: ZLEVELS, TEMPP, EXTINCTP, ALBEDOP
+      REAL LEGENP(*), ZCKD(*), GASABS(*)
+      INTEGER IPHASEP(NBPTS,NPART), NZCKD
+Cf2py intent(in) :: LEGENP, ZCKD, GASABS, IPHASEP, NZCKD
+    
+      DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
+Cf2py intent(out) :: CX, CY, CZ, CXINV, CYINV, CZINV
+      INTEGER IPDIRECT, DI, DJ, DK
+Cf2py intent(out) :: IPDIRECT, DI, DJ, DK
+      DOUBLE PRECISION EPSS, EPSZ, XDOMAIN, YDOMAIN
+Cf2py intent(out) :: EPSS, EPSZ, XDOMAIN, YDOMAIN
+      DOUBLE PRECISION UNIFORMZLEV, DELXD,DELYD
+Cf2py intent(out) :: UNIFORMZLEV, DELXD, DELYD
+      REAL    DIRFLUX(*), EXTDIRP(*)
+Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
+
       INTEGER SIDE, IP
       LOGICAL VALIDBEAM
       REAL    UNIFZLEV, XO, YO, ZO, DIR, DIRPATH
 
-      INTEGER NPX, NPY, NPZ
-      INTEGER NUMPHASE
-      REAL DELX, DELY, XSTART, YSTART
-      REAL ZLEVELS(*)
-      REAL TEMPP(*), EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
-      REAL LEGENP(*), EXTDIRP(*)
-      INTEGER IPHASEP(NBPTS,NPART)
-      INTEGER NZCKD, NPART
-      REAL ZCKD(*), GASABS(*)
-      DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
-      INTEGER IPDIRECT, DI, DJ, DK
-      DOUBLE PRECISION EPSS, EPSZ, XDOMAIN, YDOMAIN
-      DOUBLE PRECISION UNIFORMZLEV, DELXD,DELYD
-      
+
       CALL DIRECT_BEAM_PROP (1, 0.0, 0.0, 0.0, BCFLAG, IPFLAG,
      .         DELTAM,ML,NLEG, SOLARFLUX,SOLARMU,SOLARAZ, DIRFLUX(1),
      .         UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM, 
