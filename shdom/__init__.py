@@ -584,13 +584,14 @@ class BoundingBox(object):
         zmax = max(self.zmax, other.zmax)
         return BoundingBox(xmin, ymin, zmin, xmax, ymax, zmax)
 
- 
+
 from shdom.phase import *
 from shdom.medium import *
 from shdom.sensor import *
 from shdom.rte_solver import *
 from shdom.optimize import *
 import shdom.generate as Generate
+
 
 
 def save_forward_model(directory, medium, solver, measurements):
@@ -671,7 +672,7 @@ def load_forward_model(directory):
 
 class SolarSpectrum(object):
     """
-    Loads and interpolates the solar spectrum from ../ancillary_data/SpectralSolar_MODWehrli_1985_WMO.npz.
+    Loads and interpolates the solar spectrum from ancillary_data/SpectralSolar_MODWehrli_1985_WMO.npz.
     Returns the solar spectral irradiance at specified monochromatic wavelengths. Database is valid for  
     wavelengths in the range 0.2 - 200.0 micrometers. Note that thermal emission becomes substantial beyond 3.0 micrometers
     and dominates at longer wavelengths.
@@ -683,9 +684,9 @@ class SolarSpectrum(object):
     ----------
     filename: str
         Directory path to the Solar Spectral Irradiance database.
-        Default: '../ancillary_data/SpectralSolar_MODWehrli_1985_WMO.npz'
+        Default: 'ancillary_data/SpectralSolar_MODWehrli_1985_WMO.npz'
     """
-    def __init__(self, filename='../ancillary_data/SpectralSolar_MODWehrli_1985_WMO.npz'):
+    def __init__(self, filename='ancillary_data/SpectralSolar_MODWehrli_1985_WMO.npz'):
         
         self.filename = filename
         self._load()

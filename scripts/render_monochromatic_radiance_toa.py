@@ -149,6 +149,7 @@ def solve_rte(atmosphere):
     numerical_params = shdom.NumericalParameters(
             deltam=False,
             split_accuracy=0.1/solar_flux
+
     )
     rte_solver = shdom.RteSolver(scene_params, numerical_params)
     rte_solver.set_medium(atmosphere)
