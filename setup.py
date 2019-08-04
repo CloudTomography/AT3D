@@ -1,12 +1,6 @@
 import setuptools
-import popen2
 import os
-import tempfile
-import shlex
-import numpy
-import sys
-import os
-
+import subprocess
 
 NAME = "shdom"
 EXTENSION_NAME = "pyshdom"
@@ -26,7 +20,7 @@ MAINTAINER = "Aviad Levis"
 MAINTAINER_EMAIL = "aviad.levis@gmail.com"
 URL = "https://github.com/aviadlevis/pyshdom"
 LICENSE = "MIT"
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 
 classifiers =  ['Development Status :: 3 - Alpha',
                 'Programming Language :: Python',
@@ -117,13 +111,14 @@ F2PY_CORE_API = [
 
 
 def _run_command(cmd):
-    out_file, in_file, err_file = popen2.popen3(cmd)
-    output = out_file.read() + err_file.read()
-    out_file.close()
-    in_file.close()
-    err_file.close()
+    proc = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+    out_file = proc.stdout.read()
+    err_file = proc.stderr.read()                                                                     
+    output = out_file + err_file
+    proc.stdout.close()
+    proc.stderr.close()
     # need this hack to get the exit status
-    print 'running ' + cmd
+    print('running ' + cmd)
     out_file = os.popen(cmd)
     if out_file.close():
         # close returns exit status of command.
@@ -190,5 +185,8 @@ if __name__ == "__main__":
         tests_require = ['nose',],
         test_suite = 'nose.collector',
         zip_safe = True,
+        install_requires=[
+            'tensorboardX-hparams'
+        ],        
         classifiers = classifiers
     )

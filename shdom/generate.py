@@ -1,8 +1,7 @@
 """
 Generation objects generate the atmospheric optical properties and grid. 
 """
-
-import os 
+from shdom import float_round
 import numpy as np
 import argparse
 import shdom
@@ -108,14 +107,14 @@ class CloudGenerator(Generator):
             grid = self.get_grid()
         reff = self.get_reff(grid)
         veff = self.get_veff(grid)        
-        return self.mie[wavelength].get_albedo(reff, veff)
+        return self.mie[float_round(wavelength)].get_albedo(reff, veff)
     
     def get_phase(self, wavelength, grid=None):
         if grid is None:
             grid = self.get_grid()  
         reff = self.get_reff(grid)
         veff = self.get_veff(grid)          
-        return self.mie[wavelength].get_phase(reff, veff)
+        return self.mie[float_round(wavelength)].get_phase(reff, veff)
     
     def get_scatterer(self):
         """
@@ -126,13 +125,13 @@ class CloudGenerator(Generator):
         veff = self.get_veff()
         if (lwc is not None) and (reff is not None) and (veff is not None):
             scatterer = shdom.MicrophysicalScatterer(lwc, reff, veff)
-            for mie in self.mie.itervalues():
+            for mie in self.mie.values():
                 scatterer.add_mie(mie)
         
         else:
             if len(self.mie) == 1:
-                wavelength = self.mie.keys()[0]
-                scatterer = shdom.Scatterer(
+                wavelength = next(iter(self.mie.keys()))
+                scatterer = shdom.OpticalScatterer(
                     wavelength, 
                     self.get_extinction(wavelength), 
                     self.get_albedo(wavelength), 
@@ -141,8 +140,8 @@ class CloudGenerator(Generator):
             
             else:
                 scatterer = shdom.MultispectralScatterer()
-                for wavelength in self.mie.iterkeys():
-                    scatterer.add_scatterer(shdom.Scatterer(
+                for wavelength in self.mie.keys():
+                    scatterer.add_scatterer(shdom.OpticalScatterer(
                         wavelength, 
                         self.get_extinction(wavelength), 
                         self.get_albedo(wavelength), 
@@ -203,13 +202,13 @@ class AirGenerator(Generator):
         
         if  num_bands == 1:
             rayleigh = shdom.Rayleigh(wavelength)
-            rayleigh.set_profile(self.temperature_profile)
+            rayleigh.set_profile(self.temperature_profile.resample(altitudes))
             scatterer = rayleigh.get_scatterer()
         else:
             scatterer = shdom.MultispectralScatterer()
             for i in range(num_bands):
                 rayleigh = shdom.Rayleigh(wavelength[i])
-                rayleigh.set_profile(self.temperature_profile)
+                rayleigh.set_profile(self.temperature_profile.resample(altitudes))
                 scatterer.add_scatterer(rayleigh.get_scatterer())   
         return scatterer
     
@@ -300,14 +299,14 @@ class SingleVoxel(CloudGenerator):
             
         if self.args.lwc is None:
             ext_data = np.zeros(shape=(grid.nx, grid.ny, grid.nz), dtype=np.float32)
-            ext_data[grid.nx/2, grid.ny/2, grid.nz/2] = self.args.reff
+            ext_data[int(grid.nx/2), int(grid.ny/2), int(grid.nz/2)] = self.args.extinction
             extinction = shdom.GridData(grid, ext_data)
         else:
             assert wavelength is not None, 'No wavelength provided'
             lwc = self.get_lwc(grid)
             reff = self.get_reff(grid)
             veff = self.get_veff(grid)
-            extinction = self.mie[wavelength].get_extinction(lwc, reff, veff)
+            extinction = self.mie[float_round(wavelength)].get_extinction(lwc, reff, veff)
         return extinction
 
     def get_lwc(self, grid=None):
@@ -317,7 +316,7 @@ class SingleVoxel(CloudGenerator):
         lwc = self.args.lwc
         if lwc is not None:
             lwc_data = np.zeros(shape=(grid.nx, grid.ny, grid.nz), dtype=np.float32)
-            lwc_data[grid.nx/2, grid.ny/2, grid.nz/2] = self.args.lwc 
+            lwc_data[int(grid.nx/2), int(grid.ny/2), int(grid.nz/2)] = self.args.lwc 
             lwc = shdom.GridData(grid, lwc_data)        
         return lwc
         
@@ -325,14 +324,14 @@ class SingleVoxel(CloudGenerator):
         if grid is None:
             grid = self.get_grid()        
         reff_data = np.zeros(shape=(grid.nx, grid.ny, grid.nz), dtype=np.float32)
-        reff_data[grid.nx/2, grid.ny/2, grid.nz/2] = self.args.reff 
+        reff_data[int(grid.nx/2), int(grid.ny/2), int(grid.nz/2)] = self.args.reff 
         return shdom.GridData(grid, reff_data)
         
     def get_veff(self, grid=None):
         if grid is None:
             grid = self.get_grid()        
         veff_data = np.zeros(shape=(grid.nx, grid.ny, grid.nz), dtype=np.float32)
-        veff_data[grid.nx/2, grid.ny/2, grid.nz/2] = self.args.veff    
+        veff_data[int(grid.nx/2), int(grid.ny/2), int(grid.nz/2)] = self.args.veff    
         return shdom.GridData(grid, veff_data)    
 
 
@@ -403,7 +402,7 @@ class Homogeneous(CloudGenerator):
             lwc = self.get_lwc(grid)
             reff = self.get_reff(grid)
             veff = self.get_veff(grid)
-            extinction = self.mie[wavelength].get_extinction(lwc, reff, veff)
+            extinction = self.mie[float_round(wavelength)].get_extinction(lwc, reff, veff)
         return extinction
         
     def get_lwc(self, grid=None):
@@ -460,6 +459,6 @@ class LesFile(CloudGenerator):
         return self._droplets.grid
     
     def get_scatterer(self):
-        for mie in self.mie.itervalues():
+        for mie in self.mie.values():
             self._droplets.add_mie(mie)
         return self._droplets

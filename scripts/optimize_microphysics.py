@@ -44,6 +44,12 @@ def argument_parsing():
                         action='store_true',
                         help='Use the same grid for the reconstruction. This is a sort of inverse crime which is \
                               usefull for debugging/development.')
+    parser.add_argument('--use_forward_lwc',
+                        action='store_true',
+                        help='Use the ground-truth LWC.')    
+    parser.add_argument('--use_forward_reff',
+                            action='store_true',
+                            help='Use the ground-truth effective radius.')    
     parser.add_argument('--use_forward_veff',
                         action='store_true',
                         help='Use the ground-truth effective variance.')
@@ -109,11 +115,17 @@ def init_atmosphere_estimation():
    
     # Define the Microphysical parameters
     # Effective variance is either initialized (optimized) or ground-truth (not optimized)    
-    lwc = shdom.GridDataEstimator(cloud_generator.get_lwc(lwc_grid), 
-                                  min_bound=0.0)
-    reff = shdom.GridDataEstimator(cloud_generator.get_reff(reff_grid),
-                                   max_bound=cloud_gt.max_reff, 
-                                   min_bound=cloud_gt.min_reff)
+    if args.use_forward_lwc:
+        lwc = cloud_gt.lwc
+    else:
+        lwc = shdom.GridDataEstimator(cloud_generator.get_lwc(lwc_grid), min_bound=0.0)
+    
+    if args.use_forward_reff:
+        reff = cloud_gt.reff
+    else:
+        reff = shdom.GridDataEstimator(cloud_generator.get_reff(reff_grid),
+                                       min_bound=cloud_gt.min_reff,
+                                       max_bound=cloud_gt.max_reff)
     if args.use_forward_veff:
         veff = cloud_gt.veff
     else:
@@ -121,12 +133,11 @@ def init_atmosphere_estimation():
                                        max_bound=cloud_gt.max_veff,
                                        min_bound=cloud_gt.min_veff)
         
-    cloud_estimator = shdom.MicrophysicalScattererEstimator(lwc, reff, veff)
-    cloud_estimator.add_mie(cloud_gt.mie)
+    cloud_estimator = shdom.MicrophysicalScattererEstimator(cloud_gt.mie, lwc, reff, veff)
     
     # Set a cloud mask for non-cloudy voxels
     if args.use_forward_mask:
-        mask = cloud_gt.get_mask(threshold=0.001)
+        mask = cloud_gt.get_mask(threshold=0.01)
     else:
         carver = shdom.SpaceCarver(measurements)
         mask = carver.carve(grid, agreement=0.95, thresholds=args.radiance_threshold)
@@ -141,7 +152,7 @@ def init_atmosphere_estimation():
         medium_estimator.add_scatterer(air, 'air') 
     else:
         medium_estimator.set_grid(cloud_estimator.grid)
-    medium_estimator.add_scatterer(cloud_estimator, name='cloud estimator')
+    medium_estimator.add_scatterer(cloud_estimator, name='cloud')
     
     return medium_estimator
 
@@ -150,6 +161,8 @@ if __name__ == "__main__":
     
     args, CloudGenerator, AirGenerator = argument_parsing()
     
+    log_dir = os.path.join(args.input_dir, 'logs', args.log + '-' + time.strftime("%Y%m%d-%H%M%S"))
+
     # Load forward model
     medium_gt, rte_solver, measurements = shdom.load_forward_model(args.input_dir)
     
@@ -162,11 +175,13 @@ if __name__ == "__main__":
     # Define a summary writer
     writer = None
     if args.log is not None:
-        log_dir = os.path.join(args.input_dir, 'logs', args.log + '-' + time.strftime("%Y%m%d-%H%M%S"))
+        log_dir = os.path.join(args.input_dir, 'logs', args.log + '-' + time.strftime("%d-%b-%Y-%H:%M:%S"))
         writer = shdom.SummaryWriter(log_dir)
         writer.monitor_loss()
-        writer.monitor_images(acquired_images=measurements.images)
-        writer.monitor_parameter_error(ground_truth=medium_gt.get_scatterer('cloud').extinction)
+        writer.save_checkpoints(ckpt_period=30*60)
+        writer.monitor_images(acquired_images=measurements.images, ckpt_period=-1)
+        writer.monitor_scatterer_error(estimator_name='cloud', ground_truth=cloud_gt)
+        writer.monitor_domain_mean(estimator_name='cloud', ground_truth=cloud_gt)
         
     optimizer = shdom.Optimizer()
         
@@ -185,13 +200,13 @@ if __name__ == "__main__":
     optimizer.set_writer(writer)
 
     # Optimization process
-    result = optimizer.minimize(ckpt_period=30*60, options=options, n_jobs=args.n_jobs)
+    result = optimizer.minimize(options=options, n_jobs=args.n_jobs)
     print('\n------------------ Optimization Finished ------------------\n')
     print('Success: {}'.format(result.success))
     print('Message: {}'.format(result.message))
     print('Final loss: {}'.format(result.fun))
     print('Number iterations: {}'.format(result.nit))    
-
-    optimizer.save(os.path.join(args.input_dir, 'optimizer'))
+    print(result)
+    #optimizer.save(os.path.join(args.input_dir, 'optimizer'))
 
 

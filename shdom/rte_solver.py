@@ -2,14 +2,13 @@
 Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer.
 Here all the necessary functions used to solve the RT using SHDOM are wrapped.
 """
-import core
 import numpy as np
 from enum import Enum
-import warnings
 import sys, os, copy
 import dill as pickle
 from joblib import Parallel, delayed
 import shdom 
+from shdom import core, float_round
 
 
 class BC(Enum):
@@ -172,7 +171,7 @@ class NumericalParameters(object):
         Print out all the numerical parameters.        
         """
         info = 'Numerical Parameters: {}'.format(os.linesep)        
-        for item in self.__dict__.iteritems():
+        for item in self.__dict__.items():
             info += '   {}: {}{}'.format(item[0], item[1], os.linesep)
         return info     
 
@@ -269,7 +268,7 @@ class RteSolver(object):
     This object contains the interface to SHDOM internal structures and methods.
     To solve the RTE:
       1. Set the solver parameters with RteSolver.set_parameters(scene_parameters, numerical_parameters)
-      2. Attach the solver to a medium object RteSolver.init_medium(Medium)
+      2. Attach the solver to a medium object RteSolver.set_medium(Medium)
       3. Run solution iterations with RteSolver.solve(maxiter)
     
     Parameters
@@ -307,13 +306,32 @@ class RteSolver(object):
         # Link to the properties array module.
         self._pa = ShdomPropertyArrays()
         
-        self._name = name
-        
         if scene_params:
             self.set_scene(scene_params)
         if numerical_params:
             self.set_numerics(numerical_params)
             
+    def get_param_dict(self):
+        """TODO"""
+        param_dict = {
+            '_type': self.type,
+            'solver_parameters': [
+                {'scene_params': self._scene_parameters,
+                 'numerical_params': self._numerical_parameters}
+            ]
+        }
+        return param_dict
+    
+    
+    def set_param_dict(self, param_dict):
+        """TODO""" 
+        params = param_dict['solver_parameters'][0]
+        self._type = param_dict['_type']
+        self._nstokes = 1 if self.type == 'Radiance' else 3
+        self.set_numerics(params['numerical_params'])
+        self.set_scene(params['scene_params']) 
+
+
     def save_params(self, path):
         """
         Save RteSolver parameters to file.
@@ -323,10 +341,8 @@ class RteSolver(object):
         path: str,
             Full path to file. 
         """
-        param_dict = {'scene_params': self._scene_parameters,
-                      'numerical_params': self._numerical_parameters}
-        file = open(path,'w')
-        file.write(pickle.dumps(param_dict, -1))
+        file = open(path,'wb')
+        file.write(pickle.dumps(self.get_param_dict(), -1))
         file.close()    
         
 
@@ -339,13 +355,12 @@ class RteSolver(object):
         path: str,
             Full path to file. 
         """        
-        file = open(path, 'r')
+        file = open(path,'rb')
         data = file.read()
         file.close()
         params = pickle.loads(data)
-        self.set_numerics(params['numerical_params'])
-        self.set_scene(params['scene_params'])
-        
+        self.set_param_dict(params)
+
 
     def set_scene(self, scene_params):
         """
@@ -367,10 +382,10 @@ class RteSolver(object):
         # Wavelength
         self._wavelen = scene_params.wavelength
         
-        # Default name
+        # Set a default name for the solver
         if self._name is None:
-            self._name = '{} {} micron'.format(self._type, round(self._wavelen, 3))
-        
+            self._name = '{} {:1.3f} micron'.format(self._type, self.wavelength)        
+            
         # Source parameters
         if scene_params.source.type == 'Solar':
             self._srctype = 'S'
@@ -417,10 +432,6 @@ class RteSolver(object):
         self._baseout = False
         self._npart = 1
 
-        # Set a default name for the solver
-        if self._name is None:
-            self._name = '{} {} micron'.format(self._type, round(self._wavelen, 3))        
-        
         # No iterations have taken place
         self._iters = 0
         
@@ -475,10 +486,10 @@ class RteSolver(object):
         self._pa.albedop = np.zeros(shape=[self._nbpts, medium.num_scatterers], dtype=np.float32)
         self._pa.iphasep = np.zeros(shape=[self._nbpts, medium.num_scatterers], dtype=np.float32)
         
-        for i, scatterer in enumerate(medium.scatterers.itervalues()):
+        for i, scatterer in enumerate(medium.scatterers.values()):
             
             if isinstance(scatterer, shdom.MicrophysicalScatterer) or isinstance(scatterer, shdom.MultispectralScatterer):
-                scatterer = scatterer.get_optical_scatterer(self._wavelen)
+                scatterer = scatterer.get_optical_scatterer(self.wavelength)
             resampled_scatterer = scatterer.resample(medium.grid)
             
             extinction = resampled_scatterer.extinction.data
@@ -529,7 +540,6 @@ class RteSolver(object):
             self._maxigl = self._maxig*(legendre_table.maxleg + 1)
     
         self._npart = medium.num_scatterers
-        self._iphase = np.empty(shape=(self._maxig, self._npart), dtype=np.int32, order='F')
         self._nstleg = legendre_table.nstleg
         
         self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
@@ -675,7 +685,7 @@ class RteSolver(object):
         # but don't let MAX_TOTAL_MB be exceeded
         if self._max_total_mb*1024**2 > 1.75*sys.maxsize:
             self._max_total_mb > 1.75*sys.maxsize/1024**2 
-            print 'MAX_TOTAL_MB reduced to fit memory model: ', self._max_total_mb
+            print('MAX_TOTAL_MB reduced to fit memory model: ', self._max_total_mb)
     
         if self._splitacc < 0.0:
             self._adapt_grid_factor = 1.0
@@ -693,7 +703,7 @@ class RteSolver(object):
         assert self._adapt_grid_factor > 1.0, 'max_total_mb memory limit exceeded with just base grid.'
     
         if REDUCE < 1.0:
-            print 'adapt_grid_factor reduced to ', self._adapt_grid_factor
+            print('adapt_grid_factor reduced to ', self._adapt_grid_factor)
     
         wantmem *= REDUCE
         assert wantmem < sys.maxsize, 'number of words of memory exceeds max integer size: %d'% wantmem
@@ -1030,7 +1040,6 @@ class RteSolver(object):
         """
         if self.num_iterations == 0 or init_solution:
             self.init_solution()
-
         solution_arguments = self.solution_iterations(maxiter, verbose)
         self.update_solution_arguments(solution_arguments)
     
@@ -1041,7 +1050,7 @@ class RteSolver(object):
 
     @property
     def wavelength(self):
-        return self._wavelen    
+        return float_round(self._wavelen)
 
     @property
     def type(self):
@@ -1069,18 +1078,44 @@ class RteSolverArray(object):
         self._num_solvers = 0
         self._solver_list = []
         self._name = []
-        self._solver_type = None
+        self._type = None
         if solver_list is not None:
             for solver in solver_list:
                 self.add_solver(solver)
                 
-    def init_medium(self, medium):
+    def set_medium(self, medium):
         """TODO"""
-        solver_wavelengths = [round(solver._wavelen, 3) for solver in self.solver_list]
-        assert medium.wavelength == solver_wavelengths, 'medium wavelength {} differs from solver wavelengh {}'.format(medium.wavelength, solver_wavelengths)
+        solver_wavelengths = [solver.wavelength for solver in self.solver_list]
+        assert np.allclose(medium.wavelength, solver_wavelengths), 'medium wavelength {} differs from solver wavelengh {}'.format(medium.wavelength, solver_wavelengths)
         for solver in self.solver_list:
-            solver.init_medium(medium)
+            solver.set_medium(medium)
 
+
+    def get_param_dict(self):
+        """TODO"""
+        param_dict = {}
+        for key, param in self.__dict__.items():
+            if key != '_solver_list':
+                param_dict[key] = param
+            else:
+                param_dict['solver_parameters'] = []
+                for solver in param:
+                    solver_param_dict = {'scene_params': solver._scene_parameters,
+                                         'numerical_params': solver._numerical_parameters}                    
+                    param_dict['solver_parameters'].append(solver_param_dict)        
+        return param_dict
+    
+    
+    def set_param_dict(self, param_dict):
+        """TODO"""
+        num_stokes = 1 if param_dict['_type'] == 'Radiance' else 3
+        for solver_params in param_dict['solver_parameters']:
+            rte_solver = shdom.RteSolver(scene_params=solver_params['scene_params'], 
+                                         numerical_params=solver_params['numerical_params'],
+                                         num_stokes=num_stokes)
+            self.add_solver(rte_solver)  
+            
+            
     def save_params(self, path):
         """
         Save RteSolverArray parameters to file.
@@ -1090,18 +1125,8 @@ class RteSolverArray(object):
         path: str,
             Full path to file. 
         """
-        param_dict = {}
-        for key, param in self.__dict__.iteritems():
-            if key != '_solver_list':
-                param_dict[key] = param
-            else:
-                param_dict['solver_parameters'] = []
-                for solver in param:
-                    solver_param_dict = {'scene_params': solver._scene_parameters,
-                                         'numerical_params': solver._numerical_parameters}                    
-                    param_dict['solver_parameters'].append(solver_param_dict)
-        file = open(path,'w')
-        file.write(pickle.dumps(param_dict, -1))
+        file = open(path,'wb')
+        file.write(pickle.dumps(self.get_param_dict(), -1))
         file.close()            
         
         
@@ -1114,19 +1139,16 @@ class RteSolverArray(object):
         path: str,
             Full path to file. 
         """        
-        file = open(path, 'r')
+        file = open(path,'rb')
         data = file.read()
         file.close()
         params = pickle.loads(data)
-        num_stokes = 1 if params['_solver_type'] == 'Radiance' else 3
-        for solver_params in params['solver_parameters']:
-            rte_solver = shdom.RteSolver(scene_params=solver_params['scene_params'], 
-                                         numerical_params=solver_params['numerical_params'],
-                                         num_stokes=num_stokes)
-            self.add_solver(rte_solver)
+        self.set_param_dict(params)
+
 
     def __getitem__(self, val):
         return self.solver_list[val]
+    
     
     def add_solver(self, rte_solver):
         """
@@ -1138,16 +1160,26 @@ class RteSolverArray(object):
             A RteSolver object to add to the RteSolverArray
         """
         
-        if self.solver_type is None:
-            self._solver_type = rte_solver.type
+        if self.type is None:
+            self._type = rte_solver.type
         else:
-            assert self.solver_type == rte_solver.type, \
-                   '[add_solver] Assert: RteSolverArray is of type {} and new solver is of type {}'.format(self.solver_type, rte_solver.type)
+            assert self.type == rte_solver.type, \
+                   '[add_solver] Assert: RteSolverArray is of type {} and new solver is of type {}'.format(self.type, rte_solver.type)
             
         self._solver_list.append(rte_solver)
         self._name.append(rte_solver.name)
         self._num_solvers += 1
       
+    def init_solution(self):
+        """TODO"""
+        for solver in self.solver_list:
+            solver.init_solution() 
+            
+    def make_direct(self):
+        """TODO"""
+        for solver in self.solver_list:
+            solver.make_direct()    
+            
     def solve(self, maxiter, init_solution=False, verbose=True):
         """
         Parallel solving of all solvers.
@@ -1191,5 +1223,5 @@ class RteSolverArray(object):
         return self._num_solvers
 
     @property
-    def solver_type(self):
-        return self._solver_type
+    def type(self):
+        return self._type

@@ -5,15 +5,12 @@ Two Medium objects can be added to create a combined Medium.
 This will result in a unified grid with a summation of the optical extinction and a weighted average of the albedo and phase function.
 """
 
-import core
 import numpy as np
-from enum import Enum
-import warnings
-import shdom
 import dill as pickle
 from collections import OrderedDict
-import copy
- 
+import shdom
+from shdom import float_round
+
 
 class Scatterer(object):
     """TODO"""
@@ -36,8 +33,8 @@ class Scatterer(object):
 class OpticalScatterer(Scatterer):
     """TODO"""
     def __init__(self, wavelength, extinction=None, albedo=None, phase=None):
+        self._wavelength = wavelength
         super(OpticalScatterer, self).__init__()
-        self._wavelength = round(wavelength, 3)
         if (extinction is not None) and (albedo is not None) and (phase is not None):
             self.grid = extinction.grid + albedo.grid + phase.grid
         self.extinction = extinction
@@ -116,12 +113,11 @@ class MicrophysicalScatterer(Scatterer):
             
     def get_optical_scatterer(self, wavelength):
         """TODO"""
-        wavelength = round(wavelength, 3)
         scatterer = shdom.OpticalScatterer(
             wavelength, 
-            extinction=self.mie[wavelength].get_extinction(self.lwc, self.reff, self.veff), 
-            albedo=self.mie[wavelength].get_albedo(self.reff, self.veff),
-            phase=self.mie[wavelength].get_phase(self.reff, self.veff))
+            extinction=self.mie[float_round(wavelength)].get_extinction(self.lwc, self.reff, self.veff), 
+            albedo=self.mie[float_round(wavelength)].get_albedo(self.reff, self.veff),
+            phase=self.mie[float_round(wavelength)].get_phase(self.reff, self.veff))
         return scatterer
     
     def resample(self, grid):
@@ -397,13 +393,12 @@ class MultispectralScatterer(object):
                 
     def get_optical_scatterer(self, wavelength):
         """TODO"""
-        wavelength = round(wavelength, 3)
-        return self.scatterer[wavelength]    
+        return self.scatterer[float_round(wavelength)]    
 
     def resample(self, grid):
         """TODO"""
-        for wavelength in self.scatterer.iterkeys():
-            self.scatterer[wavelength] = self.scatterer[wavelength].resample(grid)    
+        for wavelength in self.scatterer.keys():
+            self.scatterer[float_round(wavelength)] = self.scatterer[float_round(wavelength)].resample(grid)    
         return self
     
     def add_scatterer(self, scatterer):
@@ -412,7 +407,7 @@ class MultispectralScatterer(object):
         else:
             self._grid += scatterer.grid
         self._num_bands += 1
-        self.scatterer[scatterer.wavelength] = scatterer.resample(self.grid)
+        self.scatterer[float_round(scatterer.wavelength)] = scatterer.resample(self.grid)
         self._wavelength.append(scatterer.wavelength)
         
     @property
@@ -476,8 +471,8 @@ class Medium(object):
         
         if first_scatterer:
             self._wavelength = scatterer.wavelength
-        else:
-            assert self.wavelength == scatterer.wavelength, ' medium wavelength {} differs from scatterer wavelength {}'.format(medium, scatterer)
+        else:       
+            assert np.allclose(self.wavelength, scatterer.wavelength), ' medium wavelength {} differs from scatterer wavelength {}'.format(self.wavelength, scatterer.wavelength)
         self._num_scatterers += 1
         name = 'scatterer{:d}'.format(self._num_scatterers) if name is None else name
         self.scatterers[name] = scatterer
@@ -492,7 +487,7 @@ class Medium(object):
         path: str,
             Full path to file. 
         """
-        file = open(path,'w')
+        file = open(path,'wb')
         file.write(pickle.dumps(self.__dict__, -1))
         file.close()
         
@@ -506,7 +501,7 @@ class Medium(object):
         path: str,
             Full path to file. 
         """        
-        file = open(path, 'r')
+        file = open(path, 'rb')
         data = file.read()
         file.close()
         self.__dict__ = pickle.loads(data)    

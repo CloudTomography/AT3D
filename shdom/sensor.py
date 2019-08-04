@@ -1,13 +1,13 @@
 """
 Camera, Sensor and Projection related objects used for rendering.
 """
-import core
 import numpy as np
-import shdom 
 import itertools
 import dill as pickle
 from joblib import Parallel, delayed
-import copy
+import shdom 
+from shdom import core
+
 
 norm = lambda x: x / np.linalg.norm(x, axis=0)
 
@@ -152,6 +152,7 @@ class RadianceSensor(Sensor):
         # Pre-computation of phase-function for all solvers.
         for rte_solver in rte_solvers:
             rte_solver._phasetab = core.precompute_phase_check(
+                negcheck=True,
                 nscatangle=rte_solver._nscatangle,
                 numphase=rte_solver._pa.numphase,
                 ml=rte_solver._ml,
@@ -258,6 +259,7 @@ class StokesSensor(Sensor):
         # Pre-computation of phase-function for all solvers.
         for rte_solver in rte_solvers:
             rte_solver._phasetab = core.precompute_phase_check(
+                negcheck=True,
                 nscatangle=rte_solver._nscatangle,
                 numphase=rte_solver._pa.numphase,
                 ml=rte_solver._ml,
@@ -787,9 +789,9 @@ class Measurements(object):
                 self._images = [images]
             
             #Check if images have the same number of channels
-            num_channels_array = np.array(map(lambda img: img.shape[2] if img.ndim>2 else 1, self.images))
-            if all([elem == num_channels_array[0] for elem in num_channels_array]):
-                num_channels = num_channels_array[0]
+            num_channels_list = list(map(lambda img: img.shape[2] if img.ndim>2 else 1, self.images))
+            if all([elem == num_channels_list[0] for elem in num_channels_list]):
+                num_channels = num_channels_list[0]
             self._radiances = np.concatenate([image.reshape((-1, num_channels), order='F') for image in self.images])
              
     def save(self, path):
@@ -801,7 +803,7 @@ class Measurements(object):
         path: str,
             Full path to file. 
         """
-        file = open(path,'w')
+        file = open(path,'wb')
         file.write(pickle.dumps(self.__dict__, -1))
         file.close()
     
@@ -815,7 +817,7 @@ class Measurements(object):
         path: str,
             Full path to file. 
         """        
-        file = open(path, 'r')
+        file = open(path,'rb')
         data = file.read()
         file.close()
         self.__dict__ = pickle.loads(data)     
@@ -865,7 +867,7 @@ class Camera(object):
         
         # Update function docstring
         if sensor.render.__doc__ is not None:
-            self.render.__func__.func_doc += sensor.render.__doc__
+            self.render.__func__.__doc__ += sensor.render.__doc__
 
     def render(self, rte_solver, n_jobs=1, verbose=0):
         """

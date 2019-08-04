@@ -713,20 +713,20 @@ C             Extrapolate ray to domain top if above
 
         CALL YLMALL (MU2, PHI2, ML, MM, NCS, YLMDIR)
 
-        IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
-          COSSCAT = SOLARMU*MU2 + SQRT((1.0-SOLARMU**2)*(1.0-MU2**2))
-     .                  *COS(SOLARAZ-PHI2)
+        IF (SRCTYPE .NE. 'T') THEN
+          U = (NSCATANGLE-1)*(ACOS(COSSCAT)/PI) + 1
+          J = MIN(NSCATANGLE-1,INT(U))
+          U = U - J
+          DO I = 1, NUMPHASE
+            SINGSCAT(I) = (1-U)*PHASETAB(I,J) + U*PHASETAB(I,J+1)
+          ENDDO
+          DO I = 1, DNUMPHASE
+            DSINGSCAT(I) = (1-U)*DPHASETAB(I,J)+U*DPHASETAB(I,J+1)
+          ENDDO
+          
           IF (NUMPHASE .GT. 0) THEN
-            U = (NSCATANGLE-1)*(ACOS(COSSCAT)/PI) + 1
-            J = MIN(NSCATANGLE-1,INT(U))
-            U = U - J
-            DO I = 1, NUMPHASE
-              SINGSCAT(I) = (1-U)*PHASETAB(I,J) + U*PHASETAB(I,J+1)
-            ENDDO
-            DO I = 1, DNUMPHASE
-              DSINGSCAT(I) = (1-U)*DPHASETAB(I,J)+U*DPHASETAB(I,J+1)
-            ENDDO
-          ELSE
+            COSSCAT = SOLARMU*MU2 + SQRT((1.0-SOLARMU**2)*(1.0-MU2**2))
+     .                  *COS(SOLARAZ-PHI2)
             CALL LEGENDRE_ALL (COSSCAT, NLEG, SUNDIRLEG)
             DO L = 0, NLEG
               SUNDIRLEG(L) = SUNDIRLEG(L)*(2*L+1)/(4*PI)
@@ -1120,7 +1120,6 @@ C             Add gradient component due to the direct solar beam propogation
                   ELSE
                     DEXTM = DEXT(SSP,IDR)
                   ENDIF 
-                  
                   RAYGRAD(SSP,:) = RAYGRAD(SSP,:) - 
      .                DPATH(II,GRIDPOINT)*DEXTM*ABSCELL*TRANSMIT*
      .                SRCSINGSCAT(KK)
@@ -1380,8 +1379,8 @@ C             Sum over the spherical harmonic series of the source function
               K = IP
             ENDIF
 
+            DA = ALBEDO(IP,IPA)*DIRFLUX(IP)*SECMU0*W
             IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
-              DA = ALBEDO(IP,IPA)*DIRFLUX(IP)*SECMU0*W
               J = 1
               DO L = 0, ML
                 ME = MIN(L,MM)
@@ -1484,7 +1483,7 @@ C     Compute trilinear interpolation kernel F(8)
       
       
       SUBROUTINE PRECOMPUTE_PHASE_CHECK(NSCATANGLE, NUMPHASE, ML, NLM,
-     .                          NLEG, LEGEN, PHASETAB, DELTAM)
+     .                          NLEG, LEGEN, PHASETAB, DELTAM, NEGCHECK)
 C       Precomputes the phase function as a function of scattering angle
 C     for all the tabulated phase functions.
       IMPLICIT NONE
@@ -1494,8 +1493,8 @@ Cf2py intent(in) :: NSCATANGLE, ML, NLM, NLEG, NUMPHASE
 Cf2py intent(in) :: LEGEN
       REAL    PHASETAB(NUMPHASE,NSCATANGLE)
 Cf2py intent(out) :: PHASETAB
-      LOGICAL DELTAM
-Cf2py intent(in) :: DELTAM
+      LOGICAL DELTAM, NEGCHECK
+Cf2py intent(in) :: DELTAM, NEGCHECK
       INTEGER I, J, L, MAXLEG
       DOUBLE PRECISION PI, SUM, F, A, COSSCAT, LEGSCAT(0:NLEG)
       
@@ -1521,7 +1520,7 @@ C       for the untruncated solar single scattering computation.
             ENDIF
             SUM = SUM + A*LEGSCAT(L)
           ENDDO
-          IF (SUM .LT. 0.0) THEN
+          IF (NEGCHECK .AND. SUM .LT. 0.0) THEN
             WRITE (6,*) 'PRECOMPUTE_PHASE: negative source',
      .          ' function for tabulated phase function: ',
      .          I, J, SUM

@@ -147,7 +147,7 @@ def init_medium_estimation(wavelength):
         medium_estimator.add_scatterer(air, 'air') 
     else:
         medium_estimator.set_grid(cloud_estimator.grid)
-    medium_estimator.add_scatterer(cloud_estimator, name='cloud estimator')
+    medium_estimator.add_scatterer(cloud_estimator, name='cloud')
     
     return medium_estimator
 
@@ -171,13 +171,13 @@ if __name__ == "__main__":
     # Define a summary writer
     writer = None
     if args.log is not None:
-        log_dir = os.path.join(args.input_dir, 'logs', args.log + '-' + time.strftime("%Y%m%d-%H%M%S"))
+        log_dir = os.path.join(args.input_dir, 'logs', args.log + '-' + time.strftime("%d-%b-%Y-%H:%M:%S"))
         writer = shdom.SummaryWriter(log_dir)
+        writer.save_checkpoints(ckpt_period=30*60)
         writer.monitor_loss()
         writer.monitor_shdom_iterations()
         writer.monitor_images(acquired_images=measurements.images, ckpt_period=5*60)
-        writer.monitor_scatterer_error(estimated_scatterer_name='cloud estimator',
-                                       ground_truth_scatterer=cloud_gt)
+        writer.monitor_scatterer_error(estimator_name='cloud', ground_truth=cloud_gt)
         
     optimizer = shdom.Optimizer()
         
@@ -196,13 +196,13 @@ if __name__ == "__main__":
     optimizer.set_writer(writer)
 
     # Optimization process
-    result = optimizer.minimize(ckpt_period=30*60, options=options, n_jobs=args.n_jobs)
+    result = optimizer.minimize(options=options, n_jobs=args.n_jobs)
     print('\n------------------ Optimization Finished ------------------\n')
     print('Success: {}'.format(result.success))
     print('Message: {}'.format(result.message))
     print('Final loss: {}'.format(result.fun))
     print('Number iterations: {}'.format(result.nit))    
-
+    print(result)
     optimizer.save(os.path.join(args.input_dir, 'optimizer'))
 
 

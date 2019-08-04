@@ -6,28 +6,20 @@ The python code was created by Aviad Levis Technion Inst. of Technology February
 
 Source Fortran files were created by Frank Evans University of Colorado May 2003.
 """
-import core
 import numpy as np
-from scipy.interpolate import interp1d, RegularGridInterpolator
 import shdom
-import copy
-
-def find_nearest(array, value):
-    array = np.asarray(array)
-    idx = (np.abs(array - value)).argmin()
-    return idx
+from shdom import core, find_nearest
+from scipy.interpolate import RegularGridInterpolator
 
 
 class LegendreTable(object):
     """TODO"""
     def __init__(self, table,  table_type='SCALAR'):
         self._table_type = table_type
-        
         # If table is comprised of a single phase entery
         if ((table.ndim==1) and (table_type=='SCALAR')) or \
            ((table.ndim==2) and (table_type=='VECTOR')):
-            table = table[...,np.newaxis]        
-
+            table = table[...,np.newaxis]
         self._data = np.array(table, dtype=np.float32)
         self._numphase = self.data.shape[-1]
         self._maxleg = self.data.shape[-2] - 1
@@ -367,13 +359,13 @@ class MieMonodisperse(object):
             wavelen2=self._wavelen2
         )        
 
-        self._radii, self._extinct, self._scatter, self._nleg, self._legcoef, self._table_type = \
+        self._radii, self._extinct, self._scatter, self._nleg, self._legcoef, table_type = \
             core.read_mono_table(
                 mietabfile=file_path,
                 nrtab=self._nsize,
                 maxleg=self._maxleg
             )
-    
+        self._table_type = table_type.decode()
 
     @property
     def maxleg(self):
@@ -478,9 +470,9 @@ class SizeDistribution(object):
             v_eff = exp(alpha^2)-1  - effective variance.
         """
         self.reff = reff
-        if kwargs.has_key('alpha'):
+        if 'alpha' in kwargs:
             self.alpha = kwargs['alpha']
-        elif kwargs.has_key('veff'):
+        elif 'veff' in kwargs:
             self.veff = kwargs['veff']
         else:
             raise AttributeError('Neither veff or alpha were specified.')
@@ -656,60 +648,6 @@ class MiePolydisperse(object):
                 legcoef1=self.mono_disperse.legcoef)
         self.init_intepolators()
         
-        
-    def get_re_derivative(self):
-        """TODO"""
-        extinct = self.extinct.reshape((self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
-        ssalb = self.ssalb.reshape((self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
-        if self.table_type == 'SCALAR':
-            legcoef = self.legcoef.reshape((self.maxleg+1, self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
-        elif self.table_type == 'VECTOR':
-            legcoef = self.legcoef.reshape((-1, self.maxleg+1, self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
-        
-        dre = np.diff(self.size_distribution.reff)        
-        dextinct = np.diff(extinct, axis=0) / dre[:,np.newaxis]
-        dssalb = np.diff(ssalb, axis=0) / dre[:,np.newaxis]
-        dlegcoef = np.diff(legcoef, axis=-2) / dre[:,np.newaxis]
-        
-        # Define a derivative Mie object, last derivative is duplicated
-        derivative = copy.deepcopy(self)
-        derivative._extinct = np.vstack((dextinct, dextinct[-1])).ravel(order='F')
-        derivative._ssalb = np.vstack((dssalb, dssalb[-1])).ravel(order='F')
-        if self.table_type == 'SCALAR':
-            derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-2).reshape((self.maxleg+1, -1), order='F')
-        elif self.table_type == 'VECTOR':
-            derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-2).reshape((6, self.maxleg+1, -1), order='F')
-        
-        derivative.init_intepolators()
-        return derivative
-        
-        
-    def compute_ve_derivative(self):
-        """TODO"""
-        extinct = self.extinct.reshape((self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
-        ssalb = self.ssalb.reshape((self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
-        if self.table_type == 'SCALAR':
-            legcoef = self.legcoef.reshape((self.maxleg+1, self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
-        elif self.table_type == 'VECTOR':
-            legcoef = self.legcoef.reshape((-1, self.maxleg+1, self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
-        
-        dve = np.diff(self.size_distribution.veff)        
-        dextinct = np.diff(extinct, axis=1) / dve[:,np.newaxis]
-        dssalb = np.diff(ssalb, axis=1) / dve[:,np.newaxis]
-        dlegcoef = np.diff(legcoef, axis=-1) / dve[:,np.newaxis]
-        
-        # Define a derivative Mie object, last derivative is duplicated
-        derivative = copy.deepcopy(self)
-        derivative._extinct = np.hstack((dextinct, dextinct[-1])).ravel(order='F')
-        derivative._ssalb = np.hstack((dssalb, dssalb[-1])).ravel(order='F')
-        if self.table_type == 'SCALAR':
-            derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-1).reshape((self.maxleg+1, -1), order='F')
-        elif self.table_type == 'VECTOR':
-            derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-1).reshape((6, self.maxleg+1, -1), order='F')
-        
-        derivative.init_intepolators()
-        return derivative        
-    
     
     def get_legendre(self, reff, veff):
         """
@@ -851,12 +789,13 @@ class MiePolydisperse(object):
         )
         
         self.size_distribution.reff, self.size_distribution.veff, self._extinct, self._ssalb, \
-            self._nleg, self.legcoef, self._table_type = core.read_poly_table(
+            self._nleg, self.legcoef, table_type = core.read_poly_table(
                 mietabfile=file_path, 
                 nretab=self.size_distribution.nretab, 
                 nvetab=self.size_distribution.nvetab,
                 ndist=self.size_distribution.ndist,
-                maxleg=self.maxleg)           
+                maxleg=self.maxleg) 
+        self._table_type = table_type.decode()
         self.init_intepolators()
 
 
@@ -872,11 +811,11 @@ class MiePolydisperse(object):
         # Truncate the legcoef (or wigcoef if polarized)
         self._maxleg = int(self.nleg.max())
         if self.table_type == 'SCALAR':
-            self._legcoef = self.legcoef[:self._maxleg+1, :]
+            self.legcoef = self.legcoef[:self.maxleg+1, :]
         elif self.table_type == 'VECTOR':
-            self._legcoef = self.legcoef[:, :self._maxleg+1, :]
+            self.legcoef = self.legcoef[:, :self.maxleg+1, :]
 
-        self._legendre_table = shdom.LegendreTable(self._legcoef, self.table_type)
+        self._legendre_table = shdom.LegendreTable(self.legcoef, self.table_type)
         
         method = 'nearest' if self.size_distribution.ndist==1 else 'linear'
         
@@ -1089,7 +1028,7 @@ class Rayleigh(object):
         """TODO"""
         index = shdom.GridData(grid, data=np.ones(shape=grid.shape, dtype=np.int32))
         table, table_type = core.rayleigh_phase_function(wavelen=self._wavelength)
-        table = LegendreTable(table.astype(np.float32), table_type) 
+        table = LegendreTable(table.astype(np.float32), table_type.decode()) 
         self._phase = GridPhase(table, index)        
         return GridPhase(table, index)
     

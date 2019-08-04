@@ -1,98 +1,47 @@
 """
 Optimization and related objects to monitor and log the optimization proccess.
 """
-
-import shdom
 import numpy as np
-import core, time, os, copy
+import time, os, copy
 from scipy.optimize import minimize
-from shdom import GridData
+import shdom
+from shdom import GridData, core, float_round
 import dill as pickle
-import cv2
 import itertools
 from joblib import Parallel, delayed
 from collections import OrderedDict
-from scipy.interpolate import RegularGridInterpolator
 
 
-class SizeDistributionDerivative(shdom.SizeDistribution):
+class OpticalScattererDerivative(shdom.OpticalScatterer):
     """TODO"""
-    def __init__(self, type='gamma'):
-        super(SizeDistributionDerivative, self).__init__(type)
+    def __init__(self, wavelength, extinction=None, albedo=None, phase=None):
+        super(OpticalScattererDerivative, self).__init__(wavelength, extinction, albedo, phase)
         
-    def compute_nd(self, type, radii, particle_density=1.0):
+    def resample(self, grid):
         """TODO"""
-        self._radii = radii
-        self._nsize = radii.shape[0]           
-        self._pardens = particle_density        
-          
-        if type=='reff':
-            self._nd = self._compute_re_derivative()
-        elif type=='veff':
-            self._nd = self._compute_ve_derivative()
-        else:
-            raise AttributeError('Derivative type is either reff or veff')
-        
-        nd = self.nd.T.reshape((self.nretab, self.nvetab, self.nsize), order='F')
-        self._nd_interpolator = RegularGridInterpolator(
-            (self.reff, self.veff), nd, bounds_error=False, fill_value=0.0)
-        
-    def _compute_re_derivative(self):
-        """TODO"""
-        reff, alpha = np.meshgrid(self.reff, self.alpha)  
-        eps = 1e-5
-        nd1 = core.make_multi_size_dist(
-            distflag=self.distflag,
-            pardens=self.pardens,
-            nsize=self.nsize,
-            radii=self.radii,
-            reff=reff.ravel(),
-            alpha=alpha.ravel(),
-            gamma=self.gamma,
-            ndist=reff.size)
-        nd2 = core.make_multi_size_dist(
-            distflag=self.distflag,
-            pardens=self.pardens,
-            nsize=self.nsize,
-            radii=self.radii,
-            reff=reff.ravel() + eps,
-            alpha=alpha.ravel(),
-            gamma=self.gamma,
-            ndist=reff.size)
-        return (nd2 - nd1) / eps
-        
-    def _compute_ve_derivative(self):
-        """TODO"""
-        reff, veff = np.meshgrid(self.reff, self.veff)  
-        eps = 1e-5
-        
-        if self.distflag == 'G':
-            alpha1 = 1.0 / veff.ravel() - 3.0
-            alpha2 = 1.0 / (veff.ravel() + eps) - 3.0
-        if self.distflag == 'L':
-            alpha1 = np.sqrt(np.log(veff.ravel() + 1.0))
-            alpha2 = np.sqrt(np.log(veff.ravel() + eps + 1.0))
-            
-        nd1 = core.make_multi_size_dist(
-            distflag=self.distflag,
-            pardens=self.pardens,
-            nsize=self.nsize,
-            radii=self.radii,
-            reff=reff.ravel(),
-            alpha=alpha1,
-            gamma=self.gamma,
-            ndist=reff.size)
-        nd2 = core.make_multi_size_dist(
-            distflag=self.distflag,
-            pardens=self.pardens,
-            nsize=self.nsize,
-            radii=self.radii,
-            reff=reff.ravel(),
-            alpha=alpha2,
-            gamma=self.gamma,
-            ndist=reff.size)
-        return (nd2 - nd1) / eps
+        extinction = self.extinction.resample(grid)
+        albedo = self.albedo.resample(grid)
+        phase = self.phase.resample(grid)            
+        return shdom.OpticalScattererDerivative(self.wavelength, extinction, albedo, phase)
     
+    @property
+    def extinction(self):
+        return self._extinction
+    
+    @extinction.setter
+    def extinction(self, val):
+        self._extinction = val
+    
+    @property
+    def albedo(self):
+        return self._albedo    
+    
+    @albedo.setter
+    def albedo(self, val):
+        self._albedo = val
+        
+    
+        
 class GridPhaseEstimator(shdom.GridPhase):
     """TODO"""
     def __init__(self, legendre_table, index):
@@ -198,7 +147,7 @@ class ScattererEstimator(object):
     def init_num_parameters(self):
         """TODO"""
         num_parameters = []
-        for estimator in self.estimators.itervalues():
+        for estimator in self.estimators.values():
             num_parameters.append(estimator.num_parameters)
         return num_parameters
 
@@ -212,14 +161,14 @@ class ScattererEstimator(object):
             A boolean mask with True making cloudy voxels and False marking non-cloud region.     
         """
         self._mask = mask.resample(self.grid, method='nearest')
-        for estimator in self.estimators.itervalues():
+        for estimator in self.estimators.values():
             estimator.set_mask(mask)
         self._num_parameters = self.init_num_parameters()
        
     def set_state(self, state):
         """TODO"""
         states = np.split(state, np.cumsum(self.num_parameters[:-1]))
-        for estimator, state in zip(self.estimators.itervalues(), states):
+        for estimator, state in zip(self.estimators.values(), states):
             estimator.set_state(state)        
     
     def get_state(self):
@@ -227,7 +176,7 @@ class ScattererEstimator(object):
         TODO
         """
         state = np.empty(shape=(0), dtype=np.float64)
-        for estimator in self.estimators.itervalues():
+        for estimator in self.estimators.values():
             state = np.concatenate((state, estimator.get_state()))
         return state
 
@@ -236,7 +185,7 @@ class ScattererEstimator(object):
         """TODO
         bounds to a list of bounds that the scipy minimize expects."""
         bounds = []
-        for estimator in self.estimators.itervalues():
+        for estimator in self.estimators.values():
             bounds.extend(estimator.get_bounds())
         return bounds
         
@@ -244,7 +193,7 @@ class ScattererEstimator(object):
     def project_gradient(self, gradient):
         """TODO"""
         state_gradient = np.empty(shape=(0), dtype=np.float64)
-        for estimator in self.estimators.itervalues():
+        for estimator in self.estimators.values():
             state_gradient = np.concatenate((state_gradient, estimator.project_gradient(gradient)))
         return state_gradient
         
@@ -288,25 +237,50 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         """TODO"""
         derivatives = OrderedDict()
         if isinstance(self.extinction, shdom.GridDataEstimator):
-            extinction = shdom.GridData(self.extinction.grid, np.ones_like(self.extinction.data))
-            albedo = shdom.GridData(self.albedo.grid, np.zeros_like(self.albedo.data))
-            legen_table = shdom.LegendreTable(np.zeros((self.phase.legendre_table.maxleg+1), dtype=np.float32), table_type=self.phase.legendre_table.table_type)
-            phase = shdom.GridPhase(legen_table, shdom.GridData(self.phase.index.grid, np.ones_like(self.phase.index.data)))
-            derivatives['extinction'] = shdom.OpticalScatterer(self.wavelength, extinction, albedo, phase)
+            derivatives['extinction'] = self.init_extinction_derivative()
         if isinstance(self.albedo, shdom.GridDataEstimator):
-            raise NotImplementedError("Albedo estimation not implemented")
+            derivatives['albedo'] = self.init_albedo_derivative()
         if isinstance(self.phase, shdom.GridPhaseEstimator):
-            raise NotImplementedError("Phase estimation not implemented")           
+            derivatives['phase'] = self.init_phase_derivative()   
         return derivatives
 
+    def init_extinction_derivative(self):
+        """TODO"""
+        extinction = shdom.GridData(self.extinction.grid, np.ones_like(self.extinction.data))
+        albedo = shdom.GridData(self.albedo.grid, np.zeros_like(self.albedo.data))
+        legen_table = shdom.LegendreTable(np.zeros((self.phase.legendre_table.maxleg+1), dtype=np.float32), table_type=self.phase.legendre_table.table_type)
+        phase = shdom.GridPhase(legen_table, shdom.GridData(self.phase.index.grid, np.ones_like(self.phase.index.data)))
+        derivative = shdom.OpticalScattererDerivative(self.wavelength, extinction, albedo, phase)        
+        return derivative
+        
+    def init_albedo_derivative(self):
+        """TODO"""
+        raise NotImplementedError("Albedo estimation not implemented")
+    
+    
+    def init_phase_derivative(self):
+        """TODO"""
+        raise NotImplementedError("Phase estimation not implemented")  
 
+    def get_derivative(self, derivative_type, wavelength):
+        """TODO"""
+        if derivative_type == 'extinction':
+            derivative = self.derivatives['extinction']
+        elif derivative_type == 'albedo':
+            derivative = self.derivatives['albedo']
+        elif derivative_type == 'phase':
+            derivative = self.derivatives['phase']   
+        else:
+            raise AttributeError('derivative type {} not supported'.format(derivative_type))
+        return derivative
+        
+        
 class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEstimator):
     """TODO"""
-    def __init__(self, lwc, reff, veff):
+    def __init__(self, mie, lwc, reff, veff):
         shdom.MicrophysicalScatterer.__init__(self, lwc, reff, veff)
+        self.add_mie(mie)
         ScattererEstimator.__init__(self)
-        self._re_derivative = OrderedDict()
-        self._ve_derivative = OrderedDict()
         
     def init_estimators(self):
         """TODO"""
@@ -320,31 +294,116 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
         return estimators
     
     
-    def add_mie(self, mie):
+    def init_derivatives(self):
         """TODO"""
-        super(MicrophysicalScattererEstimator, self).add_mie(mie)
-        if self.estimators.has_key('reff'):
-            self.add_re_derivative(mie)
-        if self.estimators.has_key('veff'):
-            self.add_ve_derivative(mie)
-        
-        
-    def add_re_derivative(self, mie):
-        """TODO"""
-        if isinstance(mie, shdom.MiePolydisperse):
-            mie_list = [mie]
-        elif isinstance(mie, dict):
-            mie_list = mie.values()
-        
-        for mie in mie_list:
-            self._re_derivative[mie.wavelength] = mie.get_re_derivative()
-
-
-    def add_ve_derivative(self, mie):
-        """TODO"""
-        raise NotImplementedError
+        derivatives = OrderedDict()
+        if isinstance(self.lwc, shdom.GridDataEstimator):
+            derivatives['lwc'] = self.init_lwc_derivative()
+        if isinstance(self.reff, shdom.GridDataEstimator):
+            derivatives['reff'] = self.init_re_derivative()
+        if isinstance(self.veff, shdom.GridPhaseEstimator):
+            derivatives['veff'] = self.init_ve_derivative()
+        return derivatives        
     
+    def init_lwc_derivative(self):
+        """TODO"""
+        derivative = OrderedDict()
+        derivative['lwc'] = shdom.GridData(self.lwc.grid, np.ones_like(self.lwc.data))
+        derivative['albedo'] = shdom.GridData(self.grid, np.zeros(self.grid.shape))
+        return derivative
         
+        
+    def init_re_derivative(self):
+        """TODO"""
+        derivatives = OrderedDict()
+        for wavelength, mie in self.mie.items():
+            extinct = mie.extinct.reshape((mie.size_distribution.nretab, mie.size_distribution.nvetab), order='F')
+            ssalb = mie.ssalb.reshape((mie.size_distribution.nretab, mie.size_distribution.nvetab), order='F')
+         
+            dre = np.diff(mie.size_distribution.reff)        
+            dextinct = np.diff(extinct, axis=0) / dre[:,np.newaxis]
+            dssalb = np.diff(ssalb, axis=0) / dre[:,np.newaxis]
+            dlegcoef = np.diff(mie.legcoef_2d, axis=-2) / dre[:,np.newaxis]
+        
+            # Define a derivative Mie object, last derivative is duplicated
+            derivative = copy.deepcopy(mie)
+            derivative._extinct = np.vstack((dextinct, dextinct[-1])).ravel(order='F')
+            derivative._ssalb = np.vstack((dssalb, dssalb[-1])).ravel(order='F')
+            if mie.table_type == 'SCALAR':
+                derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-2).reshape((mie.maxleg+1, -1), order='F')
+            elif mie.table_type == 'VECTOR':
+                derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-2).reshape((6, mie.maxleg+1, -1), order='F')
+    
+            derivative.init_intepolators()
+            derivatives[float_round(wavelength)] = derivative
+        return derivatives         
+       
+   
+    def init_ve_derivative(self):
+        """TODO"""
+        derivatives = OrderedDict()
+        for wavelength, mie in self.mie.items():        
+            extinct = self.extinct.reshape((self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
+            ssalb = self.ssalb.reshape((self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
+            if self.table_type == 'SCALAR':
+                legcoef = self.legcoef.reshape((self.maxleg+1, self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
+            elif self.table_type == 'VECTOR':
+                legcoef = self.legcoef.reshape((-1, self.maxleg+1, self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
+        
+            dve = np.diff(self.size_distribution.veff)        
+            dextinct = np.diff(extinct, axis=1) / dve[:,np.newaxis]
+            dssalb = np.diff(ssalb, axis=1) / dve[:,np.newaxis]
+            dlegcoef = np.diff(legcoef, axis=-1) / dve[:,np.newaxis]
+        
+            # Define a derivative Mie object, last derivative is duplicated
+            derivative = copy.deepcopy(self)
+            derivative._extinct = np.hstack((dextinct, dextinct[-1])).ravel(order='F')
+            derivative._ssalb = np.hstack((dssalb, dssalb[-1])).ravel(order='F')
+            if self.table_type == 'SCALAR':
+                derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-1).reshape((self.maxleg+1, -1), order='F')
+            elif self.table_type == 'VECTOR':
+                derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-1).reshape((6, self.maxleg+1, -1), order='F')
+        
+            derivative.init_intepolators()
+            derivatives[float_round(wavelength)] = derivative
+        return derivatives  
+
+       
+    def get_lwc_derivative(self, wavelength):
+        """TODO"""
+        index  = shdom.GridData(self.grid, np.ones(self.grid.shape, dtype=np.int32))
+        legen_table = shdom.LegendreTable(np.zeros((self.mie[float_round(wavelength)].maxleg+1), dtype=np.float32), 
+                                          table_type=self.mie[float_round(wavelength)].table_type)       
+        derivative = self.derivatives['lwc']
+        scatterer = shdom.OpticalScattererDerivative(
+            wavelength, 
+            extinction=self.mie[float_round(wavelength)].get_extinction(derivative['lwc'], self.reff, self.veff),
+            albedo=derivative['albedo'],
+            phase=shdom.GridPhase(legen_table, index)) 
+        return scatterer
+    
+    def get_phase_derivative(self, derivative, wavelength):
+        """TODO"""
+        scatterer = shdom.OpticalScattererDerivative(
+            wavelength, 
+            extinction=derivative[float_round(wavelength)].get_extinction(self.lwc, self.reff, self.veff),
+            albedo=derivative[float_round(wavelength)].get_albedo(self.reff, self.veff),
+            phase=derivative[float_round(wavelength)].get_phase(self.reff, self.veff)) 
+        return scatterer  
+    
+    
+
+    def get_derivative(self, derivative_type, wavelength):
+        """TODO"""
+        if derivative_type == 'lwc':
+            derivative = self.get_lwc_derivative(wavelength)
+        elif derivative_type == 'reff' or derivative_type == 'veff':
+            derivative = self.get_phase_derivative(self.derivatives[derivative_type], wavelength)
+        else:
+            raise AttributeError('derivative type {} not supported'.format(derivative_type))
+        return derivative
+        
+
 class MediumEstimator(shdom.Medium):
     """TODO"""
     def __init__(self, grid=None):
@@ -353,6 +412,7 @@ class MediumEstimator(shdom.Medium):
         self._num_parameters = []
         self._unknown_scatterers_indices =  np.empty(shape=(0),dtype=np.int32)
         self._num_derivatives = 0
+        
         
     def add_scatterer(self, scatterer, name=None):
         """TODO"""
@@ -367,10 +427,11 @@ class MediumEstimator(shdom.Medium):
                 np.full(num_estimators, self.num_scatterers, dtype=np.int32)))
             self._num_derivatives += num_estimators
                  
+                 
     def set_state(self, state):
         """TODO"""
         states = np.split(state, np.cumsum(self.num_parameters[:-1]))
-        for (name, estimator), state in zip(self.estimators.iteritems(), states):
+        for (name, estimator), state in zip(self.estimators.items(), states):
             estimator.set_state(state)
             self.scatterers[name] = estimator
     
@@ -378,7 +439,7 @@ class MediumEstimator(shdom.Medium):
     def get_state(self):
         """TODO"""
         state = np.empty(shape=(0),dtype=np.float64)
-        for estimator in self.estimators.itervalues():
+        for estimator in self.estimators.values():
             state = np.concatenate((state, estimator.get_state()))
         return state
 
@@ -387,7 +448,7 @@ class MediumEstimator(shdom.Medium):
         """TODO
         bounds to a list of bounds that the scipy minimize expects."""
         bounds = []
-        for estimator in self.estimators.itervalues():
+        for estimator in self.estimators.values():
             bounds.extend(estimator.get_bounds())
         return bounds
     
@@ -399,14 +460,15 @@ class MediumEstimator(shdom.Medium):
         diphase = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.float32)
     
         i=0
-        for estimator in self.estimators.itervalues():
-            for derivative in estimator.derivatives.itervalues():
-                if isinstance(derivative, shdom.MicrophysicalScatterer) or isinstance(derivative, shdom.MultispectralScatterer):
-                    derivative = derivative.get_optical_scatterer(rte_solver._wavelen)            
+        for estimator in self.estimators.values():
+            for dtype in estimator.derivatives.keys():
+                derivative = estimator.get_derivative(dtype, rte_solver.wavelength)       
                 resampled_derivative = derivative.resample(self.grid)
                 extinction = resampled_derivative.extinction.data
                 albedo = resampled_derivative.albedo.data
                 iphase = resampled_derivative.phase.iphasep                
+                
+                # TODO: Check this
                 if rte_solver._bcflag == 0:
                     extinction = np.pad(extinction, ((0,1),(0,1),(0,0)), 'wrap')
                     albedo = np.pad(albedo, ((0,1),(0,1),(0,0)), 'wrap')
@@ -433,6 +495,7 @@ class MediumEstimator(shdom.Medium):
         dleg = leg_table.data  
         dnumphase= leg_table.numphase
         dphasetab = core.precompute_phase_check(
+            negcheck=False,
             nscatangle=rte_solver._nscatangle,
             numphase=dnumphase,
             ml=rte_solver._ml,
@@ -446,6 +509,10 @@ class MediumEstimator(shdom.Medium):
                  
     def compute_direct_derivative(self, rte_solver):
         """TODO"""
+        
+        if isinstance(rte_solver, shdom.RteSolverArray):
+            rte_solver = rte_solver[0]
+            
         self._direct_derivative_path, self._direct_derivative_ptr = \
             core.make_direct_derivative(
                 dirflux=rte_solver._dirflux, 
@@ -483,7 +550,6 @@ class MediumEstimator(shdom.Medium):
         """
         TODO
         """
-        # projection = projection.projection_list[4][4020]
         if isinstance(projection.npix, list):
             total_pix = np.sum(projection.npix)
         else:
@@ -581,28 +647,6 @@ class MediumEstimator(shdom.Medium):
             radiance=rte_solver._radiance,
             total_ext=rte_solver._total_ext[:rte_solver._npts]
         )
-        
-        
-        #g0 = gradient.reshape((32, 36,49))
-        #g1 = g1.reshape((32,36,49))
-        
-        #import matplotlib.pyplot as plt
-        
-        #plt.figure()
-        #ax1 = plt.subplot(121)
-        #ax1.imshow(g0[:,32,:]);
-        #ax2 = plt.subplot(122)
-        #ax2.imshow(g1[:,32,:]); 
-        #plt.show()
-        
-        #cells_passed = np.zeros((32*36*49,))
-        #cells_passed[rte_solver._dptr[:25,45620-1]] = 1        
-        #ax2 = plt.subplot(132)
-        #ax2.imshow(cells_passed.reshape(32,36,49)[:,32,:])
-        #ax3 = plt.subplot(133)
-        #ax3.imshow(cells_passed.reshape(32,36,49)[:,32,:] * g1[:,32,:])        
-        #plt.imshow(g1.sum(axis=0)); plt.show();
-        #plt.imshow(g1.sum(axis=1)); plt.show();
         return gradient, loss, radiance
         
     def compute_gradient(self, rte_solver, measurements, n_jobs):
@@ -628,6 +672,7 @@ class MediumEstimator(shdom.Medium):
         # Pre-computation of phase-function and derivatives for all solvers.
         for rte_solver in rte_solvers:
             rte_solver._phasetab = core.precompute_phase_check(
+                negcheck=True,
                 nscatangle=rte_solver._nscatangle,
                 numphase=rte_solver._pa.numphase,
                 ml=rte_solver._ml,
@@ -638,12 +683,7 @@ class MediumEstimator(shdom.Medium):
             )
             rte_solver._dext, rte_solver._dalb, rte_solver._diphase, \
                 rte_solver._dleg, rte_solver._dphasetab, rte_solver._dnumphase = self.get_derivatives(rte_solver)
-            
-            for estimator in self.estimators.itervalues():
-                for derivative in estimator.derivatives.itervalues():
-                    if isinstance(derivative, shdom.MicrophysicalScatterer) or isinstance(derivative, shdom.MultispectralScatterer):
-                        derivative = derivative.get_optical_scatterer(wavelength)                    
-  
+                              
         projection = measurements.camera.projection
         sensor = measurements.camera.sensor
         radiances = measurements.radiances
@@ -661,21 +701,18 @@ class MediumEstimator(shdom.Medium):
             output = [self.core_grad(rte_solvers[channel], projection, radiances[...,channel]) for channel in range(num_channels)]
         
         # Sum over all the losses of the different channels
-        loss = np.sum(map(lambda x: x[1], output))
+        loss = np.sum(list(map(lambda x: x[1], output)))
         
         # Project rte_solver base grid gradient to the state space
-        gradient = sum(map(lambda x: x[0], output))
+        gradient = sum(list(map(lambda x: x[0], output)))
         gradient = gradient.reshape(self.grid.shape + tuple([self.num_derivatives]))
-        images = sensor.make_images(np.concatenate(map(lambda x: x[2], output)), projection, num_channels)
+        images = sensor.make_images(np.concatenate(list(map(lambda x: x[2], output))), projection, num_channels)
         
         state_gradient = np.empty(shape=(0), dtype=np.float64)
         for i, estimator in enumerate(self.estimators.values()):
             state_gradient = np.concatenate(
                 (state_gradient, estimator.project_gradient(GridData(self.grid, gradient[...,i])))
             )
-            
-        images = sensor.make_images(np.concatenate(map(lambda x: x[2], output)), projection, num_channels)
-        
         return state_gradient, loss, images
 
 
@@ -714,54 +751,105 @@ class SummaryWriter(object):
         
         self._tf_writer = SummaryWriter(log_dir)
         self._ground_truth_parameters = None
+        self._ckpt_periods = []
+        self._ckpt_times = []
         self._callback_fns = []
         self._optimizer = None
         
         
     def attach_optimizer(self, optimizer):
+        """TODO"""
         self._optimizer = optimizer
     
-    
-    def write_image_list(self, images, titles, vmax=None):
+        
+    def monitor_loss(self, ckpt_period=-1):
         """
-        Write an image list to tensorboardX.
+        Monitor the loss.
+        
+        Parameters
+        ----------
+        ckpt_period: float
+           time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
+        """
+        self._ckpt_periods.append(ckpt_period)
+        self._ckpt_times.append(time.time())
+        self._callback_fns.append(self.loss_cbfn) 
+        
+
+    def save_checkpoints(self, ckpt_period=-1):
+        """Save a checkpoint of the Optimizer
+        
+        Parameters
+        ----------
+        ckpt_period: float
+           time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
+        """
+        self._ckpt_periods.append(ckpt_period)
+        self._ckpt_times.append(time.time())        
+        self._callback_fns.append(self.save_ckpt_cbfn)
+            
+        
+    def monitor_shdom_iterations(self, ckpt_period=-1):
+        """Monitor the number of SHDOM iterations.
+        
+        Parameters
+        ----------
+        ckpt_period: float
+           time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
+        """
+        self._ckpt_periods.append(ckpt_period)
+        self._ckpt_times.append(time.time())
+        self._callback_fns.append(self.shdom_iterations_cbfn)         
+        
+        
+    def monitor_scatterer_error(self, estimator_name, ground_truth, ckpt_period=-1):
+        """
+        Monitor relative and overall mass error (epsilon, delta) as defined at:
+          Amit Aides et al, "Multi sky-view 3D aerosol distribution recovery".
+        
+        Parameters
+        ----------
+        estimator_name: str
+            The name of the scatterer to monitor
+        ground_truth: shdom.Scatterer
+            The ground truth medium.
+        ckpt_period: float
+           time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
+        """
+        self._ckpt_periods.append(ckpt_period)
+        self._ckpt_times.append(time.time())
+        self._callback_fns.append(self.scatterer_error_cbfn)
+        if hasattr(self, '_ground_truth'):
+            self._ground_truth[estimator_name] = ground_truth
+        else:
+            self._ground_truth = OrderedDict({estimator_name: ground_truth})
+            
+    def monitor_domain_mean(self, estimator_name, ground_truth, ckpt_period=-1):
+        """
+        Monitor domain mean and compare to ground truth over iterations.
 
         Parameters
         ----------
-        images: list
-            List of images to be logged onto tensorboard.
-        titles: list
-            List of strings that will title the corresponding images on tensorboard.
-        vmax: list or scalar, optional
-            List or a single of scaling factor for the image contrast equalization
+        estimator_name: str
+            The name of the scatterer to monitor
+        ground_truth: shdom.Scatterer
+            The ground truth medium.
+        ckpt_period: float
+           time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
         """
-
-        if np.isscalar(vmax) or vmax is None:
-            vmax = [vmax]*len(images)        
-
-        assert len(images) == len(titles), 'len(images) != len(titles): {} != {}'.format(len(images), len(titles))
-        assert len(vmax) == len(titles), 'len(vmax) != len(images): {} != {}'.format(len(vmax), len(times))
-
-        for image, title, vm in zip(images, titles, vmax):
-            # for polychromatic
-            if image.ndim == 3:
-                self.tf_writer.add_images(
-                    tag=title, 
-                    img_tensor=(image / vm),
-                    dataformats='HWC'
-                )
-            # for monochromatic
-            else:
-                self.tf_writer.add_image(
-                    tag=title, 
-                    img_tensor=(image / vm),
-                    dataformats='HW'
-                ) 
-    
+        self._ckpt_periods.append(ckpt_period)
+        self._ckpt_times.append(time.time())
+        self._callback_fns.append(self.domain_mean_cbfn)
+        if hasattr(self, '_ground_truth'):
+            self._ground_truth[estimator_name] = ground_truth
+        else:
+            self._ground_truth = OrderedDict({estimator_name: ground_truth})
+        
+        
     def monitor_images(self, acquired_images, ckpt_period=-1):
         """
         Monitor the synthetic images and compare to the acquired images
-        
+    
         Parameters
         ----------
         acquired_images: list
@@ -770,79 +858,126 @@ class SummaryWriter(object):
            time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
         """
         num_images = len(acquired_images)
-        self._image_ckpt_period = ckpt_period
-        self._image_ckpt_time = time.time()
+        self._ckpt_periods.append(ckpt_period)
+        self._ckpt_times.append(time.time())
+        self._callback_fns.append(self.estimated_images_cbfn)
         self._image_vmax = [image.max() * 1.25 for image in acquired_images]
         self._image_titles = ['Retrieval Image {}'.format(view) for view in range(num_images)]
         acq_titles = ['Acquiered Image {}'.format(view) for view in range(num_images)]
-        self.write_image_list(acquired_images, acq_titles, vmax=self._image_vmax)
-        self._callback_fns.append(self.estimated_images)
-    
-    
-    def estimated_images(self):
-        """Callback function the is called every optimizer iteration image monitoring is set."""
-        time_passed = time.time() - self._image_ckpt_time 
-        if time_passed > self._image_ckpt_period:
-            self._image_ckpt_time  = time.time()
-            self.write_image_list(self.optimizer.images, self._image_titles, self._image_vmax)
-            
+        self.write_image_list(0, acquired_images, acq_titles, vmax=self._image_vmax)
 
-    def monitor_loss(self):
-        """Monitor the loss."""
-        self._callback_fns.append(self.loss)
-                           
-    def loss(self):
+
+    def save_ckpt_cbfn(self):
+        timestr = time.strftime("%H%M%S")
+        path = os.path.join(self.writer._tf_writer.log_dir,  timestr + '.ckpt')
+        self.optimizer.save(path)
+        
+    def loss_cbfn(self):
         """Callback function that is called (every optimizer iteration) for loss monitoring."""
-        self.tf_writer.add_scalar('loss', self.optimizer.loss, self.optimizer.iteration)
-        
-    def monitor_shdom_iterations(self):
-        """Monitor the number of SHDOM iterations"""
-        self._callback_fns.append(self.shdom_iterations)
-        
-    def shdom_iterations(self):
+        self.tf_writer.add_scalar('loss', self.optimizer.loss, self.optimizer.iteration)    
+    
+    def estimated_images_cbfn(self):
+        """Callback function the is called every optimizer iteration image monitoring is set."""
+        self.write_image_list(self.optimizer.iteration, self.optimizer.images, self._image_titles, self._image_vmax)
+    
+    def shdom_iterations_cbfn(self):
         """Callback function that is called (every optimizer iteration) for shdom iteration monitoring"""
         self.tf_writer.add_scalar('total shdom iterations', self.optimizer.rte_solver.num_iterations, self.optimizer.iteration)       
         
-    def monitor_scatterer_error(self, estimated_scatterer_name, ground_truth_scatterer, ckpt_period=-1):
+    def scatterer_error_cbfn(self):
+        """Callback function for monitoring parameter error measures."""
+        for scatterer_name, gt_scatterer in self._ground_truth.items():
+            est_scatterer = self.optimizer.medium.get_scatterer(scatterer_name)
+            for parameter_name, parameter in est_scatterer.estimators.items():
+                est_param = parameter.data[parameter.mask.data].ravel()
+                gt_param = getattr(gt_scatterer, parameter_name).data[parameter.mask.data].ravel()
+                delta = (np.linalg.norm(est_param, 1) - np.linalg.norm(gt_param, 1)) / np.linalg.norm(gt_param, 1)
+                epsilon = np.linalg.norm((est_param - gt_param), 1) / np.linalg.norm(gt_param,1)
+                self.tf_writer.add_scalar(scatterer_name + ' delta ' + parameter_name, delta, self.optimizer.iteration)
+                self.tf_writer.add_scalar(scatterer_name + ' epsilon ' + parameter_name, epsilon, self.optimizer.iteration)           
+        
+    def domain_mean_cbfn(self):
+        """Callback function for monitoring parameter error measures."""
+        for scatterer_name, gt_scatterer in self._ground_truth.items():
+            est_scatterer = self.optimizer.medium.get_scatterer(scatterer_name)
+            for parameter_name, parameter in est_scatterer.estimators.items():
+                est_param = parameter.data[parameter.mask.data].mean()
+                gt_param = getattr(gt_scatterer, parameter_name).data[parameter.mask.data].mean()
+                self.tf_writer.add_scalars(
+                    main_tag=scatterer_name + ' mean ' + parameter_name,
+                    tag_scalar_dict={'esimated': est_param, 'true': gt_param}, 
+                    global_step=self.optimizer.iteration
+                )
+                
+     
+    def write_image_list(self, global_step, images, titles, vmax=None):
         """
-        Monitor relative and overall mass error (epsilon, delta) as defined at:
-          Amit Aides et al, "Multi sky-view 3D aerosol distribution recovery".
+        Write an image list to tensorboardX.
+    
+        Parameters
+        ----------
+        global_step: integer,
+            The global step of the optimizer.
+        images: list
+            List of images to be logged onto tensorboard.
+        titles: list
+            List of strings that will title the corresponding images on tensorboard.
+        vmax: list or scalar, optional
+            List or a single of scaling factor for the image contrast equalization
+        """
+    
+        if np.isscalar(vmax) or vmax is None:
+            vmax = [vmax]*len(images)        
+    
+        assert len(images) == len(titles), 'len(images) != len(titles): {} != {}'.format(len(images), len(titles))
+        assert len(vmax) == len(titles), 'len(vmax) != len(images): {} != {}'.format(len(vmax), len(times))
+    
+        for image, title, vm in zip(images, titles, vmax):
+            # for polychromatic
+            if image.ndim == 3:
+                self.tf_writer.add_images(
+                    tag=title, 
+                    img_tensor=(np.repeat(np.expand_dims(image, 2), 3, axis=2) / vm),
+                    dataformats='HWCN',
+                    global_step=global_step
+                )
+            # for monochromatic
+            else:
+                self.tf_writer.add_image(
+                    tag=title, 
+                    img_tensor=(image / vm),
+                    dataformats='HW',
+                    global_step=global_step
+                ) 
+                
+    def check_update_time(self, index):
+        """
+        Check if it is time to update the callback function.
         
         Parameters
         ----------
-        estimated_scatterer_name: str
-            The name of the scatterer to monitor
-        ground_truth_scatterer: shdom.Scatterer
-            The ground truth medium.
-        ckpt_period: float
-           time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
+        index: integer,
+            The index of the callback function in the list.
         """
-        self._param_ckpt_period = ckpt_period
-        self._param_ckpt_time = time.time()
-        if hasattr(self, '_ground_truth_scatterer'):
-            self._ground_truth_scatterer[estimated_scatterer_name] = ground_truth_scatterer
+        time_passed = time.time() - self.ckpt_times[index] 
+        if time_passed > self.ckpt_periods[index]:
+            self._ckpt_times[index] = time.time()
+            return True
         else:
-            self._ground_truth_scatterer = OrderedDict({estimated_scatterer_name: ground_truth_scatterer})
-        self._callback_fns.append(self.param_error)
+            return False
         
         
-    def param_error(self):
-        """Callback function the is called every optimizer iteration parameter error monitoring is set."""
-        time_passed = time.time() - self._image_ckpt_time 
-        if time_passed > self._param_ckpt_period:
-            for scatterer_name, gt_scatterer in self._ground_truth_scatterer.iteritems():
-                est_scatterer = self.optimizer.medium.get_scatterer(scatterer_name)
-                for parameter_name, parameter in est_scatterer.estimators.iteritems():
-                    est_param = parameter.data[parameter.mask.data].ravel()
-                    gt_param = getattr(gt_scatterer, parameter_name).data[parameter.mask.data].ravel()
-                    delta = (np.linalg.norm(est_param, 1) - np.linalg.norm(gt_param, 1)) / np.linalg.norm(gt_param, 1)
-                    epsilon = np.linalg.norm((est_param - gt_param), 1) / np.linalg.norm(gt_param,1)
-                    self.tf_writer.add_scalar('delta', delta, self.optimizer.iteration)
-                    self.tf_writer.add_scalar('epsilon', epsilon, self.optimizer.iteration)           
-            
     @property
     def callback_fns(self):
         return self._callback_fns
+    
+    @property
+    def ckpt_periods(self):
+        return self._ckpt_periods
+    
+    @property
+    def ckpt_times(self):
+        return self._ckpt_times
     
     @property
     def optimizer(self):
@@ -880,7 +1015,7 @@ class SpaceCarver(object):
     def carve(self, grid, thresholds, agreement=0.75):
         """
         Carves out the cloud geometry on the grid. 
-        A threshold on the radiances is found by a cv2 adaptive image threshold.
+        A threshold on radiances is used to produce a mask and preform space carving.
         
         Parameters
         ----------
@@ -968,8 +1103,6 @@ class Optimizer(object):
         self._writer = None
         self._images = None
         self._iteration = 0
-        self._ckpt_time = time.time()
-        self._ckpt_period = None
         self._loss = None
         
     def set_measurements(self, measurements):
@@ -1033,14 +1166,7 @@ class Optimizer(object):
         self._images = images
         return loss, gradient
     
-    
-    def save_ckpt(self):
-        """Save a checkpoint of the Optimizer"""
-        self._ckpt_time = time.time()
-        timestr = time.strftime("%H%M%S")
-        path = os.path.join(self.writer._tf_writer.log_dir,  timestr + '.ckpt')
-        self.save(path)
-            
+
             
     def callback(self, state):
         """
@@ -1052,16 +1178,12 @@ class Optimizer(object):
         
         # Writer callback functions
         if self.writer is not None:
-            for fn in self.writer.callback_fns:
-                fn()
-        
-        # Save checkpoint
-        time_passed = time.time() - self._ckpt_time
-        if (self.ckpt_period is not None) and (time_passed > self.ckpt_period):        
-            self.save_ckpt()
+            for index, callbackfn in enumerate(self.writer.callback_fns):
+                if self.writer.check_update_time(index) == True:
+                    callbackfn()
         
 
-    def minimize(self, options, ckpt_period=None, method='L-BFGS-B', n_jobs=1):
+    def minimize(self, options, method='L-BFGS-B', n_jobs=1):
         """
         Minimize the cost function with respect to the parameters defined.
         
@@ -1069,8 +1191,6 @@ class Optimizer(object):
         ----------
         options: Dict
             The option dictionary
-        ckpt_period: float
-            Time in seconds between saving checkpoints. None means no checkpoints will be saved.
         method: str
             The optimization method.
         n_jobs: int, default=1
@@ -1083,8 +1203,6 @@ class Optimizer(object):
         For documentation: 
             https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html
         """
-        
-        self._ckpt_period = ckpt_period
         self._n_jobs = n_jobs
         if method != 'L-BFGS-B':
             raise NotImplementedError('Optimization method not implemented')
@@ -1109,6 +1227,7 @@ class Optimizer(object):
         self.medium.compute_direct_derivative(self.rte_solver)
         self._num_parameters = self.medium.num_parameters   
         
+        
     def get_bounds(self):
         """TODO"""
         return self.medium.get_bounds()
@@ -1118,12 +1237,14 @@ class Optimizer(object):
         """TODO"""
         return self.medium.get_state()
     
+    
     def set_state(self, state):
         """TODO"""
         self.medium.set_state(state)
         self.rte_solver.set_medium(self.medium)
         self.rte_solver.make_direct()
         self.rte_solver.solve(maxiter=100, verbose=False)        
+        
         
     def save(self, path):
         """
@@ -1137,12 +1258,11 @@ class Optimizer(object):
         params = self.__dict__.copy()
         params.pop('_writer')
         rte_solver = params.pop('_rte_solver')
-        params['scene_params'] = rte_solver._scene_parameters
-        params['numerical_params'] = rte_solver._numerical_parameters
-        file = open(path, 'w')
+        params['rte_param_dict'] = rte_solver.get_param_dict()
+        file = open(path,'wb')
         file.write(pickle.dumps(params, -1))
         file.close()
-
+        
 
     def load(self, path):
         """
@@ -1153,14 +1273,18 @@ class Optimizer(object):
         path: str,
             Full path to file. 
         """
-        file = open(path, 'r')
+        file = open(path,'rb')
         data = file.read()
         file.close()        
         params = pickle.loads(data)
         
         # Create an RTE solver object
-        rte_solver = shdom.RteSolver(params.pop('scene_params'), 
-                                     params.pop('numerical_params'))
+        rte_param_dict = params.pop('rte_param_dict')
+        if len(rte_param_dict['solver_parameters']) == 1:
+            rte_solver = shdom.RteSolver()
+        else:
+            rte_solver = shdom.RteSolverArray()
+        rte_solver.set_param_dict(rte_param_dict)         
         self.set_rte_solver(rte_solver)
         self.__dict__ = params
         

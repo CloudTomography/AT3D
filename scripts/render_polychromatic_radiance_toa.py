@@ -18,11 +18,11 @@ For a tutorial overview of how to operate the forward rendering model see the fo
  - notebooks/Make Mie Table.ipynb
  - notebooks/Multispectral Rendering.ipynb
 """
-import os 
+
 import numpy as np
 import argparse
 import shdom
-from collections import OrderedDict
+
 
 def argument_parsing():
     """
@@ -131,7 +131,7 @@ def generate_atmosphere():
     """
     cloud_generator = CloudGenerator(args)
     for wavelength in args.wavelength:
-        table_path = args.mie_base_path.replace('<wavelength>', '{}'.format(int(np.round(wavelength*1000))))
+        table_path = args.mie_base_path.replace('<wavelength>', '{}'.format(shdom.int_round(wavelength)))
         cloud_generator.add_mie(table_path)
         
     cloud = cloud_generator.get_scatterer()
@@ -165,9 +165,11 @@ def solve_rte(atmospheres):
     rte_solver: shdom.RteSolverArray object
         A solver with the muispectral solutions for the RTE
     """
-    numerical_params = shdom.NumericalParameters()
     rte_solvers = shdom.RteSolverArray()
     for wavelength, solar_flux in zip(args.wavelength, args.solar_flux):
+        numerical_params = shdom.NumericalParameters(
+                split_accuracy=0.1/solar_flux,
+                deltam=False)
         scene_params = shdom.SceneParameters(
             wavelength=wavelength,
             source=shdom.SolarSource(args.solar_azimuth, args.solar_zenith, flux=solar_flux)
