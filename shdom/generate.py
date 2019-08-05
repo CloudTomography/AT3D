@@ -197,20 +197,9 @@ class AirGenerator(Generator):
         scatterer: shdom.Scatterer or shdom.MultispectralScatterer
         """
         altitudes = shdom.Grid(z=np.linspace(0.0, self.args.air_max_alt, self.args.air_num_points))       
-        wavelengths = np.array(wavelength)
-        num_bands = wavelengths.size
-        
-        if  num_bands == 1:
-            rayleigh = shdom.Rayleigh(wavelength)
-            rayleigh.set_profile(self.temperature_profile.resample(altitudes))
-            scatterer = rayleigh.get_scatterer()
-        else:
-            scatterer = shdom.MultispectralScatterer()
-            for i in range(num_bands):
-                rayleigh = shdom.Rayleigh(wavelength[i])
-                rayleigh.set_profile(self.temperature_profile.resample(altitudes))
-                scatterer.add_scatterer(rayleigh.get_scatterer())   
-        return scatterer
+        rayleigh = shdom.Rayleigh(wavelength)
+        rayleigh.set_profile(self.temperature_profile.resample(altitudes))
+        return rayleigh.get_scatterer()
     
     @property
     def temperature_profile(self):

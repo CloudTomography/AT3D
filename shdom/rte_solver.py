@@ -528,7 +528,8 @@ class RteSolver(object):
             self._nleg = self._mm
         self._nleg = self._maxleg = max(legendre_table.maxleg, self._nleg)
         self._nscatangle = max(36, min(721, 2*self._nleg))
-           
+
+
         # Legenp is without the zero order term which is 1.0 for normalized phase function
         self._pa.legenp = legendre_table.get_legenp(self._nleg).astype(np.float32)
         self._maxasym = legendre_table.maxasym
@@ -541,9 +542,11 @@ class RteSolver(object):
     
         self._npart = medium.num_scatterers
         self._nstleg = legendre_table.nstleg
-        
+        self._nstphase = min(self._nstleg, 2)
+
         self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
             self._total_ext, self._extmin, self._scatmin, self._albmax = core.transfer_pa_to_grid(
+                nstleg=self._nstleg,
                 npart=self._npart,
                 extinctp=self._pa.extinctp,
                 albedop=self._pa.albedop,
@@ -734,7 +737,9 @@ class RteSolver(object):
             self._ipdirect, self._di, self._dj, self._dk, self._epss, self._epsz, self._xdomain, self._ydomain,  \
             self._delxd, self._delyd, self._deljdot, self._deljold, self._deljnew, self._jnorm, self._fftflag, \
             self._cmu1, self._cmu2, self._wtmu, self._cphi1, self._cphi2, self._wphisave, self._work, self._work1, \
-            self._work2 = core.init_solution(
+            self._work2, self._uniform_sfc_brdf, self._sfc_brdf_do = core.init_solution(
+                nstleg=self._nstleg,
+                nstokes=self._nstokes,
                 nx=self._nx,
                 ny=self._ny,
                 nz=self._nz,
@@ -832,6 +837,8 @@ class RteSolver(object):
             A tuple containing all the output arguments, see: update_solution_arguments().
         """  
         output_arguments = core.solution_iterations(
+            uniform_sfc_brdf=self._uniform_sfc_brdf,
+            sfc_brdf_do=self._sfc_brdf_do,
             work=self._work,
             work1=self._work1,
             work2=self._work2,

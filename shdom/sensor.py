@@ -14,21 +14,22 @@ norm = lambda x: x / np.linalg.norm(x, axis=0)
     
 class Sensor(object):
     """
-    A sensor class to be inhireted by specific sensor types.
-    A Sensor needs to define a render method.
+    A sensor class to be inherited by specific sensor types.
+    This class defines the render method which preforms ray-tracing across the medium.
     """
     def __init__(self):
         self._type = 'Sensor'
     
     def render(self, rte_solver, projection):
         """TODO"""
-        
+
         if isinstance(projection.npix, list):
             total_pix = np.sum(projection.npix)
         else:
             total_pix = projection.npix 
             
         output = core.render(
+            nstphase=rte_solver._nstphase,
             ylmsun=rte_solver._ylmsun,
             phasetab=rte_solver._phasetab,
             nscatangle=rte_solver._nscatangle,
@@ -155,12 +156,16 @@ class RadianceSensor(Sensor):
                 negcheck=True,
                 nscatangle=rte_solver._nscatangle,
                 numphase=rte_solver._pa.numphase,
+                nstphase=rte_solver._nstphase,
+                nstokes=rte_solver._nstokes,
+                nstleg=rte_solver._nstleg,
+                nleg=rte_solver._nleg,
                 ml=rte_solver._ml,
                 nlm=rte_solver._nlm,
-                nleg=rte_solver._nleg,
-                legen=rte_solver._legen.reshape(rte_solver._nleg+1, -1),
+                legen=rte_solver._legen,
                 deltam=rte_solver._deltam
-            )            
+            )
+
         # Parallel rendering using multithreading (threadsafe Fortran)
         if n_jobs > 1:
             radiance = Parallel(n_jobs=n_jobs, backend="threading", verbose=verbose)(
@@ -238,23 +243,23 @@ class StokesSensor(Sensor):
             The number of jobs to divide the rendering into.
         verbose: int, default=0
             How much verbosity in the parallel rendering proccess.
-            
-            
+
         Returns
         -------
         stokes: np.array(shape=(nstokes, sensor.resolution), dtype=np.float32)
             The rendered radiances.
 
-            
         Notes
         -----
         For a small amout of pixels parallel rendering is slower due to communication overhead.
         """
-        multiview = isinstance(projection, shdom.MultiViewProjection)
-        multichannel = isinstance(rte_solver, shdom.RteSolverArray)
-        
         # If rendering several atmospheres (e.g. multi-spectral rendering)
-        rte_solvers = rte_solver if multichannel else [rte_solver]
+        if isinstance(rte_solver, shdom.RteSolverArray):
+            num_channels = rte_solver.num_solvers
+            rte_solvers = rte_solver
+        else:
+            num_channels = 1
+            rte_solvers = [rte_solver]
         
         # Pre-computation of phase-function for all solvers.
         for rte_solver in rte_solvers:
@@ -262,10 +267,13 @@ class StokesSensor(Sensor):
                 negcheck=True,
                 nscatangle=rte_solver._nscatangle,
                 numphase=rte_solver._pa.numphase,
+                nstphase=rte_solver._nstphase,
+                nstokes=rte_solver._nstokes,
+                nstleg=rte_solver._nstleg,
+                nleg=rte_solver._nleg,
                 ml=rte_solver._ml,
                 nlm=rte_solver._nlm,
-                nleg=rte_solver._nleg,
-                legen=rte_solver._legen.reshape(rte_solver._nleg+1, -1),
+                legen=rte_solver._legen,
                 deltam=rte_solver._deltam
             )
             
@@ -282,7 +290,7 @@ class StokesSensor(Sensor):
             stokes = [super(StokesSensor, self).render(rte_solver, projection) for rte_solver in rte_solvers]
           
         stokes = np.hstack(stokes) 
-        images = make_images(stokes, projection, num_channels)
+        images = self.make_images(stokes, projection, num_channels)
         return images
         
     def make_images(self, stokes, projection, num_channels):

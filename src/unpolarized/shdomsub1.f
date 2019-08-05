@@ -19,7 +19,7 @@
      .             NPTS, GRIDPOS, NPX, NPY, NPZ, DELX, DELY, XSTART,
      .             YSTART, ZLEVELS, TEMPP, EXTINCTP, NBPTS, ALBEDOP,
      .             LEGENP, IPHASEP, NZCKD, ZCKD, GASABS, 
-     .             NPART, TOTAL_EXT, EXTMIN, SCATMIN, ALBMAX)        
+     .             NPART, TOTAL_EXT, EXTMIN, SCATMIN, ALBMAX, NSTLEG)
 Cf2py threadsafe
 
       IMPLICIT NONE
@@ -36,8 +36,8 @@ Cf2py intent(out) :: EXTMIN, SCATMIN
       REAL    ALBMAX
 Cf2py intent(out) :: ALBMAX
 
-      INTEGER  ML, MM, NLEG, NUMPHASE
-Cf2py intent(in) :: ML, MM, NLEG, NUMPHASE
+      INTEGER  ML, MM, NLEG, NUMPHASE, NSTLEG
+Cf2py intent(in) :: ML, MM, NLEG, NUMPHASE, NSTLEG
       INTEGER MAXIG
 Cf2py intent(in) :: MAXIG
       INTEGER NPTS
@@ -111,14 +111,16 @@ C       Get the maximum single scattering albedo over all processors
      .             CX, CY, CZ, CXINV, CYINV, CZINV, IPDIRECT, DI, 
      .             DJ, DK, NPHI0MAX, EPSS, EPSZ, XDOMAIN, YDOMAIN, 
      .             DELXD, DELYD, DELJDOT, DELJOLD, DELJNEW, 
-     .             JNORM, NBCELLS,FFTFLAG, CMU1, CMU2, WTMU,  
-     .             CPHI1, CPHI2, WPHISAVE, MAXSFCPARS, WORK, WORK1,
-     .             WORK2)
+     .             JNORM, NBCELLS,FFTFLAG, CMU1, CMU2, WTMU, CPHI1,
+     .             CPHI2, WPHISAVE, MAXSFCPARS, WORK, WORK1, WORK2,
+     .             NSTLEG, NSTOKES, UNIFORM_SFC_BRDF, SFC_BRDF_DO)
 Cf2py threadsafe
 C       Initialize the SHDOM solution procedure.
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NX1, NY1, NXSFC, NYSFC, NSFCPAR, NUMPHASE
-Cf2py intent(in) :: NX, NY, NX1, NY1, NZ, NXSFC, NYSFC, NSFCPAR, NUMPHASE
+      INTEGER NSTLEG, NSTOKES
+Cf2py intent(in) ::  NX, NY, NX1, NY1, NZ, NXSFC, NYSFC, NSFCPAR
+Cf2py intent(in) ::  NUMPHASE, NSTLEG, NSTOKES
       INTEGER ML, MM, NCS, NLM, NMU, NPHI, NLEG, MAXSFCPARS
 Cf2py intent(in) :: ML, MM, NCS, NLM, NMU, NPHI, NLEG, MAXSFCPARS
       INTEGER BCFLAG, IPFLAG, NBCELLS
@@ -210,10 +212,13 @@ Cf2py intent(out) :: DELJDOT, DELJOLD, DELJNEW, JNORM
       REAL CPHI1(-16:16,32,NMU), CPHI2(32,-16:16,NMU)
       REAL WPHISAVE(3*NPHI0MAX+15,NMU)
 Cf2py intent(out) :: FFTFLAG, CMU1, CMU2, WTMU, CPHI1, CPHI2, WPHISAVE
+      LOGICAL UNIFORM_SFC_BRDF
+      REAL    SFC_BRDF_DO
+Cf2py intent(out) ::  UNIFORM_SFC_BRDF, SFC_BRDF_DO
 
       INTEGER ORDINATESET
       LOGICAL LAMBERTIAN
-      
+
 C       Set up some things before solution loop     
 C    Compute the solar transmission in DIRFLUX. 
       IF (SRCTYPE .NE. 'T') THEN
@@ -222,8 +227,8 @@ C    Compute the solar transmission in DIRFLUX.
      .                         SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS, 
      .                         NX, XGRID, NY, YGRID, DIRFLUX)
         ELSE
-          CALL MAKE_DIRECT (NPTS, BCFLAG, IPFLAG, DELTAM, ML, NLEG,
-     .             SOLARFLUX, SOLARMU, SOLARAZ,  GRIDPOS, DIRFLUX, 
+          CALL MAKE_DIRECT (NPTS, BCFLAG, IPFLAG, DELTAM, ML, NSTLEG,
+     .             NLEG, SOLARFLUX, SOLARMU, SOLARAZ,  GRIDPOS, DIRFLUX,
      .             NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .             XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .             ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
@@ -325,7 +330,7 @@ C            bottom grid points.
      .               NPHI0MAX, EPSS, EPSZ, XDOMAIN, YDOMAIN, DELXD,
      .               DELYD, ALBMAX, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .               FFTFLAG, CMU1, CMU2, WTMU, CPHI1, CPHI2, WPHISAVE,
-     .               WORK, WORK1, WORK2)        
+     .               WORK, WORK1, WORK2, UNIFORM_SFC_BRDF, SFC_BRDF_DO)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -438,6 +443,9 @@ Cf2py intent(in, out) :: OLDNPTS
       REAL    WORK(*), WORK2(*)
 Cf2py intent(in, out) :: WORK, WORK1, WORK2
 Cf2py intent(out) :: ITER
+      LOGICAL UNIFORM_SFC_BRDF
+      REAL    SFC_BRDF_DO
+Cf2py intent(in) :: UNIFORM_SFC_BRDF, SFC_BRDF_DO
 
       REAL A
       INTEGER SP, STACK(50)

@@ -13,7 +13,8 @@ C     The modified subroutines were written by Aviad Levis, Technion Institute o
      .                   GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                   EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, 
      .                   FLUXES, SHPTR, SOURCE, CAMX, CAMY, CAMZ, CAMMU, 
-     .                   CAMPHI, NPIX, NPART, TOTAL_EXT, STOKES)
+     .                   CAMPHI, NPIX, NPART, TOTAL_EXT, STOKES,
+     .                   NSCATANGLE, YLMSUN, PHASETAB, NSTPHASE)
 Cf2py threadsafe
       IMPLICIT NONE
       INTEGER NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
@@ -53,11 +54,13 @@ Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE
       DOUBLE PRECISION CAMMU(*), CAMPHI(*)
 Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
       INTEGER  NPIX, NSTPHASE, NSCATANGLE
-Cf2py intent(in) :: NPIX
+Cf2py intent(in) :: NPIX, NSTPHASE, NSCATANGLE
       REAL   STOKES(NSTOKES, NPIX)
 Cf2py intent(out) :: STOKES
       CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
 Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
+      REAL YLMSUN(NSTLEG, NLM), PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
+Cf2py intent(in) :: YLMSUN, PHASETAB
 
       INTEGER I, J, L, SIDE
       INTEGER IVIS
@@ -66,24 +69,9 @@ Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
       DOUBLE PRECISION U, R, PI
       DOUBLE PRECISION X0, Y0, Z0
       DOUBLE PRECISION XE,YE,ZE, TRANSMIT, VISRAD(NSTOKES)
-      INTEGER MAXSCATANG
-      PARAMETER (MAXSCATANG=721)
-      REAL, ALLOCATABLE :: YLMSUN(:,:), PHASETAB(:,:,:)
+
       REAL  MEAN, STD1, STD2
   
-      ALLOCATE (YLMSUN(NSTLEG,NLM))
-
-      IF (SRCTYPE .NE. 'T') THEN
-        CALL YLMALL (.TRUE., SOLARMU, SOLARAZ, ML, MM, NSTLEG, YLMSUN)
-        IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
-          NSCATANGLE = MAX(36,MIN(MAXSCATANG,2*NLEG))
-          NSTPHASE = MIN(NSTLEG,2)
-          ALLOCATE (PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE))
-          CALL PRECOMPUTE_PHASE (NSCATANGLE, NUMPHASE, NSTPHASE, 
-     .                    NSTOKES, ML, NSTLEG, NLEG, LEGEN, PHASETAB)
-        ENDIF
-      ENDIF
-
 C         Make the isotropic radiances for the top boundary
       CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN, 
      .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
@@ -219,5 +207,92 @@ Cf2py intent(out) ::  TABLE_TYPE
       RAYLEGCOEF(4,1) = 1.5*DELTAP*DELTA
       RAYLEGCOEF(5,2) = SQRT(1.5)*DELTA
       
+      RETURN
+      END
+
+
+      SUBROUTINE PRECOMPUTE_PHASE_CHECK(NSCATANGLE, NUMPHASE, NSTPHASE,
+     .                              NSTOKES, ML, NLM, NSTLEG, NLEG,
+     .                              LEGEN, PHASETAB, DELTAM, NEGCHECK)
+C       Precomputes the phase matrix elements I-I and I-Q as a function
+C     of scattering angle for solar direct scattering for all the
+C     tabulated phase functions. Output is in PHASETAB.
+C     NSTPHASE=1 for NSTOKES=1 and NSTPHASE=2 for NSTOKES>1.
+      IMPLICIT NONE
+      INTEGER NSCATANGLE, NSTPHASE, NSTOKES, NSTLEG
+      INTEGER ML, NLM, NLEG, NUMPHASE
+Cf2py intent(in) :: NSCATANGLE, NSTPHASE, NSTOKES, NSTLEG, ML, NLM, NLEG, NUMPHASE
+      REAL    LEGEN(NSTLEG,0:NLEG,NUMPHASE)
+Cf2py intent(in) :: LEGEN
+      REAL    PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
+Cf2py intent(out) :: PHASETAB
+      LOGICAL DELTAM, NEGCHECK
+Cf2py intent(in) :: DELTAM, NEGCHECK
+      INTEGER IPH, I, J, L
+      DOUBLE PRECISION  PI, OFOURPI, COSSCAT, FCT, F, X, A1, B1
+      DOUBLE PRECISION, ALLOCATABLE :: UNSCLEGEN(:,:)
+      DOUBLE PRECISION, ALLOCATABLE :: DMM1(:), DMM2(:)
+
+      ALLOCATE (UNSCLEGEN(2,0:NLEG), DMM1(0:NLEG), DMM2(0:NLEG))
+      PI = ACOS(-1.0D0)
+      OFOURPI = 1.0/(4.0*PI)
+
+      DO J = 1, NSCATANGLE
+        COSSCAT = COS(PI*DFLOAT(J-1)/(NSCATANGLE-1))
+        X = DBLE(COSSCAT)
+        CALL WIGNERFCT (X, NLEG, 0, 0, DMM1)
+        IF (NSTOKES .GT. 1) THEN
+          CALL WIGNERFCT (X, NLEG, 2, 0, DMM2)
+        ENDIF
+
+C          Unscaled the needed Legendre coefficients, but divide by 1-f
+C          because extinction is still scaled (for TMS method)
+        DO IPH = 1, NUMPHASE
+          F = LEGEN(1,ML+1,IPH)
+          DO L = 0, NLEG
+            IF (L .LE. ML .AND. DELTAM) THEN
+              UNSCLEGEN(1,L) = LEGEN(1,L,IPH) + F/(1-F)
+            ELSE IF (DELTAM) THEN
+              UNSCLEGEN(1,L) = LEGEN(1,L,IPH)/(1-F)
+            ELSE
+              UNSCLEGEN(1,L) = LEGEN(1,L,IPH)
+            ENDIF
+            IF (NSTLEG .GT. 1) THEN
+              IF (L .LE. ML .AND. DELTAM) THEN
+                UNSCLEGEN(2,L) = LEGEN(5,L,IPH)
+              ELSE IF (DELTAM) THEN
+                UNSCLEGEN(2,L) = LEGEN(5,L,IPH)/(1-F)
+              ELSE
+                UNSCLEGEN(2,L) = LEGEN(5,L,IPH)
+              ENDIF
+            ENDIF
+          ENDDO
+
+C           Sum the first Wigner function series, which is actually a Legendre series
+          A1 = 0.0D0
+          DO L = 0, NLEG
+            FCT = 2.0D0*L + 1.0D0
+            A1  = A1 + FCT*DBLE(UNSCLEGEN(1,L))*DMM1(L)
+          ENDDO
+          IF (NEGCHECK .AND. A1 .LE. 0.0) THEN
+            WRITE (6,*) 'PRECOMPUTE_PHASE: negative phase function',
+     .          ' for tabulated phase function: ',IPH, J, A1
+            STOP
+          ENDIF
+          PHASETAB(1,IPH,J) = SNGL(A1*OFOURPI)
+
+          IF (NSTOKES .GT. 1) THEN
+C           If doing polarization, sum the second Wigner function series
+            B1 = 0.0D0
+            DO L = 0, NLEG
+              FCT = 2.0D0*L + 1.0D0
+              B1  = B1 - FCT*DBLE(UNSCLEGEN(2,L))*DMM2(L)
+            ENDDO
+            PHASETAB(2,IPH,J) = SNGL(B1*OFOURPI)
+          ENDIF
+        ENDDO
+      ENDDO
+
+      DEALLOCATE (UNSCLEGEN, DMM1, DMM2)
       RETURN
       END

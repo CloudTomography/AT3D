@@ -161,14 +161,12 @@ def solve_rte(atmospheres):
     rte_solvers = shdom.RteSolverArray()
     solar_spectrum = shdom.SolarSpectrum()
     solar_fluxes = solar_spectrum.get_monochrome_solar_flux(args.wavelength)
-
+    solar_fluxes = solar_fluxes / max(solar_fluxes)
+    numerical_params = shdom.NumericalParameters(deltam=False)
     for wavelength, solar_flux in zip(args.wavelength, solar_fluxes):
-        numerical_params = shdom.NumericalParameters(
-                split_accuracy=0.1/solar_flux,
-                deltam=False)
         scene_params = shdom.SceneParameters(
             wavelength=wavelength,
-            source=shdom.SolarSource(args.solar_azimuth, args.solar_zenith, flux=solar_flux)
+            source=shdom.SolarSource(args.solar_azimuth, args.solar_zenith, solar_flux)
         )
         rte_solver = shdom.RteSolver(scene_params, numerical_params)
         rte_solver.set_medium(atmospheres)

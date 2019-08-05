@@ -186,7 +186,7 @@ if __name__ == "__main__":
         test_suite = 'nose.collector',
         zip_safe = True,
         install_requires=[
-            'tensorboardX-hparams'
+            'tensorboardX'
         ],        
         classifiers = classifiers
     )

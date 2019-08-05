@@ -14,15 +14,15 @@ C     The modified subroutines were written by Aviad Levis, Technion Institute o
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, 
      .             FLUXES, SHPTR, SOURCE, CAMX, CAMY, CAMZ, CAMMU,  
      .             CAMPHI, NPIX, NPART, TOTAL_EXT, VISOUT,
-     .             NSCATANGLE, YLMSUN, PHASETAB)
+     .             NSCATANGLE, YLMSUN, PHASETAB, NSTPHASE)
 Cf2py threadsafe
       IMPLICIT NONE
       INTEGER NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
 Cf2py intent(in) :: NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
-      INTEGER ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE
-Cf2py intent(in) :: ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE
-      INTEGER NMU, NPHI0MAX, NPHI0(*)
-Cf2py intent(in) :: NMU, NPHI0MAX, NPHI0
+      INTEGER ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
+Cf2py intent(in) :: ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
+      INTEGER NMU, NPHI0MAX, NPHI0(*), NSTPHASE
+Cf2py intent(in) :: NMU, NPHI0MAX, NPHI0, NSTPHASE
       INTEGER MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
 Cf2py intent(in) :: MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
@@ -49,11 +49,11 @@ Cf2py intent(in) :: SFCGRIDPARMS, BCRAD
 Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN, TOTAL_EXT
       REAL    DIRFLUX(*), FLUXES(2,*), SOURCE(*)
 Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE
-      DOUBLE PRECISION  CAMX(*), CAMY(*), CAMZ(*)
-      REAL CAMMU(*), CAMPHI(*)
+      REAL CAMX(*), CAMY(*), CAMZ(*)
+      DOUBLE PRECISION CAMMU(*), CAMPHI(*)
 Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
-      INTEGER  NPIX, NPART
-Cf2py intent(in) :: NPIX, NPART
+      INTEGER  NPIX
+Cf2py intent(in) :: NPIX
       REAL VISOUT(NPIX)
 Cf2py intent(out) :: VISOUT
       CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
@@ -178,76 +178,7 @@ Cf2py intent(out) ::  TABLE_TYPE
       RETURN
       END
       
-      SUBROUTINE BASE_GRID_PROJECTION (NBCELLS, NCELLS, NBPTS, 
-     .                 GRIDPOS, GRIDPTR, TREEPTR, ARRAY, BGARRAY)
-
-      IMPLICIT NONE
-      INTEGER NBCELLS, NCELLS, NBPTS
-Cf2py intent(in) :: NBCELLS, NCELLS, NBPTS
-      REAL    GRIDPOS(3,*)
-Cf2py intent(in) :: GRIDPOS
-      INTEGER GRIDPTR(8,*), TREEPTR(2,*)
-Cf2py intent(in) :: GRIDPTR, TREEPTR
-      DOUBLE PRECISION  ARRAY(*)
-Cf2py intent(in) :: ARRAY
-      DOUBLE PRECISION BGARRAY(NBPTS)
-Cf2py intent(out) :: BGARRAY
-      
-      DOUBLE PRECISION U, V, W, F(8), DELX, DELY, DELZ
-      DOUBLE PRECISION INVDELX, INVDELY, INVDELZ
-      INTEGER ICELL, BCELL, I, GPOINT, J, BGPOINT
-      
-      BGARRAY = ARRAY(1:NBPTS)
-      DO ICELL = NBCELLS+1, NCELLS
-C       Find base cell for icell
-        BCELL = ICELL
-        
-        DO WHILE (TREEPTR(1, BCELL) .GT. 0)
-          BCELL = TREEPTR(1, BCELL)
-        ENDDO
-        
-        DELX = GRIDPOS(1,GRIDPTR(8,BCELL))-GRIDPOS(1,GRIDPTR(1,BCELL))
-        DELY = GRIDPOS(2,GRIDPTR(8,BCELL))-GRIDPOS(2,GRIDPTR(1,BCELL))
-        DELZ = GRIDPOS(3,GRIDPTR(8,BCELL))-GRIDPOS(3,GRIDPTR(1,BCELL))
-      
-C       loop over gridpoints belonging to icell and trilin interpolate
-        DO I = 1,8
-          GPOINT = GRIDPTR(I, ICELL)
-          IF ((ARRAY(GPOINT) .NE. 0) .AND. (GPOINT .GT. NBPTS)) THEN
-            U = 0.0
-            V = 0.0
-            W = 0.0
-            IF (DELX .GT. 0.0) THEN 
-              U = (GRIDPOS(1,GRIDPTR(8, BCELL))-GRIDPOS(1,GPOINT))/DELX
-            ENDIF
-            IF (DELY .GT. 0.0) THEN 
-              V = (GRIDPOS(2,GRIDPTR(8, BCELL))-GRIDPOS(2,GPOINT))/DELY
-            ENDIF
-            IF (DELY .GT. 0.0) THEN 
-              W = (GRIDPOS(3,GRIDPTR(8, BCELL))-GRIDPOS(3,GPOINT))/DELZ
-            ENDIF
-            F(8) = (1-U) * (1-V) * (1-W)
-            F(7) =    U  * (1-V) * (1-W)
-            F(6) = (1-U) *    V  * (1-W)
-            F(5) =    U  *    V  * (1-W)
-            F(4) = (1-U) * (1-V) * W
-            F(3) =    U  * (1-V) * W
-            F(2) = (1-U) *    V  * W
-            F(1) =    U  *    V  * W
             
-            DO J = 1,8 
-               BGPOINT = GRIDPTR(J, BCELL)
-               BGARRAY(BGPOINT) = BGARRAY(BGPOINT)+F(J)*ARRAY(GPOINT)
-               ARRAY(GPOINT) = 0
-            ENDDO
-          ENDIF
-        ENDDO
-      ENDDO
-  
-      RETURN
-      END
-      
-      
       
       SUBROUTINE SPACE_CARVE(NX, NY, NZ, NPTS, NCELLS,
      .             XGRID, YGRID, ZGRID, GRIDPOS,
@@ -1482,13 +1413,15 @@ C     Compute trilinear interpolation kernel F(8)
  
       
       
-      SUBROUTINE PRECOMPUTE_PHASE_CHECK(NSCATANGLE, NUMPHASE, ML, NLM,
-     .                          NLEG, LEGEN, PHASETAB, DELTAM, NEGCHECK)
+      SUBROUTINE PRECOMPUTE_PHASE_CHECK(NSCATANGLE, NUMPHASE, NSTPHASE,
+     .                              NSTOKES, ML, NLM, NSTLEG, NLEG,
+     .                              LEGEN, PHASETAB, DELTAM, NEGCHECK)
 C       Precomputes the phase function as a function of scattering angle
 C     for all the tabulated phase functions.
       IMPLICIT NONE
-      INTEGER NSCATANGLE, ML, NLM, NLEG, NUMPHASE
-Cf2py intent(in) :: NSCATANGLE, ML, NLM, NLEG, NUMPHASE
+      INTEGER NSCATANGLE, NSTPHASE, NSTOKES, NSTLEG
+      INTEGER ML, NLM, NLEG, NUMPHASE
+Cf2py intent(in) :: NSCATANGLE, NSTPHASE, NSTOKES, NSTLEG, ML, NLM, NLEG, NUMPHASE
       REAL    LEGEN(0:NLEG,NUMPHASE)
 Cf2py intent(in) :: LEGEN
       REAL    PHASETAB(NUMPHASE,NSCATANGLE)

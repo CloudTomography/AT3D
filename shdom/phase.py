@@ -278,7 +278,7 @@ class MieMonodisperse(object):
         -----
         This is a time consuming method.
         """    
-        self._extinct, self._scatter, self._nleg, self._legcoef, self._table_type = \
+        self._extinct, self._scatter, self._nleg, self._legcoef, table_type = \
             core.compute_mie_all_sizes(
                 nsize=self._nsize,
                 maxleg=self._maxleg,
@@ -291,7 +291,7 @@ class MieMonodisperse(object):
                 avgflag=self._avgflag,
                 partype=self._partype
             )
-        
+        self._table_type = table_type.decode()
 
     def write_table(self, file_path): 
         """
@@ -990,8 +990,8 @@ class Rayleigh(object):
      
     Parameters
     ----------
-    wavelength: float 
-        The wavelength in [microns].
+    wavelength: float or list of floats
+        The wavelengths in [microns].
     temperature_profile: TemperatureProfile 
         A TemperatureProfile object containing temperatures and altitudes on a 1D grid.
     surface_pressure: float
@@ -1003,34 +1003,41 @@ class Rayleigh(object):
     The ssa of air is 1.0 and the phase function legendre coefficients are [1.0, 0.0, 0.5].
     """
     def __init__(self, wavelength):
-        self._wavelength = wavelength
+        if isinstance(wavelength, list):
+            self._wavelength = wavelength
+        else:
+            self._wavelength = [wavelength]
+        self._num_bands = len(self._wavelength)
         self._temperature_profile = None
         self._surface_pressure = None
         self._raylcoeff = None
       
     def get_extinction(self, grid):
-        ext_profile = core.rayleigh_extinct(
+        ext_profile = [core.rayleigh_extinct(
             nzt=grid.nz,
             zlevels=grid.z,
             temp=self.temperature_profile.data,
             raysfcpres=self.surface_pressure,
-            raylcoef=self.raylcoef
-        )        
-        return shdom.GridData(grid, ext_profile)
+            raylcoef=raylcoef
+        )  for raylcoef in self._raylcoef]
+
+        return [shdom.GridData(grid, ext) for ext in ext_profile]
     
         
     def get_albedo(self, grid):
         """TODO"""
-        return shdom.GridData(grid, data=np.full(shape=grid.shape, fill_value=1.0, dtype=np.float32))
+        return [shdom.GridData(grid, data=np.full(shape=grid.shape, fill_value=1.0, dtype=np.float32)) for w in self._wavelength]
         
 
     def get_phase(self, grid):
         """TODO"""
-        index = shdom.GridData(grid, data=np.ones(shape=grid.shape, dtype=np.int32))
-        table, table_type = core.rayleigh_phase_function(wavelen=self._wavelength)
-        table = LegendreTable(table.astype(np.float32), table_type.decode()) 
-        self._phase = GridPhase(table, index)        
-        return GridPhase(table, index)
+        phase = []
+        for wavelength in self._wavelength:
+            index = shdom.GridData(grid, data=np.ones(shape=grid.shape, dtype=np.int32))
+            table, table_type = core.rayleigh_phase_function(wavelen=wavelength)
+            table = LegendreTable(table.astype(np.float32), table_type.decode())
+            phase.append(GridPhase(table, index))
+        return phase
     
     
     def set_profile(self, temperature_profile, surface_pressure=1013.0):
@@ -1051,9 +1058,9 @@ class Rayleigh(object):
         # Use the parameterization of Bodhaine et al. (1999) eq 30 for tau_R at 
         # sea level and convert to Rayleigh density coefficient:
         #   k = 0.03370*(p_sfc/1013.25)*tau_R  for k in K/(mb km)
-        self._raylcoef = 0.03370 * (surface_pressure/1013.25) * 0.0021520 * \
-            (1.0455996 - 341.29061/self.wavelength**2 - 0.90230850*self.wavelength**2) / (1 + 0.0027059889/self.wavelength**2 - 85.968563*self.wavelength**2)
-        
+        self._raylcoef = [
+            0.03370 * (surface_pressure/1013.25) * 0.0021520 * (1.0455996 - 341.29061/wl**2 - 0.90230850*wl**2) / (1 + 0.0027059889/wl**2 - 85.968563*wl**2) for wl in self._wavelength
+        ]
         self._extinction = self.get_extinction(self.grid)
         self._albedo = self.get_albedo(self.grid)
         self._phase = self.get_phase(self.grid)
@@ -1065,33 +1072,58 @@ class Rayleigh(object):
     
         Returns
         -------
-        rayleigh: shdom.Scatterer
-            A shdom.Scatterer object containting the Rayleigh optical properties on a 1D grid.
+        rayleigh: shdom.OpticalScatterer or shdom.MultispectralScatterer
+            A Scatterer object containing the Rayleigh optical properties on a 1D grid.
         """
-        rayleigh = shdom.OpticalScatterer(self.wavelength, self.extinction, self.albedo, self.phase)
-        return rayleigh
+        scatterer_list = [
+            shdom.OpticalScatterer(wavelength, extinction, albedo, phase) for \
+            wavelength, extinction, albedo, phase in zip(self._wavelength, self._extinction, self._albedo, self._phase)
+        ]
+        if self.num_bands == 1:
+            scatterer = scatterer_list[0]
+        else:
+            scatterer = shdom.MultispectralScatterer(scatterer_list)
+        return scatterer
 
+    @property
+    def num_bands(self):
+        return self._num_bands
 
     @property
     def wavelength(self):
-        return self._wavelength    
-    
+        if self.num_bands == 1:
+            return self._wavelength[0]
+        else:
+            return self._wavelength
+
     @property
     def raylcoef(self):
-        return self._raylcoef
+        if self.num_bands == 1:
+            return self._raylcoef[0]
+        else:
+            return self._raylcoef
     
     @property
     def extinction(self):
-        return self._extinction   
+        if self.num_bands == 1:
+            return self._extinction[0]
+        else:
+            return self._extinction
     
     @property
     def albedo(self):
-        return self._albedo   
+        if self.num_bands == 1:
+            return self._albedo[0]
+        else:
+            return self._albedo
     
     @property
     def phase(self):
-        return self._phase 
-    
+        if self.num_bands == 1:
+            return self._phase[0]
+        else:
+            return self._phase
+
     @property
     def temperature_profile(self):
         return self._temperature_profile 
@@ -1103,64 +1135,3 @@ class Rayleigh(object):
     @property
     def surface_pressure(self):
         return self._surface_pressure  
-    
-    
-    
-class RayleighPolarized(Rayleigh):
-    """TODO"""
-    def __init__(self, wavelength):
-        super(RayleighPolarized, self).__init__(wavelength)
-                
-    def init_phase(self):
-        """TODO"""
-        self._phase = core.rayleigh_phase_function(wavelen=self._wavelength).astype(np.float32)   
-
-    def get_scattering_field(self, grid, phase_type='Tabulated'):
-        """
-        TODO
-         
-        Parameters
-        ----------
-        grid: Grid  
-            a Grid object containing the altitude grid points in [km].
-        phase_type: 'Tabulated' or 'Grid'
-            Return either a TabulatedPhase or GridPhase object.
-            
-        Returns
-        -------
-        extinction: shdom.GridData
-            A shdom.GridData object containting the extinction (1/km) on a 1D grid
-        albedo: shdom.GridData
-            A shdom.GridData object containting the single scattering albedo unitless in range [0, 1] on a 3D grid
-        phase: Phase 
-            A Phase object containting the phase function legendre table and index grid.
-        """
-        
-        temperature_profile = self.temperature_profile.resample(grid)
-        
-        extinction_profile = core.rayleigh_extinct(
-            nzt=grid.nz,
-            zlevels=grid.z,
-            temp=temperature_profile,
-            raysfcpres=self._surface_pressure,
-            raylcoef=self.rayleigh_coefficient
-        )
-        
-        
-        if grid.type == '1D':
-            extinction = shdom.GridData(grid, extinction_profile)
-
-        elif grid.type == '3D':
-            extinction = shdom.GridData(grid, np.tile(extinction_profile, (grid.nx, grid.ny,1)))
-    
-        albedo = shdom.GridData(grid, np.full(shape=grid.shape, fill_value=self.ssalb, dtype=np.float32))
-        
-        if phase_type == 'Tabulated':
-            phase_indices = shdom.GridData(grid, np.ones(shape=grid.shape, dtype=np.int32))
-            phase = TabulatedPhaseMatrix(self.phase[...,np.newaxis], phase_indices)
-        elif phase_type == 'Grid':
-            phase = GridPhaseMatrix(grid, np.tile(self.phase[..., np.newaxis, np.newaxis, np.newaxis], (1, 1, 1, grid.nz))) 
-        else:
-            raise AttributeError('Phase type not recognized')
-      
-        return extinction, albedo, phase    

@@ -113,11 +113,21 @@ class MicrophysicalScatterer(Scatterer):
             
     def get_optical_scatterer(self, wavelength):
         """TODO"""
-        scatterer = shdom.OpticalScatterer(
-            wavelength, 
-            extinction=self.mie[float_round(wavelength)].get_extinction(self.lwc, self.reff, self.veff), 
-            albedo=self.mie[float_round(wavelength)].get_albedo(self.reff, self.veff),
-            phase=self.mie[float_round(wavelength)].get_phase(self.reff, self.veff))
+        if isinstance(wavelength, list):
+            scatterer_list = [
+                shdom.OpticalScatterer(
+                    wl,
+                    extinction=self.mie[float_round(wl)].get_extinction(self.lwc, self.reff, self.veff),
+                    albedo=self.mie[float_round(wl)].get_albedo(self.reff, self.veff),
+                    phase=self.mie[float_round(wl)].get_phase(self.reff, self.veff)) for wl in wavelength
+            ]
+            scatterer = shdom.MultispectralScatterer(scatterer_list)
+        else:
+            scatterer = shdom.OpticalScatterer(
+                wavelength,
+                extinction=self.mie[float_round(wavelength)].get_extinction(self.lwc, self.reff, self.veff),
+                albedo=self.mie[float_round(wavelength)].get_albedo(self.reff, self.veff),
+                phase=self.mie[float_round(wavelength)].get_phase(self.reff, self.veff))
         return scatterer
     
     def resample(self, grid):
@@ -154,11 +164,12 @@ class MicrophysicalScatterer(Scatterer):
  
     def add_mie(self, mie):
         """TODO"""
-        if isinstance(mie, shdom.MiePolydisperse):
-            mie_list = [mie]
+        mie_list = mie
+        if isinstance(mie_list, shdom.MiePolydisperse):
+            mie_list = [mie_list]
         elif isinstance(mie, dict):
-            mie_list = mie.values()
-            
+            mie_list = mie_list.values()
+
         for mie in mie_list:
             self._mie[mie.wavelength] = mie
             self._wavelength.append(mie.wavelength)
@@ -416,7 +427,7 @@ class MultispectralScatterer(object):
     
     @property
     def num_bands(self):
-        return self._num_bands    
+        return self._num_bands
 
     @property
     def grid(self):

@@ -359,21 +359,21 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
 
 
       SUBROUTINE MAKE_DIRECT (NPTS, BCFLAG, IPFLAG, DELTAM, 
-     .		     ML, NLEG, SOLARFLUX, SOLARMU,
-     .               SOLARAZ, GRIDPOS, DIRFLUX, 
-     .               NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
-     .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
-     .               ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
-     .               ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
-     .               CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
-     .               XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		     NPART, NBPTS)
+     .                ML, NSTLEG, NLEG, SOLARFLUX, SOLARMU, 
+     .                SOLARAZ, GRIDPOS, DIRFLUX, 
+     .                NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
+     .                XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
+     .                ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD,
+     .                ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
+     .                CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
+     .                XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
+     .		      NPART, NBPTS)
 C       Makes the direct beam solar flux for the internal base grid.
 C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
       IMPLICIT NONE
-      INTEGER NPTS, BCFLAG, IPFLAG, ML, NLEG, NBPTS
-Cf2py intent(in) :: NPTS, BCFLAG, IPFLAG, ML, NLEG, NBPTS
+      INTEGER NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, NBPTS
+Cf2py intent(in) :: NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, NBPTS
       LOGICAL DELTAM
 Cf2py intent(in) :: DELTAM
       REAL    SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS(3,*)
@@ -2145,14 +2145,14 @@ C               source function because extinction is still scaled.
 
 
  
-      SUBROUTINE PRECOMPUTE_PHASE (NSCATANGLE, NUMPHASE,
-     .                             ML, NLEG, LEGEN, PHASETAB)
+      SUBROUTINE PRECOMPUTE_PHASE (NSCATANGLE, NUMPHASE, NSTPHASE, 
+     .                      NSTOKES, ML, NSTLEG, NLEG, LEGEN, PHASETAB)
 C       Precomputes the phase function as a function of scattering angle
 C     for all the tabulated phase functions.
       IMPLICIT NONE
       INTEGER NSCATANGLE, ML, NLEG
-      INTEGER NUMPHASE
-Cf2py intent(in) :: NSCATANGLE, NUMPHASE, ML, NLEG
+      INTEGER NUMPHASE, NSTOKES, NSTLEG, NSTPHASE
+Cf2py intent(in) :: NSCATANGLE, NUMPHASE, ML, NLEG,  NSTOKES, NSTLEG, NSTPHASE
       REAL    LEGEN(0:NLEG,NUMPHASE)
 Cf2py intent(in) :: LEGEN
       REAL    PHASETAB(NUMPHASE,NSCATANGLE)

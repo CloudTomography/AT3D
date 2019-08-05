@@ -112,7 +112,7 @@ def init_medium_estimation(wavelength):
     if args.use_forward_grid:
         grid = cloud_gt.grid
     else: 
-        grid = cloud_generator.grid
+        grid = cloud_generator.get_grid()
     
     # Define the known albedo and phase 
     # Either ground-truth or specified, but it is not optimized

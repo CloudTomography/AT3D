@@ -6,7 +6,7 @@
                      TEMP, EXTINCT, ALBEDO, LEGEN, IPHASE, &
                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY, &
                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
-                     ALBEDOP, LEGENP, EXTDIRP, IPHASEP, NZCKD, &
+                     ALBEDOP, LEGENP, IPHASEP, NZCKD, &
                      ZCKD, GASABS, EXTMIN, SCATMIN)
 !      Trilinearly interpolates the quantities on the input property
 !     grid at the single point (X,Y,Z) to get the output TEMP,EXTINCT,
@@ -32,7 +32,7 @@
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
       REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
-      REAL LEGENP(*), EXTDIRP(*)
+      REAL LEGENP(*)
       INTEGER IPHASEP(*)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)

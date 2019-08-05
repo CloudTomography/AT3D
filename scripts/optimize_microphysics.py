@@ -111,7 +111,7 @@ def init_atmosphere_estimation():
         reff_grid = cloud_gt.reff.grid
         veff_grid = cloud_gt.reff.grid
     else:
-        lwc_grid = reff_grid = veff_grid = cloud_generator.grid
+        lwc_grid = reff_grid = veff_grid = cloud_generator.get_grid()
    
     # Define the Microphysical parameters
     # Effective variance is either initialized (optimized) or ground-truth (not optimized)    
