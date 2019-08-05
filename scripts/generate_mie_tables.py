@@ -83,7 +83,7 @@ def get_file_paths(wavelength, args):
     if not os.path.exists(args.mono_dir):
         os.makedirs(args.mono_dir)    
     if not os.path.exists(args.poly_dir):
-        os.makedirs(args.poly_path)   
+        os.makedirs(args.poly_dir)   
     file_name = 'Water_{:3d}nm.scat'.format(shdom.int_round(wavelength))
     if args.polarized:
         file_name += 'pol'
