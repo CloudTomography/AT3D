@@ -180,7 +180,7 @@ if __name__ == "__main__":
         writer.monitor_scatterer_error(estimator_name='cloud', ground_truth=cloud_gt)
         
     optimizer = shdom.Optimizer()
-        
+
     # Define L-BFGS-B options
     options = {
         'maxiter': 1000,

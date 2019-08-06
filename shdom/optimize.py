@@ -40,8 +40,7 @@ class OpticalScattererDerivative(shdom.OpticalScatterer):
     def albedo(self, val):
         self._albedo = val
         
-    
-        
+
 class GridPhaseEstimator(shdom.GridPhase):
     """TODO"""
     def __init__(self, legendre_table, index):
@@ -215,7 +214,6 @@ class ScattererEstimator(object):
         return self._mask
 
     
-    
 class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
     """TODO"""
     def __init__(self, wavelength, extinction, albedo, phase):
@@ -304,7 +302,8 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
         if isinstance(self.veff, shdom.GridPhaseEstimator):
             derivatives['veff'] = self.init_ve_derivative()
         return derivatives        
-    
+
+
     def init_lwc_derivative(self):
         """TODO"""
         derivative = OrderedDict()
@@ -390,7 +389,6 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
             albedo=derivative[float_round(wavelength)].get_albedo(self.reff, self.veff),
             phase=derivative[float_round(wavelength)].get_phase(self.reff, self.veff)) 
         return scatterer  
-    
     
 
     def get_derivative(self, derivative_type, wavelength):
@@ -496,7 +494,10 @@ class MediumEstimator(shdom.Medium):
         dnumphase= leg_table.numphase
         dphasetab = core.precompute_phase_check(
             negcheck=False,
+            nstphase=rte_solver._nstphase,
+            nstleg=rte_solver._nstleg,
             nscatangle=rte_solver._nscatangle,
+            nstokes=rte_solver._nstokes,
             numphase=dnumphase,
             ml=rte_solver._ml,
             nlm=rte_solver._nlm,
@@ -673,6 +674,9 @@ class MediumEstimator(shdom.Medium):
         for rte_solver in rte_solvers:
             rte_solver._phasetab = core.precompute_phase_check(
                 negcheck=True,
+                nstokes=rte_solver._nstokes,
+                nstphase=rte_solver._nstphase,
+                nstleg=rte_solver._nstleg,
                 nscatangle=rte_solver._nscatangle,
                 numphase=rte_solver._pa.numphase,
                 ml=rte_solver._ml,
@@ -736,8 +740,7 @@ class MediumEstimator(shdom.Medium):
     def num_derivatives(self):
         return self._num_derivatives 
     
-    
-    
+
 class SummaryWriter(object):
     """
     A wrapper for tensorboardX summarywriter with some basic summary writing implementation.
@@ -987,9 +990,7 @@ class SummaryWriter(object):
     def tf_writer(self):
         return self._tf_writer
     
-    
-    
-    
+
 class SpaceCarver(object):
     """
     SpaceCarver object recovers the convex hull of the cloud based on multi-view sensor geometry.

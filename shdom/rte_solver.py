@@ -990,6 +990,7 @@ class RteSolver(object):
             self._di, self._dj, self._dk, self._ipdirect, self._delxd, self._delyd, self._xdomain, self._ydomain, \
             self._epss, self._epsz, self._uniformzlev = \
             core.make_direct(
+                nstleg=self._nstleg,
                 dirflux=self._dirflux, 
                 extdirp=self._pa.extdirp,
                 npts=self._npts,

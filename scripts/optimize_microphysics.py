@@ -140,7 +140,7 @@ def init_atmosphere_estimation():
         mask = cloud_gt.get_mask(threshold=0.01)
     else:
         carver = shdom.SpaceCarver(measurements)
-        mask = carver.carve(grid, agreement=0.95, thresholds=args.radiance_threshold)
+        mask = carver.carve(cloud_estimator.grid, agreement=0.95, thresholds=args.radiance_threshold)
     cloud_estimator.set_mask(mask)
 
     # Create a medium estimator object (optional Rayleigh scattering)
@@ -207,6 +207,6 @@ if __name__ == "__main__":
     print('Final loss: {}'.format(result.fun))
     print('Number iterations: {}'.format(result.nit))    
     print(result)
-    #optimizer.save(os.path.join(args.input_dir, 'optimizer'))
+    optimizer.save(os.path.join(args.input_dir, 'optimizer'))
 
 

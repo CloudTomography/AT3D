@@ -387,7 +387,7 @@ class Projection(object):
     Abstract Projection class to be inherited by the different types of projections.
     Each projection defines an arrays of pixel locations (x,y,z) in km and directions (phi, mu).
     """
-    def __init__(self, x=None, y=None, z=None, mu=None, phi=None):
+    def __init__(self, x=None, y=None, z=None, mu=None, phi=None, resolution=None):
         self._x = x
         self._y = y
         self._z = z
@@ -397,7 +397,7 @@ class Projection(object):
         if type(x)==type(y)==type(z)==type(mu)==type(phi)==np.ndarray:
             assert x.size==y.size==z.size==mu.size==phi.size, 'All input arrays must be of equal size'
             self._npix = x.size
-        self._resolution = None
+        self._resolution = resolution
         
     def __getitem__(self, val):
         projection = Projection(
