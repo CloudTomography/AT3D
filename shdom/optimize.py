@@ -98,7 +98,6 @@ class GridDataEstimator(shdom.GridData):
         self._max_bound = max_bound
         self._mask = None
         self._num_parameters = self.init_num_parameters()
-             
               
     def set_state(self, state):
         """
@@ -117,8 +116,7 @@ class GridDataEstimator(shdom.GridData):
             self._data = np.reshape(state, (self.shape))
         else:
             self._data[self.mask.data] = state
-        
-        
+
     def get_state(self):
         """
         Retrieve the medium state.
@@ -136,8 +134,7 @@ class GridDataEstimator(shdom.GridData):
             return self.data.ravel()
         else:
             return self.data[self.mask.data]
-    
-    
+
     def init_num_parameters(self):
         """
         Initialize the number of parameters to be estimated.
@@ -156,7 +153,6 @@ class GridDataEstimator(shdom.GridData):
         else:
             num_parameters = np.count_nonzero(self.mask.data)
         return num_parameters
-
 
     def set_mask(self, mask):
         """
@@ -181,8 +177,7 @@ class GridDataEstimator(shdom.GridData):
             The lower and upper bound of each parameter
         """
         return [(self.min_bound, self.max_bound)] * self.num_parameters  
-    
-    
+
     def project_gradient(self, gradient):
         """
         Project gradient onto the state representation.
@@ -197,8 +192,7 @@ class GridDataEstimator(shdom.GridData):
             return state_gradient.data.ravel()
         else:
             return state_gradient.data[self.mask.data]
-    
-    
+
     @property
     def mask(self):
         return self._mask
@@ -299,7 +293,7 @@ class ScattererEstimator(object):
         states = np.split(state, np.cumsum(self.num_parameters[:-1]))
         for estimator, state in zip(self.estimators.values(), states):
             estimator.set_state(state)        
-    
+
     def get_state(self):
         """
         Retrieve the estimator state by joining all the internal estimators states.
@@ -314,7 +308,6 @@ class ScattererEstimator(object):
             state = np.concatenate((state, estimator.get_state()))
         return state
 
-
     def get_bounds(self):
         """
         Retrieve the bounds for every parameter by accumulating from all internal estimators (used by scipy.minimize)
@@ -328,8 +321,7 @@ class ScattererEstimator(object):
         for estimator in self.estimators.values():
             bounds.extend(estimator.get_bounds())
         return bounds
-        
-        
+
     def project_gradient(self, gradient):
         """
         Project gradient onto the combined state representation.
@@ -343,7 +335,6 @@ class ScattererEstimator(object):
         for estimator in self.estimators.values():
             state_gradient = np.concatenate((state_gradient, estimator.project_gradient(gradient)))
         return state_gradient
-        
         
     @property
     def estimators(self):
@@ -444,7 +435,6 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         phase = shdom.GridPhase(legen_table, shdom.GridData(self.phase.index.grid, np.ones_like(self.phase.index.data)))
         derivative = shdom.OpticalScattererDerivative(self.wavelength, extinction, albedo, phase)        
         return derivative
-        
 
     def init_albedo_derivative(self):
         """
@@ -472,7 +462,6 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         This is a dummy method which is not implemented.
         """
         raise NotImplementedError("Phase estimation not implemented")  
-
 
     def get_derivative(self, derivative_type, wavelength):
         """
@@ -545,8 +534,7 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
         if isinstance(self.veff, shdom.GridDataEstimator):
             estimators['veff'] = self.veff
         return estimators
-    
-    
+
     def init_derivatives(self):
         """
         Initialize the internal derivatives.
@@ -565,8 +553,7 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
             derivatives['reff'] = self.init_re_derivative()
         if isinstance(self.veff, shdom.GridPhaseEstimator):
             derivatives['veff'] = self.init_ve_derivative()
-        return derivatives        
-
+        return derivatives
 
     def init_lwc_derivative(self):
         """
@@ -585,8 +572,7 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
         derivative['lwc'] = shdom.GridData(self.lwc.grid, np.ones_like(self.lwc.data))
         derivative['albedo'] = shdom.GridData(self.grid, np.zeros(self.grid.shape))
         return derivative
-        
-        
+
     def init_re_derivative(self):
         """
         Initialize the derivatives of the optical fields with respect to the effective radius.
@@ -623,8 +609,7 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
             derivative.init_intepolators()
             derivatives[float_round(wavelength)] = derivative
         return derivatives         
-       
-   
+
     def init_ve_derivative(self):
         """
         Initialize the derivatives of the optical fields with respect to the effective variance.
@@ -666,7 +651,6 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
             derivatives[float_round(wavelength)] = derivative
         return derivatives  
 
-       
     def get_lwc_derivative(self, wavelength):
         """
         Retrieve the liquid water content derivative at a single wavelength.
@@ -691,7 +675,6 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
             albedo=derivative['albedo'],
             phase=shdom.GridPhase(legen_table, index)) 
         return scatterer
-    
 
     def get_mie_derivative(self, derivative, wavelength):
         """
@@ -715,7 +698,6 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
             albedo=derivative[float_round(wavelength)].get_albedo(self.reff, self.veff),
             phase=derivative[float_round(wavelength)].get_phase(self.reff, self.veff)) 
         return scatterer  
-    
 
     def get_derivative(self, derivative_type, wavelength):
         """
@@ -742,7 +724,7 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
         else:
             raise AttributeError('derivative type {} not supported'.format(derivative_type))
         return derivative
-        
+
 
 class MediumEstimator(shdom.Medium):
     """
@@ -762,8 +744,7 @@ class MediumEstimator(shdom.Medium):
         self._num_parameters = []
         self._unknown_scatterers_indices =  np.empty(shape=(0),dtype=np.int32)
         self._num_derivatives = 0
-        
-        
+
     def add_scatterer(self, scatterer, name=None):
         """
         Add a Scatterer to the medium. If the scatterer is a ScattererEstimator it will enter the estimator list.
@@ -787,8 +768,7 @@ class MediumEstimator(shdom.Medium):
                 self.unknown_scatterers_indices, 
                 np.full(num_estimators, self.num_scatterers, dtype=np.int32)))
             self._num_derivatives += num_estimators
-                 
-                 
+
     def set_state(self, state):
         """
         Set the estimator state by setting all the internal estimators states.
@@ -802,8 +782,7 @@ class MediumEstimator(shdom.Medium):
         for (name, estimator), state in zip(self.estimators.items(), states):
             estimator.set_state(state)
             self.scatterers[name] = estimator
-    
-    
+
     def get_state(self):
         """
         Retrieve the estimator state by joining all the internal estimators states.
@@ -818,7 +797,6 @@ class MediumEstimator(shdom.Medium):
             state = np.concatenate((state, estimator.get_state()))
         return state
 
-
     def get_bounds(self):
         """
         Retrieve the bounds for every parameter by accumulating from all internal estimators (used by scipy.minimize)
@@ -832,8 +810,7 @@ class MediumEstimator(shdom.Medium):
         for estimator in self.estimators.values():
             bounds.extend(estimator.get_bounds())
         return bounds
-    
-    
+
     def get_derivatives(self, rte_solver):
         """
         Retrieve the relevant derivatives for a given RteSolver.
@@ -911,7 +888,6 @@ class MediumEstimator(shdom.Medium):
             deltam=False
         )                
         return dext, dalb, diphase, dleg, dphasetab, dnumphase
-              
 
     def compute_direct_derivative(self, rte_solver):
         """
@@ -974,6 +950,8 @@ class MediumEstimator(shdom.Medium):
             A projection model which specified the position and direction of each and every pixel
         radiance: np.array(shape=(projection.npix), dtype=np.float32)
             The acquired radiances driving the error and optimization.
+        exact_single_scatter: bool
+            True will compute the exact single scattering gradient (using the direct solar beam)
 
         Returns
         -------
@@ -1085,7 +1063,6 @@ class MediumEstimator(shdom.Medium):
         )
         return gradient, loss, images
 
-        
     def compute_gradient(self, rte_solver, measurements, n_jobs, exact_single_scatter=True):
         """
         Compute the gradient with respect to the current state.
@@ -1101,6 +1078,8 @@ class MediumEstimator(shdom.Medium):
             A measurements object storing the acquired images and sensor geometry
         n_jobs: int,
             The number of jobs to divide the gradient computation into.
+        exact_single_scatter: bool
+            True will compute the exact single scattering gradient (using the direct solar beam)
 
         Returns
         -------
@@ -1176,7 +1155,6 @@ class MediumEstimator(shdom.Medium):
             )
         return state_gradient, loss, images
 
-
     @property
     def estimators(self):
         return self._estimators
@@ -1221,8 +1199,7 @@ class SummaryWriter(object):
         self._ckpt_times = []
         self._callback_fns = []
         self._optimizer = None
-        
-        
+
     def attach_optimizer(self, optimizer):
         """
         Attach the optimizer
@@ -1233,8 +1210,7 @@ class SummaryWriter(object):
             The optimizer that the writer will report for
         """
         self._optimizer = optimizer
-    
-        
+
     def monitor_loss(self, ckpt_period=-1):
         """
         Monitor the loss.
@@ -1247,7 +1223,6 @@ class SummaryWriter(object):
         self._ckpt_periods.append(ckpt_period)
         self._ckpt_times.append(time.time())
         self._callback_fns.append(self.loss_cbfn) 
-        
 
     def save_checkpoints(self, ckpt_period=-1):
         """
@@ -1261,8 +1236,7 @@ class SummaryWriter(object):
         self._ckpt_periods.append(ckpt_period)
         self._ckpt_times.append(time.time())        
         self._callback_fns.append(self.save_ckpt_cbfn)
-            
-        
+
     def monitor_shdom_iterations(self, ckpt_period=-1):
         """Monitor the number of SHDOM iterations.
         
@@ -1273,8 +1247,7 @@ class SummaryWriter(object):
         """
         self._ckpt_periods.append(ckpt_period)
         self._ckpt_times.append(time.time())
-        self._callback_fns.append(self.shdom_iterations_cbfn)         
-        
+        self._callback_fns.append(self.shdom_iterations_cbfn)
         
     def monitor_scatterer_error(self, estimator_name, ground_truth, ckpt_period=-1):
         """
@@ -1318,8 +1291,7 @@ class SummaryWriter(object):
             self._ground_truth[estimator_name] = ground_truth
         else:
             self._ground_truth = OrderedDict({estimator_name: ground_truth})
-        
-        
+
     def monitor_images(self, acquired_images, ckpt_period=-1):
         """
         Monitor the synthetic images and compare to the acquired images
@@ -1339,7 +1311,6 @@ class SummaryWriter(object):
         self._image_titles = ['Retrieval Image {}'.format(view) for view in range(num_images)]
         acq_titles = ['Acquiered Image {}'.format(view) for view in range(num_images)]
         self.write_image_list(0, acquired_images, acq_titles, vmax=self._image_vmax)
-
 
     def save_ckpt_cbfn(self):
         timestr = time.strftime("%H%M%S")
@@ -1382,8 +1353,7 @@ class SummaryWriter(object):
                     tag_scalar_dict={'esimated': est_param, 'true': gt_param}, 
                     global_step=self.optimizer.iteration
                 )
-                
-     
+
     def write_image_list(self, global_step, images, titles, vmax=None):
         """
         Write an image list to tensorboardX.
@@ -1399,7 +1369,6 @@ class SummaryWriter(object):
         vmax: list or scalar, optional
             List or a single of scaling factor for the image contrast equalization
         """
-    
         if np.isscalar(vmax) or vmax is None:
             vmax = [vmax]*len(images)        
     
@@ -1439,8 +1408,7 @@ class SummaryWriter(object):
             return True
         else:
             return False
-        
-        
+
     @property
     def callback_fns(self):
         return self._callback_fns
@@ -1482,8 +1450,7 @@ class SpaceCarver(object):
         else:
             self._projections = [measurements.camera.projection]
         self._images = measurements.images
-        
-        
+
     def carve(self, grid, thresholds, agreement=0.75):
         """
         Carves out the cloud geometry on the grid. 
@@ -1503,7 +1470,6 @@ class SpaceCarver(object):
         mask: shdom.GridData object
             A boolean mask with True marking cloudy voxels and False marking non-cloud region.
         """
-        
         self._rte_solver.set_grid(grid)
         volume = np.zeros((grid.nx, grid.ny, grid.nz))
         
@@ -1548,8 +1514,7 @@ class SpaceCarver(object):
         volume = volume * 1.0 / len(self._images)
         mask = GridData(grid, volume > agreement) 
         return mask
-    
-    
+
     @property
     def grid(self):
         return self._grid
@@ -1584,7 +1549,6 @@ class Optimizer(object):
         """
         self._measurements = measurements
     
-    
     def set_medium_estimator(self, medium_estimator):
         """
         Set the MediumEstimator for the optimizer.
@@ -1594,8 +1558,7 @@ class Optimizer(object):
         medium_estimator: shdom.MediumEstimator
             The MediumEstimator
         """
-        self._medium = medium_estimator       
-
+        self._medium = medium_estimator
 
     def set_rte_solver(self, rte_solver):
         """
@@ -1607,7 +1570,6 @@ class Optimizer(object):
             The RteSolver
         """
         self._rte_solver = rte_solver
-
 
     def set_writer(self, writer):
         """
@@ -1652,7 +1614,6 @@ class Optimizer(object):
         self._loss = loss
         self._images = images
         return loss, gradient
-
             
     def callback(self, state):
         """
@@ -1671,7 +1632,6 @@ class Optimizer(object):
             for index, callbackfn in enumerate(self.writer.callback_fns):
                 if self.writer.check_update_time(index) == True:
                     callbackfn()
-        
 
     def minimize(self, options, method='L-BFGS-B', n_jobs=1, exact_single_scatter=True):
         """
@@ -1712,7 +1672,6 @@ class Optimizer(object):
                           callback=self.callback)
         return result
     
-    
     def init_optimizer(self):
         """
         Initialize the optimizer.
@@ -1725,8 +1684,7 @@ class Optimizer(object):
         self.rte_solver.set_medium(self.medium)
         self.rte_solver.init_solution()
         self.medium.compute_direct_derivative(self.rte_solver)
-        self._num_parameters = self.medium.num_parameters   
-        
+        self._num_parameters = self.medium.num_parameters
         
     def get_bounds(self):
         """
@@ -1739,7 +1697,6 @@ class Optimizer(object):
         """
         return self.medium.get_bounds()
     
-    
     def get_state(self):
         """
         Retrieve MediumEstimator state
@@ -1750,7 +1707,6 @@ class Optimizer(object):
             The state of the medium estimator
         """
         return self.medium.get_state()
-    
     
     def set_state(self, state):
         """
@@ -1768,8 +1724,7 @@ class Optimizer(object):
         self.medium.set_state(state)
         self.rte_solver.set_medium(self.medium)
         self.rte_solver.make_direct()
-        self.rte_solver.solve(maxiter=100, verbose=False)        
-        
+        self.rte_solver.solve(maxiter=100, verbose=False)
         
     def save(self, path):
         """
@@ -1787,7 +1742,6 @@ class Optimizer(object):
         file = open(path,'wb')
         file.write(pickle.dumps(params, -1))
         file.close()
-        
 
     def load(self, path):
         """
@@ -1812,7 +1766,6 @@ class Optimizer(object):
         rte_solver.set_param_dict(rte_param_dict)         
         self.set_rte_solver(rte_solver)
         self.__dict__ = params
-        
         
     @property
     def rte_solver(self):

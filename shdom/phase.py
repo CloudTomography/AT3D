@@ -42,7 +42,6 @@ class LegendreTable(object):
             self._maxasym = self.data[0, 1].max() / 3.0        
             self._nstleg = self.data.shape[0]
 
-
     def append(self, table):
         """
         Appending another LegenreTable to the current.
@@ -74,7 +73,6 @@ class LegendreTable(object):
         self._maxasym = max(self.maxasym, table.maxasym)
         self._maxleg = max(self.maxleg, table.maxleg)
         self._numphase += table.numphase
-         
 
     def get_legenp(self, nleg):
         """ 
@@ -105,8 +103,7 @@ class LegendreTable(object):
         if (self.table_type=='VECTOR') and (nleg>self.maxleg):
             legenp = np.pad(legenp, ((0,0), (0, nleg - self.maxleg), (0,0)) , 'constant')
         
-        return legenp.ravel(order='F') 
-    
+        return legenp.ravel(order='F')
     
     @property
     def data(self):
@@ -149,7 +146,6 @@ class GridPhase(object):
         self._index = index
         self._grid = index.grid
         self._iphasep = index.data
-
     
     def resample(self, grid):
         """
@@ -172,7 +168,6 @@ class GridPhase(object):
             index._data = index.data.clip(1)
             grid_phase = shdom.GridPhase(self.legendre_table, index)
         return grid_phase     
-    
 
     @property
     def iphasep(self):
@@ -228,7 +223,6 @@ class MieMonodisperse(object):
         self._extinct = None
         self._scatter = None
 
-
     def set_wavelength_integration(self,
                                    wavelength_band,
                                    wavelength_averaging=False,
@@ -271,7 +265,6 @@ class MieMonodisperse(object):
             wavelen2=self._wavelen2
         )
         
-        
     def set_radius_integration(self,
                                minimum_effective_radius,
                                max_integration_radius):
@@ -306,7 +299,6 @@ class MieMonodisperse(object):
             xmax = 2 * np.pi * max_integration_radius / self._wavelencen
         self._maxleg = int(np.round(2.0 * (xmax + 4.0*xmax**0.3334 + 2.0)))
 
-
     def compute_table(self):
         """
         Compute monodisperse Mie scattering per radius.
@@ -329,7 +321,6 @@ class MieMonodisperse(object):
                 partype=self._partype
             )
         self._table_type = table_type.decode()
-
 
     def write_table(self, file_path):
         """
@@ -362,8 +353,7 @@ class MieMonodisperse(object):
             nleg=self._nleg,
             maxleg=self._maxleg,
             legcoef=self._legcoef
-        )      
-
+        )
     
     def read_table_header(self, file_path):
         """
@@ -388,8 +378,7 @@ class MieMonodisperse(object):
         maxleg = np.genfromtxt(file_path, max_rows=1, skip_header=5, usecols=(0), dtype=int)
 
         return wavelen1, wavelen2, deltawave, pardens, partype, rindex, nsize, maxleg
-        
-        
+
     def read_table(self, file_path): 
         """
         Read a pre-computed table from <file_path>. 
@@ -416,7 +405,6 @@ class MieMonodisperse(object):
                 maxleg=self._maxleg
             )
         self._table_type = table_type.decode()
-
 
     @property
     def maxleg(self):
@@ -491,8 +479,7 @@ class SizeDistribution(object):
         
         # For modified gamma, currently unused
         self._gamma = 0.0 
-    
-    
+
     def set_parameters(self, reff, **kwargs):
         """
         Set size-distribution parameters. 
@@ -527,7 +514,6 @@ class SizeDistribution(object):
             self.veff = kwargs['veff']
         else:
             raise AttributeError('Neither veff or alpha were specified.')
-        
     
     def compute_nd(self, radii, particle_density=1.0):
         """
@@ -559,8 +545,7 @@ class SizeDistribution(object):
         nd = self.nd.T.reshape((self.nretab, self.nvetab, self.nsize), order='F')
         self._nd_interpolator = RegularGridInterpolator(
                 (self.reff, self.veff), nd, bounds_error=False, fill_value=0.0)
-    
-    
+
     def get_nd(self, reff, veff):
         return self._nd_interpolator((reff, veff)).T
     
@@ -635,8 +620,7 @@ class SizeDistribution(object):
     def nd(self):
         return self._nd
     
-    
-    
+
 class MiePolydisperse(object):
     """
     Polydisperse Mie scattering for spherical particles with size distribution.
@@ -665,7 +649,6 @@ class MiePolydisperse(object):
         self._maxleg = None
         self._legendre_table = None 
 
-
     def set_mono_disperse(self, mono_disperse):
         """
         Set the monodisperse Mie scattering.
@@ -678,7 +661,6 @@ class MiePolydisperse(object):
         self._mono_disperse = mono_disperse
         self._table_type = mono_disperse.table_type
 
-
     def set_size_distribution(self, size_distribution):
         """
         Set the size-distribution.
@@ -689,7 +671,6 @@ class MiePolydisperse(object):
             The size-distribution.
         """
         self._size_distribution = size_distribution
-        
         
     def compute_table(self):
         """
@@ -713,8 +694,7 @@ class MiePolydisperse(object):
                 scatter1=self.mono_disperse.scatter,
                 legcoef1=self.mono_disperse.legcoef)
         self.init_intepolators()
-        
-    
+
     def get_legendre(self, reff, veff):
         """
         Retrieve the Legendre coeffiecients at a specific effective radius and variance.
@@ -741,7 +721,6 @@ class MiePolydisperse(object):
         # Fortran style indexing
         index = veff_index*self.size_distribution.nvetab + reff_index
         return self.legcoef[..., index]
-
 
     def get_angular_scattering(self, reff, veff, angles, phase_element=1):
         """
@@ -784,7 +763,6 @@ class MiePolydisperse(object):
         )
         return phase   
 
-
     def write_table(self, file_path): 
         """
         Write a pre-computed table to <file_path>. 
@@ -824,8 +802,7 @@ class MiePolydisperse(object):
             ndist=self.size_distribution.ndist,
             maxleg=self.legendre_table.maxleg,
             gamma=self.size_distribution.gamma)
-    
-    
+
     def read_table_header(self, file_path):
         """
         Read the table header from <file_path>.
@@ -857,8 +834,7 @@ class MiePolydisperse(object):
         nvetab = np.genfromtxt(file_path, max_rows=1, skip_header=6, usecols=(0), dtype=int)
         maxleg = np.genfromtxt(file_path, max_rows=1, skip_header=8, usecols=(0), dtype=int)
     
-        return wavelen1, wavelen2, deltawave, pardens, partype, rindex, distflag, nretab, nvetab, maxleg        
-
+        return wavelen1, wavelen2, deltawave, pardens, partype, rindex, distflag, nretab, nvetab, maxleg
     
     def read_table(self, file_path): 
         """
@@ -889,7 +865,6 @@ class MiePolydisperse(object):
                 maxleg=self.maxleg) 
         self._table_type = table_type.decode()
         self.init_intepolators()
-
 
     def init_intepolators(self):
         """
@@ -924,7 +899,6 @@ class MiePolydisperse(object):
         self._nleg_interpolator = RegularGridInterpolator((reff, veff), nleg, method='nearest', bounds_error=False, fill_value=0)
         self._legen_index_interpolator = RegularGridInterpolator((reff, veff), legen_index, method='nearest', bounds_error=False, fill_value=0)
 
-
     def get_extinction(self, lwc, reff, veff):
         """
         Retrieve the extinction coefficient over a grid.
@@ -947,8 +921,7 @@ class MiePolydisperse(object):
         data = self._ext_interpolator((reff.resample(grid).data, veff.resample(grid).data))
         extinction = lwc.resample(grid) * shdom.GridData(grid, data)     
         return extinction  
-        
-   
+
     def get_albedo(self, reff, veff):
         """
         Interpolate the single scattering albedo over a grid.
@@ -969,7 +942,6 @@ class MiePolydisperse(object):
         data = self._ssalb_interpolator((reff.resample(grid).data, veff.resample(grid).data))
         albedo = shdom.GridData(grid, data)
         return albedo
-
 
     def get_phase(self, reff, veff, squeeze_table=True):
         """
@@ -1015,7 +987,6 @@ class MiePolydisperse(object):
         legen_index = shdom.GridData(grid, index.astype(np.int32))
         phase = GridPhase(legen_table, legen_index)        
         return phase
-
 
     @property
     def nleg(self):
@@ -1068,7 +1039,8 @@ class MiePolydisperse(object):
             return None
         else:
             return round(self.mono_disperse._wavelencen, 3)
-    
+
+
 class Rayleigh(object):
     """
     Rayleigh scattering for temperature profile.
@@ -1102,7 +1074,6 @@ class Rayleigh(object):
         self._temperature_profile = None
         self._surface_pressure = None
         self._raylcoeff = None
-      
 
     def get_extinction(self, grid):
         """
@@ -1128,7 +1099,6 @@ class Rayleigh(object):
         )  for raylcoef in self._raylcoef]
 
         return [shdom.GridData(grid, ext) for ext in ext_profile]
-    
         
     def get_albedo(self, grid):
         """
@@ -1146,7 +1116,6 @@ class Rayleigh(object):
             The length of the list is the number of bands (wavelengths).
         """
         return [shdom.GridData(grid, data=np.full(shape=grid.shape, fill_value=1.0, dtype=np.float32)) for wavelength in self._wavelength]
-        
 
     def get_phase(self, grid):
         """
@@ -1170,7 +1139,6 @@ class Rayleigh(object):
             table = LegendreTable(table.astype(np.float32), table_type.decode())
             phase.append(GridPhase(table, index))
         return phase
-    
     
     def set_profile(self, temperature_profile, surface_pressure=1013.0):
         """        
@@ -1196,8 +1164,7 @@ class Rayleigh(object):
         self._extinction = self.get_extinction(self.grid)
         self._albedo = self.get_albedo(self.grid)
         self._phase = self.get_phase(self.grid)
-        
-        
+
     def get_scatterer(self):
         """
         Retrieve a Scatterer from the medium.
@@ -1270,4 +1237,4 @@ class Rayleigh(object):
     
     @property
     def surface_pressure(self):
-        return self._surface_pressure  
+        return self._surface_pressure

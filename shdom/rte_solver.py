@@ -64,10 +64,9 @@ class SolarSource(object):
         """
         Print out all the source parameters.        
         """        
-        return '{}, flux: {}, azimuth: {}deg, zenith: {}deg'.format(self.type, 
-                                                                    self.flux, 
-                                                                    self.azimuth, 
-                                                                    self.zenith)  
+        return '{}, flux: {}, azimuth: {}deg, zenith: {}deg'.format(self.type, self.flux, self.azimuth, self.zenith)
+
+
 class Surface(object):
     """ 
     An abstract sufrace class to be inhirted by different surface types.
@@ -175,6 +174,7 @@ class NumericalParameters(object):
             info += '   {}: {}{}'.format(item[0], item[1], os.linesep)
         return info     
 
+
 class SceneParameters(object):
     """
     This object bundles up together all the scene related parameters required by the RteSolver object.
@@ -211,7 +211,6 @@ class SceneParameters(object):
                '   Boundary Conditions: [x:{}, y:{}]{}'.format(self.boundary_conditions['x'].name, 
                                                                self.boundary_conditions['y'].name, 
                                                                os.linesep)
-        
 
 
 class ShdomPropertyArrays(object):
@@ -331,8 +330,7 @@ class RteSolver(object):
             ]
         }
         return param_dict
-    
-    
+
     def set_param_dict(self, param_dict):
         """
         Set the solver parameters from a parameter dictionary
@@ -346,8 +344,7 @@ class RteSolver(object):
         self._type = param_dict['_type']
         self._nstokes = 1 if self.type == 'Radiance' else 3
         self.set_numerics(params['numerical_params'])
-        self.set_scene(params['scene_params']) 
-
+        self.set_scene(params['scene_params'])
 
     def save_params(self, path):
         """
@@ -360,8 +357,7 @@ class RteSolver(object):
         """
         file = open(path,'wb')
         file.write(pickle.dumps(self.get_param_dict(), -1))
-        file.close()    
-        
+        file.close()
 
     def load_params(self, path):
         """
@@ -377,7 +373,6 @@ class RteSolver(object):
         file.close()
         params = pickle.loads(data)
         self.set_param_dict(params)
-
 
     def set_scene(self, scene_params):
         """
@@ -474,7 +469,6 @@ class RteSolver(object):
         self._shacc               = numerical_params.spherical_harmonics_accuracy
         self._solacc              = numerical_params.solution_accuracy
         self._highorderrad        = numerical_params.high_order_radiance
-            
 
     def set_medium(self, medium):
         """
@@ -594,8 +588,7 @@ class RteSolver(object):
         
         # Restart solution criteria
         self._solcrit = 1.0
-        
-        
+
     def set_grid(self, grid):
         """
         Set the base grid and related grid structures for SHDOM.
@@ -680,7 +673,6 @@ class RteSolver(object):
                 zgrid=self._zgrid
             )
         self._nbcells = self._ncells
-        
 
     def init_memory(self):
         """A utility function to initialize internal memory parameters."""
@@ -740,7 +732,6 @@ class RteSolver(object):
             self._maxbcrad = 2*self._maxnbc
         else:
             self._maxbcrad = int((2+self._nmu*self._nphi0max/2)*self._maxnbc)
-
 
     def init_solution(self):
         """
@@ -837,7 +828,6 @@ class RteSolver(object):
                 maxsfcpars=self._maxsfcpars,
                 nphi0max=self._nphi0max
             )
-        
                 
     def solution_iterations(self, maxiter, verbose=True):
         """
@@ -1001,7 +991,6 @@ class RteSolver(object):
             runname=self._name
         )
         return output_arguments
-        
     
     def make_direct(self):
         """
@@ -1043,7 +1032,6 @@ class RteSolver(object):
                 gasabs=self._pa.gasabs
             )
         
-        
     def update_solution_arguments(self, solution_arguments):
         """
         Update the solution arguments from the output of the solution_iteration method.
@@ -1076,7 +1064,6 @@ class RteSolver(object):
             self.init_solution()
         solution_arguments = self.solution_iterations(maxiter, verbose)
         self.update_solution_arguments(solution_arguments)
-    
     
     @property
     def name(self):
@@ -1136,7 +1123,6 @@ class RteSolverArray(object):
         for solver in self.solver_list:
             solver.set_medium(medium)
 
-
     def get_param_dict(self):
         """
         Retrieve a dictionary with the solver array parameters
@@ -1158,7 +1144,6 @@ class RteSolverArray(object):
                     param_dict['solver_parameters'].append(solver_param_dict)        
         return param_dict
     
-    
     def set_param_dict(self, param_dict):
         """
         Set the solver array parameters from a parameter dictionary
@@ -1173,8 +1158,7 @@ class RteSolverArray(object):
             rte_solver = shdom.RteSolver(scene_params=solver_params['scene_params'], 
                                          numerical_params=solver_params['numerical_params'],
                                          num_stokes=num_stokes)
-            self.add_solver(rte_solver)  
-            
+            self.add_solver(rte_solver)
             
     def save_params(self, path):
         """
@@ -1187,8 +1171,7 @@ class RteSolverArray(object):
         """
         file = open(path,'wb')
         file.write(pickle.dumps(self.get_param_dict(), -1))
-        file.close()            
-        
+        file.close()
         
     def load_params(self, path):
         """
@@ -1205,10 +1188,8 @@ class RteSolverArray(object):
         params = pickle.loads(data)
         self.set_param_dict(params)
 
-
     def __getitem__(self, val):
         return self.solver_list[val]
-    
     
     def add_solver(self, rte_solver):
         """
@@ -1274,7 +1255,6 @@ class RteSolverArray(object):
      
         for solver, arguments in zip(self.solver_list, output_arguments):
             solver.update_solution_arguments(arguments)
-
 
     @property
     def name(self):

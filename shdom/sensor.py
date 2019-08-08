@@ -8,9 +8,7 @@ from joblib import Parallel, delayed
 import shdom 
 from shdom import core
 
-
 norm = lambda x: x / np.linalg.norm(x, axis=0)
-
     
 class Sensor(object):
     """
@@ -106,8 +104,7 @@ class Sensor(object):
             npart=rte_solver._npart)    
         
         return output
-    
-    
+
     @property
     def type(self):
         return self._type
@@ -190,8 +187,7 @@ class RadianceSensor(Sensor):
         radiance = np.concatenate(radiance) 
         images = self.make_images(radiance, projection, num_channels)
         return images
-            
-        
+
     def make_images(self, radiance, projection, num_channels):
         """
         Split radiances into Multiview, Multi-channel images (channel last)
@@ -315,7 +311,6 @@ class StokesSensor(Sensor):
         images = self.make_images(stokes, projection, num_channels)
         return images
         
-        
     def make_images(self, stokes, projection, num_channels):
         """
         Split radiances into Multiview, Multi-channel stokes images (channel last)
@@ -416,8 +411,8 @@ class DolpAolpSensor(StokesSensor):
         aolp[..., std2 < std1] = aolp2.reshape(aolp.shape)[..., std2 < std1]
         
         return dolp, aolp
-    
-    
+
+
 class Projection(object):
     """
     Abstract Projection class to be inherited by the different types of projections.
@@ -666,8 +661,7 @@ class PerspectiveProjection(HomographyProjection):
         x_c, y_c, z_c = np.meshgrid(np.linspace(-1, 1, nx), np.linspace(-1, 1, ny), 1.0)        
         self._homogeneous_coordinates = np.stack([x_c.ravel(), y_c.ravel(), z_c.ravel()])
         self.update_global_coordinates()
-        
-        
+
     def update_global_coordinates(self):
         """
         This is an internal method which is called upon when a rotation matrix is computed to update the global camera coordinates.
@@ -680,8 +674,7 @@ class PerspectiveProjection(HomographyProjection):
         self._x = np.full(self.npix, self.position[0], dtype=np.float32)
         self._y = np.full(self.npix, self.position[1], dtype=np.float32)
         self._z = np.full(self.npix, self.position[2], dtype=np.float32)
-    
-    
+
     def look_at_transform(self, point, up):
         """
         A look at transform is defined with a point and an up vector.
@@ -701,7 +694,6 @@ class PerspectiveProjection(HomographyProjection):
         self._rotation_matrix = np.stack((xaxis, yaxis, zaxis), axis=1)
         self.update_global_coordinates()
         
-        
     def rotate_transform(self, axis, angle):
         """
         Rotate the camera with respect to one of it's (local) axis
@@ -717,8 +709,8 @@ class PerspectiveProjection(HomographyProjection):
         -----
         The axis are in the camera coordinates
         """
-        
         assert axis in ['x', 'y', 'z'], 'axis parameter can only recieve "x", "y" or "z"'
+
         angle = np.deg2rad(angle)
         if axis == 'x':
             rot = np.array([[1, 0, 0],
@@ -735,8 +727,7 @@ class PerspectiveProjection(HomographyProjection):
         
         self._rotation_matrix = np.matmul(self._rotation_matrix, rot)
         self.update_global_coordinates()
-        
-        
+
     def plot(self, ax, xlim, ylim, zlim, length=0.1):
         """
         Plot the cameras and their orientation in 3D space using matplotlib's quiver.
@@ -771,8 +762,7 @@ class PerspectiveProjection(HomographyProjection):
         ax.set_ylim(*ylim)
         ax.set_zlim(*zlim)
         ax.quiver(x, y, z, u, v, w, length=length, pivot='tail')
-        
-        
+
     @property
     def position(self):
         return self._position
@@ -905,8 +895,7 @@ class Measurements(object):
         file = open(path,'wb')
         file.write(pickle.dumps(self.__dict__, -1))
         file.close()
-    
-    
+
     def load(self, path):
         """
         Load Measurements from file.
@@ -919,8 +908,7 @@ class Measurements(object):
         file = open(path,'rb')
         data = file.read()
         file.close()
-        self.__dict__ = pickle.loads(data)     
-    
+        self.__dict__ = pickle.loads(data)
     
     def split(self, n_parts):
         """
@@ -948,7 +936,6 @@ class Measurements(object):
         ]
         return measurements
     
-    
     def add_noise(self):
         """Add sensor modeled noise to the radiances"""
         raise NotImplemented
@@ -965,8 +952,7 @@ class Measurements(object):
     def images(self):
         return self._images
 
-    
-    
+
 class Camera(object):
     """
     An Camera object ecapsulates both sensor and projection.
@@ -1028,9 +1014,7 @@ class Camera(object):
     
     @property
     def sensor(self):
-        return self._sensor   
-
-    
+        return self._sensor
     
 
 class MultiViewProjection(Projection):
@@ -1042,7 +1026,6 @@ class MultiViewProjection(Projection):
     projection_list: list, optional
         A list of Sensor objects
     """
-    
     def __init__(self, projection_list=None):
         super(MultiViewProjection, self).__init__()
         self._num_projections = 0
@@ -1051,7 +1034,6 @@ class MultiViewProjection(Projection):
         if projection_list:
             for projection in projection_list:
                 self.add_projection(projection)
-
     
     def add_projection(self, projection, name=None):
         """

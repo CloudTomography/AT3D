@@ -74,7 +74,6 @@ class OpticalScatterer(Scatterer):
         albedo = self.albedo.resample(grid)
         phase = self.phase.resample(grid)            
         return shdom.OpticalScatterer(self.wavelength, extinction, albedo, phase)
-        
 
     def get_mask(self, threshold):
         """
@@ -148,7 +147,6 @@ class MicrophysicalScatterer(Scatterer):
         self._min_veff = np.Inf
         self._max_veff = -np.Inf           
         self.set_microphysics(lwc, reff, veff)
-            
 
     def set_microphysics(self, lwc, reff, veff):
         """
@@ -173,7 +171,6 @@ class MicrophysicalScatterer(Scatterer):
         self.veff = veff
         if (lwc is not None) and (reff is not None) and (veff is not None):
             self._grid = lwc.grid + reff.grid + veff.grid
-
 
     def get_optical_scatterer(self, wavelength):
         """
@@ -239,8 +236,7 @@ class MicrophysicalScatterer(Scatterer):
             A boolean mask with True for dense voxels and False for thin voxels.
         """
         data = self.lwc.data > threshold
-        return shdom.GridData(self.grid, data)    
-
+        return shdom.GridData(self.grid, data)
 
     def add_mie(self, mie):
         """
@@ -315,8 +311,7 @@ class MicrophysicalScatterer(Scatterer):
         y_grid = np.linspace(0.0, (ny - 1)*dy, ny, dtype=np.float32)    
         grid = shdom.Grid(x=x_grid, y=y_grid, z=z_grid)
         return grid
-        
-        
+
     def save_to_csv(self, path, comment_line=''):
         """
         A utility function to save a microphysical medium.
@@ -349,7 +344,6 @@ class MicrophysicalScatterer(Scatterer):
         data = np.vstack((x.ravel(), y.ravel(), z.ravel(), self.lwc.data.ravel(), self.reff.data.ravel())).T
         np.savetxt(f, X=data, fmt='%d %d %d %.5f %.3f')        
         f.close()
-        
         
     def load_from_csv(self, path, veff=0.1):
         """ 
@@ -401,7 +395,6 @@ class MicrophysicalScatterer(Scatterer):
             reff=shdom.GridData(grid, reff_data).squeeze_dims(), 
             veff=shdom.GridData(grid, veff_data).squeeze_dims()
         )
-
     
     @property
     def lwc(self):
@@ -475,6 +468,7 @@ class MicrophysicalScatterer(Scatterer):
             return self._wavelength[0]
         else:
             return self._wavelength
+
 
 class MultispectralScatterer(object):
     """
@@ -596,7 +590,6 @@ class Medium(object):
             A grid for the Medium object. All scatterers will be resampled to this grid.
         """
         self._grid = grid
-        
 
     def add_scatterer(self, scatterer, name=None):
         """
@@ -620,7 +613,6 @@ class Medium(object):
         name = 'scatterer{:d}'.format(self._num_scatterers) if name is None else name
         self.scatterers[name] = scatterer
 
-
     def get_scatterer(self, name):
         """
         Retrieve a Scatterer from the medium.
@@ -637,7 +629,6 @@ class Medium(object):
         """
         return self.scatterers[name]
 
-
     def save(self, path):
         """
         Save Medium to file.
@@ -650,7 +641,6 @@ class Medium(object):
         file = open(path,'wb')
         file.write(pickle.dumps(self.__dict__, -1))
         file.close()
-        
     
     def load(self, path):
         """

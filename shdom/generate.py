@@ -23,7 +23,7 @@ class Generator(object):
     @classmethod
     def update_parser(self, parser): 
         """
-        Update the argument parser with parameters relavent to this generator. 
+        Update the argument parser with parameters relevant to this generator. 
         
         Parameters
         ----------
@@ -263,7 +263,7 @@ class AirGenerator(Generator):
     @classmethod
     def update_parser(self, parser): 
         """
-        Update the argument parser with parameters relavent to this generator. 
+        Update the argument parser with parameters relevant to this generator. 
 
         Parameters
         ----------
@@ -295,8 +295,7 @@ class AirGenerator(Generator):
         temperature_profile: shdom.GridData
             A GridData object specifying the temperature (K) on a 1D grid (altitude)
         """
-        self._temperature_profile = temperature_profile     
-        
+        self._temperature_profile = temperature_profile          
         
     def get_scatterer(self, wavelength):
         """
@@ -354,7 +353,7 @@ class SingleVoxel(CloudGenerator):
     @classmethod
     def update_parser(self, parser):
         """
-        Update the argument parser with parameters relavent to this generator. 
+        Update the argument parser with parameters relevant to this generator. 
 
         Parameters
         ----------
@@ -402,8 +401,7 @@ class SingleVoxel(CloudGenerator):
                             help='Path to a precomputed Mie scattering table. \
                                   See notebooks/Make Mie Table.ipynb for more details')
         return parser      
-
-
+    
     def get_grid(self):
         """
         Retrieve the scatterer grid.
@@ -451,7 +449,6 @@ class SingleVoxel(CloudGenerator):
             veff = self.get_veff(grid)
             extinction = self.mie[float_round(wavelength)].get_extinction(lwc, reff, veff)
         return extinction
-
 
     def get_lwc(self, grid=None):
         """
@@ -535,7 +532,7 @@ class Homogeneous(CloudGenerator):
     @classmethod
     def update_parser(self, parser):
         """
-        Update the argument parser with parameters relavent to this generator. 
+        Update the argument parser with parameters relevant to this generator. 
 
         Parameters
         ----------
@@ -712,7 +709,20 @@ class LesFile(CloudGenerator):
         self._droplets.load_from_csv(args.path, args.veff)
         
     @classmethod
-    def update_parser(self, parser): 
+    def update_parser(self, parser):
+        """
+        Update the argument parser with parameters relevant to this generator. 
+
+        Parameters
+        ----------
+        parser: argparse.ArgumentParser()
+            The main parser to update.
+
+        Returns
+        -------
+        parser: argparse.ArgumentParser()
+            The updated parser.
+        """
         parser.add_argument('--path',
                             help='Path to the LES generated file')
         parser.add_argument('--veff', 
