@@ -1,7 +1,6 @@
 """ 
 Optimize: Extinction
 --------------------
-
 Optimize for the extinction coefficient based on radiance measurements.
 Measurements are either:
   1. Simulated measurements using a forward rendering script (e.g. in scripts/render/).
@@ -38,6 +37,7 @@ def argument_parsing():
     parser.add_argument('--input_dir', 
                         help='Path to an input directory where the forward modeling parameters are be saved. \
                               This directory will be used to save the optimization results and progress.')
+
     parser.add_argument('--log',
                         help='Write intermediate TensorBoardX results. \
                               The provided string is added as a comment to the specific run.')
@@ -142,13 +142,14 @@ def init_medium_estimation(wavelength):
     medium_estimator = shdom.MediumEstimator()
     if args.add_rayleigh:
         air_generator = AirGenerator(args)
-        air = air_generator.get_scatterer(wavelength)   
+        air = air_generator.get_scatterer(wavelength)
         medium_estimator.set_grid(cloud_estimator.grid + air.grid)
-        medium_estimator.add_scatterer(air, 'air') 
+        medium_estimator.add_scatterer(air, 'air')
     else:
         medium_estimator.set_grid(cloud_estimator.grid)
-    medium_estimator.add_scatterer(cloud_estimator, name='cloud')
-    
+
+    medium_estimator.add_scatterer(cloud_estimator, 'cloud')
+
     return medium_estimator
 
 
@@ -201,8 +202,7 @@ if __name__ == "__main__":
     print('Success: {}'.format(result.success))
     print('Message: {}'.format(result.message))
     print('Final loss: {}'.format(result.fun))
-    print('Number iterations: {}'.format(result.nit))    
-    print(result)
+    print('Number iterations: {}'.format(result.nit))
     optimizer.save(os.path.join(args.input_dir, 'optimizer'))
 
 

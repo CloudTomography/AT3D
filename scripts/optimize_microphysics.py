@@ -161,8 +161,6 @@ if __name__ == "__main__":
     
     args, CloudGenerator, AirGenerator = argument_parsing()
     
-    log_dir = os.path.join(args.input_dir, 'logs', args.log + '-' + time.strftime("%Y%m%d-%H%M%S"))
-
     # Load forward model
     medium_gt, rte_solver, measurements = shdom.load_forward_model(args.input_dir)
     
@@ -178,7 +176,7 @@ if __name__ == "__main__":
         log_dir = os.path.join(args.input_dir, 'logs', args.log + '-' + time.strftime("%d-%b-%Y-%H:%M:%S"))
         writer = shdom.SummaryWriter(log_dir)
         writer.monitor_loss()
-        writer.save_checkpoints(ckpt_period=30*60)
+        writer.save_checkpoints(ckpt_period=15*60)
         writer.monitor_images(acquired_images=measurements.images, ckpt_period=-1)
         writer.monitor_scatterer_error(estimator_name='cloud', ground_truth=cloud_gt)
         writer.monitor_domain_mean(estimator_name='cloud', ground_truth=cloud_gt)

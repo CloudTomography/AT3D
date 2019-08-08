@@ -465,8 +465,7 @@ class Medium(object):
         TODO
         """
         return self.scatterers[name]
-    
-    
+
     def add_scatterer(self, scatterer, name=None):
         """
         Add an optical scatterer at some wavelength to the medium
@@ -487,8 +486,7 @@ class Medium(object):
         self._num_scatterers += 1
         name = 'scatterer{:d}'.format(self._num_scatterers) if name is None else name
         self.scatterers[name] = scatterer
-   
-   
+
     def save(self, path):
         """
         Save Medium to file.
@@ -532,4 +530,3 @@ class Medium(object):
     @property
     def num_scatterers(self):
         return self._num_scatterers
-    

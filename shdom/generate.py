@@ -313,14 +313,16 @@ class SingleVoxel(CloudGenerator):
         if grid is None:
             grid = self.get_grid()        
         reff_data = np.zeros(shape=(grid.nx, grid.ny, grid.nz), dtype=np.float32)
-        reff_data[int(grid.nx/2), int(grid.ny/2), int(grid.nz/2)] = self.args.reff 
+        #reff_data[int(grid.nx/2), int(grid.ny/2), int(grid.nz/2)] = self.args.reff
+        reff_data[1, 2, 3] = self.args.reff
         return shdom.GridData(grid, reff_data)
         
     def get_veff(self, grid=None):
         if grid is None:
             grid = self.get_grid()        
         veff_data = np.zeros(shape=(grid.nx, grid.ny, grid.nz), dtype=np.float32)
-        veff_data[int(grid.nx/2), int(grid.ny/2), int(grid.nz/2)] = self.args.veff    
+        #veff_data[int(grid.nx/2), int(grid.ny/2), int(grid.nz/2)] = self.args.veff
+        veff_data[1, 2, 3] = self.args.veff
         return shdom.GridData(grid, veff_data)    
 
 

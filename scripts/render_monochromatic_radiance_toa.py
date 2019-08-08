@@ -1,7 +1,6 @@
 """ 
 Render: [Monochromatic] Radiance at Top of the Atmosphere (TOA)
 ---------------------------------------------------------------
-
 Forward rendering of an atmospheric medium with an monochromatic orthographic sensor measuring exitting radiance at the top of the the domain.
 This sensor is an (somewhat crude) approximation for far observing satellites where the rays are parallel. 
 
@@ -112,18 +111,17 @@ def generate_atmosphere():
     cloud_generator = CloudGenerator(args)
     cloud_generator.add_mie(args.mie_table_path)
     cloud = cloud_generator.get_scatterer()
-    
+
+    atmosphere = shdom.Medium()
     if args.add_rayleigh:
         air_generator = AirGenerator(args)
         air = air_generator.get_scatterer(cloud.wavelength)    
-        grid = cloud.grid + air.grid
-    else:
-        grid = cloud.grid
-        
-    atmosphere = shdom.Medium(grid)
-    atmosphere.add_scatterer(cloud, 'cloud')
-    if args.add_rayleigh:
+        atmosphere.set_grid(cloud.grid + air.grid)
         atmosphere.add_scatterer(air, 'air')
+    else:
+        atmosphere.set_grid(cloud.grid)
+
+    atmosphere.add_scatterer(cloud, 'cloud')
 
     return atmosphere
 

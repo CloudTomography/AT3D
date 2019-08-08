@@ -547,7 +547,7 @@ class MediumEstimator(shdom.Medium):
                 gasabs=rte_solver._pa.gasabs
             )       
         
-    def core_grad(self, rte_solver, projection, radiance):
+    def core_grad(self, rte_solver, projection, radiance, exact_single_scatter):
         """
         TODO
         """
@@ -557,6 +557,8 @@ class MediumEstimator(shdom.Medium):
             total_pix = projection.npix
 
         gradient, loss, radiance = core.gradient(
+            exact_single_scatter=exact_single_scatter,
+            nstphase=rte_solver._nstphase,
             dpath=self._direct_derivative_path, 
             dptr=self._direct_derivative_ptr,
             npx=rte_solver._pa.npx,
@@ -650,7 +652,7 @@ class MediumEstimator(shdom.Medium):
         )
         return gradient, loss, radiance
         
-    def compute_gradient(self, rte_solver, measurements, n_jobs):
+    def compute_gradient(self, rte_solver, measurements, n_jobs, exact_single_scatter=True):
         """
         The objective function (cost) and gradient at the current state.
         
@@ -698,11 +700,18 @@ class MediumEstimator(shdom.Medium):
                 delayed(self.core_grad, check_pickle=False)(
                     rte_solver=rte_solvers[channel],
                     projection=projection,
-                    radiance=spectral_radiance[..., channel]) for channel, (projection, spectral_radiance) in 
+                    radiance=spectral_radiance[..., channel],
+                    exact_single_scatter=exact_single_scatter
+                ) for channel, (projection, spectral_radiance) in
                 itertools.product(range(num_channels), zip(projection.split(n_jobs), np.array_split(radiances, n_jobs)))
             )
         else:
-            output = [self.core_grad(rte_solvers[channel], projection, radiances[...,channel]) for channel in range(num_channels)]
+            output = [
+                self.core_grad(rte_solvers[channel],
+                               projection,
+                               radiances[...,channel],
+                               exact_single_scatter) for channel in range(num_channels)
+            ]
         
         # Sum over all the losses of the different channels
         loss = np.sum(list(map(lambda x: x[1], output)))
@@ -1161,12 +1170,12 @@ class Optimizer(object):
         gradient, loss, images = self.medium.compute_gradient(
             rte_solver=self.rte_solver,
             measurements=self.measurements,
-            n_jobs=self._n_jobs
+            n_jobs=self._n_jobs,
+            exact_single_scatter=self._exact_single_scatter
         )
         self._loss = loss
         self._images = images
         return loss, gradient
-    
 
             
     def callback(self, state):
@@ -1184,7 +1193,7 @@ class Optimizer(object):
                     callbackfn()
         
 
-    def minimize(self, options, method='L-BFGS-B', n_jobs=1):
+    def minimize(self, options, method='L-BFGS-B', n_jobs=1, exact_single_scatter=True):
         """
         Minimize the cost function with respect to the parameters defined.
         
@@ -1196,7 +1205,8 @@ class Optimizer(object):
             The optimization method.
         n_jobs: int, default=1
             The number of jobs to divide the gradient computation into.
-        
+        exact_single_scatter: bool
+            True will add a calculation of the derivative along a broken-ray trajectory due to the direct solar flux.
         Notes
         -----
         Currently only L-BFGS-B optimization method is supported.
@@ -1205,6 +1215,8 @@ class Optimizer(object):
             https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html
         """
         self._n_jobs = n_jobs
+        self._exact_single_scatter = exact_single_scatter
+
         if method != 'L-BFGS-B':
             raise NotImplementedError('Optimization method not implemented')
         

@@ -24,10 +24,9 @@ A render script takes a generator as input (see: shdom/generate.py for more info
 **Render a single voxel atmosphere at 9 view angles, 20m resolution, 672nm**
 ```sh
 python scripts/render_monochromatic_radiance_toa.py experiments/single_voxel/monochromatic \
-        --generator SingleVoxel --lwc 0.1 --reff 10.0 --domain_size 1.0 \
-        --x_res 0.02 --y_res 0.02 --nx 10 --ny 10 --nz 10  \
+        --generator SingleVoxel --domain_size 1.0 --x_res 0.02 --y_res 0.02 --nx 10 --ny 10 --nz 10  \
         --azimuth 90 90 90 90 0 -90 -90 -90 -90 --zenith 70.5 60 45.6 26.1 0.0 26.1 45.6 60 70.5 \
-        --mie_table_path mie_tables/polydisperse/Water_672nm.scat --add_rayleigh
+        --mie_table_path mie_tables/polydisperse/Water_672nm.scat --lwc 0.1 --reff 10.0 --add_rayleigh
 ```
 
 **Render an LES cloud field (rico) at 9 view angles, 10m resolution, 672nm, with a rayleigh scattering atmosphere**

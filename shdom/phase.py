@@ -306,7 +306,8 @@ class MieMonodisperse(object):
         Notes
         -----
         This function must be ran after pre-computing a scattering table with compute_table().
-        """        
+        """
+        assert (None not in [self._extinct, self._scatter, self._nleg, self._maxleg, self._legcoef]), 'Cannot write table: Mie table not computed or loaded.'
         print('Writing Mie monodisperse table to file: {}'.format(file_path))
         core.write_mono_table(
             mietabfile=file_path,
@@ -907,8 +908,8 @@ class MiePolydisperse(object):
         if squeeze_table:
             max_re_idx = min(nre-1, find_nearest(self.size_distribution.reff, reff.data.max()))
             max_ve_idx = min(nve-1, find_nearest(self.size_distribution.veff, veff.data.max()))
-            min_re_idx = max(0, find_nearest(self.size_distribution.reff, reff.data[reff.data>0.0].min())-1)
-            min_ve_idx = max(0, find_nearest(self.size_distribution.veff, veff.data[veff.data>0.0].min())-1)
+            min_re_idx = max(0, find_nearest(self.size_distribution.reff, reff.data[reff.data>0.0].min()))
+            min_ve_idx = max(0, find_nearest(self.size_distribution.veff, veff.data[veff.data>0.0].min()))
             legcoef = self.legcoef_2d[..., min_re_idx:max_re_idx+1, min_ve_idx:max_ve_idx+1]
             nre, nve = legcoef.shape[-2:]
             legcoef = legcoef.reshape(self.legcoef.shape[:-1] + (-1,), order='F')

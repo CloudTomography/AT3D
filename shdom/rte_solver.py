@@ -509,9 +509,9 @@ class RteSolver(object):
                 albedo = np.pad(albedo, ((0,1),(0,0),(0,0)), 'wrap')
                 iphase = np.pad(iphase, ((0,1),(0,0),(0,0)), 'wrap')
                 
-            self._pa.extinctp[:,i] = extinction.ravel()
-            self._pa.albedop[:,i] = albedo.ravel()
-            self._pa.iphasep[:,i] = iphase.ravel()
+            self._pa.extinctp[:, i] = extinction.ravel()
+            self._pa.albedop[:, i] = albedo.ravel()
+            self._pa.iphasep[:, i] = iphase.ravel() + self._pa.iphasep.max()
             
             scat_table = copy.deepcopy(resampled_scatterer.phase.legendre_table)
             if i == 0:
@@ -528,7 +528,6 @@ class RteSolver(object):
             self._nleg = self._mm
         self._nleg = self._maxleg = max(legendre_table.maxleg, self._nleg)
         self._nscatangle = max(36, min(721, 2*self._nleg))
-
 
         # Legenp is without the zero order term which is 1.0 for normalized phase function
         self._pa.legenp = legendre_table.get_legenp(self._nleg).astype(np.float32)
