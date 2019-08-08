@@ -1,7 +1,6 @@
 """ 
 Optimize: Extinction
 --------------------
-
 Optimize for the extinction coefficient based on radiance measurements.
 Measurements are either:
   1. Simulated measurements using a forward rendering script (e.g. in scripts/render/).
@@ -27,7 +26,7 @@ def argument_parsing():
     Returns
     -------
     args: arguments from argparse.ArgumentParser()
-        The arguments requiered for this script.
+        Arguments required for this script.
     CloudGenerator: a shdom.Generator class object.
         Creates the cloudy medium.
     AirGenerator: a shdom.Air class object

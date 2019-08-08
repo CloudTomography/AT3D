@@ -1,7 +1,6 @@
 """ 
 Render: [Monochromatic] Radiance at Top of the Atmosphere (TOA)
 ---------------------------------------------------------------
-
 Forward rendering of an atmospheric medium with an monochromatic orthographic sensor measuring exitting radiance at the top of the the domain.
 This sensor is an (somewhat crude) approximation for far observing satellites where the rays are parallel. 
 
@@ -30,7 +29,7 @@ def argument_parsing():
     Returns
     -------
     args: arguments from argparse.ArgumentParser()
-        The arguments requiered for this script.
+        Arguments required for this script.
     CloudGenerator: a shdom.Generator class object.
         Creates the cloudy medium.
     AirGenerator: a shdom.Air class object

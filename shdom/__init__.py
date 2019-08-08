@@ -31,16 +31,17 @@ import warnings
 import numpy as np
 
 def float_round(x):
-    """TODO"""
+    """Round a float or np.float32 to a 3 digits float"""
     if type(x) == np.float32:
         x = x.item()
     return round(x,3) 
 
 def int_round(x):
-    """TODO"""
+    """Round a float or np.float32 to a 3 digits integer by 1000x scaling"""
     return int(np.round(x*1000))
 
 def find_nearest(array, value):
+    """Find the nearest element index in an array"""
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return idx
@@ -108,7 +109,23 @@ class Grid(object):
 
     
     def get_grid_type(self, kwargs):
-        """TODO"""
+        """
+        Retrieve the grid type.
+        
+        Parameters
+        ----------
+        kwargs: dict
+           1. kwargs = {'x', 'y', 'z'} --> grid_type = '3D'
+           2. kwargs = {'nx', 'ny', 'z'} --> grid_type = '3D'
+           3. kwargs = {'nx', 'ny', 'nz', 'bounding_box'} --> grid_type = '3D'
+           4. kwargs = {'z'} --> grid_type = '1D'
+           5. else --> grid_type = 'Homogeneous'
+        
+        Returns
+        -------
+        grid_type: str
+            type could be one of the following: '3D', '1D', 'Homogeneous'
+        """
         if 'x' in kwargs and 'y' in kwargs and 'z' in kwargs or \
            'nx' in kwargs and 'ny' in kwargs and 'nz' in kwargs and 'bounding_box' in kwargs or \
            'nx' in kwargs and 'ny' in kwargs and 'z' in kwargs:
@@ -124,11 +141,11 @@ class Grid(object):
 
     def get_common_x(self, other):
         """
-        Find the common x which maintains a the minimum dx (distance between two grid points).
+        Find the common x which maintains a minimum dx (distance between two grid points).
         
         Parameters
         ----------
-        other: Grid object
+        other: shdom.Grid object
            The other for which to find a common x.
            
         Returns
@@ -151,11 +168,11 @@ class Grid(object):
     
     def get_common_y(self, other):
         """
-        Find the common y which maintains a the minimum dy (distance between two grid points).
+        Find the common y which maintains a minimum dy (distance between two grid points).
         
         Parameters
         ----------
-        other: Grid object
+        other: shdom.Grid object
            The other grid for which to find a common y grid.
            
         Returns
@@ -181,11 +198,11 @@ class Grid(object):
         
     def get_common_z(self, other):
         """
-        Find the common z which maintains a the high resolution z grid.
+        Find the common z which maintains the high resolution z grid.
         
         Parameters
         ----------
-        other: Grid object
+        other: shdom.Grid object
            The other grid for which to find a common y grid.
            
         Returns
@@ -238,9 +255,7 @@ class Grid(object):
 
 
     def __add__(self, other):
-        """
-        Add two grids by finding the common grid which maintains the higher resolution grid.
-        """
+        """Add two grids by finding the common grid which maintains the higher resolution grid."""
         x = self.get_common_x(other)
         y = self.get_common_y(other)
         z = self.get_common_z(other)
@@ -261,7 +276,8 @@ class Grid(object):
         return grid
     
     
-    def __eq__(self, other) : 
+    def __eq__(self, other):
+        """Compare two grid objects."""
         for key, item in self.__dict__.items():
             other_item = None
             if key in other.__dict__:
@@ -381,10 +397,10 @@ class GridData(object):
     
     Parameters
     ----------
-    grid: Grid object
+    grid: shdom.Grid object
         A Grid object of type '1D' or '3D'.
     data: np.array
-        data contains the scalar field.
+        data contains a scalar field.
     """    
     def __init__(self, grid, data):
         self._type = grid.type
@@ -450,7 +466,7 @@ class GridData(object):
     
     
     def squeeze_dims(self):
-        """TODO"""
+        """Squeezes grid dimensions for which the data is constant"""
         grid = self.grid
         data = self.data
         with warnings.catch_warnings():
@@ -475,7 +491,27 @@ class GridData(object):
 
         
     def resample(self, grid, method='linear'):
-        """Resample data to a new Grid."""
+        """
+        Resample data to a new Grid
+        
+        Parameters
+        ----------
+        grid: shdom.Grid
+            The grid to which the data will be resampled
+        method: str, default='linear'
+            Options are: 'linear', 'nearest'
+        
+        Returns
+        -------
+        grid_data: shdom.GridData
+            GridData sampled onto the new grid.
+            
+        Notes
+        -----
+        1. A 1D/3D grid sampled onto a Homogeneous grid yields the mean of the data.
+        2. A 1D grid sampled onto a 3D grid tiles the data along the horizonal axes and reamples along the vertical axis.
+        3. A 3D grid sampled onto 1D grid reamples along the vertical axis and averages along the horizontal axes
+        """
         if self.grid == grid:
             return self   
         
@@ -544,22 +580,17 @@ class BoundingBox(object):
     Parameters
     ----------
     xmin: float
-         Minimum x (North).
+         Minimum x (North) [km].
     ymin: float
-         Minimum y (East)
+         Minimum y (East) [km].
     zmin: float
-         Minimum z (Up).
+         Minimum z (Up) [km].
     xmax: float
-         Maximum x (North).
+         Maximum x (North) [km].
     ymax: float
-         Maximum y (East).
+         Maximum y (East) [km].
     zmax: float
-         Maximum z (Up).
-
-    
-    Notes
-    -----
-    All values are in [km] units
+         Maximum z (Up) [km].
     """ 
     def __init__(self, xmin, ymin, zmin, xmax, ymax, zmax):
         assert xmin < xmax, 'Zero area bounding_box along x axis.'  
@@ -593,7 +624,6 @@ from shdom.optimize import *
 import shdom.generate as Generate
 
 
-
 def save_forward_model(directory, medium, solver, measurements):
     """
     Save the forward model parameters for reconstruction.
@@ -604,12 +634,12 @@ def save_forward_model(directory, medium, solver, measurements):
         Directory path where the forward modeling parameters are saved. 
         If the folder doesnt exist it will be created.
     medium: shdom.Medium object
-        The atmospheric medium. This ground-truth medium will be used to 
+        The atmospheric medium. This ground-truth medium will be used for comparisons.
     solver: shdom.RteSolver object
         The solver and the parameters used. This includes the scene parameters (such as solar and surface parameters)
         and the numerical parameters.
     measurements: shdom.Measurements
-        Contains the sensor used to image the mediu and the radiance measurements. 
+        Contains the camera used and the measurements acquired. 
         
     Notes
     -----
@@ -634,7 +664,7 @@ def load_forward_model(directory):
     Returns
     -------
     medium: shdom.Medium object
-        The atmospheric medium. This ground-truth medium will be used to 
+        The ground-truth atmospheric medium. 
     solver: shdom.RteSolver object
         The solver and the parameters used. This includes the scene parameters (such as solar and surface parameters)
         and the numerical parameters.
