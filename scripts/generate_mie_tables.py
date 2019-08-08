@@ -1,13 +1,13 @@
 """
 Generate Mie tables 
 -------------------
-
 Generate mie tables, each table contains a Gamma distribution of drop size for multiple effective radii and variances.
 Multiple tables can be computed by specifying wavelength as a list 
-  -- For command line flags info: python scripts/generate_mie_tables -h
 
-Example usage:
-  python scripts/generate_mie_tables.py --wavelength 0.443 0.67 0.865
+For information about the command line flags see:
+  python scripts/generate_mie_tables.py --help
+  
+For example usage see the README.md
 """
 
 import os, shdom, argparse
@@ -21,7 +21,7 @@ def argument_parsing():
     Returns
     -------
     args: arguments from argparse.ArgumentParser()
-        The arguments requiered for this script.
+        The arguments required for this script
     """
     parser = argparse.ArgumentParser()
     
@@ -68,23 +68,44 @@ def argument_parsing():
                         help='(default value: %(default)s) The cutoff radius for the pdf averaging [Micron]')    
     parser.add_argument('--polarized',
                         action='store_true',
-                        help='Polarized/Unpolarized table.')    
+                        help='Polarized/Unpolarized table.')  
+    parser.add_argument('--mie_base_path',
+                        default='mie_tables/polydisperse/Water_<wavelength>nm.scat/pol',
+                        help='(default value: %(default)s) Mie table base file name. ' \
+                        '<wavelength> will be replaced by the corresponding wavelengths.')      
     
     args = parser.parse_args()
     
-    assert args.wavelength is not None, 'Requiered wavelength was not input. \n' \
+    assert args.wavelength is not None, 'required wavelength was not input. \n' \
            'For command line flags see: python generate_polarized_mie_tables.py -h'
     
     return args
 
 
 def get_file_paths(wavelength, args):
-    """TODO"""
+    """
+    Retrieve the file paths according to the wavelength and base path argument.
+    
+    Parameters
+    ----------
+    wavelength: float
+            Wavelength in microns
+    args: arguments from argparse.ArgumentParser()
+        Arguments required for this function
+    
+    Returns
+    -------
+    mono_path: str
+        Path to the monodisperse table
+    poly_path: str
+        Path to the polydisperse table
+    """
     if not os.path.exists(args.mono_dir):
         os.makedirs(args.mono_dir)    
     if not os.path.exists(args.poly_dir):
         os.makedirs(args.poly_dir)   
-    file_name = 'Water_{:3d}nm.scat'.format(shdom.int_round(wavelength))
+         
+    file_name = args.mie_base_path.replace('<wavelength>', '{}'.format(shdom.int_round(wavelength)))
     if args.polarized:
         file_name += 'pol'
     mono_path = os.path.join(args.mono_dir, file_name)
@@ -93,7 +114,16 @@ def get_file_paths(wavelength, args):
 
 
 def compute_mie_table(wavelength, args):
-    """TODO"""
+    """
+    Compute and save the monodisperse and polydisperse Mie tables.
+    
+    Parameters
+    ----------
+    wavelength: float
+            Wavelength in microns
+    args: arguments from argparse.ArgumentParser()
+        Arguments required for this function
+    """
     mono_path, poly_path = get_file_paths(wavelength, args)
 
     mie_mono = shdom.MieMonodisperse()
@@ -116,7 +146,6 @@ def compute_mie_table(wavelength, args):
 
 
 if __name__ == "__main__":
-    
     args = argument_parsing()
     for wavelength in args.wavelength:
         compute_mie_table(wavelength, args)

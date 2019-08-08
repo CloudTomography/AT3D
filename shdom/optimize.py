@@ -13,12 +13,38 @@ from collections import OrderedDict
 
 
 class OpticalScattererDerivative(shdom.OpticalScatterer):
-    """TODO"""
+    """
+    An OpticalScattererDerivative object.
+    Essentially identical to a shdom.OpticalScatterer with no restrictions on negative extinction or albedo values outside of [0,1].
+
+    Parameters
+    ----------
+    wavelength: float
+        A wavelength in microns
+    extinction: shdom.GridData object
+        A GridData object containing the extinction (1/km) on a grid
+    albedo: shdom.GridData
+        A GridData object containing the single scattering albedo [0,1] on a grid
+    phase: shdom.GridPhase
+        A GridPhase object containing the phase function on a grid
+    """
     def __init__(self, wavelength, extinction=None, albedo=None, phase=None):
         super(OpticalScattererDerivative, self).__init__(wavelength, extinction, albedo, phase)
         
     def resample(self, grid):
-        """TODO"""
+        """
+        The resample method resamples the OpticalScatterer (extinction, albedo, phase).
+
+        Parameters
+        ----------
+        grid: shdom.Grid
+            The new grid to which the data will be resampled
+
+        Returns
+        -------
+        scatterer: shdom.OpticalScatterer
+            An optical scatterer resampled onto the input grid
+        """
         extinction = self.extinction.resample(grid)
         albedo = self.albedo.resample(grid)
         phase = self.phase.resample(grid)            
@@ -42,13 +68,30 @@ class OpticalScattererDerivative(shdom.OpticalScatterer):
         
 
 class GridPhaseEstimator(shdom.GridPhase):
-    """TODO"""
+    """
+    A GridPhaseEstimator.
+
+    Notes
+    -----
+    A dummy class, currently not implemented.
+    """
     def __init__(self, legendre_table, index):
         super(GridPhaseEstimator, self).__init__(legendre_table, index)
 
    
 class GridDataEstimator(shdom.GridData):
-    """TODO"""
+    """
+    A GridDataEstimator defines unknown shdom.GridData to be estimated.
+
+    Parameters
+    ----------
+    grid_data: shdom.GridData
+        The initial guess for the estimator
+    min_bound: float, optional
+        A lower bound for the parameter values
+    max_bound: float, optional
+        An upper bound for the parameter values
+    """
     def __init__(self, grid_data, min_bound=None, max_bound=None):
         super(GridDataEstimator, self).__init__(grid_data.grid, grid_data.data)
         self._min_bound = min_bound
@@ -58,7 +101,18 @@ class GridDataEstimator(shdom.GridData):
              
               
     def set_state(self, state):
-        """TODO"""
+        """
+        Set the estimator state.
+
+        Parameters
+        ----------
+        state: np.array(dtype=np.float64)
+            The state to set the estimator data (grid is left unchanged)
+
+        Notes
+        -----
+        If the estimator has a mask, data point outside of the mask are left uneffected.
+        """
         if self.mask is None:
             self._data = np.reshape(state, (self.shape))
         else:
@@ -66,7 +120,18 @@ class GridDataEstimator(shdom.GridData):
         
         
     def get_state(self):
-        """TODO"""
+        """
+        Retrieve the medium state.
+
+        Returns
+        -------
+        state: np.array(dtype=np.float64)
+            The state of the estimator data.
+
+        Notes
+        -----
+        If the estimator has a mask, data point outside of the mask are not retrieved.
+        """
         if self.mask is None:
             return self.data.ravel()
         else:
@@ -74,7 +139,18 @@ class GridDataEstimator(shdom.GridData):
     
     
     def init_num_parameters(self):
-        """TODO"""
+        """
+        Initialize the number of parameters to be estimated.
+
+        Returns
+        -------
+        num_parameters: int
+            The number of parameters to be estimated.
+
+        Notes
+        -----
+        If the estimator has a mask, data point outside of the mask are not counted.
+        """
         if self.mask is None:
             num_parameters = self.data.size
         else:
@@ -84,25 +160,38 @@ class GridDataEstimator(shdom.GridData):
 
     def set_mask(self, mask):
         """
-        TODO
+        Set a mask for data points that will be estimated.
         
         Parameters
         ----------
         mask: shdom.GridData object
-            A boolean mask with True making cloudy voxels and False marking non-cloud region.     
+            A GridData object with boolean data. True is for data points that will be estimated.
         """
         self._mask = mask.resample(self.grid, method='nearest')
         self._data[np.bitwise_not(self._mask.data)] = 0.0
         self._num_parameters = self.init_num_parameters()
         
     def get_bounds(self):
-        """TODO
-        bounds to a list of bounds that the scipy minimize expects."""
+        """
+        Retrieve the bounds for every parameter (used by scipy.minimize)
+
+        Returns
+        -------
+        bounds: list of tuples
+            The lower and upper bound of each parameter
+        """
         return [(self.min_bound, self.max_bound)] * self.num_parameters  
     
     
     def project_gradient(self, gradient):
-        """TODO"""
+        """
+        Project gradient onto the state representation.
+
+        Parameters
+        ----------
+        gradient: shdom.GridData
+            A GridData object representing the cost function gradient with respect to the parameters.
+        """
         state_gradient = gradient.resample(self.grid)
         if self.mask is None:
             return state_gradient.data.ravel()
@@ -128,7 +217,11 @@ class GridDataEstimator(shdom.GridData):
     
     
 class ScattererEstimator(object):
-    """TODO"""
+    """
+    A ScattererEstimator defines an unknown shdom.Scatterer to be estimated.
+    A scatterer estimator contains more basic estimators such as GridDataEstimators which define the parameters of the Scatterer that are to be estimated.
+    This is an abstract method that is inherited by a specific type of scatterer estimator (e.g. OpticalScatterEstimator, MicrophysicalScattererEstimator)
+    """
     def __init__(self):      
         self._mask = None         
         self._estimators = self.init_estimators()
@@ -136,15 +229,45 @@ class ScattererEstimator(object):
         self._num_parameters = self.init_num_parameters()
         
     def init_estimators(self):
-        """TODO"""
+        """
+        Initialize the internal estimators.
+
+        Returns
+        -------
+        estimators: OrderedDict
+            A dictionary of more basic estimators that define the ScattererEstimator.
+
+        Notes
+        -----
+        This is a dummy method that is overwritten by inheritance.
+        """
         return OrderedDict()
     
     def init_derivatives(self):
-        """TODO"""
+        """
+        Initialize the internal derivatives.
+        The internal derivatives are of the optical fields (extinction, albedo, phase) with respect to the internal estimators.
+
+        Returns
+        -------
+        derivatives: OrderedDict
+            A dictionary of derivatives that define the ScattererEstimator.
+
+        Notes
+        -----
+        This is a dummy method that is overwritten by inheritance.
+        """
         return OrderedDict()    
 
     def init_num_parameters(self):
-        """TODO"""
+        """
+        Initialize the number of parameters to be estimated by accumulating all the internal estimator parameters.
+
+        Returns
+        -------
+        num_parameters: int
+            The number of parameters to be estimated.
+        """
         num_parameters = []
         for estimator in self.estimators.values():
             num_parameters.append(estimator.num_parameters)
@@ -152,12 +275,12 @@ class ScattererEstimator(object):
 
     def set_mask(self, mask):
         """
-        TODO
+        Set a mask for data points that will be estimated.
         
         Parameters
         ----------
         mask: shdom.GridData object
-            A boolean mask with True making cloudy voxels and False marking non-cloud region.     
+            A GridData object with boolean data. True is for data points that will be estimated.
         """
         self._mask = mask.resample(self.grid, method='nearest')
         for estimator in self.estimators.values():
@@ -165,14 +288,26 @@ class ScattererEstimator(object):
         self._num_parameters = self.init_num_parameters()
        
     def set_state(self, state):
-        """TODO"""
+        """
+        Set the estimator state by setting all the internal estimators states.
+
+        Parameters
+        ----------
+        state: np.array(dtype=np.float64)
+            The combined state of all the internal estimators
+        """
         states = np.split(state, np.cumsum(self.num_parameters[:-1]))
         for estimator, state in zip(self.estimators.values(), states):
             estimator.set_state(state)        
     
     def get_state(self):
         """
-        TODO
+        Retrieve the estimator state by joining all the internal estimators states.
+
+        Returns
+        -------
+        state: np.array(dtype=np.float64)
+            The combined state of all the internal estimators
         """
         state = np.empty(shape=(0), dtype=np.float64)
         for estimator in self.estimators.values():
@@ -181,8 +316,14 @@ class ScattererEstimator(object):
 
 
     def get_bounds(self):
-        """TODO
-        bounds to a list of bounds that the scipy minimize expects."""
+        """
+        Retrieve the bounds for every parameter by accumulating from all internal estimators (used by scipy.minimize)
+
+        Returns
+        -------
+        bounds: list of tuples
+            The lower and upper bound of each parameter
+        """
         bounds = []
         for estimator in self.estimators.values():
             bounds.extend(estimator.get_bounds())
@@ -190,7 +331,14 @@ class ScattererEstimator(object):
         
         
     def project_gradient(self, gradient):
-        """TODO"""
+        """
+        Project gradient onto the combined state representation.
+
+        Parameters
+        ----------
+        gradient: shdom.GridData
+            A GridData object representing the cost function gradient with respect to the parameters.
+        """
         state_gradient = np.empty(shape=(0), dtype=np.float64)
         for estimator in self.estimators.values():
             state_gradient = np.concatenate((state_gradient, estimator.project_gradient(gradient)))
@@ -215,13 +363,42 @@ class ScattererEstimator(object):
 
     
 class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
-    """TODO"""
+    """
+    An OpticalScattererEstimator defines an unknown shdom.OpticalScatterer to be estimated.
+    The internal estimators which define an OpticalScatterer are: extinction, albedo, phase.
+
+    Parameters
+    ----------
+    wavelength: float
+        A wavelength in microns
+    extinction: shdom.GridData or shdom.GridDataEstimator object
+        A GridData or GridDataEstimator object containing the extinction (1/km) on a grid
+    albedo: shdom.GridData or shdom.GridDataEstimator
+        A GridData or GridDataEstimator object containing the single scattering albedo [0,1] on a grid
+    phase: shdom.GridPhase or shdom.GridPhaseEstimator
+        A GridPhase or GridPhaseEstimator object containing the phase function on a grid
+
+    Notes
+    -----
+    albedo and phase estimation is not implemented
+    """
     def __init__(self, wavelength, extinction, albedo, phase):
         shdom.OpticalScatterer.__init__(self, wavelength, extinction, albedo, phase)
         ScattererEstimator.__init__(self)
         
     def init_estimators(self):
-        """TODO"""
+        """
+        Initialize the internal estimators: extinction, albedo, phase
+
+        Returns
+        -------
+        estimators: OrderedDict
+            A dictionary with optional GridDataEstimators and/or GridPhaseEstimators
+
+        Notes
+        -----
+        albedo and phase estimation is not implemented
+        """
         estimators = OrderedDict()
         if isinstance(self.extinction, shdom.GridDataEstimator):
             estimators['extinction'] = self.extinction
@@ -232,7 +409,16 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         return estimators
 
     def init_derivatives(self):
-        """TODO"""
+        """
+        Initialize the internal derivatives.
+        The internal derivatives are of the optical fields (extinction, albedo, phase) with respect to the internal estimators.
+        For this estimator, the internal parameters are the optical fields themselves, hence the derivatives are indicator functions.
+
+        Returns
+        -------
+        derivatives: OrderedDict of shdom.OpticalScattererDerivative
+            A dictionary of derivatives that define the ScattererEstimator.
+        """
         derivatives = OrderedDict()
         if isinstance(self.extinction, shdom.GridDataEstimator):
             derivatives['extinction'] = self.init_extinction_derivative()
@@ -243,7 +429,15 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         return derivatives
 
     def init_extinction_derivative(self):
-        """TODO"""
+        """
+        Initialize the derivatives of the optical fields with respect to the optical extinction.
+        This is an indicator function, as only the extinction depends on the extinction parameter.
+
+        Returns
+        -------
+        derivative: shdom.OpticalScattererDerivative
+            An OpticalScattererDerivative object with the optical derivatives with respect to extinction.
+        """
         extinction = shdom.GridData(self.extinction.grid, np.ones_like(self.extinction.data))
         albedo = shdom.GridData(self.albedo.grid, np.zeros_like(self.albedo.data))
         legen_table = shdom.LegendreTable(np.zeros((self.phase.legendre_table.maxleg+1), dtype=np.float32), table_type=self.phase.legendre_table.table_type)
@@ -251,17 +445,57 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         derivative = shdom.OpticalScattererDerivative(self.wavelength, extinction, albedo, phase)        
         return derivative
         
+
     def init_albedo_derivative(self):
-        """TODO"""
-        raise NotImplementedError("Albedo estimation not implemented")
+        """
+        Initialize the derivatives of the optical fields with respect to the single scattering albedo.
+        This is an indicator function, as only the albedo depends on the albedo parameter.
+
+        Returns
+        -------
+        derivative: shdom.OpticalScattererDerivative
+            An OpticalScattererDerivative object with the optical derivatives with respect to albedo.
+        """
+        extinction = shdom.GridData(self.extinction.grid, np.zeros_like(self.extinction.data))
+        albedo = shdom.GridData(self.albedo.grid, np.ones_like(self.albedo.data))
+        legen_table = shdom.LegendreTable(np.zeros((self.phase.legendre_table.maxleg+1), dtype=np.float32), table_type=self.phase.legendre_table.table_type)
+        phase = shdom.GridPhase(legen_table, shdom.GridData(self.phase.index.grid, np.ones_like(self.phase.index.data)))
+        derivative = shdom.OpticalScattererDerivative(self.wavelength, extinction, albedo, phase) )
     
     
     def init_phase_derivative(self):
-        """TODO"""
+        """
+        Initialize the derivatives of the optical fields with respect to the phase function.
+
+        Notes
+        -----
+        This is a dummy method which is not implemented.
+        """
         raise NotImplementedError("Phase estimation not implemented")  
 
+
     def get_derivative(self, derivative_type, wavelength):
-        """TODO"""
+        """
+        Retrieve the relevant derivative at a single wavelength.
+
+        Parameters
+        ----------
+        derivative_type: str
+            'extinction' for the extinction derivative
+            'albedo' for the albedo derivative
+            'phase' for the phase derivative
+        wavelength: float
+            A wavelength in microns
+
+        Returns
+        -------
+        derivative: shdom.OpticalScattererDerivative
+            An OpticalScattererDerivative with respect to the type requested
+
+        Notes
+        -----
+        Wavelength here is a dummy. The optical derivatives with respect to the optical parameters are indicator functions and not a function of wavelength
+        """
         if derivative_type == 'extinction':
             derivative = self.derivatives['extinction']
         elif derivative_type == 'albedo':
@@ -274,14 +508,35 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         
         
 class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEstimator):
-    """TODO"""
+    """
+    An MicrophysicalScattererEstimator defines an unknown shdom.MicrophysicalScatterer to be estimated.
+    The internal estimators which define an MicrophysicalScatterer are: lwc, reff, veff.
+
+    Parameters
+    ----------
+    mie: shdom.MiePolydisperse or list of shdom.MiePolydisperse
+        Using the Mie model microphyical properties are transformed into optical properties (see get_optical_scatterer method)
+    lwc: shdom.GridData
+        A GridData object containing liquid water content (g/m^3) on a 3D grid.
+    reff: shdom.GridData
+        A GridData object containing effective radii (micron) on a 3D grid.
+    veff: shdom.GridPhase
+        A GridData object containing effective variances on a 3D grid.
+    """
     def __init__(self, mie, lwc, reff, veff):
         shdom.MicrophysicalScatterer.__init__(self, lwc, reff, veff)
         self.add_mie(mie)
         ScattererEstimator.__init__(self)
         
     def init_estimators(self):
-        """TODO"""
+        """
+        Initialize the internal estimators: lwc, reff, veff
+
+        Returns
+        -------
+        estimators: OrderedDict
+            A dictionary with optional GridDataEstimators
+        """
         estimators = OrderedDict()
         if isinstance(self.lwc, shdom.GridDataEstimator):
             estimators['lwc'] = self.lwc
@@ -293,7 +548,16 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
     
     
     def init_derivatives(self):
-        """TODO"""
+        """
+        Initialize the internal derivatives.
+        The internal derivatives are of the optical fields (extinction, albedo, phase) with respect to the internal estimators.
+        For this estimator, the internal parameters are: lwc, reff, veff
+
+        Returns
+        -------
+        derivatives: OrderedDict of shdom.OpticalScattererDerivative
+            A dictionary of derivatives that define the ScattererEstimator.
+        """
         derivatives = OrderedDict()
         if isinstance(self.lwc, shdom.GridDataEstimator):
             derivatives['lwc'] = self.init_lwc_derivative()
@@ -305,7 +569,18 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
 
 
     def init_lwc_derivative(self):
-        """TODO"""
+        """
+        Initialize the derivatives of the optical fields with respect to the liquid water content.
+
+        Returns
+        -------
+        derivative: OrderedDict
+            A dictionary of properties that define the the optical derivatives with respect to lwc.
+
+        Notes
+        -----
+        Only the optical extinction depends on the lwc, however, since it also depends on wavelength it is not initialized here.
+        """
         derivative = OrderedDict()
         derivative['lwc'] = shdom.GridData(self.lwc.grid, np.ones_like(self.lwc.data))
         derivative['albedo'] = shdom.GridData(self.grid, np.zeros(self.grid.shape))
@@ -313,7 +588,19 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
         
         
     def init_re_derivative(self):
-        """TODO"""
+        """
+        Initialize the derivatives of the optical fields with respect to the effective radius.
+        This means the optical cross-section, single scattering albedo and phase function derivatives.
+
+        Returns
+        -------
+        derivatives: OrderedDict
+            A dictionary of shdom.MiePolydisperse (at every wavelength) which defines the derivatives which respect to the effective radius.
+
+        Notes
+        -----
+        Derivatives are computed numerically thus small enough spacing of reff in the Mie tables is required.
+        """
         derivatives = OrderedDict()
         for wavelength, mie in self.mie.items():
             extinct = mie.extinct.reshape((mie.size_distribution.nretab, mie.size_distribution.nvetab), order='F')
@@ -339,7 +626,19 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
        
    
     def init_ve_derivative(self):
-        """TODO"""
+        """
+        Initialize the derivatives of the optical fields with respect to the effective variance.
+        This means the optical cross-section, single scattering albedo and phase function derivatives.
+
+        Returns
+        -------
+        derivatives: OrderedDict
+            A dictionary of shdom.MiePolydisperse (at every wavelength) which defines the derivatives which respect to the effective variance.
+
+        Notes
+        -----
+        Derivatives are computed numerically thus small enough spacing of veff in the Mie tables is required.
+        """
         derivatives = OrderedDict()
         for wavelength, mie in self.mie.items():        
             extinct = self.extinct.reshape((self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
@@ -369,7 +668,19 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
 
        
     def get_lwc_derivative(self, wavelength):
-        """TODO"""
+        """
+        Retrieve the liquid water content derivative at a single wavelength.
+
+        Parameters
+        ----------
+        wavelength: float
+            Wavelength in microns. A Mie table at this wavelength should be added prior
+
+        Returns
+        -------
+        scatterer: shdom.OpticalScatterer
+            The derivative with respect to lwc at a single wavelength
+        """
         index  = shdom.GridData(self.grid, np.ones(self.grid.shape, dtype=np.int32))
         legen_table = shdom.LegendreTable(np.zeros((self.mie[float_round(wavelength)].maxleg+1), dtype=np.float32), 
                                           table_type=self.mie[float_round(wavelength)].table_type)       
@@ -381,8 +692,23 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
             phase=shdom.GridPhase(legen_table, index)) 
         return scatterer
     
-    def get_phase_derivative(self, derivative, wavelength):
-        """TODO"""
+
+    def get_mie_derivative(self, derivative, wavelength):
+        """
+        Retrieve mie scattering derivatives at a single wavelength.
+
+        Parameters
+        ----------
+        derivative: OrderedDict
+            A dictionary of shdom.MiePolydisperse at multiple wavelengths
+        wavelength: float
+            Wavelength in microns. A Mie derivative at this wavelength should be added prior
+
+        Returns
+        -------
+        scatterer: shdom.OpticalScatterer
+            The Mie derivative at a single wavelength
+        """
         scatterer = shdom.OpticalScattererDerivative(
             wavelength, 
             extinction=derivative[float_round(wavelength)].get_extinction(self.lwc, self.reff, self.veff),
@@ -392,18 +718,44 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
     
 
     def get_derivative(self, derivative_type, wavelength):
-        """TODO"""
+        """
+        Retrieve the relevant derivative at a single wavelength.
+
+        Parameters
+        ----------
+        derivative_type: str
+            'lwc' for the lwc derivative
+            'reff' for the reff derivative
+            'veff' for the veff derivative
+        wavelength: float
+            A wavelength in microns
+
+        Returns
+        -------
+        derivative: shdom.OpticalScattererDerivative
+            An OpticalScattererDerivative with respect to the type requested
+        """
         if derivative_type == 'lwc':
             derivative = self.get_lwc_derivative(wavelength)
         elif derivative_type == 'reff' or derivative_type == 'veff':
-            derivative = self.get_phase_derivative(self.derivatives[derivative_type], wavelength)
+            derivative = self.get_mie_derivative(self.derivatives[derivative_type], wavelength)
         else:
             raise AttributeError('derivative type {} not supported'.format(derivative_type))
         return derivative
         
 
 class MediumEstimator(shdom.Medium):
-    """TODO"""
+    """
+    A MediumEstimator defines an unknown shdom.Medium to be estimated.
+    A medium estimator is a shdom.Medium with unknown (and optionally known) scatterers.
+    Unknown scatterers are defined by internal estimators (shdom.ScattererEstimator instances).
+
+    Parameters
+    ----------
+    grid: shdom.Grid, optional
+        A grid for the Medium object. All scatterers will be resampled to this grid.
+
+    """
     def __init__(self, grid=None):
         super(MediumEstimator, self).__init__(grid)
         self._estimators = OrderedDict()
@@ -413,7 +765,18 @@ class MediumEstimator(shdom.Medium):
         
         
     def add_scatterer(self, scatterer, name=None):
-        """TODO"""
+        """
+        Add a Scatterer to the medium. If the scatterer is a ScattererEstimator it will enter the estimator list.
+
+        Parameters
+        ----------
+        scatterer: shdom.Scatterer or shdom.ScattererEstimator
+            A known or unknown scattering particle distribution
+            (e.g. MicrophysicalScatterer, MicrophysicalScattererEstimator, OpticalScatterer, OpticalScattererEstimator)
+        name: string, optional
+            A name for the scatterer that will be used to retrieve it (see get_scatterer method).
+            If no name is specified the default name is scatterer# where # is the number in which it was input (i.e. scatterer1 for the first scatterer).
+        """
         super(MediumEstimator, self).add_scatterer(scatterer, name)
         if issubclass(type(scatterer), shdom.ScattererEstimator):
             name = 'scatterer{:d}'.format(self._num_scatterers) if name is None else name 
@@ -427,7 +790,14 @@ class MediumEstimator(shdom.Medium):
                  
                  
     def set_state(self, state):
-        """TODO"""
+        """
+        Set the estimator state by setting all the internal estimators states.
+
+        Parameters
+        ----------
+        state: np.array(dtype=np.float64)
+            The combined state of all the internal estimators
+        """
         states = np.split(state, np.cumsum(self.num_parameters[:-1]))
         for (name, estimator), state in zip(self.estimators.items(), states):
             estimator.set_state(state)
@@ -435,7 +805,14 @@ class MediumEstimator(shdom.Medium):
     
     
     def get_state(self):
-        """TODO"""
+        """
+        Retrieve the estimator state by joining all the internal estimators states.
+
+        Returns
+        -------
+        state: np.array(dtype=np.float64)
+            The combined state of all the internal estimators
+        """
         state = np.empty(shape=(0),dtype=np.float64)
         for estimator in self.estimators.values():
             state = np.concatenate((state, estimator.get_state()))
@@ -443,8 +820,14 @@ class MediumEstimator(shdom.Medium):
 
 
     def get_bounds(self):
-        """TODO
-        bounds to a list of bounds that the scipy minimize expects."""
+        """
+        Retrieve the bounds for every parameter by accumulating from all internal estimators (used by scipy.minimize)
+
+        Returns
+        -------
+        bounds: list of tuples
+            The lower and upper bound of each parameter
+        """
         bounds = []
         for estimator in self.estimators.values():
             bounds.extend(estimator.get_bounds())
@@ -452,7 +835,29 @@ class MediumEstimator(shdom.Medium):
     
     
     def get_derivatives(self, rte_solver):
-        """TODO"""
+        """
+        Retrieve the relevant derivatives for a given RteSolver.
+
+        Parameters
+        ----------
+        rte_solver: shdom.RteSolver
+            The RteSolver object (at a given wavelength)
+
+        Returns
+        -------
+        dext: np.array(dtype=np.float32)
+            The derivative of the optical extinction with respect to the parameters
+        dalb: np.array(dtype=np.float32)
+            The derivative of the single scattering albedo with respect to the parameters
+        diphase: np.array(dtype=np.int32)
+            A pointer to the derivative of the phase function respect to the parameters
+        dleg: np.array(dtype=np.float32)
+             The derivative of the phase function legendre coefficients with respect to the parameters
+        dphasetab: np.array(dtype=np.float32)
+             The derivative of the phase function at pre-determined angles with respect to the parameters
+        dnumphase: np.array(dtype=np.float32)
+             The number of phase function derivatives
+        """
         dext = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.float32)
         dalb = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.float32)
         diphase = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.float32)
@@ -507,10 +912,20 @@ class MediumEstimator(shdom.Medium):
         )                
         return dext, dalb, diphase, dleg, dphasetab, dnumphase
               
-                 
+
     def compute_direct_derivative(self, rte_solver):
-        """TODO"""
+        """
+        Compute the derivative with respect to the direct solar beam. This is a ray for every point in 3D space.
+        Internally this method stores for every point the indices and paths traversed by the direct solar beam to reach it.
         
+        Parameters
+        ----------
+        rte_solver: shdom.RteSolver
+            The RteSolver object (at a given wavelength)
+        """
+
+        # There is no optical information stored here, only paths and indices
+        # Therefor, there is no important for the specific RteSolver which is used
         if isinstance(rte_solver, shdom.RteSolverArray):
             rte_solver = rte_solver[0]
             
@@ -549,7 +964,25 @@ class MediumEstimator(shdom.Medium):
         
     def core_grad(self, rte_solver, projection, radiance, exact_single_scatter):
         """
-        TODO
+        The core gradient method.
+
+        Parameters
+        ----------
+        rte_solver: shdom.RteSolver
+            A solver with all the associated parameters and the solution to the RTE
+        projection: shdom.Projection
+            A projection model which specified the position and direction of each and every pixel
+        radiance: np.array(shape=(projection.npix), dtype=np.float32)
+            The acquired radiances driving the error and optimization.
+
+        Returns
+        -------
+        gradient: np.array(shape=(rte_solver._nbpts, self.num_derivatives), dtype=np.float64)
+            The gradient with respect to all parameters at every grid base point
+        loss: float64
+            The total loss accumulated over all pixels
+        images: np.array(shape=(projection.npix), dtype=np.float32)
+            The rendered (synthetic) radiances.
         """
         if isinstance(projection.npix, list):
             total_pix = np.sum(projection.npix)
@@ -650,18 +1083,33 @@ class MediumEstimator(shdom.Medium):
             radiance=rte_solver._radiance,
             total_ext=rte_solver._total_ext[:rte_solver._npts]
         )
-        return gradient, loss, radiance
+        return gradient, loss, images
+
         
     def compute_gradient(self, rte_solver, measurements, n_jobs, exact_single_scatter=True):
         """
-        The objective function (cost) and gradient at the current state.
+        Compute the gradient with respect to the current state.
         
-        TODO 
+        If n_jobs>1 than parallel gradient computation is used with pixels are distributed amongst all workers
+
         
         Parameters
         ----------
+        rte_solver: shdom.RteSolver
+            A solver with all the associated parameters and the solution to the RTE
+        measurements: shdom.Measurements
+            A measurements object storing the acquired images and sensor geometry
         n_jobs: int,
-            The number of jobs to divide the gradient computation into.     
+            The number of jobs to divide the gradient computation into.
+
+        Returns
+        -------
+        state_gradient: np.array(shape=(self.num_parameters), dtype=np.float64)
+            The gradient of the loss function with respect to the state parameters
+        loss: np.float64
+            The total loss accumulated over all pixels
+        images: list of np.array(shape=(measurements.projection.resolution), dtype=np.float32)
+            A list of the rendered (synthetic) images, used for display purposes.
         """
                 
         # If rendering several atmospheres (e.g. multi-spectral rendering)
@@ -754,8 +1202,14 @@ class SummaryWriter(object):
     """
     A wrapper for tensorboardX summarywriter with some basic summary writing implementation.
     This wrapper enables logging of images, error measures and loss with pre-determined temporal intervals into tensorboard.
-    To see the summary of this run (and comparisons to all subdirectories):
+
+    To view the summary of this run (and comparisons to all subdirectories):
         tensorboard --logdir LOGDIR 
+
+    Parameters
+    ----------
+    log_dir: str
+        The directory where the log will be saved
     """
     def __init__(self, log_dir):
         
@@ -770,7 +1224,14 @@ class SummaryWriter(object):
         
         
     def attach_optimizer(self, optimizer):
-        """TODO"""
+        """
+        Attach the optimizer
+
+        Parameters
+        ----------
+        optimizer: shdom.Optimizer
+            The optimizer that the writer will report for
+        """
         self._optimizer = optimizer
     
         
@@ -789,7 +1250,8 @@ class SummaryWriter(object):
         
 
     def save_checkpoints(self, ckpt_period=-1):
-        """Save a checkpoint of the Optimizer
+        """
+        Save a checkpoint of the Optimizer
         
         Parameters
         ----------
@@ -1002,7 +1464,7 @@ class SummaryWriter(object):
 
 class SpaceCarver(object):
     """
-    SpaceCarver object recovers the convex hull of the cloud based on multi-view sensor geometry.
+    SpaceCarver object recovers the convex hull of the cloud based on multi-view sensor geometry and pixel segmentation.
     
     Parameters
     ----------
@@ -1025,7 +1487,7 @@ class SpaceCarver(object):
     def carve(self, grid, thresholds, agreement=0.75):
         """
         Carves out the cloud geometry on the grid. 
-        A threshold on radiances is used to produce a mask and preform space carving.
+        A threshold on radiances is used to produce a pixel mask and preform space carving.
         
         Parameters
         ----------
@@ -1100,11 +1562,7 @@ class Optimizer(object):
        [required] optimizer.set_measurements()
        [required] optimizer.set_rte_solver()
        [required] optimizer.set_medium_estimator() 
-       [optional] optimizer.set_writer() 
-    
-    Notes
-    -----
-    Currently only Extinction optimization is supported.
+       [optional] optimizer.set_writer()
     """
     def __init__(self):
         self._medium = None
@@ -1122,7 +1580,7 @@ class Optimizer(object):
         Parameters
         ----------
         measurements: shdom.Measurements
-            A measurements object storing the images and sensor geometry
+            A measurements object storing the acquired images and sensor geometry
         """
         self._measurements = measurements
     
@@ -1165,7 +1623,25 @@ class Optimizer(object):
             self._writer.attach_optimizer(self)        
         
     def objective_fun(self, state):
-        """The objective function (cost) at the current state"""
+        """
+        The objective function (cost) and gradient at the current state.
+
+        Parameters
+        ----------
+        state: np.array(shape=(self.num_parameters, dtype=np.float64)
+            The current state vector
+
+        Returns
+        -------
+        loss: np.float64
+            The total loss accumulated over all pixels
+        gradient: np.array(shape=(self.num_parameters), dtype=np.float64)
+            The gradient of the objective function with respect to the state parameters
+
+        Notes
+        -----
+        This function also saves the current synthetic images for visualization purpose
+        """
         self.set_state(state)
         gradient, loss, images = self.medium.compute_gradient(
             rte_solver=self.rte_solver,
@@ -1181,8 +1657,12 @@ class Optimizer(object):
     def callback(self, state):
         """
         The callback function invokes the callbacks defined by the writer (if any). 
-        Additionally it keeps track of the iteration number 
-        and if the checkpoint period has passed it saves a checkpoint of the Optimizer
+        Additionally it keeps track of the iteration number.
+
+        Parameters
+        ----------
+        state: np.array(shape=(self.num_parameters, dtype=np.float64)
+            The current state vector
         """
         self._iteration += 1
         
@@ -1234,7 +1714,14 @@ class Optimizer(object):
     
     
     def init_optimizer(self):
-        """TODO"""
+        """
+        Initialize the optimizer.
+        This means:
+          1. Setting the RteSolver medium
+          2. Initializing a solution
+          3. Computing the direct solar flux derivatives
+          4. Counting the number of unknown parameters
+        """
         self.rte_solver.set_medium(self.medium)
         self.rte_solver.init_solution()
         self.medium.compute_direct_derivative(self.rte_solver)
@@ -1242,17 +1729,42 @@ class Optimizer(object):
         
         
     def get_bounds(self):
-        """TODO"""
+        """
+        Retrieve the bounds for every parameter from the MediumEstimator (used by scipy.minimize)
+
+        Returns
+        -------
+        bounds: list of tuples
+            The lower and upper bound of each parameter
+        """
         return self.medium.get_bounds()
     
     
     def get_state(self):
-        """TODO"""
+        """
+        Retrieve MediumEstimator state
+
+        Returns
+        -------
+        state: np.array(dtype=np.float64)
+            The state of the medium estimator
+        """
         return self.medium.get_state()
     
     
     def set_state(self, state):
-        """TODO"""
+        """
+        Set the state of the optimization. This means:
+          1. Setting the MediumEstimator state
+          2. Updating the RteSolver medium
+          3. Computing the direct solar flux
+          4. Computing the current RTE solution with the previous solution as an initialization
+
+        Returns
+        -------
+        state: np.array(dtype=np.float64)
+            The state of the medium estimator
+        """
         self.medium.set_state(state)
         self.rte_solver.set_medium(self.medium)
         self.rte_solver.make_direct()

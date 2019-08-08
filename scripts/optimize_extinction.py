@@ -26,7 +26,7 @@ def argument_parsing():
     Returns
     -------
     args: arguments from argparse.ArgumentParser()
-        The arguments requiered for this script.
+        Arguments required for this script.
     CloudGenerator: a shdom.Generator class object.
         Creates the cloudy medium.
     AirGenerator: a shdom.Air class object

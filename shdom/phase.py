@@ -13,7 +13,16 @@ from scipy.interpolate import RegularGridInterpolator
 
 
 class LegendreTable(object):
-    """TODO"""
+    """
+    A LegendreTable object to encapsulate phase function tables.
+
+    Parameters
+    ----------
+    table: np.array(dtype=no.float32)
+        A table containing the phase function enteries.
+        For a SCALAR table the first dimension is the legendre coeffiecients and the second dimension is the talbe entries.
+        For a VECTOR table the first dimension is the stokes components (6), the second dimension is the legendre coeffiecients and the third dimension is the talbe entries.
+    """
     def __init__(self, table,  table_type='SCALAR'):
         self._table_type = table_type
         # If table is comprised of a single phase entery
@@ -36,7 +45,12 @@ class LegendreTable(object):
 
     def append(self, table):
         """
-        TODO
+        Appending another LegenreTable to the current.
+
+        Parameters
+        ----------
+        table: shdom.LegendreTable
+            A LegendreTable to append to the current table.
         """
         assert self.table_type==table.table_type, 'Cannot append new table of type {} '\
                'to current table of type {}'.format(table.table_type, self.table_type)
@@ -61,12 +75,24 @@ class LegendreTable(object):
         self._maxleg = max(self.maxleg, table.maxleg)
         self._numphase += table.numphase
          
-        
 
     def get_legenp(self, nleg):
         """ 
-        TODO
-        legenp is without the zero order term which is 1.0 for normalized phase function
+        Retrieves a flattened table to be used by the shdom.RteSolver.
+
+        Parameters
+        ----------
+        nleg: int
+            The number of legendre coefficients. If nleg > self.maxleg then the table is padded with zeros to match nleg.
+
+        Returns
+        -------
+        legenp: np.array(dtype=np.float32)
+            A flattened legendre table
+
+        Notes
+        -----
+        For a SCALAR table the zero order term, which is 1.0 for normalized phase function, is removed.
         """
         legenp = self.data
         
@@ -109,12 +135,12 @@ class LegendreTable(object):
 
 class GridPhase(object):
     """
-    The GridPhase internally keeps a phase function table and a pointer array for each grid point.
+    The GridPhase internally keeps a legendre table and a pointer array for each grid point.
 
     Parameters
     ----------
     legendre_table: shdom.LegendreTable
-       An object containing the Legendre table.
+       An object encapsulating the Legendre table.
     index: shdom.GridData object
        A shdom.GridData object with dtype=int. This is a pointer to the enteries in the legendre_table.
     """
@@ -126,7 +152,19 @@ class GridPhase(object):
 
     
     def resample(self, grid):
-        """Resample data to a new shdom.Grid."""
+        """
+        The resample method resamples the GridPhase (i.e. the index GridData).
+
+        Parameters
+        ----------
+        grid: shdom.Grid
+            The new grid to which the data will be resampled
+
+        Returns
+        -------
+        GridPhase: shdom.GridPhase
+            A GridPhase resampled onto the input grid
+        """
         if self.grid == grid:
             grid_phase =  self
         else:
@@ -135,6 +173,7 @@ class GridPhase(object):
             grid_phase = shdom.GridPhase(self.legendre_table, index)
         return grid_phase     
     
+
     @property
     def iphasep(self):
         return self._iphasep
@@ -152,20 +191,18 @@ class GridPhase(object):
         return self._index
     
 
-
 class MieMonodisperse(object):
     """
-    Mie scattering for spherical particles.
+    Mie monodisperse scattering for spherical particles.
     
     Parameters
     ----------
     particle_type: string
-        Options are 'Water' or 'Aerosol'.
-        
+        Options are 'Water' or 'Aerosol'. Default is 'Water'.
         
     Notes
     -----
-    Aerosol particle type not supported.  
+    Aerosol particle type not supported.
     """    
     def __init__(self, particle_type='Water'):
         
@@ -293,7 +330,8 @@ class MieMonodisperse(object):
             )
         self._table_type = table_type.decode()
 
-    def write_table(self, file_path): 
+
+    def write_table(self, file_path):
         """
         Write a pre-computed table to <file_path>. 
     
@@ -301,13 +339,14 @@ class MieMonodisperse(object):
         ----------
         file_path: str
             Path to file.
-      
 
         Notes
         -----
         This function must be ran after pre-computing a scattering table with compute_table().
         """
-        assert (None not in [self._extinct, self._scatter, self._nleg, self._maxleg, self._legcoef]), 'Cannot write table: Mie table not computed or loaded.'
+        assert (None not in [self._extinct, self._scatter, self._nleg, self._maxleg, self._legcoef]), \
+               'Cannot write table: Mie table not computed or loaded.'
+
         print('Writing Mie monodisperse table to file: {}'.format(file_path))
         core.write_mono_table(
             mietabfile=file_path,
@@ -328,8 +367,18 @@ class MieMonodisperse(object):
     
     def read_table_header(self, file_path):
         """
-        TODO
-        """        
+        Read the table header from <file_path>.
+
+        Parameters
+        ----------
+        file_path: str
+            Path to file.
+
+        Notes
+        -----
+        The header contains the following information:
+            wavelen1, wavelen2, deltawave, pardens, partype, rindex, nsize, maxleg
+        """
         wavelen1, wavelen2, deltawave = np.genfromtxt(file_path, max_rows=1, skip_header=1, usecols=(0, 1, 2), dtype=float)
         pardens = np.genfromtxt(file_path, max_rows=1, skip_header=2, usecols=(0), dtype=float)
         partype = np.asscalar(np.genfromtxt(file_path, max_rows=1, skip_header=2, usecols=(1), dtype=str))
@@ -368,6 +417,7 @@ class MieMonodisperse(object):
             )
         self._table_type = table_type.decode()
 
+
     @property
     def maxleg(self):
         return self._maxleg
@@ -403,7 +453,7 @@ class MieMonodisperse(object):
 
 class SizeDistribution(object):
     """
-    Size distribution object to compute Polydisprese Mie scattering.
+    Size distribution object to compute Polydisprese scattering.
     
     Parameters
     ----------
@@ -590,7 +640,7 @@ class SizeDistribution(object):
 class MiePolydisperse(object):
     """
     Polydisperse Mie scattering for spherical particles with size distribution.
-    Scattering coefficients are averaged over a range of particle radii and wavelengths.
+    Scattering coefficients are averaged over a range of particle radii and wavelengths (optionaly) .
     
     Parameters
     ----------
@@ -615,14 +665,29 @@ class MiePolydisperse(object):
         self._maxleg = None
         self._legendre_table = None 
 
+
     def set_mono_disperse(self, mono_disperse):
-        """TODO"""
+        """
+        Set the monodisperse Mie scattering.
+
+        Parameters
+        ----------
+        mono_disperse: shdom.MieMonodisperse
+            The monodisperse Mie scattering.
+        """
         self._mono_disperse = mono_disperse
         self._table_type = mono_disperse.table_type
 
 
     def set_size_distribution(self, size_distribution):
-        """TODO"""
+        """
+        Set the size-distribution.
+
+        Parameters
+        ----------
+        size_distribution: shdom.SizeDistribution
+            The size-distribution.
+        """
         self._size_distribution = size_distribution
         
         
@@ -652,7 +717,23 @@ class MiePolydisperse(object):
     
     def get_legendre(self, reff, veff):
         """
-        TODO
+        Retrieve the Legendre coeffiecients at a specific effective radius and variance.
+
+        Parameters
+        ----------
+        reff: float
+            The effective radius [microns]
+        veff: float
+            The effective variance
+
+        Returns
+        -------
+        legcoef: np.array(dtype=np.float32)
+            The Legendre coefficients
+
+        Notes
+        -----
+        The legcoef of the nearest reff, veff that is found in the table is retrieved.
         """
         reff_index = find_nearest(self.size_distribution.reff, reff)
         veff_index = find_nearest(self.size_distribution.veff, veff)
@@ -688,6 +769,7 @@ class MiePolydisperse(object):
         """
         reff_index = find_nearest(self.size_distribution.reff, reff)
         veff_index = find_nearest(self.size_distribution.veff, veff)
+
         # Fortran style indexing
         index = veff_index*self.size_distribution.nvetab + reff_index        
 
@@ -715,7 +797,11 @@ class MiePolydisperse(object):
         Notes
         -----
         This function must be ran after pre-computing a scattering table with compute_table().
-        """        
+        """
+
+        assert (None not in [self._extinct, self._ssalb, self._nleg, self.legcoef]), \
+               'Cannot write table: Mie table not computed or loaded.'
+
         print('Writing mie table to file: {}'.format(file_path))
         core.write_poly_table(
             mietabfile=file_path,
@@ -742,7 +828,17 @@ class MiePolydisperse(object):
     
     def read_table_header(self, file_path):
         """
-        TODO
+        Read the table header from <file_path>.
+
+        Parameters
+        ----------
+        file_path: str
+            Path to file.
+
+        Notes
+        -----
+        The header contains the following information:
+            wavelen1, wavelen2, deltawave, pardens, partype, rindex, distflag, nretab, nvetab, maxleg
         """
         wavelen1, wavelen2, deltawave = np.genfromtxt(file_path, max_rows=1, skip_header=1, usecols=(0, 1, 2), dtype=float)
         pardens = np.genfromtxt(file_path, max_rows=1, skip_header=2, usecols=(0), dtype=float)
@@ -772,11 +868,6 @@ class MiePolydisperse(object):
         ----------
         file_path: str
             Path to file.
-
-        Returns
-        -------
-        None
-
         """   
         print('Reading mie table from file: {}'.format(file_path))
         self._mono_disperse._wavelen1, self._mono_disperse._wavelen2, self._mono_disperse._deltawave, \
@@ -806,7 +897,7 @@ class MiePolydisperse(object):
     
         Notes
         -----
-        This function is ran after pre-computing/loading a scattering tables.
+        This function is ran after pre-computing/loading a table.
         """        
         
         # Truncate the legcoef (or wigcoef if polarized)
@@ -836,21 +927,21 @@ class MiePolydisperse(object):
 
     def get_extinction(self, lwc, reff, veff):
         """
-        Interpolate the extinciton coefficient function over a grid.
+        Retrieve the extinction coefficient over a grid.
     
         Parameters
         ----------
         lwc: shdom.GridData 
-            A GridData object containting liquid water content (g/m^3) on a 3D grid.
+            A GridData object containing liquid water content (g/m^3) on a grid.
         reff: shdom.GridData 
-            A GridData object containting effective radii (micron) on a 3D grid.
+            A GridData object containing effective radii (micron) on a grid.
         veff: shdom.GridData 
-            A GridData object containting effective variances on a 3D grid.
+            A GridData object containing effective variances on a grid.
         
         Returns
         -------
         extinction: shdom.GridData object
-            A shdom.GridData3D object containting the extinction (1/km) on a 3D grid
+            A GridData object containing the extinction (1/km) on a grid
         """
         grid = lwc.grid + veff.grid + reff.grid
         data = self._ext_interpolator((reff.resample(grid).data, veff.resample(grid).data))
@@ -865,14 +956,14 @@ class MiePolydisperse(object):
         Parameters
         ----------
         reff: shdom.GridData 
-            A shdom.GridData object containting the effective radii (micron) on a 3D grid.
+            A shdom.GridData object containing the effective radii (micron) on a 3D grid.
         veff: shdom.GridData 
-            A GridData object containting effective variances on a 3D grid.
+            A GridData object containing effective variances on a 3D grid.
             
         Returns
         -------
         albedo: shdom.GridData object
-            A shdom.GridData object containting the single scattering albedo unitless in range [0, 1] on a 3D grid
+            A shdom.GridData object containing the single scattering albedo unitless in range [0, 1] on a 3D grid
         """
         grid = veff.grid + reff.grid
         data = self._ssalb_interpolator((reff.resample(grid).data, veff.resample(grid).data))
@@ -887,9 +978,9 @@ class MiePolydisperse(object):
         Parameters
         ----------
         reff: shdom.GridData 
-            A shdom.GridData object containting the effective radii (micron) on a 3D grid.
+            A shdom.GridData object containing the effective radii (micron) on a 3D grid.
         veff: shdom.GridData 
-            A GridData object containting effective variances on a 3D grid.
+            A GridData object containing effective variances on a 3D grid.
         squeeze_table: boolean
             True: return compact table containing the range of provided reff, veff. 
             False will return the current table.
@@ -897,7 +988,7 @@ class MiePolydisperse(object):
         Returns
         -------
         phase: GridPhase
-            A GridPhase object containting the phase function legendre coeffiecients as a table.
+            A GridPhase object containing the phase function legendre coeffiecients as a table.
         """
         grid = veff.grid + reff.grid
         
@@ -997,8 +1088,7 @@ class Rayleigh(object):
         A TemperatureProfile object containing temperatures and altitudes on a 1D grid.
     surface_pressure: float
         Surface pressure in units [mb]
-        
-        
+
     Notes
     -----
     The ssa of air is 1.0 and the phase function legendre coefficients are [1.0, 0.0, 0.5].
@@ -1013,7 +1103,22 @@ class Rayleigh(object):
         self._surface_pressure = None
         self._raylcoeff = None
       
+
     def get_extinction(self, grid):
+        """
+        Retrieve the Rayleigh extinction profile (as a function of altitude).
+
+        Parameters
+        ----------
+        grid: shdom.Grid
+            The new grid to which the data will be resampled
+
+        Returns
+        -------
+        extinction_profile: list of shdom.GridData
+            A list of GridData objects containing the extinction on a 1D grid.
+            The length of the list is the number of bands (wavelengths).
+        """
         ext_profile = [core.rayleigh_extinct(
             nzt=grid.nz,
             zlevels=grid.z,
@@ -1026,12 +1131,38 @@ class Rayleigh(object):
     
         
     def get_albedo(self, grid):
-        """TODO"""
-        return [shdom.GridData(grid, data=np.full(shape=grid.shape, fill_value=1.0, dtype=np.float32)) for w in self._wavelength]
+        """
+        Retrieve the Rayleigh single scattering albedo.
+
+        Parameters
+        ----------
+        grid: shdom.Grid
+            The new grid to which the data will be resampled
+
+        Returns
+        -------
+        albedo: list of shdom.GridData
+            A list of GridData objects containing the single scattering albedo [0,1] on a grid.
+            The length of the list is the number of bands (wavelengths).
+        """
+        return [shdom.GridData(grid, data=np.full(shape=grid.shape, fill_value=1.0, dtype=np.float32)) for wavelength in self._wavelength]
         
 
     def get_phase(self, grid):
-        """TODO"""
+        """
+        Retrieve the Rayleigh phase function.
+
+        Parameters
+        ----------
+        grid: shdom.Grid
+            The new grid to which the data will be resampled
+
+        Returns
+        -------
+        phase: list of shdom.GridPhase
+            A list of GridPhase objects containing the phase function on a grid.
+            The length of the list is the number of bands (wavelengths).
+        """
         phase = []
         for wavelength in self._wavelength:
             index = shdom.GridData(grid, data=np.ones(shape=grid.shape, dtype=np.int32))
@@ -1069,12 +1200,16 @@ class Rayleigh(object):
         
     def get_scatterer(self):
         """
-        TODO
+        Retrieve a Scatterer from the medium.
     
         Returns
         -------
-        rayleigh: shdom.OpticalScatterer or shdom.MultispectralScatterer
+        scatterer: shdom.Scatterer
             A Scatterer object containing the Rayleigh optical properties on a 1D grid.
+
+        Notes
+        -----
+        For a single band a shdom.OpticalScatterer is returned and for multiple bands a shdom.MultispectralScatterer object.
         """
         scatterer_list = [
             shdom.OpticalScatterer(wavelength, extinction, albedo, phase) for \

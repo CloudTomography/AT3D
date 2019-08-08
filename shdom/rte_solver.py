@@ -109,7 +109,7 @@ class LambertianSurface(Surface):
         
 class NumericalParameters(object):
     """
-    This object bundles up together all the numerical parameters requiered by the RteSolver object.
+    This object bundles up together all the numerical parameters required by the RteSolver object.
     An instantitation will have all parameters intialized to their default values defined below.
     Below is the description for each parameter as taken from the SHDOM documentation (http://nit.colorado.edu/shdom/shdomdoc/)
     In capitals is the parameter name in the source fortran code.
@@ -177,7 +177,7 @@ class NumericalParameters(object):
 
 class SceneParameters(object):
     """
-    This object bundles up together all the scene related parameters requiered by the RteSolver object.
+    This object bundles up together all the scene related parameters required by the RteSolver object.
     An instantitation will have all parameters intialized to their default values defined below.
     
     Properties
@@ -282,7 +282,10 @@ class RteSolver(object):
         num_stokes=1 means unpolarized.
         num_stokes=3 means linear polarization.
         num_stokes=4 means full polarization.
-        
+    name: str, optional 
+       The name for the solver. Will be used when printing solution iteration messages. 
+       If non specified a default <type> <wavelength> is given.
+       
     Notes
     -----
     k-distribution not supported.
@@ -312,7 +315,14 @@ class RteSolver(object):
             self.set_numerics(numerical_params)
             
     def get_param_dict(self):
-        """TODO"""
+        """
+        Retrieve a dictionary with the solver parameters
+        
+        Returns
+        -------
+        param_dict: dict
+            The parameters dictionary contains: type, scene_params, numerical_params
+        """
         param_dict = {
             '_type': self.type,
             'solver_parameters': [
@@ -324,7 +334,14 @@ class RteSolver(object):
     
     
     def set_param_dict(self, param_dict):
-        """TODO""" 
+        """
+        Set the solver parameters from a parameter dictionary
+        
+        Parameters
+        ----------
+        param_dict: dict
+            The parameters dictionary contains: type, scene_params, numerical_params
+        """ 
         params = param_dict['solver_parameters'][0]
         self._type = param_dict['_type']
         self._nstokes = 1 if self.type == 'Radiance' else 3
@@ -443,10 +460,6 @@ class RteSolver(object):
         ----------
         numerical_params : NumericalParameters
             An object which encapsulate numerical parameters such as number of azimuthal and zenith bins. 
-    
-        Notes
-        -----
-        Curently not delta-m is not suppoted.
         """ 
         self._numerical_parameters = numerical_params
         self._nmu                 = max(2, 2 * int((numerical_params.num_mu_bins + 1) / 2))
@@ -465,17 +478,20 @@ class RteSolver(object):
 
     def set_medium(self, medium):
         """
-        Set the property array optical medium properties.
-        Initialize an internal grid and transfer the property array to it.
+        Set the optical medium properties. 
+        If a scatterer within the medium is a MultispectralScatterer or MicrophysicalScatterer object then the OpticalScatterer 
+        at the solver's wavelength is extracted out of the medium (see get_optical_scatterer method within these classes).
+        In addition this method initializes an internal grid and transfers the property array.
         
         Parameters
         ----------
         medium: shdom.Medium
-            an Medium object contains extinctp property
+            a Medium object conatining the optical properties.
             
         Notes
         -----
-        Temperature is not supported (set to zero).
+        The solution iteration criteria is set to 1.0 (restarted)
+        Temperature (used for thermal radiation) is not supported (set to zero).
         """
         self.set_grid(medium.grid)
         
@@ -579,14 +595,15 @@ class RteSolver(object):
         # Restart solution criteria
         self._solcrit = 1.0
         
+        
     def set_grid(self, grid):
         """
-        set the base grid for SHDOM.
+        Set the base grid and related grid structures for SHDOM.
         
         Parameters
         ----------
         grid: shdom.Grid
-            The grid.
+            The grid
         """
         
         def ibits(val, bit, ret_val):
@@ -666,7 +683,7 @@ class RteSolver(object):
         
 
     def init_memory(self):
-        """A utility function to initialize internal memory structures and parameters."""
+        """A utility function to initialize internal memory parameters."""
         
         # Make ml and mm from nmu and nphi
         # ML is the maximum meridional mode, MM is the maximum azimuthal mode,
@@ -726,7 +743,10 @@ class RteSolver(object):
 
 
     def init_solution(self):
-        """TODO"""
+        """
+        Initilize the solution (I, J fields) from the direct transmition and a simple layered model. 
+        Many arrays are initialized including the dirflux (the direct solar transmition).
+        """
         self._oldnpts = 0
         self._solcrit = 1.0
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo,  \
@@ -821,7 +841,7 @@ class RteSolver(object):
                 
     def solution_iterations(self, maxiter, verbose=True):
         """
-        Run SHDOM solution iterations.
+        Run SHDOM solution iterations process.
 
         Parameters
         ----------
@@ -984,7 +1004,9 @@ class RteSolver(object):
         
     
     def make_direct(self):
-        """TODO"""
+        """
+        Compute the direct transmition from the solar beam.
+        """
         self._dirflux, self._pa.extdirp, self._cx, self._cy, self._cz, self._cxinv, self._cyinv, self._czinv, \
             self._di, self._dj, self._dk, self._ipdirect, self._delxd, self._delyd, self._xdomain, self._ydomain, \
             self._epss, self._epsz, self._uniformzlev = \
@@ -1023,7 +1045,9 @@ class RteSolver(object):
         
         
     def update_solution_arguments(self, solution_arguments):
-        """TODO"""
+        """
+        Update the solution arguments from the output of the solution_iteration method.
+        """
         self._sfcgridparms, self._solcrit, \
             self._iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
             self._ntoppts, self._nbotpts, self._bcptr, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
@@ -1034,14 +1058,17 @@ class RteSolver(object):
           
     def solve(self, maxiter, init_solution=False, verbose=True):
         """
-        Main solver routine.
+        Main solver routine. This routine is comprised of two parts:
+          1. Initialization (init_solution method), optional
+          2. Solution iterations (solution_iterations method followed by update_solution_arguments method)
 
         Parameters
         ----------
         maxiter: integer
             Maximum number of iterations for the iterative solution.
-        init_solution: boolean
-            True will re-initialize a precomputed solution.
+        init_solution: boolean, default=False
+            If False the solution is initialized according to the existing radiance and source function saved within the RteSolver object (previously computed)
+            If True or no prior solution (I,J fields) exists then an initialization is preformed (part 1.).
         verbose: boolean
             True will output solution iteration information into stdout.
         """
@@ -1091,7 +1118,19 @@ class RteSolverArray(object):
                 self.add_solver(solver)
                 
     def set_medium(self, medium):
-        """TODO"""
+        """
+        Set the optical medium properties for all rte_solvers within the list.
+        medium.wavelength must match solver.wavelengths
+        
+        Parameters
+        ----------
+        medium: shdom.Medium
+            a Medium object conatining the optical properties.
+            
+        Notes
+        -----
+        medium wavelengths must match solver wavelengths
+        """
         solver_wavelengths = [solver.wavelength for solver in self.solver_list]
         assert np.allclose(medium.wavelength, solver_wavelengths), 'medium wavelength {} differs from solver wavelengh {}'.format(medium.wavelength, solver_wavelengths)
         for solver in self.solver_list:
@@ -1099,7 +1138,14 @@ class RteSolverArray(object):
 
 
     def get_param_dict(self):
-        """TODO"""
+        """
+        Retrieve a dictionary with the solver array parameters
+        
+        Returns
+        -------
+        param_dict: dict
+            The parameters dictionary contains: type and a list of scene_params, numerical_params matching all the solvers
+        """
         param_dict = {}
         for key, param in self.__dict__.items():
             if key != '_solver_list':
@@ -1114,7 +1160,14 @@ class RteSolverArray(object):
     
     
     def set_param_dict(self, param_dict):
-        """TODO"""
+        """
+        Set the solver array parameters from a parameter dictionary
+        
+        Parameters
+        ----------
+        param_dict: dict
+            The parameters dictionary contains: type and a list of scene_params, numerical_params matching all the solvers
+        """ 
         num_stokes = 1 if param_dict['_type'] == 'Radiance' else 3
         for solver_params in param_dict['solver_parameters']:
             rte_solver = shdom.RteSolver(scene_params=solver_params['scene_params'], 
@@ -1178,31 +1231,37 @@ class RteSolverArray(object):
         self._num_solvers += 1
       
     def init_solution(self):
-        """TODO"""
+        """
+        Initilize the solution (I, J fields) from the direct transmition and a simple layered model. 
+        Many arrays are initialized including the dirflux (the direct solar transmition).
+        """
         for solver in self.solver_list:
             solver.init_solution() 
             
     def make_direct(self):
-        """TODO"""
+        """
+        Compute the direct transmition from the solar beam.
+        """
         for solver in self.solver_list:
             solver.make_direct()    
             
     def solve(self, maxiter, init_solution=False, verbose=True):
         """
         Parallel solving of all solvers.
+        
+        Main solver routine. This routine is comprised of two parts:
+          1. Initialization (init_solution method), optional
+          2. Parallel solution iterations (solution_iterations method followed by update_solution_arguments method)
 
         Parameters
         ----------
         maxiter: integer
             Maximum number of iterations for the iterative solution.
-        init_solution: boolean
-            True will re-initialize a precomputed solution.
-        verbose: verbosity
+        init_solution: boolean, default=False
+            If False the solution is initialized according to the existing radiance and source function saved within the RteSolver object (previously computed)
+            If True or no prior solution (I,J fields) exists then an initialization is preformed (part 1.).
+        verbose: boolean
             True will output solution iteration information into stdout.
-            
-        Returns
-        -------
-        None
         """
         for solver in self.solver_list:
             if init_solution or solver.num_iterations == 0:

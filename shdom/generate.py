@@ -1,5 +1,5 @@
 """
-Generation objects generate the atmospheric optical properties and grid. 
+Generation objects generate the atmospheric properties and grid.
 """
 from shdom import float_round
 import numpy as np
@@ -10,12 +10,12 @@ from collections import OrderedDict
 
 class Generator(object):
     """
-    TODO 
+    The abstract generator class object which is inherited by specific atmosphere generators. 
        
     Parameters
     ----------
     args: arguments from argparse.ArgumentParser()
-        The arguments requiered for this generator.
+        Arguments required for this generator.
     """
     def __init__(self, args):
         self._args = args
@@ -23,7 +23,7 @@ class Generator(object):
     @classmethod
     def update_parser(self, parser): 
         """
-        Update the argument parser with parameters relavent to this generation script. 
+        Update the argument parser with parameters relavent to this generator. 
         
         Parameters
         ----------
@@ -34,37 +34,61 @@ class Generator(object):
         -------
         parser: argparse.ArgumentParser()
             The updated parser.
+            
+        Notes
+        -----
+        Dummy method which will be overwritten.
         """
         return parser
     
     def get_grid(self):
         """
-        This method gets the atmospheric grid.
+        Retrieve the atmospheric grid.
+        
+        Notes
+        -----
+        Dummy method which will be overwritten.
         """
         return None
         
     def get_extinction(self, grid=None):
         """
-        This method gets the atmospheric extinction.
+        Retrieve the atmospheric extinction.
+        
+        Notes
+        -----
+        Dummy method which will be overwritten.
         """
         return None
         
     def get_albedo(self, grid=None):
         """
-        This method gets the atmospheric albedo.
+        Retrieve the atmospheric albedo.
+        
+        Notes
+        -----
+        Dummy method which will be overwritten.
         """
         self._albedo = albedo
     
     def get_phase(self, grid=None):
         """
-        This method gets the atmospheric phase.
+        Retrieve the atmospheric phase.
+        
+        Notes
+        -----
+        Dummy method which will be overwritten.
         """
         return None  
    
     
     def get_scatterer(self):
         """
-        This method gets a shdom.Scatterer object.
+        Retrieve a shdom.Scatterer object.
+        
+        Notes
+        -----
+        Dummy method which will be overwritten.
         """
         return None
     
@@ -74,35 +98,85 @@ class Generator(object):
 
     
 class CloudGenerator(Generator):
-    """TODO"""
+    """
+    An abstract CloudGenerator class which is inherited by specific generators to generate cloudy voxels.
+    
+    Parameters
+    ----------
+    args: arguments from argparse.ArgumentParser()
+        Arguments required for this generator.
+    """
     def __init__(self, args):
         super(CloudGenerator, self).__init__(args)
         self._mie = OrderedDict()
         
     def add_mie(self, table_path):
+        """
+        Add a Mie table to the generator.
+        
+        Parameters
+        ----------
+        table_path: string
+            A path to read the Mie table from file.
+            
+        Notes
+        -----
+        Multiple Mie tables are added for generation of MultispectralScatterer or MicrophysicalScatterer objects.
+        """
         mie = shdom.MiePolydisperse()
         mie.read_table(table_path)
         self._mie[mie.wavelength] = copy.deepcopy(mie)
         
     def get_lwc(self, grid=None):
         """
-        This method gets the lwc.
+        Retrieve the liquid water content.
+        
+        Notes
+        -----
+        Dummy method which will be overwritten.
         """
         return None     
       
     def get_reff(self, grid=None):
         """
-        This method gets the reff.
+        Retrieve the effective radius.
+        
+        Notes
+        -----
+        Dummy method which will be overwritten.
         """
         return None          
 
     def get_veff(self, grid=None):
         """
-        This method gets the veff.
+        Retrieve the effective variance.
+        
+        Notes
+        -----
+        Dummy method which will be overwritten.
         """
         return None
     
     def get_albedo(self, wavelength, grid=None):
+        """
+        Retrieve the single scattering albedo at a single wavelength on a grid.
+        
+        Parameters
+        ----------
+        wavelength: float
+            Wavelength in microns. A Mie table at this wavelength should be added prior (see add_mie method).
+        grid: shdom.Grid, optional
+            A shdom.Grid object. If None is specified than a grid is created from Arguments given to the generator (get_grid method)
+        
+        Returns
+        -------
+        albedo: shdom.GridData
+            A GridData object containing the single scattering albedo [0,1] on a grid
+            
+        Notes
+        ----- 
+        The input wavelength is rounded to three decimals.
+        """
         if grid is None:
             grid = self.get_grid()
         reff = self.get_reff(grid)
@@ -110,6 +184,25 @@ class CloudGenerator(Generator):
         return self.mie[float_round(wavelength)].get_albedo(reff, veff)
     
     def get_phase(self, wavelength, grid=None):
+        """
+        Retrieve the phase function at a single wavelength on a grid.
+        
+        Parameters
+        ----------
+        wavelength: float
+            Wavelength in microns. A Mie table at this wavelength should be added prior (see add_mie method).
+        grid: shdom.Grid, optional
+            A shdom.Grid object. If None is specified than a grid is created from Arguments given to the generator (get_grid method)
+        
+        Returns
+        -------
+        phase: shdom.GridPhase
+            A GridPhase object containing the phase function on a grid
+            
+        Notes
+        ----- 
+        The input wavelength is rounded to three decimals.
+        """        
         if grid is None:
             grid = self.get_grid()  
         reff = self.get_reff(grid)
@@ -162,15 +255,26 @@ class AirGenerator(Generator):
     Parameters
     ----------
     args: arguments from argparse.ArgumentParser()
-        The arguments requiered for this generator.
-    wavelength: float,
-        The wavelength in [microns]
+        Arguments required for this generator.
     """
     def __init__(self, args):
         super(AirGenerator, self).__init__(args)
         
     @classmethod
     def update_parser(self, parser): 
+        """
+        Update the argument parser with parameters relavent to this generator. 
+
+        Parameters
+        ----------
+        parser: argparse.ArgumentParser()
+            The main parser to update.
+    
+        Returns
+        -------
+        parser: argparse.ArgumentParser()
+            The updated parser.
+        """
         parser.add_argument('--air_max_alt',
                             default=20.0,
                             type=np.float32,
@@ -183,7 +287,16 @@ class AirGenerator(Generator):
         return parser        
     
     def set_temperature_profile(self, temperature_profile):
+        """
+        Set the temperature profile
+        
+        Parameters
+        ----------
+        temperature_profile: shdom.GridData
+            A GridData object specifying the temperature (K) on a 1D grid (altitude)
+        """
         self._temperature_profile = temperature_profile     
+        
         
     def get_scatterer(self, wavelength):
         """
@@ -213,7 +326,7 @@ class AFGLSummerMidLatAir(AirGenerator):
     Parameters
     ----------
     args: arguments from argparse.ArgumentParser()
-        The arguments requiered for this generator.   
+        Arguments required for this generator.   
     """
     def __init__(self, args):
         super(AFGLSummerMidLatAir, self).__init__(args)
@@ -233,13 +346,26 @@ class SingleVoxel(CloudGenerator):
     Parameters
     ----------
     args: arguments from argparse.ArgumentParser()
-        The arguments requiered for this generator.
+        Arguments required for this generator.
     """
     def __init__(self, args):
         super(SingleVoxel, self).__init__(args)
 
     @classmethod
     def update_parser(self, parser):
+        """
+        Update the argument parser with parameters relavent to this generator. 
+
+        Parameters
+        ----------
+        parser: argparse.ArgumentParser()
+            The main parser to update.
+    
+        Returns
+        -------
+        parser: argparse.ArgumentParser()
+            The updated parser.
+        """        
         parser.add_argument('--nx', 
                             default=10,
                             type=int, 
@@ -279,10 +405,38 @@ class SingleVoxel(CloudGenerator):
 
 
     def get_grid(self):
+        """
+        Retrieve the scatterer grid.
+        
+        Returns
+        -------
+        grid: shdom.Grid
+            A Grid object for this scatterer
+        """
         bb = shdom.BoundingBox(0.0, 0.0, 0.0, self.args.domain_size, self.args.domain_size, self.args.domain_size)
         return shdom.Grid(bounding_box=bb, nx=self.args.nx, ny=self.args.ny, nz=self.args.nz)
             
     def get_extinction(self, wavelength=None, grid=None):
+        """
+        Retrieve the optical extinction at a single wavelength on a grid.
+
+        Parameters
+        ----------
+        wavelength: float
+            Wavelength in microns. A Mie table at this wavelength should be added prior (see add_mie method).
+        grid: shdom.Grid, optional
+            A shdom.Grid object. If None is specified than a grid is created from Arguments given to the generator (get_grid method)
+
+        Returns
+        -------
+        extinction: shdom.GridData
+            A GridData object containing the optical extinction on a grid
+
+        Notes
+        -----
+        If the LWC is specified then the extinction is derived using (lwc,reff,veff). If not the extinction needs to be directly specified.
+        The input wavelength is rounded to three decimals.
+        """        
         if grid is None:
             grid = self.get_grid()
             
@@ -298,7 +452,21 @@ class SingleVoxel(CloudGenerator):
             extinction = self.mie[float_round(wavelength)].get_extinction(lwc, reff, veff)
         return extinction
 
+
     def get_lwc(self, grid=None):
+        """
+        Retrieve the liquid water content on a grid.
+        
+        Parameters
+        ----------
+        grid: shdom.Grid, optional
+            A shdom.Grid object. If None is specified than a grid is created from Arguments given to the generator (get_grid method)
+            
+        Returns
+        -------
+        lwc: shdom.GridData
+            A GridData object containing liquid water content (g/m^3) on a 3D grid.
+        """        
         if grid is None:
             grid = self.get_grid()
             
@@ -310,6 +478,19 @@ class SingleVoxel(CloudGenerator):
         return lwc
         
     def get_reff(self, grid=None):
+        """
+        Retrieve the effective radius on a grid.
+        
+        Parameters
+        ----------
+        grid: shdom.Grid, optional
+            A shdom.Grid object. If None is specified than a grid is created from Arguments given to the generator (get_grid method)
+            
+        Returns
+        -------
+        reff: shdom.GridData
+            A GridData object containing the effective radius [microns] on a grid
+        """          
         if grid is None:
             grid = self.get_grid()        
         reff_data = np.zeros(shape=(grid.nx, grid.ny, grid.nz), dtype=np.float32)
@@ -318,6 +499,19 @@ class SingleVoxel(CloudGenerator):
         return shdom.GridData(grid, reff_data)
         
     def get_veff(self, grid=None):
+        """
+        Retrieve the effective variance on a grid.
+        
+        Parameters
+        ----------
+        grid: shdom.Grid, optional
+            A shdom.Grid object. If None is specified than a grid is created from Arguments given to the generator (get_grid method)
+            
+        Returns
+        -------
+        veff: shdom.GridData
+            A GridData object containing the effective variance on a grid
+        """           
         if grid is None:
             grid = self.get_grid()        
         veff_data = np.zeros(shape=(grid.nx, grid.ny, grid.nz), dtype=np.float32)
@@ -333,13 +527,26 @@ class Homogeneous(CloudGenerator):
     Parameters
     ----------
     args: arguments from argparse.ArgumentParser()
-        The arguments requiered for this generator.    
+        Arguments required for this generator.    
     """
     def __init__(self, args):
         super(Homogeneous, self).__init__(args)
    
     @classmethod
     def update_parser(self, parser):
+        """
+        Update the argument parser with parameters relavent to this generator. 
+
+        Parameters
+        ----------
+        parser: argparse.ArgumentParser()
+            The main parser to update.
+
+        Returns
+        -------
+        parser: argparse.ArgumentParser()
+            The updated parser.
+        """               
         parser.add_argument('--nx', 
                             default=10,
                             type=int, 
@@ -378,10 +585,38 @@ class Homogeneous(CloudGenerator):
         return parser        
 
     def get_grid(self):
+        """
+        Retrieve the scatterer grid.
+
+        Returns
+        -------
+        grid: shdom.Grid
+            A Grid object for this scatterer
+        """
         bb = shdom.BoundingBox(0.0, 0.0, 0.0, self.args.domain_size, self.args.domain_size, self.args.domain_size)
         return shdom.Grid(bounding_box=bb, nx=self.args.nx, ny=self.args.ny, nz=self.args.nz)
         
     def get_extinction(self, wavelength=None, grid=None):
+        """
+        Retrieve the optical extinction at a single wavelength on a grid.
+
+        Parameters
+        ----------
+        wavelength: float
+            Wavelength in microns. A Mie table at this wavelength should be added prior (see add_mie method).
+        grid: shdom.Grid, optional
+            A shdom.Grid object. If None is specified than a grid is created from Arguments given to the generator (get_grid method)
+
+        Returns
+        -------
+        extinction: shdom.GridData
+            A GridData object containing the optical extinction on a grid
+
+        Notes
+        -----
+        If the LWC is specified then the extinction is derived using (lwc,reff,veff). If not the extinction needs to be directly specified.
+        The input wavelength is rounded to three decimals.
+        """           
         if grid is None:
             grid = self.get_grid()
             
@@ -397,6 +632,19 @@ class Homogeneous(CloudGenerator):
         return extinction
         
     def get_lwc(self, grid=None):
+        """
+        Retrieve the liquid water content.
+        
+        Parameters
+        ----------
+        grid: shdom.Grid, optional
+            A shdom.Grid object. If None is specified than a grid is created from Arguments given to the generator (get_grid method)
+            
+        Returns
+        -------
+        lwc: shdom.GridData
+            A GridData object containing liquid water content (g/m^3) on a 3D grid.
+        """        
         if grid is None:
             grid = self.get_grid()
             
@@ -407,12 +655,38 @@ class Homogeneous(CloudGenerator):
         return lwc
         
     def get_reff(self, grid=None):
+        """
+        Retrieve the effective radius on a grid.
+
+        Parameters
+        ----------
+        grid: shdom.Grid, optional
+            A shdom.Grid object. If None is specified than a grid is created from Arguments given to the generator (get_grid method)
+
+        Returns
+        -------
+        reff: shdom.GridData
+            A GridData object containing the effective radius [microns] on a grid
+        """         
         if grid is None:
             grid = self.get_grid()     
         reff_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=self.args.reff, dtype=np.float32)
         return shdom.GridData(grid, reff_data)
         
     def get_veff(self, grid=None):
+        """
+        Retrieve the effective variance on a grid.
+
+        Parameters
+        ----------
+        grid: shdom.Grid, optional
+            A shdom.Grid object. If None is specified than a grid is created from Arguments given to the generator (get_grid method)
+
+        Returns
+        -------
+        veff: shdom.GridData
+            A GridData object containing the effective variance on a grid
+        """         
         if grid is None:
             grid = self.get_grid()        
         veff_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=self.args.veff, dtype=np.float32)    
@@ -426,7 +700,11 @@ class LesFile(CloudGenerator):
     Parameters
     ----------
     args: arguments from argparse.ArgumentParser()
-        The arguments requiered for this generator.
+        Arguments required for this generator.
+        
+    Notes
+    -----
+    If veff is not specified in the file a single value will be used for the entire domain.
     """
     def __init__(self, args):
         super(LesFile, self).__init__(args)
@@ -447,9 +725,26 @@ class LesFile(CloudGenerator):
         return parser
     
     def get_grid(self):
+        """
+        Retrieve the scatterer grid.
+
+        Returns
+        -------
+        grid: shdom.Grid
+            A Grid object for this scatterer
+        """        
         return self._droplets.grid
     
+    
     def get_scatterer(self):
+        """
+        Retrieve a shdom.MicrophysicalScatterer object.
+
+        Returns
+        -------
+        droplets: shdom.MicrophysicalScatterer
+            A microphysical scatterer object.
+        """        
         for mie in self.mie.values():
             self._droplets.add_mie(mie)
         return self._droplets

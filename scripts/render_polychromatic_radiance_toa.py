@@ -1,7 +1,6 @@
 """ 
 Render: [Multispectral] Radiance at Top of the Atmosphere (TOA)
 ---------------------------------------------------------------
-
 Forward rendering of an atmospheric medium with at multiple spectral bands with an orthographic sensor measuring 
 exitting radiance at the top of the the domain. This sensor is an approximation (somewhat crude) for far observing satellites where the rays are parallel. 
 
@@ -30,7 +29,7 @@ def argument_parsing():
     Returns
     -------
     args: arguments from argparse.ArgumentParser()
-        The arguments requiered for this script.
+        Arguments required for this script.
     CloudGenerator: a shdom.Generator class object.
         Creates the cloudy medium.
     AirGenerator: a shdom.Air class object
