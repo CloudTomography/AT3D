@@ -450,7 +450,7 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         albedo = shdom.GridData(self.albedo.grid, np.ones_like(self.albedo.data))
         legen_table = shdom.LegendreTable(np.zeros((self.phase.legendre_table.maxleg+1), dtype=np.float32), table_type=self.phase.legendre_table.table_type)
         phase = shdom.GridPhase(legen_table, shdom.GridData(self.phase.index.grid, np.ones_like(self.phase.index.data)))
-        derivative = shdom.OpticalScattererDerivative(self.wavelength, extinction, albedo, phase) )
+        derivative = shdom.OpticalScattererDerivative(self.wavelength, extinction, albedo, phase)
     
     
     def init_phase_derivative(self):

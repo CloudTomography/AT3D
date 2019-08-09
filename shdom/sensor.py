@@ -438,15 +438,14 @@ class Projection(object):
     All input arrays are raveled and should be of the same size.
     """
     def __init__(self, x=None, y=None, z=None, mu=None, phi=None, resolution=None):
-        self._x = x.ravel().astype(np.float32)
-        self._y = y.ravel().astype(np.float32)
-        self._z = z.ravel().astype(np.float32)
-        self._mu = mu.ravel().astype(np.float64)
-        self._phi = phi.ravel().astype(np.float64)
+        self._x = x
+        self._y = y
+        self._z = z
+        self._mu = mu
+        self._phi = phi
         self._npix = None
         if type(x)==type(y)==type(z)==type(mu)==type(phi)==np.ndarray:
             assert x.size==y.size==z.size==mu.size==phi.size, 'All input arrays must be of equal size'
-            self._npix = x.size
         self._resolution = resolution
         
     def __getitem__(self, val):

@@ -335,9 +335,6 @@ class MieMonodisperse(object):
         -----
         This function must be ran after pre-computing a scattering table with compute_table().
         """
-        assert (None not in [self._extinct, self._scatter, self._nleg, self._maxleg, self._legcoef]), \
-               'Cannot write table: Mie table not computed or loaded.'
-
         print('Writing Mie monodisperse table to file: {}'.format(file_path))
         core.write_mono_table(
             mietabfile=file_path,
@@ -776,10 +773,6 @@ class MiePolydisperse(object):
         -----
         This function must be ran after pre-computing a scattering table with compute_table().
         """
-
-        assert (None not in [self._extinct, self._ssalb, self._nleg, self.legcoef]), \
-               'Cannot write table: Mie table not computed or loaded.'
-
         print('Writing mie table to file: {}'.format(file_path))
         core.write_poly_table(
             mietabfile=file_path,
