@@ -103,7 +103,7 @@ class OpticalScatterer(Scatterer):
     @extinction.setter
     def extinction(self, val):
         if val is not None:
-            assert val.min_value.astype(np.float32) >= 0.0, 'Extinction should be larger than 0.0'
+            assert val.min_value.astype(np.float32) >= 0.0, 'Extinction min value {} and should be larger than 0.0'.format(val.min_value)
         self._extinction = val
     
     @property
@@ -113,7 +113,7 @@ class OpticalScatterer(Scatterer):
     @albedo.setter
     def albedo(self, val):
         if val is not None: 
-            assert (val.max_value.astype(np.float32) <= 1.0 and  val.min_value.astype(np.float32) >= 0.0), 'Single scattering albedo should be in the range [0, 1]'
+            assert (val.max_value.astype(np.float32) <= 1.0 and val.min_value.astype(np.float32) >= 0.0), 'Single scattering albedo should be in the range [0, 1]'
         self._albedo = val
         
     @property
@@ -123,7 +123,7 @@ class OpticalScatterer(Scatterer):
     @phase.setter
     def phase(self, val):
         self._phase = val
-           
+
 
 class MicrophysicalScatterer(Scatterer):
     """
@@ -260,41 +260,41 @@ class MicrophysicalScatterer(Scatterer):
             self._max_veff = max(self.max_veff, mie.size_distribution.veff.max())        
        
         if self.reff is not None:            
-            min_val = self.reff.data[self.reff.data>0.0].min() 
-            assert  self.reff.max_value < self.max_reff+1e-3, \
+            min_val = self.reff.data[self.reff.data > 0.0].min()
+            assert self.reff.max_value < self.max_reff+1e-3, \
                                'Maximum medium effective radius [{:2.2f}] is larger than the pre-computed table maximum radius [{:2.2f}]. ' \
-                               'Recompute Mie table with larger maximum radius.'.format(self.reff.max_va, self.max_reff)
-            assert  min_val > self.min_reff-1e-3, \
+                               'Recompute Mie table with larger maximum radius.'.format(self.reff.max_value, self.max_reff)
+            assert min_val > self.min_reff-1e-3, \
                     'Minimum medium effective radius [{:2.2f}] is smaller than the pre-computed table minimum radius [{:2.2f}]. ' \
                     'Recompute Mie table with smaller minimum radius.'.format(min_val, self.min_reff)   
         
         if self.veff is not None:
             min_val = self.veff.data[self.veff.data>0.0].min()            
-            assert  self.veff.max_value < self.max_veff+1e-3, \
+            assert self.veff.max_value < self.max_veff+1e-3, \
                     'Maximum medium effective radius [{:2.2f}] is larger than the pre-computed table maximum variance [{:2.2f}]. ' \
-                    'Recompute Mie table with larger maximum radius.'.format(max_val, self.max_veff)
-            assert  min_val > self.min_veff-1e-3, \
+                    'Recompute Mie table with larger maximum radius.'.format(self.veff.max_value, self.max_veff)
+            assert min_val > self.min_veff-1e-3, \
                     'Minimum medium effective radius [{:2.2f}] is smaller than the pre-computed table minimum variance [{:2.2f}]. ' \
-                    'Recompute Mie table with smaller minimum radius.'.format(min_val, self.min_veff)              
+                    'Recompute Mie table with smaller minimum radius.'.format(min_val, self.min_veff)
 
     def load_grid(self, path):
         """
         A utility function to load a microphysical medium from file
-    
+
         Parameters
         ----------
         path: str
              Path to file.
-    
+
         Returns
         -------
         grid: shdom.Grid object
             The 3D grid of the medium.
-    
+
         Notes
         -----
         CSV format should be as follows:
-    
+
         # comment line (description)
         nx ny nz
         dz dy dz     z_levels[0]     z_levels[1] ...  z_levels[nz-1]
@@ -304,11 +304,11 @@ class MicrophysicalScatterer(Scatterer):
         .
         ix iy iz     lwc[ix, iy, iz]    reff[ix, iy, iz]
         """
-        nx, ny, nz = np.genfromtxt(path, max_rows=1, dtype=int) 
-        dx, dy = np.genfromtxt(path, max_rows=1, usecols=(0, 1), dtype=float, skip_header=2)        
+        nx, ny, nz = np.genfromtxt(path, max_rows=1, dtype=int)
+        dx, dy = np.genfromtxt(path, max_rows=1, usecols=(0, 1), dtype=float, skip_header=2)
         z_grid = np.genfromtxt(path, max_rows=1, usecols=range(2, 2 + nz), dtype=float, skip_header=2)
         x_grid = np.linspace(0.0, (nx - 1)*dx, nx, dtype=np.float32)
-        y_grid = np.linspace(0.0, (ny - 1)*dy, ny, dtype=np.float32)    
+        y_grid = np.linspace(0.0, (ny - 1)*dy, ny, dtype=np.float32)
         grid = shdom.Grid(x=x_grid, y=y_grid, z=z_grid)
         return grid
 
@@ -403,7 +403,7 @@ class MicrophysicalScatterer(Scatterer):
     @lwc.setter
     def lwc(self, val):
         if val is not None:
-            assert val.min_value.astype(np.float32) >= 0.0, 'LWC should be larger than 0.0'
+            assert val.min_value.astype(np.float32) >= 0.0, 'LWC min value is {} and should be larger than 0.0'.format(val.min_value)
         self._lwc = val
     
     @property

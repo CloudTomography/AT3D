@@ -2,14 +2,16 @@
 Optimization and related objects to monitor and log the optimization proccess.
 """
 import numpy as np
-import time, os, copy
+import time, os, copy, shutil
 from scipy.optimize import minimize
+from scipy.optimize import basinhopping
 import shdom
 from shdom import GridData, core, float_round
 import dill as pickle
 import itertools
 from joblib import Parallel, delayed
 from collections import OrderedDict
+import tensorboardX as tb
 
 
 class OpticalScattererDerivative(shdom.OpticalScatterer):
@@ -92,12 +94,13 @@ class GridDataEstimator(shdom.GridData):
     max_bound: float, optional
         An upper bound for the parameter values
     """
-    def __init__(self, grid_data, min_bound=None, max_bound=None):
+    def __init__(self, grid_data, min_bound=None, max_bound=None, random_step=None):
         super(GridDataEstimator, self).__init__(grid_data.grid, grid_data.data)
         self._min_bound = min_bound
         self._max_bound = max_bound
         self._mask = None
         self._num_parameters = self.init_num_parameters()
+        self._random_step = random_step
               
     def set_state(self, state):
         """
@@ -198,6 +201,10 @@ class GridDataEstimator(shdom.GridData):
         return self._mask
     
     @property
+    def random_step(self):
+        return self._random_step
+    
+    @property
     def num_parameters(self):
         return self._num_parameters
     
@@ -221,7 +228,7 @@ class ScattererEstimator(object):
         self._estimators = self.init_estimators()
         self._derivatives = self.init_derivatives()
         self._num_parameters = self.init_num_parameters()
-        
+
     def init_estimators(self):
         """
         Initialize the internal estimators.
@@ -252,6 +259,29 @@ class ScattererEstimator(object):
         This is a dummy method that is overwritten by inheritance.
         """
         return OrderedDict()    
+
+    def get_step_slice_bound(self):
+        """
+        Retrieve the random step size.
+        This is used by a global optimizer (see shdom.RandomStep class)
+
+        Returns
+        -------
+        step_slice_bound: list of tuples
+            A list of tuples containing the random step size and the slice of the state space
+            that corresponds to this step size
+        """
+        step_slice_bound = []
+        total_num_params = 0
+        for estimator in self.estimators.values():
+            step_slice_bound.append((
+                estimator.random_step,
+                slice(total_num_params, total_num_params + estimator.num_parameters),
+                estimator.min_bound,
+                estimator.max_bound
+            ))
+            total_num_params += estimator.num_parameters
+        return step_slice_bound
 
     def init_num_parameters(self):
         """
@@ -339,7 +369,7 @@ class ScattererEstimator(object):
     @property
     def estimators(self):
         return self._estimators
-    
+
     @property
     def derivatives(self):
         return self._derivatives    
@@ -550,9 +580,9 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
         if isinstance(self.lwc, shdom.GridDataEstimator):
             derivatives['lwc'] = self.init_lwc_derivative()
         if isinstance(self.reff, shdom.GridDataEstimator):
-            derivatives['reff'] = self.init_re_derivative()
-        if isinstance(self.veff, shdom.GridPhaseEstimator):
-            derivatives['veff'] = self.init_ve_derivative()
+            derivatives['reff'] = self.init_mie_derivative(derivative_type='reff')
+        if isinstance(self.veff, shdom.GridDataEstimator):
+            derivatives['veff'] = self.init_mie_derivative(derivative_type='veff')
         return derivatives
 
     def init_lwc_derivative(self):
@@ -573,83 +603,57 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
         derivative['albedo'] = shdom.GridData(self.grid, np.zeros(self.grid.shape))
         return derivative
 
-    def init_re_derivative(self):
+    def init_mie_derivative(self, derivative_type):
         """
-        Initialize the derivatives of the optical fields with respect to the effective radius.
+        Initialize the Mie derivatives of the optical fields with respect to the effective radius/variance.
         This means the optical cross-section, single scattering albedo and phase function derivatives.
 
         Returns
         -------
         derivatives: OrderedDict
-            A dictionary of shdom.MiePolydisperse (at every wavelength) which defines the derivatives which respect to the effective radius.
+            A dictionary of shdom.MiePolydisperse (at every wavelength).
+        derivative_type: str
+            The derivative type: 'reff' or 'veff'
 
         Notes
         -----
-        Derivatives are computed numerically thus small enough spacing of reff in the Mie tables is required.
+        Derivatives are computed numerically thus small enough spacing of reff/veff in the Mie tables is required.
         """
         derivatives = OrderedDict()
         for wavelength, mie in self.mie.items():
             extinct = mie.extinct.reshape((mie.size_distribution.nretab, mie.size_distribution.nvetab), order='F')
             ssalb = mie.ssalb.reshape((mie.size_distribution.nretab, mie.size_distribution.nvetab), order='F')
-         
-            dre = np.diff(mie.size_distribution.reff)        
-            dextinct = np.diff(extinct, axis=0) / dre[:,np.newaxis]
-            dssalb = np.diff(ssalb, axis=0) / dre[:,np.newaxis]
-            dlegcoef = np.diff(mie.legcoef_2d, axis=-2) / dre[:,np.newaxis]
-        
+
+            if derivative_type == 'reff':
+                dre = np.diff(mie.size_distribution.reff)[:, np.newaxis]
+                dextinct = np.diff(extinct, axis=0) / dre
+                dextinct = np.vstack((dextinct, dextinct[-1])).ravel(order='F')
+                dssalb = np.diff(ssalb, axis=0) / dre
+                dssalb = np.vstack((dssalb, dssalb[-1])).ravel(order='F')
+                dlegcoef = np.diff(mie.legcoef_2d, axis=-2) / dre
+                dlegcoef = np.concatenate((dlegcoef, dlegcoef[:, -1][:, None]), axis=-2)
+
+            elif derivative_type == 'veff':
+                dve = np.diff(mie.size_distribution.veff)[np.newaxis, :]
+                dextinct = np.diff(extinct, axis=1) / dve
+                dextinct = np.hstack((dextinct, dextinct[:, -1][:, None])).ravel(order='F')
+                dssalb = np.diff(ssalb, axis=1) / dve
+                dssalb = np.hstack((dssalb, dssalb[:, -1][:, None])).ravel(order='F')
+                dlegcoef = np.diff(mie.legcoef_2d, axis=-1) / dve
+                dlegcoef = np.concatenate((dlegcoef, dlegcoef[..., -1][..., None]), axis=-1)
+
             # Define a derivative Mie object, last derivative is duplicated
             derivative = copy.deepcopy(mie)
-            derivative._extinct = np.vstack((dextinct, dextinct[-1])).ravel(order='F')
-            derivative._ssalb = np.vstack((dssalb, dssalb[-1])).ravel(order='F')
+            derivative._extinct = dextinct
+            derivative._ssalb = dssalb
             if mie.table_type == 'SCALAR':
-                derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-2).reshape((mie.maxleg+1, -1), order='F')
+                derivative.legcoef = dlegcoef.reshape((mie.maxleg+1, -1), order='F')
             elif mie.table_type == 'VECTOR':
-                derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-2).reshape((6, mie.maxleg+1, -1), order='F')
+                derivative.legcoef = dlegcoef.reshape((6, mie.maxleg+1, -1), order='F')
     
             derivative.init_intepolators()
             derivatives[float_round(wavelength)] = derivative
         return derivatives         
-
-    def init_ve_derivative(self):
-        """
-        Initialize the derivatives of the optical fields with respect to the effective variance.
-        This means the optical cross-section, single scattering albedo and phase function derivatives.
-
-        Returns
-        -------
-        derivatives: OrderedDict
-            A dictionary of shdom.MiePolydisperse (at every wavelength) which defines the derivatives which respect to the effective variance.
-
-        Notes
-        -----
-        Derivatives are computed numerically thus small enough spacing of veff in the Mie tables is required.
-        """
-        derivatives = OrderedDict()
-        for wavelength, mie in self.mie.items():        
-            extinct = self.extinct.reshape((self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
-            ssalb = self.ssalb.reshape((self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
-            if self.table_type == 'SCALAR':
-                legcoef = self.legcoef.reshape((self.maxleg+1, self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
-            elif self.table_type == 'VECTOR':
-                legcoef = self.legcoef.reshape((-1, self.maxleg+1, self.size_distribution.nretab, self.size_distribution.nvetab), order='F')
-        
-            dve = np.diff(self.size_distribution.veff)        
-            dextinct = np.diff(extinct, axis=1) / dve[:,np.newaxis]
-            dssalb = np.diff(ssalb, axis=1) / dve[:,np.newaxis]
-            dlegcoef = np.diff(legcoef, axis=-1) / dve[:,np.newaxis]
-        
-            # Define a derivative Mie object, last derivative is duplicated
-            derivative = copy.deepcopy(self)
-            derivative._extinct = np.hstack((dextinct, dextinct[-1])).ravel(order='F')
-            derivative._ssalb = np.hstack((dssalb, dssalb[-1])).ravel(order='F')
-            if self.table_type == 'SCALAR':
-                derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-1).reshape((self.maxleg+1, -1), order='F')
-            elif self.table_type == 'VECTOR':
-                derivative.legcoef = np.concatenate((dlegcoef, dlegcoef[:,-1][:,None]), axis=-1).reshape((6, self.maxleg+1, -1), order='F')
-        
-            derivative.init_intepolators()
-            derivatives[float_round(wavelength)] = derivative
-        return derivatives  
 
     def get_lwc_derivative(self, wavelength):
         """
@@ -665,7 +669,7 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
         scatterer: shdom.OpticalScatterer
             The derivative with respect to lwc at a single wavelength
         """
-        index  = shdom.GridData(self.grid, np.ones(self.grid.shape, dtype=np.int32))
+        index = shdom.GridData(self.grid, np.ones(self.grid.shape, dtype=np.int32))
         legen_table = shdom.LegendreTable(np.zeros((self.mie[float_round(wavelength)].maxleg+1), dtype=np.float32), 
                                           table_type=self.mie[float_round(wavelength)].table_type)       
         derivative = self.derivatives['lwc']
@@ -742,7 +746,7 @@ class MediumEstimator(shdom.Medium):
         super(MediumEstimator, self).__init__(grid)
         self._estimators = OrderedDict()
         self._num_parameters = []
-        self._unknown_scatterers_indices =  np.empty(shape=(0),dtype=np.int32)
+        self._unknown_scatterers_indices =  np.empty(shape=(0), dtype=np.int32)
         self._num_derivatives = 0
 
     def add_scatterer(self, scatterer, name=None):
@@ -844,36 +848,18 @@ class MediumEstimator(shdom.Medium):
             for dtype in estimator.derivatives.keys():
                 derivative = estimator.get_derivative(dtype, rte_solver.wavelength)       
                 resampled_derivative = derivative.resample(self.grid)
-                extinction = resampled_derivative.extinction.data
-                albedo = resampled_derivative.albedo.data
-                iphase = resampled_derivative.phase.iphasep                
-                
-                # TODO: Check this
-                if rte_solver._bcflag == 0:
-                    extinction = np.pad(extinction, ((0,1),(0,1),(0,0)), 'wrap')
-                    albedo = np.pad(albedo, ((0,1),(0,1),(0,0)), 'wrap')
-                    iphase = np.pad(iphase, ((0,1),(0,1),(0,0)), 'wrap')
-                elif rte_solver._bcflag == 1:
-                    extinction = np.pad(extinction, ((0,0),(0,1),(0,0)), 'wrap')
-                    albedo = np.pad(albedo, ((0,0),(0,1),(0,0)), 'wrap')
-                    iphase = np.pad(iphase, ((0,0),(0,1),(0,0)), 'wrap')
-                elif rte_solver._bcflag == 2:
-                    extinction = np.pad(extinction, ((0,1),(0,0),(0,0)), 'wrap')
-                    albedo = np.pad(albedo, ((0,1),(0,0),(0,0)), 'wrap')
-                    iphase = np.pad(iphase, ((0,1),(0,0),(0,0)), 'wrap')            
-    
-                dext[:,i] = extinction.ravel()
-                dalb[:,i] = albedo.ravel()
-                diphase[:,i] = iphase.ravel()      
-    
+                dext[:, i] = resampled_derivative.extinction.data.ravel()
+                dalb[:, i] = resampled_derivative.albedo.data.ravel()
+                diphase[:, i] = resampled_derivative.phase.iphasep.ravel() + diphase.max()
+
                 if i == 0:
                     leg_table = copy.deepcopy(resampled_derivative.phase.legendre_table)
                 else:
                     leg_table.append(copy.deepcopy(resampled_derivative.phase.legendre_table))                
                 i += 1
                 
-        dleg = leg_table.data  
-        dnumphase= leg_table.numphase
+        dleg = leg_table.data
+        dnumphase = leg_table.numphase
         dphasetab = core.precompute_phase_check(
             negcheck=False,
             nstphase=rte_solver._nstphase,
@@ -885,7 +871,7 @@ class MediumEstimator(shdom.Medium):
             nlm=rte_solver._nlm,
             nleg=rte_solver._nleg,
             legen=dleg,
-            deltam=False
+            deltam=rte_solver._deltam
         )                
         return dext, dalb, diphase, dleg, dphasetab, dnumphase
 
@@ -967,7 +953,7 @@ class MediumEstimator(shdom.Medium):
         else:
             total_pix = projection.npix
 
-        gradient, loss, radiance = core.gradient(
+        gradient, loss, images = core.gradient(
             exact_single_scatter=exact_single_scatter,
             nstphase=rte_solver._nstphase,
             dpath=self._direct_derivative_path, 
@@ -1116,7 +1102,7 @@ class MediumEstimator(shdom.Medium):
             )
             rte_solver._dext, rte_solver._dalb, rte_solver._diphase, \
                 rte_solver._dleg, rte_solver._dphasetab, rte_solver._dnumphase = self.get_derivatives(rte_solver)
-                              
+
         projection = measurements.camera.projection
         sensor = measurements.camera.sensor
         radiances = measurements.radiances
@@ -1158,7 +1144,7 @@ class MediumEstimator(shdom.Medium):
     @property
     def estimators(self):
         return self._estimators
-    
+
     @property
     def num_parameters(self):
         return self._num_parameters
@@ -1190,15 +1176,26 @@ class SummaryWriter(object):
         The directory where the log will be saved
     """
     def __init__(self, log_dir):
-        
-        from tensorboardX import SummaryWriter
-        
-        self._tf_writer = SummaryWriter(log_dir)
+        self._dir = log_dir
+        self._tf_writer = tb.SummaryWriter(log_dir)
         self._ground_truth_parameters = None
-        self._ckpt_periods = []
-        self._ckpt_times = []
         self._callback_fns = []
+        self._kwargs = []
         self._optimizer = None
+
+    def add_callback_fn(self, callback_fn, kwargs=None):
+        """
+        Add a callback function to the callback function list
+
+        Parameters
+        ----------
+        callback_fn: bound method
+            A callback function to push into the list
+        kwargs: dict, optional
+            A dictionary with optional keyword arguments for the callback function
+        """
+        self._callback_fns.append(callback_fn)
+        self._kwargs.append(kwargs)
 
     def attach_optimizer(self, optimizer):
         """
@@ -1220,9 +1217,12 @@ class SummaryWriter(object):
         ckpt_period: float
            time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
         """
-        self._ckpt_periods.append(ckpt_period)
-        self._ckpt_times.append(time.time())
-        self._callback_fns.append(self.loss_cbfn) 
+        kwargs = {
+            'ckpt_period': ckpt_period,
+            'ckpt_time': time.time(),
+            'title': 'loss'
+        }
+        self.add_callback_fn(self.loss_cbfn, kwargs)
 
     def save_checkpoints(self, ckpt_period=-1):
         """
@@ -1233,22 +1233,27 @@ class SummaryWriter(object):
         ckpt_period: float
            time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
         """
-        self._ckpt_periods.append(ckpt_period)
-        self._ckpt_times.append(time.time())        
-        self._callback_fns.append(self.save_ckpt_cbfn)
+        kwargs = {
+            'ckpt_period': ckpt_period,
+            'ckpt_time': time.time()
+        }
+        self.add_callback_fn(self.save_ckpt_cbfn, kwargs)
 
     def monitor_shdom_iterations(self, ckpt_period=-1):
-        """Monitor the number of SHDOM iterations.
+        """Monitor the number of SHDOM forward iterations.
         
         Parameters
         ----------
         ckpt_period: float
            time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
         """
-        self._ckpt_periods.append(ckpt_period)
-        self._ckpt_times.append(time.time())
-        self._callback_fns.append(self.shdom_iterations_cbfn)
-        
+        kwargs = {
+            'ckpt_period': ckpt_period,
+            'ckpt_time': time.time(),
+            'title': 'shdom iterations'
+        }
+        self.add_callback_fn(self.shdom_iterations_cbfn, kwargs)
+
     def monitor_scatterer_error(self, estimator_name, ground_truth, ckpt_period=-1):
         """
         Monitor relative and overall mass error (epsilon, delta) as defined at:
@@ -1263,14 +1268,17 @@ class SummaryWriter(object):
         ckpt_period: float
            time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
         """
-        self._ckpt_periods.append(ckpt_period)
-        self._ckpt_times.append(time.time())
-        self._callback_fns.append(self.scatterer_error_cbfn)
+        kwargs = {
+            'ckpt_period': ckpt_period,
+            'ckpt_time': time.time(),
+            'title': ['{}/delta/{}', '{}/epsilon/{}']
+        }
+        self.add_callback_fn(self.scatterer_error_cbfn, kwargs)
         if hasattr(self, '_ground_truth'):
             self._ground_truth[estimator_name] = ground_truth
         else:
             self._ground_truth = OrderedDict({estimator_name: ground_truth})
-            
+
     def monitor_domain_mean(self, estimator_name, ground_truth, ckpt_period=-1):
         """
         Monitor domain mean and compare to ground truth over iterations.
@@ -1284,9 +1292,12 @@ class SummaryWriter(object):
         ckpt_period: float
            time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
         """
-        self._ckpt_periods.append(ckpt_period)
-        self._ckpt_times.append(time.time())
-        self._callback_fns.append(self.domain_mean_cbfn)
+        kwargs = {
+            'ckpt_period': ckpt_period,
+            'ckpt_time': time.time(),
+            'title': '{}/mean/{}'
+        }
+        self.add_callback_fn(self.domain_mean_cbfn, kwargs)
         if hasattr(self, '_ground_truth'):
             self._ground_truth[estimator_name] = ground_truth
         else:
@@ -1304,33 +1315,71 @@ class SummaryWriter(object):
            time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
         """
         num_images = len(acquired_images)
-        self._ckpt_periods.append(ckpt_period)
-        self._ckpt_times.append(time.time())
-        self._callback_fns.append(self.estimated_images_cbfn)
-        self._image_vmax = [image.max() * 1.25 for image in acquired_images]
-        self._image_titles = ['Retrieval Image {}'.format(view) for view in range(num_images)]
-        acq_titles = ['Acquiered Image {}'.format(view) for view in range(num_images)]
-        self.write_image_list(0, acquired_images, acq_titles, vmax=self._image_vmax)
+        kwargs = {
+            'ckpt_period': ckpt_period,
+            'ckpt_time': time.time(),
+            'title':  ['Retrieval/view{}'.format(view) for view in range(num_images)],
+            'vmax': [image.max() * 1.25 for image in acquired_images]
+        }
+        self.add_callback_fn(self.estimated_images_cbfn, kwargs)
+        acq_titles = ['Acquired/view{}'.format(view) for view in range(num_images)]
+        self.write_image_list(0, acquired_images, acq_titles, vmax=kwargs['vmax'])
 
-    def save_ckpt_cbfn(self):
+    def save_ckpt_cbfn(self, kwargs=None):
+        """
+        Callback function that saves checkpoints .
+
+        Parameters
+        ----------
+        kwargs: dict,
+            keyword arguments
+        """
         timestr = time.strftime("%H%M%S")
-        path = os.path.join(self.writer._tf_writer.log_dir,  timestr + '.ckpt')
+        path = os.path.join(self.tf_writer.log_dir,  timestr + '.ckpt')
         self.optimizer.save(path)
         
-    def loss_cbfn(self):
-        """Callback function that is called (every optimizer iteration) for loss monitoring."""
-        self.tf_writer.add_scalar('loss', self.optimizer.loss, self.optimizer.iteration)    
+    def loss_cbfn(self, kwargs):
+        """
+        Callback function that is called (every optimizer iteration) for loss monitoring.
+
+        Parameters
+        ----------
+        kwargs: dict,
+            keyword arguments
+        """
+        self.tf_writer.add_scalar(kwargs['title'], self.optimizer.loss, self.optimizer.iteration)
     
-    def estimated_images_cbfn(self):
-        """Callback function the is called every optimizer iteration image monitoring is set."""
-        self.write_image_list(self.optimizer.iteration, self.optimizer.images, self._image_titles, self._image_vmax)
+    def estimated_images_cbfn(self, kwargs):
+        """
+        Callback function the is called every optimizer iteration image monitoring is set.
+
+        Parameters
+        ----------
+        kwargs: dict,
+            keyword arguments
+        """
+        self.write_image_list(self.optimizer.iteration, self.optimizer.images, kwargs['title'], kwargs['vmax'])
     
-    def shdom_iterations_cbfn(self):
-        """Callback function that is called (every optimizer iteration) for shdom iteration monitoring"""
-        self.tf_writer.add_scalar('total shdom iterations', self.optimizer.rte_solver.num_iterations, self.optimizer.iteration)       
+    def shdom_iterations_cbfn(self, kwargs):
+        """
+        Callback function that is called (every optimizer iteration) for shdom iteration monitoring.
+
+        Parameters
+        ----------
+        kwargs: dict,
+            keyword arguments
+        """
+        self.tf_writer.add_scalar(kwargs['title'], self.optimizer.rte_solver.num_iterations, self.optimizer.iteration)
         
-    def scatterer_error_cbfn(self):
-        """Callback function for monitoring parameter error measures."""
+    def scatterer_error_cbfn(self, kwargs):
+        """
+        Callback function for monitoring parameter error measures.
+
+        Parameters
+        ----------
+        kwargs: dict,
+            keyword arguments
+        """
         for scatterer_name, gt_scatterer in self._ground_truth.items():
             est_scatterer = self.optimizer.medium.get_scatterer(scatterer_name)
             for parameter_name, parameter in est_scatterer.estimators.items():
@@ -1338,19 +1387,26 @@ class SummaryWriter(object):
                 gt_param = getattr(gt_scatterer, parameter_name).data[parameter.mask.data].ravel()
                 delta = (np.linalg.norm(est_param, 1) - np.linalg.norm(gt_param, 1)) / np.linalg.norm(gt_param, 1)
                 epsilon = np.linalg.norm((est_param - gt_param), 1) / np.linalg.norm(gt_param,1)
-                self.tf_writer.add_scalar(scatterer_name + ' delta ' + parameter_name, delta, self.optimizer.iteration)
-                self.tf_writer.add_scalar(scatterer_name + ' epsilon ' + parameter_name, epsilon, self.optimizer.iteration)           
+                self.tf_writer.add_scalar(kwargs['title'][0].format(scatterer_name, parameter_name), delta, self.optimizer.iteration)
+                self.tf_writer.add_scalar(kwargs['title'][1].format(scatterer_name, parameter_name), epsilon, self.optimizer.iteration)
         
-    def domain_mean_cbfn(self):
-        """Callback function for monitoring parameter error measures."""
+    def domain_mean_cbfn(self, kwargs):
+        """
+        Callback function for monitoring parameter error measures.
+
+        Parameters
+        ----------
+        kwargs: dict,
+            keyword arguments
+        """
         for scatterer_name, gt_scatterer in self._ground_truth.items():
             est_scatterer = self.optimizer.medium.get_scatterer(scatterer_name)
             for parameter_name, parameter in est_scatterer.estimators.items():
                 est_param = parameter.data[parameter.mask.data].mean()
                 gt_param = getattr(gt_scatterer, parameter_name).data[parameter.mask.data].mean()
                 self.tf_writer.add_scalars(
-                    main_tag=scatterer_name + ' mean ' + parameter_name,
-                    tag_scalar_dict={'esimated': est_param, 'true': gt_param}, 
+                    main_tag=kwargs['title'].format(scatterer_name, parameter_name),
+                    tag_scalar_dict={'estimated': est_param, 'true': gt_param},
                     global_step=self.optimizer.iteration
                 )
 
@@ -1391,36 +1447,20 @@ class SummaryWriter(object):
                     img_tensor=(image / vm),
                     dataformats='HW',
                     global_step=global_step
-                ) 
-                
-    def check_update_time(self, index):
-        """
-        Check if it is time to update the callback function.
-        
-        Parameters
-        ----------
-        index: integer,
-            The index of the callback function in the list.
-        """
-        time_passed = time.time() - self.ckpt_times[index] 
-        if time_passed > self.ckpt_periods[index]:
-            self._ckpt_times[index] = time.time()
-            return True
-        else:
-            return False
+                )
 
     @property
     def callback_fns(self):
         return self._callback_fns
-    
+
     @property
-    def ckpt_periods(self):
-        return self._ckpt_periods
-    
+    def dir(self):
+        return self._dir
+
     @property
-    def ckpt_times(self):
-        return self._ckpt_times
-    
+    def kwargs(self):
+        return self._kwargs
+
     @property
     def optimizer(self):
         return self._optimizer
@@ -1520,16 +1560,33 @@ class SpaceCarver(object):
         return self._grid
 
 
-class Optimizer(object):
+class LocalOptimizer(object):
     """
-    The Optimizer class takes care of the under the hood of the optimization process. 
+    The LocalOptimizer class takes care of the under the hood of the optimization process.
     To run the optimization the following methods should be called:
        [required] optimizer.set_measurements()
        [required] optimizer.set_rte_solver()
        [required] optimizer.set_medium_estimator() 
        [optional] optimizer.set_writer()
+
+    Parameters
+    ----------
+    options: dict
+        The option dictionary for the optimizer
+    n_jobs: int, default=1
+        The number of jobs to divide the gradient computation into.
+    exact_single_scatter: bool
+        True will add a calculation of the derivative along a broken-ray trajectory due to the direct solar flux.
+    method: str, default='L-BFGS-B'
+        The optimizer solution method
+
+    Notes
+    -----
+    Currently only L-BFGS-B optimization method is supported.
+    For documentation:
+        https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html
     """
-    def __init__(self):
+    def __init__(self, options, n_jobs=1, exact_single_scatter=True, method='L-BFGS-B'):
         self._medium = None
         self._rte_solver = None
         self._measurements = None
@@ -1537,6 +1594,12 @@ class Optimizer(object):
         self._images = None
         self._iteration = 0
         self._loss = None
+        self._n_jobs = n_jobs
+        self._exact_single_scatter = exact_single_scatter
+        if method != 'L-BFGS-B':
+            raise NotImplementedError('Optimization method [{}] not implemented'.format(method))
+        self._method = method
+        self._options = options
         
     def set_measurements(self, measurements):
         """
@@ -1629,46 +1692,25 @@ class Optimizer(object):
         
         # Writer callback functions
         if self.writer is not None:
-            for index, callbackfn in enumerate(self.writer.callback_fns):
-                if self.writer.check_update_time(index) == True:
-                    callbackfn()
+            for callbackfn, kwargs in zip(self.writer.callback_fns, self.writer.kwargs):
+                time_passed = time.time() - kwargs['ckpt_time']
+                if time_passed > kwargs['ckpt_period']:
+                    kwargs['ckpt_time'] = time.time()
+                    callbackfn(kwargs)
 
-    def minimize(self, options, method='L-BFGS-B', n_jobs=1, exact_single_scatter=True):
+    def minimize(self):
         """
-        Minimize the cost function with respect to the parameters defined.
-        
-        Parameters
-        ----------
-        options: Dict
-            The option dictionary
-        method: str
-            The optimization method.
-        n_jobs: int, default=1
-            The number of jobs to divide the gradient computation into.
-        exact_single_scatter: bool
-            True will add a calculation of the derivative along a broken-ray trajectory due to the direct solar flux.
-        Notes
-        -----
-        Currently only L-BFGS-B optimization method is supported.
-       
-        For documentation: 
-            https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html
+        Local minimization with respect to the parameters defined.
         """
-        self._n_jobs = n_jobs
-        self._exact_single_scatter = exact_single_scatter
-
-        if method != 'L-BFGS-B':
-            raise NotImplementedError('Optimization method not implemented')
-        
         if self.iteration == 0:
             self.init_optimizer()
-            
-        result = minimize(fun=self.objective_fun, 
-                          x0=self.get_state(), 
-                          method=method, 
+
+        result = minimize(fun=self.objective_fun,
+                          x0=self.get_state(),
+                          method=self.method,
                           jac=True,
                           bounds=self.get_bounds(),
-                          options=options,
+                          options=self.options,
                           callback=self.callback)
         return result
     
@@ -1739,7 +1781,7 @@ class Optimizer(object):
         params.pop('_writer')
         rte_solver = params.pop('_rte_solver')
         params['rte_param_dict'] = rte_solver.get_param_dict()
-        file = open(path,'wb')
+        file = open(path, 'wb')
         file.write(pickle.dumps(params, -1))
         file.close()
 
@@ -1766,7 +1808,15 @@ class Optimizer(object):
         rte_solver.set_param_dict(rte_param_dict)         
         self.set_rte_solver(rte_solver)
         self.__dict__ = params
-        
+
+    @property
+    def method(self):
+        return self._method
+
+    @property
+    def options(self):
+        return self._options
+
     @property
     def rte_solver(self):
         return self._rte_solver
@@ -1790,15 +1840,221 @@ class Optimizer(object):
     @property
     def iteration(self):
         return self._iteration
-    
-    @property
-    def ckpt_period(self):
-        return self._ckpt_period
-    
+
     @property
     def loss(self):
         return self._loss        
     
     @property
     def images(self):
-        return self._images      
+        return self._images
+
+
+class GlobalOptimizer(object):
+    """
+    The GlobalOptimizer class takes care of the under the hood of the global optimization process.
+    To run the optimization a local optimizer should be set (see set_local_optimizer method)
+
+    Parameters
+    ----------
+    local_optimizer: shdom.LocalOptimizer, optional
+        A local optimizer object, after all initializations (see LocalOptimizer class)
+    method: str
+        The global optimization method.
+
+    Notes
+    -----
+    Currently only basin-hopping global optimization is supported.
+
+    For documentation:
+        https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.basinhopping.html
+    """
+    def __init__(self, local_optimizer=None, method='basin-hopping'):
+        self._iteration = 1
+        self._best_minimum_f = np.Inf
+        self._best_minimum_iteration = 0
+        self._best_minimum_x = None
+        self._loss = None
+        self._take_step = None
+        self._tf_writer = None
+        if method != 'basin-hopping':
+            raise NotImplementedError('Optimization method [{}] not implemented'.format(method))
+        self._method = method
+        self.set_local_optimizer(local_optimizer)
+
+    def set_local_optimizer(self, local_optimizer):
+        """
+        Set the local optimizer.
+
+        Parameters
+        ----------
+        local_optimizer: shdom.LocalOptimizer
+            A local optimizer object, after all initializations (see LocalOptimizer class)
+        """
+        self._local_optimizer = local_optimizer
+        self._take_step = RandomStep(local_optimizer.medium)
+        self.init_local_optimizer()
+
+    def minimize(self, niter_success, T=1e-3, maxiter=100, stepsize=1.0, interval=10, disp=True):
+        """
+        Global minimization with respect to the parameters defined.
+
+        Parameters
+        ----------
+        niter_success: int
+            Stop the run if the global minimum candidate remains the same for this number of iterations.
+        T: float
+            The “temperature” parameter for the accept or reject criterion.
+            Higher “temperatures” mean that larger jumps in function value will be accepted.
+            For best results T should be comparable to the separation (in function value) between local minima
+        maxiter : int,
+            The number of basin hopping iterations
+        stepsize: float,
+            Maximum step size for use in the random displacement.
+        interval: int,
+            interval for how often to update the stepsize
+        disp: bool
+            Display information of the optimization process.
+        """
+        if self.method == 'basin-hopping':
+            result = basinhopping(func=self.local_optimizer.objective_fun,
+                                  x0=self.local_optimizer.get_state(),
+                                  minimizer_kwargs=self.local_minimizer_kwargs,
+                                  disp=disp,
+                                  niter=maxiter,
+                                  take_step=self.take_step,
+                                  stepsize=stepsize,
+                                  callback=self.callback,
+                                  T=T,
+                                  interval=interval,
+                                  niter_success=niter_success)
+        return result
+
+    def init_local_optimizer(self):
+        """Initialize the local optimizer and writer (if any)."""
+        self.local_optimizer.init_optimizer()
+        self._best_minimum_x = self.local_optimizer.get_state()
+        local_options = self.local_optimizer.options
+        local_options['disp'] = False
+        self._local_minimizer_kwargs = {
+            'method': self.local_optimizer.method,
+            'jac': True,
+            'bounds': self.local_optimizer.get_bounds(),
+            'options': local_options,
+            'callback': self.local_optimizer.callback
+        }
+
+        # If local writer exists, modify checkpoint saving for global optimization
+        if self.local_optimizer.writer is not None:
+            self._tf_writer = tb.SummaryWriter(self.local_optimizer.writer.dir)
+            self.update_writer(self.iteration)
+            self.update_ckpt_saving()
+
+
+    def callback(self, state, loss, accept):
+        """
+        The callback function invokes the callbacks defined by the writer (if any).
+        Additionally it keeps track of the iteration number.
+
+        Parameters
+        ----------
+        state: np.array(shape=(self.num_parameters, dtype=np.float64)
+            The state vector of the local minimum found
+        loss: float64
+            The loss of the local minimum found
+        accept: bool
+            Whether of not the minimum was accepted
+        """
+        self.local_optimizer._iteration = 0
+        if loss < self._best_minimum_f:
+            self._best_minimum_f = loss
+            self._best_minimum_iteration = self.iteration
+            self._best_minimum_x = state
+            if self.tf_writer is not None:
+                self.tf_writer.add_scalar('Basin loss', loss, self.iteration)
+
+            if self._save_checkpoints:
+                time_passed = time.time() - self._ckpt_time
+                if time_passed > self._ckpt_period:
+                    self.local_optimizer.writer.save_ckpt_cbfn()
+        else:
+            shutil.rmtree(self.local_optimizer.writer.tf_writer.log_dir)
+
+        self._iteration += 1
+        if self.tf_writer is not None:
+            self.update_writer(self.iteration)
+
+    def update_writer(self, iteration):
+        """
+        Update summary writer to global iteration index.
+        This method will place Basin<iteration> at the beginning of the path.
+
+        Parameters
+        ----------
+        iteration: int
+            The current iteration number.
+        """
+        log_dir = os.path.join(self.local_optimizer.writer.dir, 'Basin{}'.format(iteration))
+        self.local_optimizer.writer._tf_writer = tb.SummaryWriter(log_dir)
+
+    def update_ckpt_saving(self):
+        """If checkpoint saving is defined then update to save only global minima."""
+        self._save_checkpoints = False
+        cbfn_names = [cbfn.__name__ for cbfn in self.local_optimizer.writer.callback_fns]
+        if 'save_ckpt_cbfn' in cbfn_names:
+            self._save_checkpoints = True
+            cbfn_index = cbfn_names.index('save_ckpt_cbfn')
+            self._ckpt_period = self.local_optimizer.writer.kwargs[cbfn_index]['ckpt_period']
+            self._ckpt_time = self.local_optimizer.writer.kwargs[cbfn_index]['ckpt_time']
+            self.local_optimizer.writer.kwargs[cbfn_index]['ckpt_period'] = np.Inf
+
+    @property
+    def method(self):
+        return self._method
+
+    @property
+    def take_step(self):
+        return self._take_step
+
+    @property
+    def local_minimizer_kwargs(self):
+        return self._local_minimizer_kwargs
+
+    @property
+    def local_optimizer(self):
+        return self._local_optimizer
+
+    @property
+    def iteration(self):
+        return self._iteration
+
+    @property
+    def tf_writer(self):
+        return self._tf_writer
+
+
+class RandomStep(object):
+    """"
+    Replaces the default step taking routine of the basin hopping minimizer.
+    The default step taking routine is a random displacement of the coordinates, but other step taking algorithms may be better for some systems.
+    Here a custume step taking procedure is defined taking into account the different scale of the parameters.
+
+    Parameters
+    ----------
+    medium: shdom.MediumEstimator
+        A MediumEstimator object
+    stepsize: float
+        A factor to the per-parameter stepsize that is optimized throughout iterations
+    """
+    def __init__(self, medium, stepsize=0.5):
+        step_slice_bound = []
+        for estimator in medium.estimators.values():
+            step_slice_bound.extend(estimator.get_step_slice_bound())
+        self.stepsize = stepsize
+        self.step_slice_bound = step_slice_bound
+
+    def __call__(self, x):
+        for step, slice, min_bound, max_bound in self.step_slice_bound:
+            x[slice] += np.random.uniform(-self.stepsize*step, self.stepsize*step)
+            x[slice] = np.clip(x[slice], min_bound, max_bound)
+        return x

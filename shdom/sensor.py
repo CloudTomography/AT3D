@@ -446,6 +446,7 @@ class Projection(object):
         self._npix = None
         if type(x)==type(y)==type(z)==type(mu)==type(phi)==np.ndarray:
             assert x.size==y.size==z.size==mu.size==phi.size, 'All input arrays must be of equal size'
+            self._npix = x.size
         self._resolution = resolution
         
     def __getitem__(self, val):

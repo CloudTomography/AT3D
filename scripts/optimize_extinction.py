@@ -171,38 +171,39 @@ if __name__ == "__main__":
     
     # Define a summary writer
     writer = None
+    log_dir = args.input_dir
     if args.log is not None:
         log_dir = os.path.join(args.input_dir, 'logs', args.log + '-' + time.strftime("%d-%b-%Y-%H:%M:%S"))
         writer = shdom.SummaryWriter(log_dir)
-        writer.save_checkpoints(ckpt_period=30*60)
+        writer.save_checkpoints(ckpt_period=20*60)
         writer.monitor_loss()
         writer.monitor_shdom_iterations()
         writer.monitor_images(acquired_images=measurements.images, ckpt_period=5*60)
         writer.monitor_scatterer_error(estimator_name='cloud', ground_truth=cloud_gt)
-        
-    optimizer = shdom.Optimizer()
 
-    # Define L-BFGS-B options
+    # Define an L-BFGS-B optimizer
     options = {
         'maxiter': 1000,
         'maxls': 100,
         'disp': True,
-        'gtol': 1e-16,
-        'ftol': 1e-16 
+        'gtol': 1e-18,
+        'ftol': 1e-18
     }
-    
+    optimizer = shdom.LocalOptimizer(options, n_jobs=args.n_jobs)
     optimizer.set_measurements(measurements)
     optimizer.set_rte_solver(rte_solver)
     optimizer.set_medium_estimator(medium_estimator)
     optimizer.set_writer(writer)
 
     # Optimization process
-    result = optimizer.minimize(options=options, n_jobs=args.n_jobs)
+    result = optimizer.minimize()
+    optimizer.save(os.path.join(log_dir, 'optimizer'))
+
     print('\n------------------ Optimization Finished ------------------\n')
     print('Success: {}'.format(result.success))
     print('Message: {}'.format(result.message))
     print('Final loss: {}'.format(result.fun))
     print('Number iterations: {}'.format(result.nit))
-    optimizer.save(os.path.join(args.input_dir, 'optimizer'))
+
 
 

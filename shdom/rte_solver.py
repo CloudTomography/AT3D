@@ -502,27 +502,10 @@ class RteSolver(object):
                 scatterer = scatterer.get_optical_scatterer(self.wavelength)
             resampled_scatterer = scatterer.resample(medium.grid)
             
-            extinction = resampled_scatterer.extinction.data
-            albedo = resampled_scatterer.albedo.data
-            iphase = resampled_scatterer.phase.iphasep
-            
-            if self._bcflag == 0:
-                extinction = np.pad(extinction, ((0,1),(0,1),(0,0)), 'wrap')
-                albedo = np.pad(albedo, ((0,1),(0,1),(0,0)), 'wrap')
-                iphase = np.pad(iphase, ((0,1),(0,1),(0,0)), 'wrap')
-            elif self._bcflag == 1:
-                extinction = np.pad(extinction, ((0,0),(0,1),(0,0)), 'wrap')
-                albedo = np.pad(albedo, ((0,0),(0,1),(0,0)), 'wrap')
-                iphase = np.pad(iphase, ((0,0),(0,1),(0,0)), 'wrap')
-            elif self._bcflag == 2:
-                extinction = np.pad(extinction, ((0,1),(0,0),(0,0)), 'wrap')
-                albedo = np.pad(albedo, ((0,1),(0,0),(0,0)), 'wrap')
-                iphase = np.pad(iphase, ((0,1),(0,0),(0,0)), 'wrap')
-                
-            self._pa.extinctp[:, i] = extinction.ravel()
-            self._pa.albedop[:, i] = albedo.ravel()
-            self._pa.iphasep[:, i] = iphase.ravel() + self._pa.iphasep.max()
-            
+            self._pa.extinctp[:, i] = resampled_scatterer.extinction.data.ravel()
+            self._pa.albedop[:, i] = resampled_scatterer.albedo.data.ravel()
+            self._pa.iphasep[:, i] = resampled_scatterer.phase.iphasep.ravel() + self._pa.iphasep.max()
+
             scat_table = copy.deepcopy(resampled_scatterer.phase.legendre_table)
             if i == 0:
                 legendre_table = scat_table
@@ -634,7 +617,7 @@ class RteSolver(object):
             self._nx1 -= 1
         if self._bcflag & 7:
             self._ny1 -= 1
-        self._nbpts = self._nx1 * self._ny1 * self._nz 
+        self._nbpts = self._nx * self._ny * self._nz
         
         # Calculate the number of base grid cells depending on the BCFLAG
         self._nbcells = (self._nz - 1) * (self._nx + ibits(self._bcflag, 0, 1) - \

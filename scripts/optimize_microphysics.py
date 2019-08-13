@@ -17,7 +17,6 @@ import numpy as np
 import argparse
 import shdom
 
-
 def argument_parsing():
     """
     Handle all the argument parsing needed for this script.
@@ -45,7 +44,7 @@ def argument_parsing():
                               usefull for debugging/development.')
     parser.add_argument('--use_forward_lwc',
                         action='store_true',
-                        help='Use the ground-truth LWC.')    
+                        help='Use the ground-truth LWC.')
     parser.add_argument('--use_forward_reff',
                             action='store_true',
                             help='Use the ground-truth effective radius.')    
@@ -60,13 +59,17 @@ def argument_parsing():
                         default=[0.05],
                         nargs='+',
                         type=np.float32,
-                        help='(default value: %(default)s) Threshold for the radiance to create a cloud mask.' \
+                        help='(default value: %(default)s) Threshold for the radiance to create a cloud mask.'
                         'Threshold is either a scalar or a list of length of measurements.')    
     parser.add_argument('--n_jobs',
                         default=1,
                         type=int,
                         help='(default value: %(default)s) Number of jobs for parallel rendering. n_jobs=1 uses no parallelization')
-    
+    parser.add_argument('--globalopt',
+                        action='store_true',
+                        help='Global optimization with basin-hopping.'
+                             'For more info see: https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.basinhopping.html')
+
     # Additional arguments to the parser
     subparser = argparse.ArgumentParser(add_help=False)
     subparser.add_argument('--init')
@@ -112,25 +115,28 @@ def init_atmosphere_estimation():
     else:
         lwc_grid = reff_grid = veff_grid = cloud_generator.get_grid()
    
-    # Define the Microphysical parameters
-    # Effective variance is either initialized (optimized) or ground-truth (not optimized)    
+    # Define Microphysical parameters: either optimize or use ground-truth
     if args.use_forward_lwc:
         lwc = cloud_gt.lwc
     else:
-        lwc = shdom.GridDataEstimator(cloud_generator.get_lwc(lwc_grid), min_bound=0.0)
+        lwc = shdom.GridDataEstimator(cloud_generator.get_lwc(lwc_grid),
+                                      min_bound=0.0,
+                                      random_step=0.15)
     
     if args.use_forward_reff:
         reff = cloud_gt.reff
     else:
         reff = shdom.GridDataEstimator(cloud_generator.get_reff(reff_grid),
                                        min_bound=cloud_gt.min_reff,
-                                       max_bound=cloud_gt.max_reff)
+                                       max_bound=cloud_gt.max_reff,
+                                       random_step=5.0)
     if args.use_forward_veff:
         veff = cloud_gt.veff
     else:
         veff = shdom.GridDataEstimator(cloud_generator.get_veff(veff_grid), 
                                        max_bound=cloud_gt.max_veff,
-                                       min_bound=cloud_gt.min_veff)
+                                       min_bound=cloud_gt.min_veff,
+                                       random_step=0.1)
         
     cloud_estimator = shdom.MicrophysicalScattererEstimator(cloud_gt.mie, lwc, reff, veff)
     
@@ -171,39 +177,48 @@ if __name__ == "__main__":
     
     # Define a summary writer
     writer = None
+    log_dir = args.input_dir
     if args.log is not None:
         log_dir = os.path.join(args.input_dir, 'logs', args.log + '-' + time.strftime("%d-%b-%Y-%H:%M:%S"))
         writer = shdom.SummaryWriter(log_dir)
         writer.monitor_loss()
-        writer.save_checkpoints(ckpt_period=15*60)
-        writer.monitor_images(acquired_images=measurements.images, ckpt_period=-1)
+        writer.save_checkpoints(ckpt_period=30*60)
+        writer.monitor_images(acquired_images=measurements.images, ckpt_period=3*60)
         writer.monitor_scatterer_error(estimator_name='cloud', ground_truth=cloud_gt)
         writer.monitor_domain_mean(estimator_name='cloud', ground_truth=cloud_gt)
-        
-    optimizer = shdom.Optimizer()
-        
-    # Define L-BFGS-B options
+
+    # Define an L-BFGS-B local optimizer
     options = {
         'maxiter': 1000,
         'maxls': 100,
         'disp': True,
         'gtol': 1e-18,
-        'ftol': 1e-18 
+        'ftol': 1e-18
     }
-    
+    optimizer = shdom.LocalOptimizer(options, n_jobs=args.n_jobs)
     optimizer.set_measurements(measurements)
     optimizer.set_rte_solver(rte_solver)
     optimizer.set_medium_estimator(medium_estimator)
     optimizer.set_writer(writer)
 
-    # Optimization process
-    result = optimizer.minimize(options=options, n_jobs=args.n_jobs)
+    n_global_iter = 1
+    if args.globalopt:
+        global_optimizer = shdom.GlobalOptimizer(local_optimizer=optimizer)
+        result = global_optimizer.minimize(niter_success=20, T=1e-3)
+        n_global_iter = result.nit
+        result = result.lowest_optimization_result
+        optimizer.set_state(result.x)
+    else:
+        result = optimizer.minimize()
+    optimizer.save(os.path.join(log_dir, 'optimizer'))
+
     print('\n------------------ Optimization Finished ------------------\n')
+    print('Number global iterations: {}'.format(n_global_iter))
     print('Success: {}'.format(result.success))
     print('Message: {}'.format(result.message))
     print('Final loss: {}'.format(result.fun))
-    print('Number iterations: {}'.format(result.nit))    
+    print('Number local iterations: {}'.format(result.nit))
     print(result)
-    optimizer.save(os.path.join(args.input_dir, 'optimizer'))
+
 
 
