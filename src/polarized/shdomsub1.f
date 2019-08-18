@@ -370,7 +370,7 @@ Cf2py intent(in) :: SRCTYPE, UNITS, SFCTYPE
 Cf2py intent(in) :: VERBOSE
       CHARACTER(LEN=*) :: RUNNAME
 Cf2py intent(in) :: RUNNAME
-      REAL    YLMSUN(NSTLEG,*)
+      REAL    YLMSUN(NSTLEG,NLM)
 Cf2py intent(in) :: YLMSUN
       INTEGER NPX, NPY, NPZ, NPART, NBPTS
 Cf2py intent(in) :: NPX, NPY, NPZ, NPART, NBPTS
@@ -778,7 +778,7 @@ Cf2py intent(in) :: RSHPTR, SHPTR, OSHPTR
 Cf2py intent(in) :: IPHASE
       LOGICAL FIXSH, FIRST, ACCELFLAG
 Cf2py intent(in) :: FIXSH, FIRST, ACCELFLAG
-      REAL    SHACC, YLMSUN(*), SOLARMU
+      REAL    SHACC, YLMSUN(NSTLEG,NLM), SOLARMU
 Cf2py intent(in) :: SHACC, YLMSUN, SOLARMU
       REAL    DELJDOT, DELJOLD, DELJNEW, JNORM
 Cf2py intent(out) :: DELJDOT, DELJOLD, DELJNEW, JNORM

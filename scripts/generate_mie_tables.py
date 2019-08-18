@@ -69,8 +69,8 @@ def argument_parsing():
     parser.add_argument('--polarized',
                         action='store_true',
                         help='Polarized/Unpolarized table.')  
-    parser.add_argument('--mie_base_path',
-                        default='mie_tables/polydisperse/Water_<wavelength>nm.scat/pol',
+    parser.add_argument('--mie_base_name',
+                        default='Water_<wavelength>nm.scat',
                         help='(default value: %(default)s) Mie table base file name. ' \
                         '<wavelength> will be replaced by the corresponding wavelengths.')      
     
@@ -105,7 +105,7 @@ def get_file_paths(wavelength, args):
     if not os.path.exists(args.poly_dir):
         os.makedirs(args.poly_dir)   
          
-    file_name = args.mie_base_path.replace('<wavelength>', '{}'.format(shdom.int_round(wavelength)))
+    file_name = args.mie_base_name.replace('<wavelength>', '{}'.format(shdom.int_round(wavelength)))
     if args.polarized:
         file_name += 'pol'
     mono_path = os.path.join(args.mono_dir, file_name)

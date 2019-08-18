@@ -133,11 +133,12 @@ def init_atmosphere_estimation():
     if args.use_forward_veff:
         veff = cloud_gt.veff
     else:
-        veff = shdom.GridDataEstimator(cloud_generator.get_veff(veff_grid), 
+        veff = shdom.GridDataEstimator(cloud_generator.get_veff(veff_grid),
                                        max_bound=cloud_gt.max_veff,
                                        min_bound=cloud_gt.min_veff,
                                        random_step=0.1)
-        
+
+
     cloud_estimator = shdom.MicrophysicalScattererEstimator(cloud_gt.mie, lwc, reff, veff)
     
     # Set a cloud mask for non-cloudy voxels
@@ -219,6 +220,7 @@ if __name__ == "__main__":
     print('Final loss: {}'.format(result.fun))
     print('Number local iterations: {}'.format(result.nit))
     print(result)
+
 
 
 

@@ -461,10 +461,14 @@ class MicrophysicalScatterer(Scatterer):
         return self._max_veff
 
     @property
+    def num_wavelengths(self):
+        return len(self._wavelength)
+
+    @property
     def wavelength(self):
-        if len(self._wavelength) == 0:
+        if self.num_wavelengths == 0:
             return None
-        if len(self._wavelength) == 1:
+        if self.num_wavelengths == 1:
             return self._wavelength[0]
         else:
             return self._wavelength
@@ -481,7 +485,7 @@ class MultispectralScatterer(object):
     """
     def __init__(self, scatterer_list=None):
         self._scatterer = OrderedDict()
-        self._num_bands = 0
+        self._num_wavelengths = 0
         self._grid = None
         self._wavelength = []
         if scatterer_list is not None:
@@ -530,11 +534,11 @@ class MultispectralScatterer(object):
         scatterer: shdom.OpticalScatterer
             An optical scatterer at a given wavelength.
         """
-        if self.num_bands == 0:
+        if self.num_wavelengths == 0:
             self._grid = scatterer.grid
         else:
             self._grid += scatterer.grid
-        self._num_bands += 1
+        self._num_wavelengths += 1
         self.scatterer[float_round(scatterer.wavelength)] = scatterer.resample(self.grid)
         self._wavelength.append(scatterer.wavelength)
         
@@ -543,13 +547,17 @@ class MultispectralScatterer(object):
         return self._scatterer
     
     @property
-    def num_bands(self):
-        return self._num_bands
+    def num_wavelengths(self):
+        return self._num_wavelengths
 
     @property
     def grid(self):
         return self._grid    
-    
+
+    @property
+    def bounding_box(self):
+        return self.grid.bounding_box
+
     @property
     def wavelength(self):
         if len(self._wavelength) == 0:
@@ -671,3 +679,10 @@ class Medium(object):
     @property
     def num_scatterers(self):
         return self._num_scatterers
+
+    @property
+    def num_wavelengths(self):
+        if isinstance(self._wavelength, list):
+            return len(self._wavelength)
+        else:
+            return 1

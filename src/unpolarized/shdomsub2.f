@@ -1565,7 +1565,7 @@ C              ends of the edge; assume the cell was split in half.
      .                        MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD, 
      .                        SFCTYPE, NSFCPAR, SFCGRIDPARMS, NPART, 
      .                        MURAY,PHIRAY, MU2,PHI2, X0,Y0,Z0,
-     .			      TOTAL_EXT, RADOUT)
+     .			              TOTAL_EXT, RADOUT)
 
 C       Integrates the source function through the extinction field 
 C     (EXTINCT) backward in the direction (MURAY,PHIRAY) to find the 
@@ -1829,7 +1829,7 @@ C                 Linear extinction, linear source*extinction, to second order
             TRANSCELL = 1.0
             SRC = 0.0
           ENDIF
-	  
+
           RAD = RAD + TRANSMIT*SRC*ABSCELL
           TRANSMIT = TRANSMIT*TRANSCELL
           EXT1 = EXT0
@@ -1896,7 +1896,7 @@ C             boundary then prepare for next cell
         ELSE
           XE = XN
           YE = YN
-	  ZE = ZN
+	      ZE = ZN
           ICELL = INEXTCELL
         ENDIF
 
@@ -2073,7 +2073,7 @@ C           at the viewing angle from the spherical harmonic source function.
           SRCEXT8(N) = SRCEXT8(ABS(I))
         ELSE
 	
-	  EXT = TOTAL_EXT(IP)
+	      EXT = TOTAL_EXT(IP)
           OLDIPTS(N) = IP
           IS = SHPTR(IP)
           NS = SHPTR(IP+1)-IS
@@ -2084,35 +2084,35 @@ C             Sum over the spherical harmonic series of the source function
           ENDDO
 
 C             Special case for solar source and Delta-M
-          IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
+        IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
 	    
 	    DO IPA = 1, NPART
 	      IF (EXT.EQ.0.0) THEN
-		W = 1.0D0
+		    W = 1.0D0
 	      ELSE
-		W = EXTINCT(IP,IPA)/EXT
+		    W = EXTINCT(IP,IPA)/EXT
 	      ENDIF
 	      IF (W.EQ.0.0) CYCLE
 	    
 	      IF (NUMPHASE .GT. 0) THEN
-		K = IPHASE(IP,IPA)
+		    K = IPHASE(IP,IPA)
 	      ELSE
-		K = IP
+		    K = IP
 	      ENDIF
 
 C               First subtract off the truncated single scattering 
 	      DA = ALBEDO(IP,IPA)*DIRFLUX(IP)*SECMU0*W
 	      J = 1
 	      DO L = 0, ML
-		ME = MIN(L,MM)
-		MS = (1-NCS)*ME
-		A = DA*LEGEN(L,K)
-		IF (J .LE. NS) THEN
-		  DO M = MS, ME
-		    SRCEXT8(N) = SRCEXT8(N) - A*YLMDIR(J)*YLMSUN(J)
-		    J = J + 1
-		  ENDDO
-		ENDIF
+		    ME = MIN(L,MM)
+		    MS = (1-NCS)*ME
+		    A = DA*LEGEN(L,K)
+		    IF (J .LE. NS) THEN
+		      DO M = MS, ME
+		        SRCEXT8(N) = SRCEXT8(N) - A*YLMDIR(J)*YLMSUN(J)
+		        J = J + 1
+		      ENDDO
+		    ENDIF
 	      ENDDO
 C               Then add in the single scattering contribution for the
 C               original unscaled phase function.  For L<=ML this requires
@@ -2306,7 +2306,7 @@ C         Loop over the radiance directions
         ELSE          
 
 C             Compute the source function throughout grid for this angle
-          CALL COMPUTE_ONE_SOURCE (ML, MM, NCS, NLEG, NUMPHASE, 
+          CALL COMPUTE_ONE_SOURCE (ML, MM, NCS, NLEG, NUMPHASE,
      .           NPTS, DELTAM, MUOUT, PHIOUT, 
      .           SRCTYPE, SOLARMU, SOLARAZ, ALBEDO, LEGEN, IPHASE, 
      .           DIRFLUX, SHPTR, SOURCE, SOURCE1)

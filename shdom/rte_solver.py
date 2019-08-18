@@ -494,7 +494,7 @@ class RteSolver(object):
         
         self._pa.extinctp = np.zeros(shape=[self._nbpts, medium.num_scatterers], dtype=np.float32)
         self._pa.albedop = np.zeros(shape=[self._nbpts, medium.num_scatterers], dtype=np.float32)
-        self._pa.iphasep = np.zeros(shape=[self._nbpts, medium.num_scatterers], dtype=np.float32)
+        self._pa.iphasep = np.zeros(shape=[self._nbpts, medium.num_scatterers], dtype=np.int32)
         
         for i, scatterer in enumerate(medium.scatterers.values()):
             
@@ -718,8 +718,8 @@ class RteSolver(object):
 
     def init_solution(self):
         """
-        Initilize the solution (I, J fields) from the direct transmition and a simple layered model. 
-        Many arrays are initialized including the dirflux (the direct solar transmition).
+        Initilize the solution (I, J fields) from the direct transmission and a simple layered model. 
+        Many arrays are initialized including the dirflux (the direct solar transmission).
         """
         self._oldnpts = 0
         self._solcrit = 1.0
@@ -974,10 +974,29 @@ class RteSolver(object):
             runname=self._name
         )
         return output_arguments
-    
+
+    def precompute_phase(self):
+        """
+        Precompute angular scattering for the entire legendre table.
+        Preform a negativity check. (negcheck=True).
+        """
+        self._phasetab = core.precompute_phase_check(
+            negcheck=True,
+            nscatangle=self._nscatangle,
+            numphase=self._pa.numphase,
+            nstphase=self._nstphase,
+            nstokes=self._nstokes,
+            nstleg=self._nstleg,
+            nleg=self._nleg,
+            ml=self._ml,
+            nlm=self._nlm,
+            legen=self._legen,
+            deltam=self._deltam
+        )
+
     def make_direct(self):
         """
-        Compute the direct transmition from the solar beam.
+        Compute the direct transmission from the solar beam.
         """
         self._dirflux, self._pa.extdirp, self._cx, self._cy, self._cz, self._cxinv, self._cyinv, self._czinv, \
             self._di, self._dj, self._dk, self._ipdirect, self._delxd, self._delyd, self._xdomain, self._ydomain, \
@@ -1083,6 +1102,7 @@ class RteSolverArray(object):
         self._solver_list = []
         self._name = []
         self._type = None
+        self._maxiters = 0
         if solver_list is not None:
             for solver in solver_list:
                 self.add_solver(solver)
@@ -1196,15 +1216,23 @@ class RteSolverArray(object):
       
     def init_solution(self):
         """
-        Initilize the solution (I, J fields) from the direct transmition and a simple layered model. 
-        Many arrays are initialized including the dirflux (the direct solar transmition).
+        Initilize the solution (I, J fields) from the direct transmission and a simple layered model. 
+        Many arrays are initialized including the dirflux (the direct solar transmission).
         """
         for solver in self.solver_list:
-            solver.init_solution() 
-            
+            solver.init_solution()
+
+    def precompute_phase(self):
+        """
+        Pre-compute angular scattering for the entire legendre table.
+        Preform a negativity check. (negcheck=True).
+        """
+        for solver in self.solver_list:
+            solver.precompute_phase()
+
     def make_direct(self):
         """
-        Compute the direct transmition from the solar beam.
+        Compute the direct trasmission from the solar beam.
         """
         for solver in self.solver_list:
             solver.make_direct()    
@@ -1239,6 +1267,8 @@ class RteSolverArray(object):
         for solver, arguments in zip(self.solver_list, output_arguments):
             solver.update_solution_arguments(arguments)
 
+        self._maxiters = max([solver._iters for solver in self._solver_list])
+
     @property
     def name(self):
         return self._name    
@@ -1250,6 +1280,10 @@ class RteSolverArray(object):
     @property
     def num_solvers(self):
         return self._num_solvers
+
+    @property
+    def num_iterations(self):
+        return self._maxiters
 
     @property
     def type(self):

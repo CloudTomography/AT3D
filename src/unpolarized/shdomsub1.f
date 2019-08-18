@@ -235,7 +235,7 @@ C    Compute the solar transmission in DIRFLUX.
      .             ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .             CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		   NPART, NBPTS)
+     .		       NPART, NBPTS)
         ENDIF
       ENDIF
                    

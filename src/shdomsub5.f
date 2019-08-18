@@ -367,3 +367,419 @@ C     Compute trilinear interpolation kernel F(8)
 
       RETURN
       END
+
+
+
+      SUBROUTINE MAKE_DIRECT_DERIVATIVE (NPTS, BCFLAG, NPX, NPY, NPZ,
+     .		         DELX, DELY, XSTART, YSTART, GRIDPOS, ZLEVELS,
+     .		         IPDIRECT, DI, DJ, DK, CX, CY, CZ, CXINV,
+     .		         CYINV, CZINV, EPSS, EPSZ, XDOMAIN, YDOMAIN,
+     .		         UNIFORMZLEV, DELXD, DELYD, DPATH, DPTR)
+C       Makes the direct beam solar flux for the internal base grid.
+C     DIRFLUX is set to F*exp(-tau_sun).
+C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
+      IMPLICIT NONE
+      INTEGER NPTS, BCFLAG
+Cf2py intent(in) :: NPTS, BCFLAG
+      INTEGER NPX, NPY, NPZ
+Cf2py intent(in) :: NPX, NPY, NPZ
+      REAL DELX, DELY, XSTART, YSTART, GRIDPOS(3,*), ZLEVELS(*)
+Cf2py intent(in) :: DELX, DELY, XSTART, YSTART, GRIDPOS, ZLEVELS
+      INTEGER IPDIRECT, DI, DJ, DK
+Cf2py intent(in) :: IPDIRECT, DI, DJ, DK
+      DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
+Cf2py intent(in) ::   CX, CY, CZ, CXINV, CYINV, CZINV
+      DOUBLE PRECISION EPSS, EPSZ, XDOMAIN, YDOMAIN
+Cf2py intent(in) :: EPSS, EPSZ, XDOMAIN, YDOMAIN
+      DOUBLE PRECISION UNIFORMZLEV, DELXD, DELYD
+Cf2py intent(in) :: UNIFORMZLEV, DELXD, DELYD
+      REAL DPATH(8*(NPX+NPY+NPZ),NPTS)
+      INTEGER DPTR(8*(NPX+NPY+NPZ),NPTS)
+Cf2py intent(out) :: DPATH, DPTR
+
+      INTEGER SIDE, IP
+      LOGICAL VALIDBEAM
+      REAL    UNIFZLEV, XO, YO, ZO, DIR, DIRPATH
+
+      DPTR = 0
+      DPATH = 0.0
+
+      DO IP = 1, NPTS
+        DIRPATH = 0.0
+        CALL DIRECT_BEAM_AND_PATHS_PROP(GRIDPOS(1,IP), GRIDPOS(2,IP),
+     .            GRIDPOS(3,IP), BCFLAG, XO, YO, ZO, SIDE, NPX, NPY,
+     .            NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS, CX, CY, CZ,
+     .            CXINV, CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD,
+     .            DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
+     .            DPATH(:,IP), DPTR(:,IP))
+      ENDDO
+      RETURN
+      END
+
+
+      SUBROUTINE DIRECT_BEAM_AND_PATHS_PROP (XI, YI, ZI, BCFLAG,
+     .           XO, YO, ZO, SIDE, NPX, NPY, NPZ, DELX, DELY,
+     .           XSTART, YSTART, ZLEVELS, CX, CY, CZ, CXINV, CYINV,
+     .           CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD, XDOMAIN,
+     .           YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, DPATH, DPTR)
+      IMPLICIT NONE
+
+      REAL    DPATH(8*(NPX+NPY+NPZ))
+      INTEGER DPTR(8*(NPX+NPY+NPZ))
+      INTEGER BCFLAG, SIDE
+      REAL    XO, YO, ZO, XI, YI, ZI
+
+      INTEGER IX, IY, IZ, JZ, IL, IM, IU
+      INTEGER I, J, K, IP, JP, I1, I2, I3, I4
+      INTEGER IPDIRECT, DI, DJ, DK
+      LOGICAL CONSTX, CONSTY, HITBOUNDARY, BTEST, OUTOFDOMAIN
+      DOUBLE PRECISION UNIFORMZLEV
+      DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
+      DOUBLE PRECISION EPSS, EPSZ, XDOMAIN, YDOMAIN
+      DOUBLE PRECISION XOFFS, YOFFS, DELXD, DELYD
+      DOUBLE PRECISION X, Y, Z, XE, YE, ZE, XP, YP, ZP
+      DOUBLE PRECISION X0, X1, Y0, Y1, Z0, Z1, SO, SOX, SOY, SOZ
+      DOUBLE PRECISION U0, V0, W0, U1, V1, W1, AX, AY, AZ
+      DOUBLE PRECISION U0M, V0M, W0M, U1M, V1M, W1M, DU, DV, DW
+      DOUBLE PRECISION B1,B2,B3,B4,B5,B6,B7,B8,C1,C2,C3,C4,C5,C6,C7,C8
+      DOUBLE PRECISION UV,UMV,UVM,UMVM,UW,UMW,UWM,UMWM,VW,VMW,VWM,VMWM
+      DOUBLE PRECISION VWU,VWUM,UWV,UWVM,UVW,UVWM
+
+      INTEGER NPX, NPY, NPZ, IDP
+      REAL DELX, DELY, XSTART, YSTART
+      REAL ZLEVELS(*)
+
+      OUTOFDOMAIN = .FALSE.
+
+C         Here for computing the direct beam path for one starting point.
+      Z = ZI
+      X = XI - XSTART
+      Y = YI - YSTART
+
+C         Find the grid location
+      IL=0
+      IU=NPZ
+      DO WHILE (IU-IL .GT. 1)
+        IM = (IU+IL)/2
+        IF (Z .GE. ZLEVELS(IM)) THEN
+          IL = IM
+        ELSE
+          IU=IM
+        ENDIF
+      ENDDO
+      K = MAX(IL,1)
+
+
+      I = INT(X/DELXD) + 1
+      IF (I .GT. NPX .AND. ABS(X-XDOMAIN) .LT. 0.001*DELXD) I = NPX
+      IF (I .LT. 1 .OR. I .GT. NPX) THEN
+        WRITE (6,*) 'DIRECT_BEAM_PROP: Beyond X domain',I,XI,YI,ZI
+        STOP
+      ENDIF
+      J = INT(Y/DELYD) + 1
+      IF (J .GT. NPY .AND. ABS(Y-YDOMAIN) .LT. 0.001*DELYD) J = NPY
+      IF (J .LT. 1 .OR. J .GT. NPY) THEN
+        WRITE (6,*) 'DIRECT_BEAM_PROP: Beyond Y domain',J,XI,YI,ZI
+        STOP
+      ENDIF
+      XE = X
+      YE = Y
+      ZE = Z
+      XP = XE
+      YP = YE
+      ZP = ZE
+      CONSTX = BTEST(IPDIRECT,0)
+      CONSTY = BTEST(IPDIRECT,1)
+      IF (CX .EQ. 0.0)  CONSTX = .TRUE.
+      IF (CY .EQ. 0.0)  CONSTY = .TRUE.
+      IF (BTEST(BCFLAG,0) .AND. (ABS(X) .LT. 0.01*DELXD
+     .   .OR. ABS(X-(NPX-1)*DELXD) .LT. 0.01*DELXD)) THEN
+        CONSTX = .TRUE.
+        OUTOFDOMAIN = .TRUE.
+      ENDIF
+      IF (BTEST(BCFLAG,1) .AND. (ABS(Y) .LT. 0.01*DELYD
+     .   .OR. ABS(Y-(NPY-1)*DELYD) .LT. 0.01*DELYD)) THEN
+        CONSTY = .TRUE.
+        OUTOFDOMAIN = .TRUE.
+      ENDIF
+
+C     If have multiple subdomains (processors) and ray is going outwards
+C      from a boundary then set the HITBOUNDARY flag
+      HITBOUNDARY = .FALSE.
+      IF (BTEST(BCFLAG,2)) THEN
+        IF (CX .GT. 0.0 .AND. ABS(X-XDOMAIN) .LT. 0.001*DELXD) THEN
+          SIDE = 2
+          HITBOUNDARY = .TRUE.
+        ELSE IF (CX .LT. 0.0 .AND. ABS(X) .LT.  0.001*DELXD) THEN
+          SIDE = 1
+          HITBOUNDARY = .TRUE.
+        ENDIF
+      ENDIF
+      IF (BTEST(BCFLAG,3)) THEN
+        IF (CY .GT. 0.0 .AND. ABS(Y-YDOMAIN) .LT. 0.001*DELYD) THEN
+          SIDE = 4
+          HITBOUNDARY = .TRUE.
+        ENDIF
+        IF (CY .LT. 0.0 .AND. ABS(Y) .LT.  0.001*DELYD) THEN
+          SIDE = 3
+          HITBOUNDARY = .TRUE.
+        ENDIF
+      ENDIF
+
+C           Grid cell loop begin
+      IDP = 0
+      DO WHILE (.NOT. HITBOUNDARY .AND. ABS(ZE-ZLEVELS(NPZ)) .GT. EPSZ)
+        IP = I + 1
+        IF (I .EQ. NPX) THEN
+          IF (BTEST(BCFLAG,0) .OR. BTEST(BCFLAG,2)) THEN
+            IP=NPX
+          ELSE
+            IP = 1
+          ENDIF
+        ENDIF
+        JP = J + 1
+        IF (J .EQ. NPY) THEN
+          IF (BTEST(BCFLAG,1) .OR. BTEST(BCFLAG,3)) THEN
+            JP=NPY
+          ELSE
+            JP = 1
+          ENDIF
+        ENDIF
+        X0 = DELXD*(I-1)
+        X1 = X0 + DELXD
+        Y0 = DELYD*(J-1)
+        Y1 = Y0 + DELYD
+        Z0 = ZLEVELS(K)
+        Z1 = ZLEVELS(K+1)
+
+        IF (I .LT. 1 .OR. I .GT. NPX .OR.
+     .      J .LT. 1 .OR. J .GT. NPY .OR.
+     .      K .LT. 1 .OR. K .GE. NPZ) THEN
+          WRITE (6,'(A,3I4)') 'DIRECT_BEAM_PROP: beyond grid!', I, J, K
+          WRITE(*,*) NPX, NPY, NPZ
+          WRITE (6,'(1(2X,3F9.5))') X, Y, Z
+          STOP
+        ENDIF
+C           Get the eight corner extinction values
+        I1 = K + NPZ*(J-1)  + NPZ*NPY*(I-1)
+        I2 = K + NPZ*(J-1)  + NPZ*NPY*(IP-1)
+        I3 = K + NPZ*(JP-1) + NPZ*NPY*(I-1)
+        I4 = K + NPZ*(JP-1) + NPZ*NPY*(IP-1)
+
+C           Compute the distance to the next grid plane in  X, Y, and Z
+C             If in horizontal uniform region or doing IP then fix X and/or Y.
+        IF (ZE .GE. UNIFORMZLEV) THEN
+          CONSTX = .TRUE.
+          CONSTY = .TRUE.
+        ENDIF
+        IF (CONSTX) THEN
+          SOX = 1.0E30
+        ELSE IF (CX .GT. 0.0) THEN
+          SOX = (X1-XE)*CXINV
+          XP = X1
+        ELSE
+          SOX = (X0-XE)*CXINV
+          XP = X0
+        ENDIF
+        IF (CONSTY) THEN
+          SOY = 1.0E30
+        ELSE IF (CY .GT. 0.0) THEN
+          SOY = (Y1-YE)*CYINV
+          YP = Y1
+        ELSE
+          SOY = (Y0-YE)*CYINV
+          YP = Y0
+        ENDIF
+        IF (CZ .GT. 0.0) THEN
+          SOZ = (Z1-ZE)*CZINV
+          ZP = Z1
+        ELSE IF (CZ .LT. 0.0) THEN
+          SOZ = (Z0-ZE)*CZINV
+          ZP = Z0
+        ELSE
+          SOZ = 1.0E30
+        ENDIF
+
+C           The shortest distance is the plane we stop at:
+C             get the exitting location and increment the cell
+        XOFFS = 0.0
+        YOFFS = 0.0
+        IF (SOZ .LE. SOX .AND. SOZ .LE. SOY) THEN
+          SO = SOZ
+          IF (.NOT. CONSTX) XP = XE + SO*CX
+          IF (.NOT. CONSTY) YP = YE + SO*CY
+          K = K + DK
+        ELSE IF (SOX .LE. SOY) THEN
+          SO = SOX
+          IF (.NOT. CONSTY) YP = YE + SO*CY
+          ZP = ZE + SO*CZ
+          I = I + DI
+C             If have reached a horizontal boundary then either wrap around
+C               (periodic) or go into IP mode (open boundaries).
+          IF (I .EQ. 0) THEN
+            OUTOFDOMAIN = .TRUE.
+            IF (BTEST(BCFLAG,0)) THEN
+              I = 1
+              CONSTX = .TRUE.
+            ELSE IF (BTEST(BCFLAG,2)) THEN
+              HITBOUNDARY = .TRUE.
+              SIDE = 1
+            ELSE
+              I = NPX
+              XOFFS = XDOMAIN
+            ENDIF
+          ELSE IF (I .GE. NPX .AND. BTEST(BCFLAG,2)) THEN
+              HITBOUNDARY = .TRUE.
+              SIDE = 2
+          ELSE IF (I .EQ. NPX+1) THEN
+            OUTOFDOMAIN = .TRUE.
+            IF (BTEST(BCFLAG,0)) THEN
+              I = NPX
+              CONSTX = .TRUE.
+            ELSE
+              I = 1
+              XOFFS = -XDOMAIN
+            ENDIF
+          ENDIF
+        ELSE
+          SO = SOY
+          IF (.NOT. CONSTX) XP = XE + SO*CX
+          ZP = ZE + SO*CZ
+          J = J + DJ
+          IF (J .EQ. 0) THEN
+            OUTOFDOMAIN = .TRUE.
+            IF (BTEST(BCFLAG,1)) THEN
+              J = 1
+              CONSTY = .TRUE.
+            ELSE IF (BTEST(BCFLAG,3)) THEN
+              HITBOUNDARY = .TRUE.
+              SIDE = 3
+            ELSE
+              J = NPY
+              YOFFS = YDOMAIN
+            ENDIF
+          ELSE IF (J .GE. NPY .AND. BTEST(BCFLAG,3)) THEN
+              HITBOUNDARY = .TRUE.
+              SIDE = 4
+          ELSE IF (J .EQ. NPY+1) THEN
+            OUTOFDOMAIN = .TRUE.
+            IF (BTEST(BCFLAG,1)) THEN
+              J = NPY
+              CONSTY = .TRUE.
+            ELSE
+              J = 1
+              YOFFS = -YDOMAIN
+            ENDIF
+          ENDIF
+        ENDIF
+        IF (SO .LT. -EPSS) THEN
+          WRITE (6,*) 'DIRECT_BEAM_PROP: SO<0', X,Y,Z,
+     .         XE,YE,ZE, XP,YP,ZP, CX,CY,CZ, SOX,SOY,SOZ
+          STOP
+        ENDIF
+        SO = MAX(SO,0.0D0)
+C           Make the starting and ending interpolation factors
+        AX = 1.0D0/(X1-X0)
+        AY = 1.0D0/(Y1-Y0)
+        AZ = 1.0D0/(Z1-Z0)
+        U0 = (XE-X0)*AX
+        V0 = (YE-Y0)*AY
+        W0 = (ZE-Z0)*AZ
+        U1 = (XP-X0)*AX
+        V1 = (YP-Y0)*AY
+        W1 = (ZP-Z0)*AZ
+C           Compute the cubic polynomial extinction coefficients
+        U0M = 1.0-U0
+        V0M = 1.0-V0
+        W0M = 1.0-W0
+        U1M = 1.0-U1
+        V1M = 1.0-V1
+        W1M = 1.0-W1
+        DU = U1-U0
+        DV = V1-V0
+        DW = W1-W0
+        UV   = U0 *V0
+        UMV  = U0M*V0
+        UVM  = U0 *V0M
+        UMVM = U0M*V0M
+        UW   = U0 *W0
+        UMW  = U0M*W0
+        UWM  = U0 *W0M
+        UMWM = U0M*W0M
+        VW   = V0 *W0
+        VMW  = V0M*W0
+        VWM  = V0 *W0M
+        VMWM = V0M*W0M
+
+        B1 = -DU*VMWM - DV*UMWM - DW*UMVM
+        B2 =  DU*VMWM - DV*UWM  - DW*UVM
+        B3 = -DU*VWM  + DV*UMWM - DW*UMV
+        B4 =  DU*VWM  + DV*UWM  - DW*UV
+        B5 = -DU*VMW  - DV*UMW  + DW*UMVM
+        B6 =  DU*VMW  - DV*UW   + DW*UVM
+        B7 = -DU*VW   + DV*UMW  + DW*UMV
+        B8 =  DU*VW   + DV*UW   + DW*UV
+
+        VW = DV*DW
+        VWU  = VW*U0
+        VWUM = VW*U0M
+        UW = DU*DW
+        UWV  = UW*V0
+        UWVM = UW*V0M
+        UV = DU*DV
+        UVW  = UV*W0
+        UVWM = UV*W0M
+        C1 = + VWUM + UWVM + UVWM
+        C2 = + VWU  - UWVM - UVWM
+        C3 = - VWUM + UWV  - UVWM
+        C4 = - VWU  - UWV  + UVWM
+        C5 = - VWUM - UWVM + UVW
+        C6 = - VWU  + UWVM - UVW
+        C7 = + VWUM - UWV  - UVW
+        C8 = + VWU  + UWV  + UVW
+
+
+C       Compute the inner derivatives (minus the path lengths)
+        IF (.NOT. OUTOFDOMAIN .AND. K .LT. NPZ) THEN
+          IF (IDP+8 .GT. 8*(NPX+NPY+NPZ)) THEN
+            WRITE(*,*) 'ERROR DIRECT_BEAM_AND_PATHS_PROP: ',
+     .                 'Max IDP exceeded: ', 8*(NPX+NPY+NPZ)
+            STOP
+          ENDIF
+          DPATH(IDP+1) = MAX(0.0, SO*(U0M*VMWM + 0.5D0*B1 +
+     .                 0.3333333333333333D0*C1 - 0.25D0*DU*DV*DW))
+          DPATH(IDP+2) = MAX(0.0, SO*(U0*VMWM + 0.5D0*B2 +
+     .                 0.3333333333333333D0*C2 + 0.25D0*DU*DV*DW))
+          DPATH(IDP+3) = MAX(0.0, SO*(U0M*VWM + 0.5D0*B3 +
+     .                 0.3333333333333333D0*C3 + 0.25D0*DU*DV*DW))
+          DPATH(IDP+4) = MAX(0.0, SO*(U0*VWM + 0.5D0*B4 +
+     .                 0.3333333333333333D0*C4 - 0.25D0*DU*DV*DW))
+          DPATH(IDP+5) = MAX(0.0, SO*(U0M*VMW + 0.5D0*B5 +
+     .                 0.3333333333333333D0*C5 + 0.25D0*DU*DV*DW))
+          DPATH(IDP+6) = MAX(0.0, SO*(U0*VMW + 0.5D0*B6 +
+     .                 0.3333333333333333D0*C6 - 0.25D0*DU*DV*DW))
+          DPATH(IDP+7) = MAX(0.0, SO*(U0M*VW + 0.5D0*B7 +
+     .                 0.3333333333333333D0*C7 - 0.25D0*DU*DV*DW))
+          DPATH(IDP+8) = MAX(0.0, SO*(U0*VW + 0.5D0*B8 +
+     .                 0.3333333333333333D0*C8 + 0.25D0*DU*DV*DW))
+
+          DPTR(IDP+1) = I1
+          DPTR(IDP+2) = I2
+          DPTR(IDP+3) = I3
+          DPTR(IDP+4) = I4
+          DPTR(IDP+5) = I1+1
+          DPTR(IDP+6) = I2+1
+          DPTR(IDP+7) = I3+1
+          DPTR(IDP+8) = I4+1
+
+          IDP = IDP + 8
+        ENDIF
+
+        XE = XP + XOFFS
+        YE = YP + YOFFS
+        ZE = ZP
+
+      ENDDO
+
+      RETURN
+      END

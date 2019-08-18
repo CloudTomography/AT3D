@@ -158,19 +158,7 @@ class RadianceSensor(Sensor):
             
         # Pre-computation of phase-function for all solvers.
         for rte_solver in rte_solvers:
-            rte_solver._phasetab = core.precompute_phase_check(
-                negcheck=True,
-                nscatangle=rte_solver._nscatangle,
-                numphase=rte_solver._pa.numphase,
-                nstphase=rte_solver._nstphase,
-                nstokes=rte_solver._nstokes,
-                nstleg=rte_solver._nstleg,
-                nleg=rte_solver._nleg,
-                ml=rte_solver._ml,
-                nlm=rte_solver._nlm,
-                legen=rte_solver._legen,
-                deltam=rte_solver._deltam
-            )
+            rte_solver.precompute_phase()
 
         # Parallel rendering using multithreading (threadsafe Fortran)
         if n_jobs > 1:
@@ -313,7 +301,7 @@ class StokesSensor(Sensor):
         
     def make_images(self, stokes, projection, num_channels):
         """
-        Split radiances into Multiview, Multi-channel stokes images (channel last)
+        Split into Multiview, Multi-channel Stokes images (channel last)
         
         Parameters
         ----------
@@ -337,20 +325,20 @@ class StokesSensor(Sensor):
     
         if multiview: 
             split_indices = np.cumsum(projection.npix[:-1])        
-            stokes = np.split(stokes, split_indices)
+            stokes = np.split(stokes, split_indices, axis=1)
     
             if multichannel:
                 stokes = [
-                    image.reshape(resolution + [num_channels], order='F')
+                    image.reshape([image.shape[0]] + resolution + [num_channels], order='F')
                     for image, resolution in zip(stokes, projection.resolution)
                 ]
             else:
                 stokes = [
-                    image.reshape(resolution, order='F') 
+                    image.reshape([image.shape[0]] + resolution, order='F')
                     for image, resolution in zip(stokes, projection.resolution) 
                 ]                  
         else:
-            new_shape =  [stokes.shape[0]] + projection.resolution
+            new_shape = [stokes.shape[0]] + projection.resolution
             if multichannel:
                 new_shape.append(num_channels)       
             stokes = stokes.reshape(new_shape, order='F')        
@@ -370,7 +358,7 @@ class DolpAolpSensor(StokesSensor):
         """   
         The render method integrates a pre-computed stokes vector in-scatter field (source function) J over the sensor gemoetry.
         The source code for this function is in src/polarized/shdomsub4.f. 
-        It is a modified version of the original SHDOM visualize_radiance subroutine in src/polarized/shdomsub2.f.
+        It is a modified version of the original SHDOM subroutine in src/polarized/shdomsub2.f.
         
         If n_jobs>1 than parallel rendering is used where all pixels are distributed amongst all workers
         
@@ -830,7 +818,7 @@ class AlmucantarProjection(Projection):
 
 class HemisphericProjection(Projection):
     """
-    Measurments of radiance on a hemisphere.
+    Measurments on a hemisphere.
     
     Parameters
     ----------
@@ -861,28 +849,58 @@ class HemisphericProjection(Projection):
 
 class Measurements(object):
     """
-    A Measurements object bundles together the imaging geometry and sensor measurents for later optimization.
-    It can be initilized with a Camera and images or radiances. 
+    A Measurements object bundles together the imaging geometry and sensor measurements for later optimization.
+    It can be initialized with a Camera and images or pixels.
     Alternatively is can be loaded from file.
-    
-    Notes
-    -----
-    When an images exist, radiances are simply a flattened version of the images.
+
+    Parameters
+    ----------
+    camera: shdom.Camera
+        The camera model used to take the measurements
+    images: list of images, optional
+        A list of images (multiview camera)
+    pixels: np.array(dtype=float)
+        pixels are a flattened version of the image list where the channel dimension is kept (1 for monochrome).
     """
-    def __init__(self, camera=None, images=None, radiances=None):
+    def __init__(self, camera=None, images=None, pixels=None):
         self._camera = camera
         self._images = images
-        self._radiances = radiances
-        if images is not None: 
+        num_channels = None
+
+        if images is not None:
+
             if type(images) is not list:
                 self._images = [images]
-            
-            #Check if images have the same number of channels
-            num_channels_list = list(map(lambda img: img.shape[2] if img.ndim>2 else 1, self.images))
+
+            # Check if images have the same number of channels
+            num_channels_list = list(map(lambda img: img.shape[-1] if img.ndim > 2 else 1, self.images))
             if all([elem == num_channels_list[0] for elem in num_channels_list]):
                 num_channels = num_channels_list[0]
-            self._radiances = np.concatenate([image.reshape((-1, num_channels), order='F') for image in self.images])
-             
+            else:
+                NotImplementedError('unequal number of channels not implemented')
+
+            pixels = []
+            for image in self.images:
+                if image.ndim == 3 or image.ndim == 2:
+                    pixels.append(image.reshape((-1, num_channels), order='F'))
+                elif image.ndim == 4:
+                    pixels.append(image.reshape((image.shape[0], -1, num_channels), order='F'))
+                else:
+                    AttributeError('Error image dimensions: {}'.format(image.ndim))
+            pixels = np.concatenate(pixels, axis=-2)
+
+        elif pixels is not None:
+            if (pixels.ndim == 1 and camera.sensor.type == 'Radiance') or (pixels.ndim == 2 and camera.sensor.type == 'StokesSensor'):
+                num_channels = 1
+                pixels = pixels[..., None]
+            elif (pixels.ndim == 2 and camera.sensor.type == 'Radiance') or (pixels.ndim == 3 and camera.sensor.type == 'StokesSensor'):
+                num_channels = pixels.shape[-1]
+            else:
+                AttributeError('Pixels should be a flat along spatial dimensions while maintaining channels/stokes dimension')
+
+        self._pixels = pixels
+        self._num_channels = num_channels
+
     def save(self, path):
         """
         Save Measurements to file.
@@ -929,15 +947,15 @@ class Measurements(object):
         An even split doesnt always exist, in which case some parts will have slightly more pixels.
         """
         projections = self.camera.projection.split(n_parts)
-        radiances = np.array_split(self.radiances, n_parts) 
+        pixels = np.array_split(self.pixels, n_parts)
         measurements = [shdom.Measurements(
             camera=shdom.Camera(self.camera.sensor, projection), 
-            radiances=radiance) for  projection, radiance in zip(projections, radiances)
+            pixels=pixel) for projection, pixel in zip(projections, pixels)
         ]
         return measurements
     
     def add_noise(self):
-        """Add sensor modeled noise to the radiances"""
+        """Add sensor modeled noise to the measurements"""
         raise NotImplemented
     
     @property
@@ -945,13 +963,16 @@ class Measurements(object):
         return self._camera
     
     @property
-    def radiances(self):
-        return self._radiances
+    def pixels(self):
+        return self._pixels
     
     @property
     def images(self):
         return self._images
 
+    @property
+    def num_channels(self):
+        return self._num_channels
 
 class Camera(object):
     """
@@ -1046,6 +1067,10 @@ class MultiViewProjection(Projection):
         name: str, optional
             An ID for the projection. 
         """
+        # Set a default name for the projection
+        if name is None:
+            name = 'View{}'.format(self.num_projections)
+
         attributes = ['x', 'y', 'z', 'mu', 'phi']
         
         if self.num_projections == 0:

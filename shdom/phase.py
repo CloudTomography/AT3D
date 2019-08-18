@@ -1063,7 +1063,7 @@ class Rayleigh(object):
             self._wavelength = wavelength
         else:
             self._wavelength = [wavelength]
-        self._num_bands = len(self._wavelength)
+        self._num_wavelengths = len(self._wavelength)
         self._temperature_profile = None
         self._surface_pressure = None
         self._raylcoeff = None
@@ -1081,7 +1081,7 @@ class Rayleigh(object):
         -------
         extinction_profile: list of shdom.GridData
             A list of GridData objects containing the extinction on a 1D grid.
-            The length of the list is the number of bands (wavelengths).
+            The length of the list is the number of wavelengths.
         """
         ext_profile = [core.rayleigh_extinct(
             nzt=grid.nz,
@@ -1106,7 +1106,7 @@ class Rayleigh(object):
         -------
         albedo: list of shdom.GridData
             A list of GridData objects containing the single scattering albedo [0,1] on a grid.
-            The length of the list is the number of bands (wavelengths).
+            The length of the list is the number of wavelengths.
         """
         return [shdom.GridData(grid, data=np.full(shape=grid.shape, fill_value=1.0, dtype=np.float32)) for wavelength in self._wavelength]
 
@@ -1123,7 +1123,7 @@ class Rayleigh(object):
         -------
         phase: list of shdom.GridPhase
             A list of GridPhase objects containing the phase function on a grid.
-            The length of the list is the number of bands (wavelengths).
+            The length of the list is the number of wavelengths.
         """
         phase = []
         for wavelength in self._wavelength:
@@ -1169,53 +1169,53 @@ class Rayleigh(object):
 
         Notes
         -----
-        For a single band a shdom.OpticalScatterer is returned and for multiple bands a shdom.MultispectralScatterer object.
+        For a single band a shdom.OpticalScatterer is returned and for multiple wavelengths a shdom.MultispectralScatterer object.
         """
         scatterer_list = [
             shdom.OpticalScatterer(wavelength, extinction, albedo, phase) for \
             wavelength, extinction, albedo, phase in zip(self._wavelength, self._extinction, self._albedo, self._phase)
         ]
-        if self.num_bands == 1:
+        if self.num_wavelengths == 1:
             scatterer = scatterer_list[0]
         else:
             scatterer = shdom.MultispectralScatterer(scatterer_list)
         return scatterer
 
     @property
-    def num_bands(self):
-        return self._num_bands
+    def num_wavelengths(self):
+        return self._num_wavelengths
 
     @property
     def wavelength(self):
-        if self.num_bands == 1:
+        if self.num_wavelengths == 1:
             return self._wavelength[0]
         else:
             return self._wavelength
 
     @property
     def raylcoef(self):
-        if self.num_bands == 1:
+        if self.num_wavelengths == 1:
             return self._raylcoef[0]
         else:
             return self._raylcoef
     
     @property
     def extinction(self):
-        if self.num_bands == 1:
+        if self.num_wavelengths == 1:
             return self._extinction[0]
         else:
             return self._extinction
     
     @property
     def albedo(self):
-        if self.num_bands == 1:
+        if self.num_wavelengths == 1:
             return self._albedo[0]
         else:
             return self._albedo
     
     @property
     def phase(self):
-        if self.num_bands == 1:
+        if self.num_wavelengths == 1:
             return self._phase[0]
         else:
             return self._phase

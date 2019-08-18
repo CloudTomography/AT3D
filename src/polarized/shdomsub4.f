@@ -68,7 +68,8 @@ Cf2py intent(in) :: YLMSUN, PHASETAB
       DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION U, R, PI
       DOUBLE PRECISION X0, Y0, Z0
-      DOUBLE PRECISION XE,YE,ZE, TRANSMIT, VISRAD(NSTOKES)
+      DOUBLE PRECISION XE,YE,ZE, TRANSMIT
+      REAL VISRAD(NSTOKES)
 
       REAL  MEAN, STD1, STD2
   
@@ -130,7 +131,7 @@ C         to calculate the Stokes radiance vector for this pixel
      .                       SFCTYPE, NSFCPAR, SFCGRIDPARMS,
      .                       MU2, PHI2, X0,Y0,Z0, 
      .                       XE,YE,ZE, SIDE, TRANSMIT, VISRAD, VALIDRAD,
-     .   	             TOTAL_EXT, NPART)
+     .   	                 TOTAL_EXT, NPART)
 900   CONTINUE
 
 C      WRITE (6,'(1X,2F8.4,1X,2F11.7,4(1X,F11.6))') 
@@ -226,7 +227,7 @@ Cf2py intent(in) :: GNDTEMP, GNDALBEDO, SKYRAD, WAVENO, WAVELEN
 Cf2py intent(in) :: MU, PHI, WTDO
       REAL    XGRID(*), YGRID(*), ZGRID(*), GRIDPOS(3,*)
 Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
-      REAL    SFCGRIDPARMS(*), BCRAD(NSTOKES, *)
+      REAL    SFCGRIDPARMS(*), BCRAD(NSTOKES,*)
 Cf2py intent(in) :: SFCGRIDPARMS, BCRAD
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL    TOTAL_EXT(NPTS), LEGEN(NSTLEG,0:NLEG,*)
@@ -239,7 +240,7 @@ Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE, RADIANCE
 Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
       INTEGER  NPIX
 Cf2py intent(in) :: NPIX
-      REAL   MEASUREMENTS(NSTOKES,*), DLEG(NSTLEG,0:NLEG,DNUMPHASE)
+      REAL   MEASUREMENTS(NSTOKES,NPIX), DLEG(NSTLEG,0:NLEG,DNUMPHASE)
       REAL   DEXT(NBPTS,NUMDER), DALB(NBPTS,NUMDER)
       INTEGER DIPHASE(NBPTS,NUMDER)
 Cf2py intent(in) :: MEASUREMENTS, DEXT ,DALB, DIPHASE, DLEG
@@ -253,24 +254,25 @@ Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
 Cf2py intent(in) :: NUMDER, PARTDER
       INTEGER NSCATANGLE, NSTPHASE
       REAL YLMSUN(NSTLEG,NLM), PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
-      REAL DPHASETAB(NSTPHASE, DNUMPHASE, NSCATANGLE)
+      REAL DPHASETAB(NSTPHASE,DNUMPHASE,NSCATANGLE)
 Cf2py intent(in) :: YLMSUN, PHASETAB
 Cf2py intent(in) :: NSCATANGLE, YLMSUN, PHASETAB, DPHASETAB, NSTPHASE
       REAL DPATH(8*(NPX+NPY+NPZ),*)
       INTEGER DPTR(8*(NPX+NPY+NPZ),*)
 Cf2py intent(in) :: DPATH, DPTR
 
-      DOUBLE PRECISION PIXEL_ERROR(NSTOKES)
-      DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER)
-      INTEGER I, J, L, SIDE
-      INTEGER IVIS, LOFJ(NLM)
+      REAL PIXEL_ERROR(NSTOKES)
+      DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER), VISRAD(NSTOKES)
+      INTEGER I, J, L, SIDE, IVIS
       LOGICAL VALIDRAD
       DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION U, R, PI
       DOUBLE PRECISION X0, Y0, Z0
-      DOUBLE PRECISION XE,YE,ZE, TRANSMIT, VISRAD(NSTOKES)
+      DOUBLE PRECISION XE,YE,ZE, TRANSMIT
       INTEGER M, ME, MS, NS
 
+      INTEGER, ALLOCATABLE :: LOFJ(:)
+      ALLOCATE (LOFJ(NLM))
       GRADOUT = 0.0D0
       
       J = 0
@@ -300,6 +302,7 @@ C          Compute the upwelling bottom radiances using the downwelling fluxes.
   
       PI = ACOS(-1.0D0)
 C         Loop over pixels in image
+      COST = 0.0D0
       DO IVIS = 1, NPIX
         X0 = CAMX(IVIS)
         Y0 = CAMY(IVIS)
@@ -326,17 +329,17 @@ C             Extrapolate ray to domain top if above
         
 C         Integrate the extinction and source function along this ray
 C         to calculate the Stokes radiance vector for this pixel
-        TRANSMIT = 1.0D0 ; VISRAD = 0.0D0 ; RAYGRAD = 0.0D0
+        TRANSMIT = 1.0D0 ; VISRAD = 0.0D0; RAYGRAD = 0.0D0
         CALL GRAD_INTEGRATE_1RAY (BCFLAG, IPFLAG, NSTOKES, NSTLEG, 
      .             NSTPHASE, NSCATANGLE, PHASETAB,
-     .             NX, NY, NZ, NPTS, NCELLS, 
+     .             NX, NY, NZ, NPTS, NCELLS,
      .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .             XGRID, YGRID, ZGRID, GRIDPOS,
      .             ML, MM, NLM, NLEG, NUMPHASE,
-     .             NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, 
+     .             NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .             DELTAM, SRCTYPE, WAVELEN, SOLARMU,SOLARAZ,
-     .             EXTINCT(:NPTS,:), ALBEDO(:NPTS,:), LEGEN,  
-     .             IPHASE(:NPTS,:), DIRFLUX, SHPTR, SOURCE,  
+     .             EXTINCT, ALBEDO, LEGEN,
+     .             IPHASE, DIRFLUX, SHPTR, SOURCE,
      .             YLMSUN, MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD, 
      .             SFCTYPE, NSFCPAR, SFCGRIDPARMS, MU2, PHI2,  
      .             X0, Y0, Z0, XE, YE, ZE, SIDE, TRANSMIT, VISRAD, 
@@ -347,22 +350,16 @@ C         to calculate the Stokes radiance vector for this pixel
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER)
 900   CONTINUE
-
       STOKESOUT(:,IVIS) = VISRAD(:)
-      PIXEL_ERROR = VISRAD(:) - MEASUREMENTS(:,IVIS)
+      PIXEL_ERROR = STOKESOUT(:,IVIS) - MEASUREMENTS(:,IVIS)
       DO NS=1, NSTOKES
         GRADOUT = GRADOUT + PIXEL_ERROR(NS)*RAYGRAD(NS,:,:)/NSTOKES
       ENDDO
       COST = COST + (0.5/NSTOKES)*SUM(PIXEL_ERROR**2)
-      
-C      WRITE (6,'(1X,2F8.4,1X,2F11.7,4(1X,F11.6))') 
-C     .         X0,Y0,Z0,MURAY,PHIRAY,VISRAD(:)
-        
       ENDDO
 
       RETURN
       END
-
 
 
       SUBROUTINE GRAD_INTEGRATE_1RAY (BCFLAG, IPFLAG, NSTOKES, NSTLEG, 
@@ -380,7 +377,7 @@ C     .         X0,Y0,Z0,MURAY,PHIRAY,VISRAD(:)
      .		       RSHPTR, RADIANCE, LOFJ, PARTDER, NUMDER, DEXT,
      .             DALB, DIPHASE, DLEG, NBPTS, DNUMPHASE, SOLARFLUX,
      .             NPX, NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
-     .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR),
+     .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER)
      
 C       Integrates the source function through the extinction field 
@@ -401,29 +398,29 @@ C     5=-Z,6=+Z).
       INTEGER NX, NY, NZ, NPTS, NCELLS, SIDE
       INTEGER ML, MM, NLM, NLEG, NUMPHASE, NPART
       INTEGER MAXNBC, NTOPPTS, NBOTPTS
-      INTEGER NMU, NPHI0MAX, NPHI0(NMU), NSFCPAR
-      INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
-      INTEGER SHPTR(NPTS+1), RSHPTR(NPTS+1)
-      INTEGER*2 CELLFLAGS(NCELLS)
+      INTEGER NMU, NPHI0MAX, NPHI0(*), NSFCPAR
+      INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
+      INTEGER SHPTR(*), RSHPTR(*)
+      INTEGER*2 CELLFLAGS(*)
       INTEGER IPHASE(NPTS,NPART), DNUMPHASE
       INTEGER BCPTR(MAXNBC,2), LOFJ(NLM)
       LOGICAL DELTAM, VALIDRAD, OUTOFDOMAIN
-      REAL    WTDO(NMU,NPHI0MAX), MU(NMU), PHI(NMU,NPHI0MAX)
+      REAL    WTDO(NMU,*), MU(*), PHI(NMU,*)
       REAL    WAVELEN, SOLARMU, SOLARAZ
       REAL    SFCGRIDPARMS(NSFCPAR,NBOTPTS), BCRAD(*)
-      REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
+      REAL    XGRID(*), YGRID(*), ZGRID(*), GRIDPOS(3,*)
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
-      REAL    LEGEN(NSTLEG,0:NLEG,NPTS)
+      REAL    LEGEN(NSTLEG,0:NLEG,*)
       DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER)
       DOUBLE PRECISION DIRGRAD(NSTOKES,NBPTS,NUMDER)
-      REAL    DIRFLUX(NPTS), SOURCE(NSTOKES,*), RADIANCE(NSTOKES,*)
-      REAL    TOTAL_EXT(NPTS), YLMSUN(NSTLEG,NLM)
+      REAL    DIRFLUX(*), SOURCE(NSTOKES,*), RADIANCE(NSTOKES,*)
+      REAL    TOTAL_EXT(*), YLMSUN(NSTLEG,*)
       REAL    PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
       REAL    DPHASETAB(NSTPHASE,DNUMPHASE,NSCATANGLE)
       DOUBLE PRECISION MU2, PHI2, X0,Y0,Z0, XE,YE,ZE
       DOUBLE PRECISION TRANSMIT, RADOUT(NSTOKES)
       CHARACTER SRCTYPE*1, SFCTYPE*2
-      REAL      DLEG(NSTLEG,0:NLEG,DNUMPHASE), DEXT(NBPTS,NUMDER)
+      REAL      DLEG(NSTLEG,0:NLEG,*), DEXT(NBPTS,NUMDER)
       REAL      DALB(NBPTS,NUMDER)
       REAL      SINGSCAT8(NSTOKES,8), OSINGSCAT8(NSTOKES,8)
       INTEGER   PARTDER(NUMDER), NUMDER, DIPHASE(NBPTS,NUMDER)
@@ -438,7 +435,7 @@ C     5=-Z,6=+Z).
       REAL    EXTINCT8(8), SRCEXT8(NSTOKES,8)
       REAL    EXT0, EXT1, EXTN
       REAL    SRCEXT0(NSTOKES), SRCEXT1(NSTOKES), RADBND(NSTOKES)
-      REAL    XM, YM, F, FC(8), FB(8)
+      REAL    XM, YM, F
       REAL    GRAD8(NSTOKES,8,NUMDER), OGRAD8(NSTOKES,8,NUMDER)
       REAL    GRAD0(NSTOKES,8,NUMDER), GRAD1(NSTOKES,8,NUMDER)
       REAL    SRCGRAD(NSTOKES,8,NUMDER), SRCSINGSCAT(NSTOKES,8)
@@ -446,12 +443,13 @@ C     5=-Z,6=+Z).
       INTEGER DPTR(8*(NPX+NPY+NPZ),*)
       DOUBLE PRECISION PI, CX, CY, CZ, CXINV, CYINV, CZINV
       DOUBLE PRECISION XN, YN, ZN, XI, YI, ZI
-      DOUBLE PRECISION SO, SOX, SOY, SOZ, EPS
+      DOUBLE PRECISION SO, SOX, SOY, SOZ, EPS, FC(8), FB(8)
       DOUBLE PRECISION TAUTOL, TAUGRID, S, DELS, TRANSCUT
       DOUBLE PRECISION EXT, TAU, TRANSCELL, ABSCELL
       DOUBLE PRECISION SRC(NSTOKES)
       DOUBLE PRECISION COSSCAT
-      REAL, ALLOCATABLE :: YLMDIR(:,:), SINGSCAT(:,:), DSINGSCAT(:,:)
+      REAL YLMDIR(NSTLEG,NLM)
+      REAL, ALLOCATABLE ::  SINGSCAT(:,:), DSINGSCAT(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: SUNDIRLEG(:)
 
       DATA OPPFACE/2,1,4,3,6,5/
@@ -465,14 +463,11 @@ C         TRANSCUT is the transmission to stop the integration at
       TRANSCUT = 5.0E-5
 C         TAUTOL is the maximum optical path for the subgrid intervals
       TAUTOL = 0.2
-      RADOUT(:) = 0.0D0
       
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
       MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
       PI = ACOS(-1.0D0)
-
 C       Calculate the generalized spherical harmonics for this direction
-      ALLOCATE (YLMDIR(NSTLEG,NLM))
       CALL YLMALL (.FALSE.,SNGL(MU2),SNGL(PHI2),ML,MM,NSTLEG, YLMDIR)
 
       IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
@@ -553,8 +548,6 @@ C         Setup for the ray path direction
       IOCT = 1 + BITX + 2*BITY + 4*BITZ
       XM = 0.5*(XGRID(1)+XGRID(NX))
       YM = 0.5*(YGRID(1)+YGRID(NY))
-
-
 C         Start at the desired point, getting the extinction and source there
       XE = X0
       YE = Y0
@@ -587,10 +580,12 @@ C           Decide which of the eight grid points we need the source function
           IF (NY .EQ. 1 .AND. ONEY(I) .LT. 0) DONETHIS(I) = ONEY(I)
           OEXTINCT8(I) = EXTINCT8(I)
           OSRCEXT8(:,I) = SRCEXT8(:,I)
-          OSINGSCAT8(:,I) = OSINGSCAT8(:,I)
-          OGRAD8(I,:,:) = GRAD8(I,:,:)
+          OSINGSCAT8(:,I) = SINGSCAT8(:,I)
+          OGRAD8(:,I,:) = GRAD8(:,I,:)
         ENDDO
 C         Compute the source function times extinction in direction (MU2,PHI2)
+
+
         IF (NSTOKES .EQ. 1) THEN
           CALL COMPUTE_SOURCE_GRAD_1CELL_UNPOL (ICELL, GRIDPTR, 
      .            ML, MM, NLM, NLEG, NUMPHASE,
@@ -614,6 +609,7 @@ C         Compute the source function times extinction in direction (MU2,PHI2)
      .            DNUMPHASE, DEXT, DALB, DIPHASE, DLEG, NBPTS, BCELL,
      .            DSINGSCAT, SINGSCAT8, OSINGSCAT8)
         ENDIF
+
 C         Interpolate the source and extinction to the current point
         CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XE, YE, ZE, FC)
         SRCEXT1 = FC(1)*SRCEXT8(:,1) + FC(2)*SRCEXT8(:,2) +
@@ -639,7 +635,7 @@ C         Interpolate the source and extinction to the current point
         ELSE
           GRAD1 = 0.0
         ENDIF
-        
+
 C           This cell is independent pixel if IP mode or open boundary
 C             conditions and ray is leaving domain (i.e. not entering)
         IPINX = BTEST(INT(CELLFLAGS(ICELL)),0) .AND.
@@ -710,7 +706,6 @@ C            Interpolate extinction and source function along path
             EXT0 = EXTN
           ENDIF
           SRCEXT0(1) = MAX(0.0, SRCEXT0(1))
-          
           IF (.NOT. OUTOFDOMAIN) THEN
             CALL GET_INTERP_KERNEL(BCELL,GRIDPTR,GRIDPOS,XI,YI,ZI,FB)
             DO KK=1, 8
@@ -721,7 +716,6 @@ C            Interpolate extinction and source function along path
           ELSE
             GRAD0 = 0.0
           ENDIF
-          
 C            Compute the subgrid radiance: integration of the source function
           EXT = 0.5*(EXT0+EXT1)
           IF (EXT .NE. 0.0) THEN
@@ -732,19 +726,17 @@ C                 Linear extinction, linear source*extinction, to second order
             SRC(:) = ( 0.5*(SRCEXT0(:)+SRCEXT1(:)) 
      .           + 0.08333333333*(EXT0*SRCEXT1(:)-EXT1*SRCEXT0(:))*DELS
      .                *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
-     
+
             IF (.NOT. OUTOFDOMAIN) THEN
               SRCGRAD = ( 0.5*(GRAD0+GRAD1)
      .          + 0.08333333333*(EXT0*GRAD1-EXT1*GRAD0)*DELS
      .           *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
-
                IF (EXACT_SINGLE_SCATTER) THEN
                  SRCSINGSCAT = ( 0.5*(SINGSCAT0+SINGSCAT1)
      .            + 0.08333333333*(EXT0*SINGSCAT1-EXT1*SINGSCAT0)*DELS
      .                    *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
                 ENDIF
-            ENDIF 
-            
+            ENDIF
           ELSE
             ABSCELL = 0.0
             TRANSCELL = 1.0
@@ -752,14 +744,14 @@ C                 Linear extinction, linear source*extinction, to second order
             SRCGRAD = 0.0
             SRCSINGSCAT = 0.0
           ENDIF
+
           RADOUT(:) = RADOUT(:) + TRANSMIT*SRC(:)*ABSCELL
-          
+
           IF (.NOT. OUTOFDOMAIN) THEN
             DO KK = 1, 8
               GRIDPOINT = GRIDPTR(KK,BCELL)
               RAYGRAD(:,GRIDPOINT,:) = RAYGRAD(:,GRIDPOINT,:) +
      .                     TRANSMIT*SRCGRAD(:,KK,:)*ABSCELL
-     
 C             Add gradient component due to the direct solar beam propogation
               IF (EXACT_SINGLE_SCATTER) THEN
                 II = 1
@@ -788,15 +780,16 @@ C             Add gradient component due to the direct solar beam propogation
                 ENDDO
               ENDIF
             ENDDO
-          ENDIF 
+          ENDIF
+
           TRANSMIT = TRANSMIT*TRANSCELL
           EXT1 = EXT0
           SRCEXT1(:) = SRCEXT0(:)
           GRAD1 = GRAD0
           SINGSCAT1 = SINGSCAT0
-          
 C                End of sub grid cell loop
         ENDDO
+
 C               Get the intersection face number (i.e. neighptr index)
         IF (SOX .LE. SOZ .AND. SOX .LE. SOY) THEN
           IFACE = 2-BITX
@@ -859,17 +852,14 @@ C             boundary then prepare for next cell
         YE = YN
         ZE = ZN
       ENDDO
-
       SIDE = IFACE
       IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
         IF (NUMPHASE .GT. 0) THEN
-          DEALLOCATE (SINGSCAT)
+          DEALLOCATE (SINGSCAT, DSINGSCAT)
         ELSE
           DEALLOCATE (SUNDIRLEG)
         ENDIF
       ENDIF
-      DEALLOCATE (YLMDIR)
-      
       RETURN
       END
 
@@ -900,10 +890,10 @@ C     for unscaled untruncated phase function.
       LOGICAL DELTAM
       REAL    SOLARMU
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
-      REAL    LEGEN(NSTLEG,0:NLEG,NPTS), TOTAL_EXT(NPTS)
-      REAL    DIRFLUX(NPTS), SOURCE(NSTOKES,*)
+      REAL    LEGEN(NSTLEG,0:NLEG,*), TOTAL_EXT(*)
+      REAL    DIRFLUX(*), SOURCE(NSTOKES,*)
       REAL    RADIANCE(NSTOKES,*)
-      REAL    YLMDIR(NSTLEG,NLM), YLMSUN(NSTLEG,NLM)
+      REAL    YLMDIR(NSTLEG,*), YLMSUN(NSTLEG,*)
       REAL    SINGSCAT(NSTOKES,NUMPHASE)
       REAL    OEXTINCT8(8), OSRCEXT8(NSTOKES,8)
       REAL    EXTINCT8(8), SRCEXT8(NSTOKES,8)
@@ -918,10 +908,11 @@ C     for unscaled untruncated phase function.
       REAL    DALB(NBPTS,NUMDER), DEXTM, DALBM, DLEGM(NSTLEG)
       INTEGER DIPHASE(NBPTS,NUMDER), KK
       REAL    DSINGSCAT(NSTOKES,DNUMPHASE)
-      INTEGER LOFJ(NLM), PARTDER(NUMDER), RNS, RIS, IDR, IB
+      INTEGER LOFJ(*), PARTDER(NUMDER), RNS, RIS, IDR, IB
       INTEGER IP, J, JT, L, M, MS, ME, IPH, IS, NS, N, I,IPA,K
       REAL    SECMU0, F, DA, A, A1, B1, EXT
- 
+
+      GRAD8 = 0.0
       SECMU0 = 1.0D0/ABS(SOLARMU)
 
 C         Loop over the grid points, computing the source function 
@@ -941,7 +932,6 @@ C           at the viewing angle from the spherical harmonics source function.
           SINGSCAT8(:,N) = SINGSCAT8(:,ABS(I))
           GRAD8(:,N,:) = GRAD8(:,ABS(I),:)
         ELSE
-          
           EXT = TOTAL_EXT(IP)
           OLDIPTS(N) = IP
           IS = SHPTR(IP)
@@ -968,67 +958,60 @@ C           at the viewing angle from the spherical harmonics source function.
                 F = LEGEN(1,ML+1,K)
               ELSE 
                 F = 0.0
-              ENDIF 
-              
+              ENDIF
+
               DEXTM = (1.0-ALBEDO(IP,IPA)*F) * DEXT(IB,IDR)
               DALBM = (1.0-F)*DALB(IB,IDR)/(1.0-ALBEDO(IP,IPA)*F)
-              DLEGM(:) = DLEG(:,L,DIPHASE(IB,IDR))/(1-F)
 
 C             Sum over the real generalized spherical harmonic series 
 C             of the source function
               DO J = 1, RNS
                 L = LOFJ(J)
+                DLEGM(:) = DLEG(:,L,DIPHASE(IB,IDR))/(1-F)
+
                 GRAD8(1,N,IDR) = GRAD8(1,N,IDR) + 
      .            RADIANCE(1,RIS+J)*YLMDIR(1,J)*(
      .              DEXTM*(ALBEDO(IP,IPA)*LEGEN(1,L,K)-1.0) +
      .              EXTINCT(IP,IPA)*DALBM*LEGEN(1,L,K) +
      .              EXTINCT(IP,IPA)*ALBEDO(IP,IDR)*DLEGM(1))
-                
                 IF (NSTOKES .GT. 1) THEN
                   GRAD8(1,N,IDR) = GRAD8(1,N,IDR) + 
      .              RADIANCE(2,RIS+J)*YLMDIR(1,J)*(
      .              DEXTM*(ALBEDO(IP,IPA)*LEGEN(5,L,K)-1.0) +
      .              EXTINCT(IP,IPA)*DALBM*LEGEN(5,L,K) + 
      .              EXTINCT(IP,IPA)*ALBEDO(IP,IDR)*DLEGM(5))
-     
                   IF (J .GE. 5) THEN
                     GRAD8(2,N,IDR) = GRAD8(2,N,IDR) + 
      .                RADIANCE(1,RIS+J)*YLMDIR(2,J)*(
      .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(5,L,K)-1.0) +
      .                EXTINCT(IP,IPA)*DALBM*LEGEN(5,L,K) + 
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IDR)*DLEGM(5))
-
                     GRAD8(2,N,IDR) = GRAD8(2,N,IDR) + 
      .                RADIANCE(2,RIS+J)*YLMDIR(2,J)*(
      .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(2,L,K)-1.0) +
      .                EXTINCT(IP,IPA)*DALBM*LEGEN(2,L,K) + 
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IDR)*DLEGM(2))
-
                     GRAD8(2,N,IDR) = GRAD8(2,N,IDR) + 
      .                RADIANCE(3,RIS+J)*YLMDIR(5,J)*(
      .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(3,L,K)-1.0) +
      .                EXTINCT(IP,IPA)*DALBM*LEGEN(3,L,K) + 
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IDR)*DLEGM(3))
-     
 
                     GRAD8(3,N,IDR) = GRAD8(3,N,IDR) + 
      .                RADIANCE(1,RIS+J)*YLMDIR(6,J)*(
      .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(5,L,K)-1.0) +
      .                EXTINCT(IP,IPA)*DALBM*LEGEN(5,L,K) + 
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IDR)*DLEGM(5))
-
                     GRAD8(3,N,IDR) = GRAD8(3,N,IDR) + 
      .                RADIANCE(2,RIS+J)*YLMDIR(6,J)*(
      .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(2,L,K)-1.0) +
      .                EXTINCT(IP,IPA)*DALBM*LEGEN(2,L,K) + 
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IDR)*DLEGM(2))
-
                     GRAD8(3,N,IDR) = GRAD8(3,N,IDR) + 
      .                RADIANCE(3,RIS+J)*YLMDIR(3,J)*(
      .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(3,L,K)-1.0) +
      .                EXTINCT(IP,IPA)*DALBM*LEGEN(3,L,K) + 
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IDR)*DLEGM(3))
-     
                   ENDIF
                 ENDIF
                 IF (NSTOKES .EQ. 4) THEN
@@ -1060,8 +1043,7 @@ C             of the source function
               ENDDO
 C             Add in the single scattering contribution for the original unscaled phase function.  
 C             For DELTA M and L<=ML this requires reconstructing the original phase function values (LEGEN) by unscaling.  
-C             Need to put the inverse of the tau scaling in the source function because extinction is still scaled.              
-              
+C             Need to put the inverse of the tau scaling in the source function because extinction is still scaled.
               IF (NUMPHASE .GT. 0) THEN
                 FULL_SINGSCAT(:) = DA*(
      .               DEXTM*ALBEDO(IP,IPA)*SINGSCAT(:,K) + 
@@ -1079,6 +1061,7 @@ C             Need to put the inverse of the tau scaling in the source function 
 C             Sum over the real generalized spherical harmonic series 
 C             of the source function
           SRCEXT8(:,N) = 0.0
+          SINGSCAT8(:,N) = 0.0
           DO J = 1, NS
             SRCEXT8(1,N) = SRCEXT8(1,N) + SOURCE(1,IS+J)*YLMDIR(1,J)
           ENDDO
@@ -1098,27 +1081,27 @@ C             of the source function
             ENDDO
           ENDIF
           
-C             Special case for solar source and Delta-M
-          IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
-            DO IPA = 1, NPART
-            
-              
-              IF (EXT.EQ.0.0) THEN
-                W = 1.0D0
-              ELSE
-                W = EXTINCT(IP,IPA)/EXT
-              ENDIF
-              IF (W.EQ.0.0) CYCLE
-                
-              IF (NUMPHASE .GT. 0) THEN
-                IPH = IPHASE(IP,IPA)
-              ELSE
-                IPH = IP
-              ENDIF
-C               First subtract off the truncated single scattering 
+C
+          DO IPA = 1, NPART
+
+            IF (EXT.EQ.0.0) THEN
+              W = 1.0D0
+            ELSE
+              W = EXTINCT(IP,IPA)/EXT
+            ENDIF
+            IF (W.EQ.0.0) CYCLE
+
+            IF (NUMPHASE .GT. 0) THEN
+              IPH = IPHASE(IP,IPA)
+            ELSE
+              IPH = IP
+            ENDIF
+
+C             First subtract off the truncated single scattering
+            IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
               DA = ALBEDO(IP,IPA)*DIRFLUX(IP)*SECMU0*W
               J = 1
-              
+
               DO L = 0, ML
                 ME = MIN(L,MM)
                 MS = -ME
@@ -1140,27 +1123,34 @@ C               First subtract off the truncated single scattering
      .                                       B1*YLMDIR(6,J)*YLMSUN(1,J)
                       J = J + 1
                     ENDDO
-                  ENDIF  
-                ENDIF    
-              ENDDO
-              
-C               Then add in the single scattering contribution for the
-C               original unscaled phase function.  
-              IF (NUMPHASE .GT. 0) THEN
-                SRCEXT8(:,N) = SRCEXT8(:,N) + DA*SINGSCAT(:,IPH)
-              ELSE IF (NSTOKES .EQ. 1) THEN
-                F = LEGEN(1,ML+1,IPH)
-                DO L = 0, NLEG
-                  IF (L .LE. ML) THEN
-                    A = DA*(LEGEN(1,L,IPH) + F/(1-F))
-                  ELSE
-                    A = DA*LEGEN(1,L,IPH)/(1-F)
                   ENDIF
-                  SRCEXT8(1,N) = SRCEXT8(1,N) + A*SUNDIRLEG(L)
-                ENDDO
+                ENDIF
+              ENDDO
+            ENDIF
+
+C             Then add in the single scattering contribution for the
+C             original unscaled phase function.
+            IF (NUMPHASE .GT. 0) THEN
+              SINGSCAT8(:,N) = SINGSCAT8(:,N) + DA*SINGSCAT(:,IPH)
+              IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
+                SRCEXT8(:,N) = SRCEXT8(:,N) + DA*SINGSCAT(:,IPH)
               ENDIF
-            ENDDO
-          ENDIF
+            ELSE IF (NSTOKES .EQ. 1) THEN
+              F = LEGEN(1,ML+1,IPH)
+              DO L = 0, NLEG
+                IF (L .LE. ML) THEN
+                  A = DA*(LEGEN(1,L,IPH) + F/(1-F))
+                ELSE
+                  A = DA*LEGEN(1,L,IPH)/(1-F)
+                ENDIF
+                SINGSCAT8(1,N) = SINGSCAT8(1,N) + A*SUNDIRLEG(L)
+                IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
+                  SRCEXT8(1,N) = SRCEXT8(1,N) + A*SUNDIRLEG(L)
+                ENDIF
+              ENDDO
+            ENDIF
+          ENDDO
+
           
           SRCEXT8(:,N) = SRCEXT8(:,N)*EXT
           EXTINCT8(N) = EXT

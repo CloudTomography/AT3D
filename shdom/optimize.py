@@ -181,16 +181,23 @@ class GridDataEstimator(shdom.GridData):
         """
         return [(self.min_bound, self.max_bound)] * self.num_parameters  
 
-    def project_gradient(self, gradient):
+    def project_gradient(self, gradient, grid):
         """
         Project gradient onto the state representation.
 
         Parameters
         ----------
-        gradient: shdom.GridData
-            A GridData object representing the cost function gradient with respect to the parameters.
+        grid: shdom.Grid
+            The internal shdom grid upon which the gradient was computed.
+        gradient: np.array(dtype=np.float64)
+            An array containing the gradient of the cost function with respect to the parameters.
+
+        Returns
+        -------
+        state_gradient: np.array(dtype=np.float64)
+            State gradient representation
         """
-        state_gradient = gradient.resample(self.grid)
+        state_gradient = shdom.GridData(grid, gradient.squeeze(axis=-1)).resample(self.grid)
         if self.mask is None:
             return state_gradient.data.ravel()
         else:
@@ -224,10 +231,11 @@ class ScattererEstimator(object):
     This is an abstract method that is inherited by a specific type of scatterer estimator (e.g. OpticalScatterEstimator, MicrophysicalScattererEstimator)
     """
     def __init__(self):      
-        self._mask = None         
+        self._mask = None
         self._estimators = self.init_estimators()
         self._derivatives = self.init_derivatives()
         self._num_parameters = self.init_num_parameters()
+        self._num_estimators = len(self.estimators)
 
     def init_estimators(self):
         """
@@ -352,23 +360,30 @@ class ScattererEstimator(object):
             bounds.extend(estimator.get_bounds())
         return bounds
 
-    def project_gradient(self, gradient):
+    def project_gradient(self, gradient, grid):
         """
         Project gradient onto the combined state representation.
 
         Parameters
         ----------
-        gradient: shdom.GridData
-            A GridData object representing the cost function gradient with respect to the parameters.
+        grid: shdom.Grid
+            The internal shdom grid upon which the gradient was computed.
+        gradient: np.array(dtype=np.float64)
+            An array containing the gradient of the cost function with respect to the parameters.
         """
+        gradient = np.split(gradient, self.num_estimators, axis=-1)
         state_gradient = np.empty(shape=(0), dtype=np.float64)
-        for estimator in self.estimators.values():
-            state_gradient = np.concatenate((state_gradient, estimator.project_gradient(gradient)))
+        for estimator, gradient in zip(self.estimators.values(), gradient):
+            state_gradient = np.concatenate((state_gradient, estimator.project_gradient(gradient, grid)))
         return state_gradient
         
     @property
     def estimators(self):
         return self._estimators
+
+    @property
+    def num_estimators(self):
+        return self._num_estimators
 
     @property
     def derivatives(self):
@@ -631,7 +646,10 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
                 dssalb = np.diff(ssalb, axis=0) / dre
                 dssalb = np.vstack((dssalb, dssalb[-1])).ravel(order='F')
                 dlegcoef = np.diff(mie.legcoef_2d, axis=-2) / dre
-                dlegcoef = np.concatenate((dlegcoef, dlegcoef[:, -1][:, None]), axis=-2)
+                if mie.table_type == 'SCALAR':
+                    dlegcoef = np.concatenate((dlegcoef, dlegcoef[:, -1][:, None]), axis=-2)
+                elif mie.table_type == 'VECTOR':
+                    dlegcoef = np.concatenate((dlegcoef, dlegcoef[:, :, -1][:, :, None]), axis=-2)
 
             elif derivative_type == 'veff':
                 dve = np.diff(mie.size_distribution.veff)[np.newaxis, :]
@@ -649,7 +667,7 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
             if mie.table_type == 'SCALAR':
                 derivative.legcoef = dlegcoef.reshape((mie.maxleg+1, -1), order='F')
             elif mie.table_type == 'VECTOR':
-                derivative.legcoef = dlegcoef.reshape((6, mie.maxleg+1, -1), order='F')
+                derivative.legcoef = dlegcoef.reshape((mie.legendre_table.nstleg, mie.maxleg+1, -1), order='F')
     
             derivative.init_intepolators()
             derivatives[float_round(wavelength)] = derivative
@@ -669,13 +687,16 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
         scatterer: shdom.OpticalScatterer
             The derivative with respect to lwc at a single wavelength
         """
+        mie = self.mie[float_round(wavelength)]
         index = shdom.GridData(self.grid, np.ones(self.grid.shape, dtype=np.int32))
-        legen_table = shdom.LegendreTable(np.zeros((self.mie[float_round(wavelength)].maxleg+1), dtype=np.float32), 
-                                          table_type=self.mie[float_round(wavelength)].table_type)       
+        if mie.table_type == 'SCALAR':
+            legen_table = shdom.LegendreTable(np.zeros((mie.maxleg+1), dtype=np.float32), mie.table_type)
+        elif mie.table_type == 'VECTOR':
+            legen_table = shdom.LegendreTable(np.zeros((mie.legendre_table.nstleg, mie.maxleg + 1), dtype=np.float32), mie.table_type)
         derivative = self.derivatives['lwc']
         scatterer = shdom.OpticalScattererDerivative(
             wavelength, 
-            extinction=self.mie[float_round(wavelength)].get_extinction(derivative['lwc'], self.reff, self.veff),
+            extinction=mie.get_extinction(derivative['lwc'], self.reff, self.veff),
             albedo=derivative['albedo'],
             phase=shdom.GridPhase(legen_table, index)) 
         return scatterer
@@ -748,6 +769,7 @@ class MediumEstimator(shdom.Medium):
         self._num_parameters = []
         self._unknown_scatterers_indices =  np.empty(shape=(0), dtype=np.int32)
         self._num_derivatives = 0
+        self._num_estimators = 0
 
     def add_scatterer(self, scatterer, name=None):
         """
@@ -764,14 +786,15 @@ class MediumEstimator(shdom.Medium):
         """
         super(MediumEstimator, self).add_scatterer(scatterer, name)
         if issubclass(type(scatterer), shdom.ScattererEstimator):
-            name = 'scatterer{:d}'.format(self._num_scatterers) if name is None else name 
-            num_estimators = len(scatterer.estimators)
+            name = 'scatterer{:d}'.format(self._num_scatterers) if name is None else name
+            self._num_estimators += 1
+            total_num_estimators = len(scatterer.estimators)
             self._estimators[name] = scatterer
             self._num_parameters.append(np.sum(scatterer.num_parameters))
             self._unknown_scatterers_indices = np.concatenate((
                 self.unknown_scatterers_indices, 
-                np.full(num_estimators, self.num_scatterers, dtype=np.int32)))
-            self._num_derivatives += num_estimators
+                np.full(total_num_estimators, self.num_scatterers, dtype=np.int32)))
+            self._num_derivatives += total_num_estimators
 
     def set_state(self, state):
         """
@@ -841,7 +864,7 @@ class MediumEstimator(shdom.Medium):
         """
         dext = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.float32)
         dalb = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.float32)
-        diphase = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.float32)
+        diphase = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.int32)
     
         i=0
         for estimator in self.estimators.values():
@@ -889,42 +912,44 @@ class MediumEstimator(shdom.Medium):
         # There is no optical information stored here, only paths and indices
         # Therefor, there is no important for the specific RteSolver which is used
         if isinstance(rte_solver, shdom.RteSolverArray):
+            uniformzlev = max([solver._uniformzlev for solver in rte_solver])
             rte_solver = rte_solver[0]
+        else:
+            uniformzlev = rte_solver._uniformzlev
             
         self._direct_derivative_path, self._direct_derivative_ptr = \
             core.make_direct_derivative(
-                dirflux=rte_solver._dirflux, 
-                extdirp=rte_solver._pa.extdirp,                
                 npts=rte_solver._npts,
                 bcflag=rte_solver._bcflag,
-                ipflag=rte_solver._ipflag,
-                deltam=rte_solver._deltam,
-                ml=rte_solver._ml,
-                nleg=rte_solver._nleg,
-                solarflux=rte_solver._solarflux,
-                solarmu=rte_solver._solarmu,
-                solaraz=rte_solver._solaraz,
                 gridpos=rte_solver._gridpos,
                 npx=rte_solver._pa.npx,
                 npy=rte_solver._pa.npy,
                 npz=rte_solver._pa.npz,
-                numphase=rte_solver._pa.numphase,
                 delx=rte_solver._pa.delx,
                 dely=rte_solver._pa.dely,
                 xstart=rte_solver._pa.xstart,
                 ystart=rte_solver._pa.ystart,
                 zlevels=rte_solver._pa.zlevels,
-                tempp=rte_solver._pa.tempp,
-                extinctp=rte_solver._pa.extinctp,
-                albedop=rte_solver._pa.albedop,
-                legenp=rte_solver._pa.legenp,
-                iphasep=rte_solver._pa.iphasep,
-                nzckd=rte_solver._pa.nzckd,
-                zckd=rte_solver._pa.zckd,
-                gasabs=rte_solver._pa.gasabs
+                ipdirect=rte_solver._ipdirect,
+                di=rte_solver._di,
+                dj=rte_solver._dj,
+                dk=rte_solver._dk,
+                epss=rte_solver._epss,
+                epsz=rte_solver._epsz,
+                xdomain=rte_solver._xdomain,
+                ydomain=rte_solver._ydomain,
+                cx=rte_solver._cx,
+                cy=rte_solver._cy,
+                cz=rte_solver._cz,
+                cxinv=rte_solver._cxinv,
+                cyinv=rte_solver._cyinv,
+                czinv=rte_solver._czinv,
+                uniformzlev=uniformzlev,
+                delxd=rte_solver._delxd,
+                delyd=rte_solver._delyd
             )       
         
-    def core_grad(self, rte_solver, projection, radiance, exact_single_scatter):
+    def core_grad(self, rte_solver, projection, pixels, exact_single_scatter):
         """
         The core gradient method.
 
@@ -934,8 +959,8 @@ class MediumEstimator(shdom.Medium):
             A solver with all the associated parameters and the solution to the RTE
         projection: shdom.Projection
             A projection model which specified the position and direction of each and every pixel
-        radiance: np.array(shape=(projection.npix), dtype=np.float32)
-            The acquired radiances driving the error and optimization.
+        pixels: np.array(shape=(projection.npix), dtype=np.float32)
+            The acquired pixels driving the error and optimization.
         exact_single_scatter: bool
             True will compute the exact single scattering gradient (using the direct solar beam)
 
@@ -946,7 +971,7 @@ class MediumEstimator(shdom.Medium):
         loss: float64
             The total loss accumulated over all pixels
         images: np.array(shape=(projection.npix), dtype=np.float32)
-            The rendered (synthetic) radiances.
+            The rendered (synthetic) images.
         """
         if isinstance(projection.npix, list):
             total_pix = np.sum(projection.npix)
@@ -1019,8 +1044,8 @@ class MediumEstimator(shdom.Medium):
             waveno=rte_solver._waveno,
             wavelen=rte_solver._wavelen,
             mu=rte_solver._mu,
-            phi=rte_solver._phi.reshape(rte_solver._nmu, -1),
-            wtdo=rte_solver._wtdo.reshape(rte_solver._nmu, -1),
+            phi=rte_solver._phi,
+            wtdo=rte_solver._wtdo,
             xgrid=rte_solver._xgrid,
             ygrid=rte_solver._ygrid,
             zgrid=rte_solver._zgrid,
@@ -1029,8 +1054,8 @@ class MediumEstimator(shdom.Medium):
             bcrad=rte_solver._bcrad,
             extinct=rte_solver._extinct[:rte_solver._npts],
             albedo=rte_solver._albedo[:rte_solver._npts],
-            legen=rte_solver._legen.reshape(rte_solver._nleg+1, -1),            
-            dirflux=rte_solver._dirflux,
+            legen=rte_solver._legen,
+            dirflux=rte_solver._dirflux[:rte_solver._npts],
             fluxes=rte_solver._fluxes,
             source=rte_solver._source,
             camx=projection.x,
@@ -1042,24 +1067,22 @@ class MediumEstimator(shdom.Medium):
             srctype=rte_solver._srctype,
             sfctype=rte_solver._sfctype,
             units=rte_solver._units,
-            measurements=radiance,
+            measurements=pixels,
             rshptr=rte_solver._rshptr,
             radiance=rte_solver._radiance,
             total_ext=rte_solver._total_ext[:rte_solver._npts]
         )
         return gradient, loss, images
 
-    def compute_gradient(self, rte_solver, measurements, n_jobs, exact_single_scatter=True):
+    def compute_gradient(self, rte_solvers, measurements, n_jobs, exact_single_scatter=True):
         """
         Compute the gradient with respect to the current state.
-        
         If n_jobs>1 than parallel gradient computation is used with pixels are distributed amongst all workers
-
         
         Parameters
         ----------
-        rte_solver: shdom.RteSolver
-            A solver with all the associated parameters and the solution to the RTE
+        rte_solvers: shdom.RteSolverArray
+            A solver array with all the associated parameters and the solution to the RTE
         measurements: shdom.Measurements
             A measurements object storing the acquired images and sensor geometry
         n_jobs: int,
@@ -1076,36 +1099,15 @@ class MediumEstimator(shdom.Medium):
         images: list of np.array(shape=(measurements.projection.resolution), dtype=np.float32)
             A list of the rendered (synthetic) images, used for display purposes.
         """
-                
-        # If rendering several atmospheres (e.g. multi-spectral rendering)
-        if isinstance(rte_solver, shdom.RteSolverArray):
-            num_channels = rte_solver.num_solvers
-            rte_solvers = rte_solver
-        else:
-            num_channels = 1
-            rte_solvers = [rte_solver]
-        
         # Pre-computation of phase-function and derivatives for all solvers.
-        for rte_solver in rte_solvers:
-            rte_solver._phasetab = core.precompute_phase_check(
-                negcheck=True,
-                nstokes=rte_solver._nstokes,
-                nstphase=rte_solver._nstphase,
-                nstleg=rte_solver._nstleg,
-                nscatangle=rte_solver._nscatangle,
-                numphase=rte_solver._pa.numphase,
-                ml=rte_solver._ml,
-                nlm=rte_solver._nlm,
-                nleg=rte_solver._nleg,
-                legen=rte_solver._legen.reshape(rte_solver._nleg+1, -1),
-                deltam=rte_solver._deltam
-            )
+        for rte_solver in rte_solvers.solver_list:
+            rte_solver.precompute_phase()
             rte_solver._dext, rte_solver._dalb, rte_solver._diphase, \
                 rte_solver._dleg, rte_solver._dphasetab, rte_solver._dnumphase = self.get_derivatives(rte_solver)
 
         projection = measurements.camera.projection
         sensor = measurements.camera.sensor
-        radiances = measurements.radiances
+        pixels = measurements.pixels
         
         # Sequential or parallel processing using multithreading (threadsafe Fortran)
         if n_jobs > 1:           
@@ -1113,17 +1115,15 @@ class MediumEstimator(shdom.Medium):
                 delayed(self.core_grad, check_pickle=False)(
                     rte_solver=rte_solvers[channel],
                     projection=projection,
-                    radiance=spectral_radiance[..., channel],
+                    pixels=spectral_pixels[..., channel],
                     exact_single_scatter=exact_single_scatter
-                ) for channel, (projection, spectral_radiance) in
-                itertools.product(range(num_channels), zip(projection.split(n_jobs), np.array_split(radiances, n_jobs)))
+                ) for channel, (projection, spectral_pixels) in
+                itertools.product(range(self.num_wavelengths), zip(projection.split(n_jobs), np.array_split(pixels, n_jobs, axis=-2)))
             )
         else:
             output = [
-                self.core_grad(rte_solvers[channel],
-                               projection,
-                               radiances[...,channel],
-                               exact_single_scatter) for channel in range(num_channels)
+                self.core_grad(rte_solvers[channel], projection, pixels[..., channel], exact_single_scatter)
+                for channel in range(self.num_wavelengths)
             ]
         
         # Sum over all the losses of the different channels
@@ -1132,13 +1132,14 @@ class MediumEstimator(shdom.Medium):
         # Project rte_solver base grid gradient to the state space
         gradient = sum(list(map(lambda x: x[0], output)))
         gradient = gradient.reshape(self.grid.shape + tuple([self.num_derivatives]))
-        images = sensor.make_images(np.concatenate(list(map(lambda x: x[2], output))), projection, num_channels)
-        
+        gradient = np.split(gradient, self.num_estimators, axis=-1)
         state_gradient = np.empty(shape=(0), dtype=np.float64)
-        for i, estimator in enumerate(self.estimators.values()):
-            state_gradient = np.concatenate(
-                (state_gradient, estimator.project_gradient(GridData(self.grid, gradient[...,i])))
-            )
+        for estimator, gradient in zip(self.estimators.values(), gradient):
+            state_gradient = np.concatenate((state_gradient, estimator.project_gradient(gradient, self.grid)))
+
+        # Gather pixels to make images for analysis purposes
+        images = sensor.make_images(np.concatenate(list(map(lambda x: x[2], output)), axis=-1), projection, self.num_wavelengths)
+
         return state_gradient, loss, images
 
     @property
@@ -1160,7 +1161,10 @@ class MediumEstimator(shdom.Medium):
     @property
     def num_derivatives(self):
         return self._num_derivatives 
-    
+
+    @property
+    def num_estimators(self):
+        return self._num_estimators
 
 class SummaryWriter(object):
     """
@@ -1632,7 +1636,10 @@ class LocalOptimizer(object):
         rte_solver: shdom.RteSolver
             The RteSolver
         """
-        self._rte_solver = rte_solver
+        if isinstance(rte_solver, shdom.RteSolverArray):
+            self._rte_solver = rte_solver
+        else:
+            self._rte_solver = shdom.RteSolverArray([rte_solver])
 
     def set_writer(self, writer):
         """
@@ -1669,7 +1676,7 @@ class LocalOptimizer(object):
         """
         self.set_state(state)
         gradient, loss, images = self.medium.compute_gradient(
-            rte_solver=self.rte_solver,
+            rte_solvers=self.rte_solver,
             measurements=self.measurements,
             n_jobs=self._n_jobs,
             exact_single_scatter=self._exact_single_scatter
@@ -1723,6 +1730,10 @@ class LocalOptimizer(object):
           3. Computing the direct solar flux derivatives
           4. Counting the number of unknown parameters
         """
+
+        assert self.rte_solver.num_solvers == self.measurements.num_channels == self.medium.num_wavelengths, \
+            'RteSolver has {} solvers, Measurements have {} channels and Medium has {} wavelengths'.format(self.rte_solver.num_solvers, self.measurements.num_channels, self.medium.num_wavelengths)
+
         self.rte_solver.set_medium(self.medium)
         self.rte_solver.init_solution()
         self.medium.compute_direct_derivative(self.rte_solver)

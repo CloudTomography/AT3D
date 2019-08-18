@@ -2025,8 +2025,8 @@ C        Choose the best range for the angle of linear polarization (-90 to 90 o
      .                        MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD, 
      .                        SFCTYPE, NSFCPAR, SFCGRIDPARMS,
      .                        MU2, PHI2, X0,Y0,Z0, 
-     .			      XE,YE,ZE, SIDE, TRANSMIT, RADIANCE, 
-     .			      VALIDRAD, TOTAL_EXT, NPART)
+     .			              XE,YE,ZE, SIDE, TRANSMIT, RADIANCE,
+     .			              VALIDRAD, TOTAL_EXT, NPART)
 C       Integrates the source function through the extinction field 
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the 
 C     radiance (RADIANCE) at the point X0,Y0,Z0.
@@ -2434,13 +2434,13 @@ C     the boundary point.
       IMPLICIT NONE
       INTEGER NSTOKES, ICELL, KFACE, MAXNBC, NTOPPTS, NBOTPTS
       INTEGER GRIDPTR(8,*), BCPTR(MAXNBC,2)
-      INTEGER NMU, NPHI0MAX, NPHI0(NMU), NSFCPAR
+      INTEGER NMU, NPHI0MAX, NPHI0(*), NSFCPAR
       REAL    MU2, PHI2, RADBND(NSTOKES)
       DOUBLE PRECISION XB, YB
       REAL    GRIDPOS(3,*)
-      REAL    WTDO(NMU,NPHI0MAX), MU(NMU), PHI(NMU,NPHI0MAX)
+      REAL    WTDO(NMU,*), MU(NMU), PHI(NMU,*)
       REAL    WAVELEN, SOLARMU, SOLARAZ, DIRFLUX(*)
-      REAL    SFCGRIDPARMS(NSFCPAR,NBOTPTS), BCRAD(NSTOKES,*)
+      REAL    SFCGRIDPARMS(NSFCPAR,*), BCRAD(NSTOKES,*)
       CHARACTER SRCTYPE*1, SFCTYPE*2
 
       INTEGER IL, IM, IU, IP, IBC, J
