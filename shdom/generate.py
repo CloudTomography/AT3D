@@ -1149,21 +1149,7 @@ class StochasticCloudGenerator(object):
         self.list_of_cloud_geometries = ['Sphere','Cuboid','Cylinder', 'Blob','Stochastic']        
         assert self.cloud_geometry in self.list_of_cloud_geometries, 'Geometry: {}  is not supported. Please select one of {}'.format(
                 self.cloud_geometry,self.list_of_cloud_geometries)
-        
-     
-        #calculate lower and upper bounds of truncated normal distributions to avoid 
-        #exceeding mie_table bounds.
-        self.reff_lower = (self.reff_min - self.reff_mean) / (self.reff_snr*self.reff_mean)
-        self.reff_upper = (self.reff_max - self.reff_mean) / (self.reff_snr*self.reff_mean)
-        self.veff_lower = (self.veff_min - self.veff_mean) / (self.veff_snr*self.veff_mean)
-        self.veff_upper = (self.veff_max - self.veff_mean) / (self.veff_snr*self.veff_mean)
-
-        #Initialize stochastic generator. Specific arguments are updated later.
-        self.gaussian_field_generator = GaussianFieldGenerator(self.nx,self.ny,self.nz,self.beta,
-                                                               [self.domain_size,self.domain_size,
-                                                                self.aspect_ratio*self.domain_size])
-          
-        self.vertical_resolution = self.aspect_ratio*self.domain_size/self.nz         
+                 
     def _update_args(self,**kwargs):
         """Updates parameters of the cloud generator."""
         for name in kwargs:
@@ -1194,6 +1180,21 @@ class StochasticCloudGenerator(object):
         seed = rand.randrange(2**32)
         np.random.seed(seed)
         self._update_args(**kwargs)
+        
+        #calculate lower and upper bounds of truncated normal distributions to avoid 
+        #exceeding mie_table bounds.
+        self.reff_lower = (self.reff_min - self.reff_mean) / (self.reff_snr*self.reff_mean)
+        self.reff_upper = (self.reff_max - self.reff_mean) / (self.reff_snr*self.reff_mean)
+        self.veff_lower = (self.veff_min - self.veff_mean) / (self.veff_snr*self.veff_mean)
+        self.veff_upper = (self.veff_max - self.veff_mean) / (self.veff_snr*self.veff_mean)
+
+        #Initialize stochastic generator. Specific arguments are updated later.
+        self.gaussian_field_generator = GaussianFieldGenerator(self.nx,self.ny,self.nz,self.beta,
+                                                               [self.domain_size,self.domain_size,
+                                                                self.aspect_ratio*self.domain_size])
+          
+        self.vertical_resolution = self.aspect_ratio*self.domain_size/self.nz
+        
         
         self.cloud_mask = self._generate_cloud_mask()     
         # Generate random fields for microphysics.
