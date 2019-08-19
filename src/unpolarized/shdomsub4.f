@@ -277,7 +277,7 @@ Cf2py intent(in) :: DPATH, DPTR
       DOUBLE PRECISION, ALLOCATABLE :: SUNDIRLEG(:)
 
       ALLOCATE (YLMDIR(NLM), LOFJ(NLM), SUNDIRLEG(0:NLEG))
-      ALLOCATE (SINGSCAT(NUMPHASE), DSINGSCAT(NUMPHASE))
+      ALLOCATE (SINGSCAT(NUMPHASE), DSINGSCAT(DNUMPHASE))
       
       GRADOUT = 0.0D0
       
@@ -370,7 +370,7 @@ C             Extrapolate ray to domain top if above
      .             SFCTYPE, NSFCPAR, SFCGRIDPARMS,NPART,
      .             MURAY, PHIRAY, MU2, PHI2, X0, Y0, Z0, 
      .             VISOUT(N), RAYGRAD, RSHPTR, TOTAL_EXT, 
-     .             RADIANCE, LOFJ, PARTDER, NUMDER,DSINGSCAT, 
+     .             RADIANCE, LOFJ, PARTDER, NUMDER, DSINGSCAT,
      .             DEXT, DALB, DIPHASE, DLEG, NBPTS, DNUMPHASE,
      .             SOLARFLUX, NPX, NPY, NPZ, DELX, DELY, XSTART,
      .             YSTART, ZLEVELS, EXTDIRP, UNIFORMZLEV,
@@ -870,7 +870,7 @@ Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN
       REAL    DIRFLUX(*), SOURCE(*), RADIANCE(*)
 Cf2py intent(in) :: DIRFLUX, SOURCE
       REAL    YLMDIR(*), YLMSUN(*), SINGSCAT(*)
-      REAL    DSINGSCAT(DNUMPHASE)
+      REAL    DSINGSCAT(*)
 Cf2py intent(in) :: YLMDIR, YLMSUN, SINGSCAT
       REAL    OEXTINCT8(8), OSRCEXT8(8)
 Cf2py intent(in) :: OEXTINCT8, OSRCEXT8
@@ -953,18 +953,17 @@ C           at the viewing angle from the spherical harmonic source function.
      .            RADIANCE(RIS+J)*YLMDIR(J)*(
      .              DEXTM*(ALBEDO(IP,IPA)*LEGEN(L,K)-1.0) +
      .              EXTINCT(IP,IPA)*DALBM*LEGEN(L,K) + 
-     .              EXTINCT(IP,IPA)*ALBEDO(IP,IDR)*DLEGM)
-     
+     .              EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM)
+
                 IF (NUMPHASE .EQ. 0) THEN
                   IF (L .LE. ML) THEN
                     A = LEGEN(L,K) + F/(1-F)
                   ELSE
                     A = LEGEN(L,K)/(1-F)
                   ENDIF
-                  FULL_SINGSCAT = FULL_SINGSCAT + DA*(
-     .               DEXTM*ALBEDO(IP,IPA)*A*SUNDIRLEG(L) + 
-     .               EXTINCT(IP,IPA)*DALBM*A*SUNDIRLEG(L) +
-     .               EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM*SUNDIRLEG(L))
+                  FULL_SINGSCAT = FULL_SINGSCAT + DA*SUNDIRLEG(L)*(
+     .               DEXTM*ALBEDO(IP,IPA)*A + EXTINCT(IP,IPA)*DALBM*A
+     .               + EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM)
                 ENDIF
               ENDDO
 

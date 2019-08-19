@@ -126,18 +126,17 @@ def generate_atmosphere():
         cloud_generator.add_mie(table_path)
         
     cloud = cloud_generator.get_scatterer()
-    
+
+    atmosphere = shdom.Medium()
     if args.add_rayleigh:
         air_generator = AirGenerator(args)
-        air = air_generator.get_scatterer(args.wavelength)
-        grid = cloud.grid + air.grid
-    else:
-        grid = cloud.grid
-        
-    atmosphere = shdom.Medium(grid)
-    atmosphere.add_scatterer(cloud, 'cloud')
-    if args.add_rayleigh:
+        air = air_generator.get_scatterer(cloud.wavelength)
+        atmosphere.set_grid(cloud.grid + air.grid)
         atmosphere.add_scatterer(air, 'air')
+    else:
+        atmosphere.set_grid(cloud.grid)
+
+    atmosphere.add_scatterer(cloud, 'cloud')
 
     return atmosphere
 

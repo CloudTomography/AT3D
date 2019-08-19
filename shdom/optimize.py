@@ -1581,6 +1581,9 @@ class LocalOptimizer(object):
         The number of jobs to divide the gradient computation into.
     exact_single_scatter: bool
         True will add a calculation of the derivative along a broken-ray trajectory due to the direct solar flux.
+    init_solution: bool
+        True will re-initialize the solution process every iteration.
+        False will use the previous step RTE solution to initialize the current RTE solution.
     method: str, default='L-BFGS-B'
         The optimizer solution method
 
@@ -1590,7 +1593,7 @@ class LocalOptimizer(object):
     For documentation:
         https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html
     """
-    def __init__(self, options, n_jobs=1, exact_single_scatter=True, method='L-BFGS-B'):
+    def __init__(self, options, n_jobs=1, init_solution=True, exact_single_scatter=True, method='L-BFGS-B'):
         self._medium = None
         self._rte_solver = None
         self._measurements = None
@@ -1600,6 +1603,7 @@ class LocalOptimizer(object):
         self._loss = None
         self._n_jobs = n_jobs
         self._exact_single_scatter = exact_single_scatter
+        self._init_solution = init_solution
         if method != 'L-BFGS-B':
             raise NotImplementedError('Optimization method [{}] not implemented'.format(method))
         self._method = method
@@ -1681,6 +1685,7 @@ class LocalOptimizer(object):
             n_jobs=self._n_jobs,
             exact_single_scatter=self._exact_single_scatter
         )
+        print(state, gradient, loss)
         self._loss = loss
         self._images = images
         return loss, gradient
@@ -1776,8 +1781,7 @@ class LocalOptimizer(object):
         """
         self.medium.set_state(state)
         self.rte_solver.set_medium(self.medium)
-        self.rte_solver.make_direct()
-        self.rte_solver.solve(maxiter=100, verbose=False)
+        self.rte_solver.solve(maxiter=100, init_solution=self._init_solution, verbose=False)
         
     def save(self, path):
         """

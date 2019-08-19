@@ -37,7 +37,6 @@ def argument_parsing():
     parser.add_argument('--input_dir', 
                         help='Path to an input directory where the forward modeling parameters are be saved. \
                               This directory will be used to save the optimization results and progress.')
-
     parser.add_argument('--log',
                         help='Write intermediate TensorBoardX results. \
                               The provided string is added as a comment to the specific run.')
@@ -65,7 +64,11 @@ def argument_parsing():
                         default=1,
                         type=int,
                         help='(default value: %(default)s) Number of jobs for parallel rendering. n_jobs=1 uses no parallelization')
-    
+    parser.add_argument('--mie_base_path',
+                        default='mie_tables/polydisperse/Water_<wavelength>nm.scat',
+                        help='(default value: %(default)s) Mie table base file name. ' \
+                             '<wavelength> will be replaced by the corresponding wavelength.')
+
     # Additional arguments to the parser
     subparser = argparse.ArgumentParser(add_help=False)
     subparser.add_argument('--init')
@@ -116,14 +119,19 @@ def init_medium_estimation(wavelength):
     
     # Define the known albedo and phase 
     # Either ground-truth or specified, but it is not optimized
+    if args.use_forward_albedo is False or args.use_forward_phase is False:
+        table_path = args.mie_base_path.replace('<wavelength>', '{}'.format(shdom.int_round(cloud_gt.wavelength)))
+        cloud_generator.add_mie(table_path)
+
     if args.use_forward_albedo:
         albedo = cloud_gt.albedo
     else:
-        albedo = cloud_generator.get_albedo(grid=grid)
+        albedo = cloud_generator.get_albedo(wavelength, grid)
+
     if args.use_forward_phase:
         phase = cloud_gt.phase
     else:
-        phase = cloud_generator.get_phase(grid=grid)
+        phase = cloud_generator.get_phase(wavelength, grid)
     
     extinction = shdom.GridDataEstimator(cloud_generator.get_extinction(grid=grid), min_bound=0.0)
     cloud_estimator = shdom.OpticalScattererEstimator(wavelength, extinction, albedo, phase)
@@ -133,9 +141,7 @@ def init_medium_estimation(wavelength):
         mask = cloud_gt.get_mask(threshold=1.0)
     else:
         carver = shdom.SpaceCarver(measurements)
-        mask = carver.carve(cloud_estimator.grid, 
-                            agreement=0.95, 
-                            thresholds=args.radiance_threshold)
+        mask = carver.carve(cloud_estimator.grid, agreement=0.95, thresholds=args.radiance_threshold)
     cloud_estimator.set_mask(mask)
     
     # Create a medium estimator object (optional Rayleigh scattering)

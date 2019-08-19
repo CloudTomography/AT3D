@@ -158,6 +158,7 @@ def init_atmosphere_estimation():
         medium_estimator.add_scatterer(air, 'air') 
     else:
         medium_estimator.set_grid(cloud_estimator.grid)
+
     medium_estimator.add_scatterer(cloud_estimator, name='cloud')
     
     return medium_estimator
@@ -194,7 +195,8 @@ if __name__ == "__main__":
         'maxls': 100,
         'disp': True,
         'gtol': 1e-18,
-        'ftol': 1e-18
+        'ftol': 1e-18,
+        'eps': 1e-1
     }
     optimizer = shdom.LocalOptimizer(options, n_jobs=args.n_jobs)
     optimizer.set_measurements(measurements)
@@ -211,6 +213,23 @@ if __name__ == "__main__":
         optimizer.set_state(result.x)
     else:
         result = optimizer.minimize()
+        print(result)
+        """
+        optimizer.init_optimizer()
+        optimizer.set_state([0.362])
+        gradient, loss, images = optimizer.medium.compute_gradient(
+            rte_solvers=optimizer.rte_solver,
+            measurements=optimizer.measurements,
+            n_jobs=optimizer._n_jobs,
+            exact_single_scatter=optimizer._exact_single_scatter
+        )
+        print(gradient)
+        print(loss)
+        a=1
+        """
+        # result = optimizer.minimize()
+
+    """
     optimizer.save(os.path.join(log_dir, 'optimizer'))
 
     print('\n------------------ Optimization Finished ------------------\n')
@@ -220,6 +239,7 @@ if __name__ == "__main__":
     print('Final loss: {}'.format(result.fun))
     print('Number local iterations: {}'.format(result.nit))
     print(result)
+    """
 
 
 
