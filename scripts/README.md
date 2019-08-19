@@ -57,7 +57,7 @@ python scripts/render_polychromatic_radiance_toa.py experiments/rico32x36x25/pol
 ```
 **Render a Stochastically generated 'Blob' cloud at 9 view angles, 3 spectral bands, 10m resolution, with a rayleigh scattering atmosphere**
 ```sh
-python scripts/render_polychromatic_radiance_toa.py experiments/rico32x36x25/polychromatic \
+python scripts/render_polychromatic_radiance_toa.py experiments/stochastic_blob/polychromatic \
         --generator StochasticCloud \
         --x_res 0.01 --y_res 0.01 --wavelength 0.672 0.55 0.445  \
         --azimuth 90 90 90 90 0 -90 -90 -90 -90 --zenith 70.5 60 45.6 26.1 0.0 26.1 45.6 60 70.5 \
@@ -67,7 +67,7 @@ python scripts/render_polychromatic_radiance_toa.py experiments/rico32x36x25/pol
 
 **Render a Stochastically generated 'Cuboid' cloud at 9 view angles, 3 spectral bands, 10m resolution, with a rayleigh scattering atmosphere. Vertical:horizontal aspect ratio is 2**
 ```sh
-python scripts/render_polychromatic_radiance_toa.py experiments/rico32x36x25/polychromatic \
+python scripts/render_polychromatic_radiance_toa.py experiments/stochastic_cuboid/polychromatic \
         --generator StochasticCloud \
         --x_res 0.01 --y_res 0.01 --wavelength 0.672 0.55 0.445  \
         --azimuth 90 90 90 90 0 -90 -90 -90 -90 --zenith 70.5 60 45.6 26.1 0.0 26.1 45.6 60 70.5 \
