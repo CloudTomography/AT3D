@@ -1,10 +1,34 @@
 # pyshdom
 ---
-This is a python wrapper for SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer).
-The purpose of this wrapper is to develop 3D remote sensing methodologies.
-It was created by Aviad Levis, Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois).
+Pyshdom performs 3D reconstruction of cloud microphysical properties from multi-angule, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2]]. The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[3]]. The python package was created by Aviad Levis, Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois).
 
+[1]: http://openaccess.thecvf.com/content_iccv_2015/html/Levis_Airborne_Three-Dimensional_Cloud_ICCV_2015_paper.html
+[2]: http://openaccess.thecvf.com/content_cvpr_2017/html/Levis_Multiple-Scattering_Microphysics_Tomography_CVPR_2017_paper.html
+[3]: http://coloradolinux.com/~evans/shdom.html
 
+---
+
+At present pyshdom has the following features:
+
+* Mie & Rayleigh scattering optical property calculations. Optical properties of other species (e.g. non-spherical ice or aerosol) can be included but must be calculated externally.
+* Cloud data of varying complexity can be generated or read from LES output.
+* Scalar radiative transfer from SHDOM with Perspective or Orthographic sensor geometries and Lambertian Surface.
+* Each SHDOM solution is serial but independent wavelengths and pixel radiance calculations are
+parallelised in a shared memory framework.
+* Local & Global optimization procedures for recovery of cloud microphysical properties (liquid water content,
+droplet effective radius, droplet effective variance) on 3D (or reduced order) grids from simulated (or observed) radiances.
+* The calculation of optical properties and each SHDOM solution have been streamlined to minimize computational resources
+necessary at each iteration of the optimization routines.
+
+Future Improvements:
+
+* Implement vector SHDOM to include polarisation information in the optimization.
+* Add additional sensor geometries (cross-track scan, push-broom) & expand to other surface types in SHDOM.
+* Include a more flexible parallelisation scheme.
+* Add useful regularisation options in the optimization procedure.
+* Add further accelerations for computational efficiency.
+* Include gaseous absorption for greater realism.
+---
 
 The documentation of the source Fortran SHDOM code by Frank K. Evans can be found at http://nit.colorado.edu/shdom/shdomdoc
 
@@ -17,8 +41,8 @@ This program computes unpolarized monochromatic or spectral band radiative trans
  - Multispectral rendering and optimization
  - Microphysical optimization
  - Main changes to SHDOM core code: 
-     1. Removal of global varibles (property array)
-     2. Particle mixing is done at runtime and not as an a-proiri computation 
+     1. Removal of global variables (property array)
+     2. Particle mixing is done at runtime and not as an a-priori computation 
      3. SOLVE_RTE is broken down into initialization and solution iterations
      4. Mie computations are broken down to monodisperse and polydisperse
 ---
