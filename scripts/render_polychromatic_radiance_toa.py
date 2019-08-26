@@ -80,7 +80,25 @@ def argument_parsing():
                         default=1,
                         type=int,
                         help='(default value: %(default)s) Number of jobs for parallel rendering. n_jobs=1 uses no parallelization')
-    
+    parser.add_argument('--surface_albedo',
+                        default=0.05,
+                        type=float,
+                        help='(default value: %(default)s) The albedo of the Lambertian Surface.')
+    parser.add_argument('--num_mu',
+                        default=16,
+                        type=int,
+                        help='(default value: %(default)s) The number of discrete ordinates in the zenith direction.\
+                        See rte_solver.NumericalParameters for more details.')
+    parser.add_argument('--num_phi',
+                        default=32,
+                        type=int,
+                        help='(default value: %(default)s) The number of discrete ordinates in the azimuthal direction.\
+                        See rte_solver.NumericalParameters for more details.')
+    parser.add_argument('--split_accuracy',
+                        default=0.03,
+                        type=float,
+                        help='(default value: %(default)s) The cell splitting accuracy for SHDOM. \
+                        See rte_solver.NumericalParameters for more details.')        
     # Additional arguments to the parser
     subparser = argparse.ArgumentParser(add_help=False)
     subparser.add_argument('--generator')
@@ -159,11 +177,14 @@ def solve_rte(atmospheres):
     solar_spectrum = shdom.SolarSpectrum()
     solar_fluxes = solar_spectrum.get_monochrome_solar_flux(args.wavelength)
     solar_fluxes = solar_fluxes / max(solar_fluxes)
-    numerical_params = shdom.NumericalParameters()
+    numerical_params = shdom.NumericalParameters(num_mu_bins=args.num_mu,
+                                                num_phi_bins=args.num_phi,
+                                                split_accuracy=args.split_accuracy)
     for wavelength, solar_flux in zip(args.wavelength, solar_fluxes):
         scene_params = shdom.SceneParameters(
             wavelength=wavelength,
-            source=shdom.SolarSource(args.solar_azimuth, args.solar_zenith, solar_flux)
+            source=shdom.SolarSource(args.solar_azimuth, args.solar_zenith, solar_flux),
+            surface=shdom.LambertianSurface(albedo=args.surface_albedo)
         )
         rte_solver = shdom.RteSolver(scene_params, numerical_params)
         rte_solver.set_medium(atmospheres)
