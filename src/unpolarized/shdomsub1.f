@@ -673,8 +673,7 @@ Cf2py intent(in) :: SRCTYPE
       INTEGER IPA
       INTEGER, ALLOCATABLE :: LOFJ(:)
       REAL, ALLOCATABLE :: SOURCET(:)
-      REAL    SRCMIN, C, SECMU0, D, EXT
-      DOUBLE PRECISION W
+      REAL    SRCMIN, C, SECMU0, D, EXT, W
 
       ALLOCATE (SOURCET(NLM), LOFJ(NLM))
       SOURCET = 0.0
@@ -707,7 +706,7 @@ C             Compute the temporary source function for this point
           EXT = TOTAL_EXT(I)
           DO IPA = 1, NPART
             IF (EXT.EQ.0.0) THEN
-              W = 1.0D0
+              W = 1.0
             ELSE
               W = EXTINCT(I,IPA)/EXT
             ENDIF
@@ -781,7 +780,7 @@ C             Compute the temporary source function for this point
           DO IPA = 1, NPART
           
             IF (EXT.EQ.0.0) THEN
-              W = 1.0D0
+              W = 1.0
             ELSE
               W = EXTINCT(I,IPA)/EXT
             ENDIF
@@ -968,8 +967,7 @@ Cf2py intent(in) :: SHACC
       INTEGER IRO, IR, NRO, NR, I, J, K, L, LR, LS, M, MS, ME, NS
       INTEGER, ALLOCATABLE :: LOFJ(:)
       LOGICAL NOTEND
-      REAL    RADMIN, EXT, RAD
-      DOUBLE PRECISION W
+      REAL    RADMIN, EXT, RAD, W
 
       IF (FIXSH)  GOTO 190
       RADMIN = SHACC
@@ -1006,7 +1004,7 @@ C             We don't have radiances for any new points, so don't use them
             DO IPA = 1, NPART
               
               IF (EXT.EQ.0.0) THEN
-                W = 1.0D0
+                W = 1.0
               ELSE
                 W = EXTINCT(I,IPA)/EXT
               ENDIF
@@ -3338,8 +3336,7 @@ C     function for the new points.
       INTEGER IR, IR1, IR2, NR, NR1, NR2, SIDE
       LOGICAL VALIDBEAM
       REAL    X, Y, Z, F, BB, C, D, RAD1, RAD2, SECMU0
-      REAL    UNIFZLEV, XO, YO, ZO, DIRPATH, EXT
-      DOUBLE PRECISION W
+      REAL    UNIFZLEV, XO, YO, ZO, DIRPATH, EXT, W
 
       INTEGER, ALLOCATABLE :: LOFJ(:)
       

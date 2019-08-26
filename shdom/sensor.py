@@ -865,7 +865,7 @@ class Measurements(object):
     def __init__(self, camera=None, images=None, pixels=None):
         self._camera = camera
         self._images = images
-        num_channels = None
+        num_channels = 1
 
         if images is not None:
 
@@ -881,9 +881,9 @@ class Measurements(object):
 
             pixels = []
             for image in self.images:
-                if image.ndim == 3 or image.ndim == 2:
+                if ((image.ndim == 3 or image.ndim == 2) and camera.sensor.type == 'Radiance'):
                     pixels.append(image.reshape((-1, num_channels), order='F'))
-                elif image.ndim == 4:
+                elif ((image.ndim == 3 or image.ndim == 4) and camera.sensor.type == 'StokesSensor'):
                     pixels.append(image.reshape((image.shape[0], -1, num_channels), order='F'))
                 else:
                     AttributeError('Error image dimensions: {}'.format(image.ndim))

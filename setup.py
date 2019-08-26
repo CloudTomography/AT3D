@@ -35,7 +35,7 @@ classifiers =  ['Development Status :: 3 - Alpha',
 # Set this to True for compiling the polarized 
 # version of the SHDOM algorithm.
 #
-POLARIZED_SHDOM = False
+POLARIZED_SHDOM = True
 
 #
 # f2py stuff
@@ -100,7 +100,8 @@ F2PY_CORE_API = [
     'compute_top_radiances',
     'fixed_lambertian_boundary',
     'variable_lambertian_boundary',
-    'gradient',
+    'gradient_normcorr',
+    'gradient_l2',
     'space_carve',
     'precompute_phase_check'
 ]

@@ -101,9 +101,9 @@ def argument_parsing():
     return args, CloudGenerator, AirGenerator
 
 
-def init_atmosphere_estimation():
+def init_medium_estimation():
     """
-    Initilize the atmosphere for optimization.
+    Initialize the medium for optimization.
     """
     cloud_generator = CloudGenerator(args)
     
@@ -120,24 +120,28 @@ def init_atmosphere_estimation():
         lwc = cloud_gt.lwc
     else:
         lwc = shdom.GridDataEstimator(cloud_generator.get_lwc(lwc_grid),
-                                      min_bound=0.0,
-                                      random_step=0.15)
-    
+                                      min_bound=1e-5,
+                                      max_bound=1.0)
+
+    lwc = shdom.GridData(lwc_grid, np.zeros(lwc_grid.shape))
+    lwc.data[cloud_gt.get_mask(threshold=0.01).data] = args.lwc
+
     if args.use_forward_reff:
         reff = cloud_gt.reff
     else:
         reff = shdom.GridDataEstimator(cloud_generator.get_reff(reff_grid),
                                        min_bound=cloud_gt.min_reff,
-                                       max_bound=cloud_gt.max_reff,
-                                       random_step=5.0)
+                                       max_bound=cloud_gt.max_reff)
+
+    reff = shdom.GridData(reff_grid, np.zeros(reff_grid.shape))
+    reff.data[cloud_gt.get_mask(threshold=0.01).data] = args.reff
+
     if args.use_forward_veff:
         veff = cloud_gt.veff
     else:
         veff = shdom.GridDataEstimator(cloud_generator.get_veff(veff_grid),
                                        max_bound=cloud_gt.max_veff,
-                                       min_bound=cloud_gt.min_veff,
-                                       random_step=0.1)
-
+                                       min_bound=cloud_gt.min_veff)
 
     cloud_estimator = shdom.MicrophysicalScattererEstimator(cloud_gt.mie, lwc, reff, veff)
     
@@ -159,7 +163,7 @@ def init_atmosphere_estimation():
     else:
         medium_estimator.set_grid(cloud_estimator.grid)
 
-    medium_estimator.add_scatterer(cloud_estimator, name='cloud')
+    medium_estimator.add_scatterer(cloud_estimator, 'cloud')
     
     return medium_estimator
 
@@ -175,7 +179,7 @@ if __name__ == "__main__":
     cloud_gt = medium_gt.get_scatterer('cloud')
     
     # Init medium estimator
-    medium_estimator = init_atmosphere_estimation()
+    medium_estimator = init_medium_estimation()
     
     # Define a summary writer
     writer = None
@@ -192,13 +196,12 @@ if __name__ == "__main__":
     # Define an L-BFGS-B local optimizer
     options = {
         'maxiter': 1000,
-        'maxls': 100,
+        #'maxls': 30,
         'disp': True,
         'gtol': 1e-18,
         'ftol': 1e-18,
-        'eps': 1e-1
     }
-    optimizer = shdom.LocalOptimizer(options, n_jobs=args.n_jobs)
+    optimizer = shdom.LocalOptimizer('TNC', options, n_jobs=args.n_jobs)
     optimizer.set_measurements(measurements)
     optimizer.set_rte_solver(rte_solver)
     optimizer.set_medium_estimator(medium_estimator)
@@ -213,23 +216,7 @@ if __name__ == "__main__":
         optimizer.set_state(result.x)
     else:
         result = optimizer.minimize()
-        print(result)
-        """
-        optimizer.init_optimizer()
-        optimizer.set_state([0.362])
-        gradient, loss, images = optimizer.medium.compute_gradient(
-            rte_solvers=optimizer.rte_solver,
-            measurements=optimizer.measurements,
-            n_jobs=optimizer._n_jobs,
-            exact_single_scatter=optimizer._exact_single_scatter
-        )
-        print(gradient)
-        print(loss)
-        a=1
-        """
-        # result = optimizer.minimize()
 
-    """
     optimizer.save(os.path.join(log_dir, 'optimizer'))
 
     print('\n------------------ Optimization Finished ------------------\n')
@@ -238,8 +225,7 @@ if __name__ == "__main__":
     print('Message: {}'.format(result.message))
     print('Final loss: {}'.format(result.fun))
     print('Number local iterations: {}'.format(result.nit))
-    print(result)
-    """
+
 
 
 

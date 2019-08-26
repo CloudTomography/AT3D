@@ -885,11 +885,11 @@ Cf2py intent(in) :: SRCTYPE
       REAL    GRAD8(8,NUMDER), OGRAD8(8,NUMDER)
       REAL    FULL_SINGSCAT, SINGSCAT8(8), OSINGSCAT8(8)
       REAL    DLEG(0:NLEG,DNUMPHASE), DEXT(NBPTS,NUMDER)
-      REAL    DALB(NBPTS,NUMDER), DEXTM, DALBM, DLEGM
+      REAL    DALB(NBPTS,NUMDER), DEXTM, DALBM, DLEGM, W
       INTEGER DIPHASE(NBPTS,NUMDER), KK
       INTEGER IP, J, L, M, MS, ME, K, IS, NS, N, I, IB
       INTEGER IPA, LOFJ(NLM), PARTDER(NUMDER), RNS, RIS, IDR
-      DOUBLE PRECISION DA, F, A, SECMU0, W
+      DOUBLE PRECISION DA, F, A, SECMU0
       
       GRAD8 = 0.0
       SECMU0 = 1.0D0/ABS(SOLARMU)
@@ -991,7 +991,7 @@ C             Sum over the spherical harmonic series of the source function
           DO IPA = 1, NPART
           
             IF (EXT.EQ.0.0) THEN
-              W = 1.0D0
+              W = 1.0
             ELSE
               W = EXTINCT(IP,IPA)/EXT
             ENDIF

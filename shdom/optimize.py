@@ -94,13 +94,13 @@ class GridDataEstimator(shdom.GridData):
     max_bound: float, optional
         An upper bound for the parameter values
     """
-    def __init__(self, grid_data, min_bound=None, max_bound=None, random_step=None):
+    def __init__(self, grid_data, min_bound=None, max_bound=None, precondition_scale_factor=1.0):
         super(GridDataEstimator, self).__init__(grid_data.grid, grid_data.data)
         self._min_bound = min_bound
         self._max_bound = max_bound
         self._mask = None
         self._num_parameters = self.init_num_parameters()
-        self._random_step = random_step
+        self._precondition_scale_factor = precondition_scale_factor
               
     def set_state(self, state):
         """
@@ -113,8 +113,10 @@ class GridDataEstimator(shdom.GridData):
 
         Notes
         -----
+        The state is scaled back by the preconditioning scale factor
         If the estimator has a mask, data point outside of the mask are left uneffected.
         """
+        state = state / self.precondition_scale_factor
         if self.mask is None:
             self._data = np.reshape(state, (self.shape))
         else:
@@ -126,17 +128,19 @@ class GridDataEstimator(shdom.GridData):
 
         Returns
         -------
-        state: np.array(dtype=np.float64)
-            The state of the estimator data.
+        preconditioned_state: np.array(dtype=np.float64)
+            The preconditioned state scaled by a preconditioning scale factor.
 
         Notes
         -----
         If the estimator has a mask, data point outside of the mask are not retrieved.
         """
         if self.mask is None:
-            return self.data.ravel()
+            data = self.data.ravel()
         else:
-            return self.data[self.mask.data]
+            data = self.data[self.mask.data]
+        preconditioned_state = data * self.precondition_scale_factor
+        return preconditioned_state
 
     def init_num_parameters(self):
         """
@@ -179,7 +183,9 @@ class GridDataEstimator(shdom.GridData):
         bounds: list of tuples
             The lower and upper bound of each parameter
         """
-        return [(self.min_bound, self.max_bound)] * self.num_parameters  
+        min_bound = self.min_bound * self.precondition_scale_factor if self.min_bound is not None else None
+        max_bound = self.max_bound * self.precondition_scale_factor if self.max_bound is not None else None
+        return [(min_bound, max_bound)] * self.num_parameters
 
     def project_gradient(self, gradient, grid):
         """
@@ -197,7 +203,8 @@ class GridDataEstimator(shdom.GridData):
         state_gradient: np.array(dtype=np.float64)
             State gradient representation
         """
-        state_gradient = shdom.GridData(grid, gradient.squeeze(axis=-1)).resample(self.grid)
+        gradient = gradient.squeeze(axis=-1)
+        state_gradient = shdom.GridData(grid, gradient).resample(self.grid)
         if self.mask is None:
             return state_gradient.data.ravel()
         else:
@@ -208,8 +215,8 @@ class GridDataEstimator(shdom.GridData):
         return self._mask
     
     @property
-    def random_step(self):
-        return self._random_step
+    def precondition_scale_factor(self):
+        return self._precondition_scale_factor
     
     @property
     def num_parameters(self):
@@ -270,6 +277,7 @@ class ScattererEstimator(object):
 
     def get_step_slice_bound(self):
         """
+        TODO
         Retrieve the random step size.
         This is used by a global optimizer (see shdom.RandomStep class)
 
@@ -283,7 +291,7 @@ class ScattererEstimator(object):
         total_num_params = 0
         for estimator in self.estimators.values():
             step_slice_bound.append((
-                estimator.random_step,
+                estimator.precondition_scale_factor,
                 slice(total_num_params, total_num_params + estimator.num_parameters),
                 estimator.min_bound,
                 estimator.max_bound
@@ -949,9 +957,9 @@ class MediumEstimator(shdom.Medium):
                 delyd=rte_solver._delyd
             )       
         
-    def core_grad(self, rte_solver, projection, pixels, exact_single_scatter):
+    def core_grad_normcorr(self, rte_solver, projection, pixels, exact_single_scatter):
         """
-        The core gradient method.
+        The core normalized correlation gradient method.
 
         Parameters
         ----------
@@ -966,11 +974,17 @@ class MediumEstimator(shdom.Medium):
 
         Returns
         -------
-        gradient: np.array(shape=(rte_solver._nbpts, self.num_derivatives), dtype=np.float64)
-            The gradient with respect to all parameters at every grid base point
-        loss: float64
-            The total loss accumulated over all pixels
-        images: np.array(shape=(projection.npix), dtype=np.float32)
+        grad1: np.array(shape=(rte_solver._nstokes, rte_solver._nbpts, self.num_derivatives), dtype=np.float32)
+            A part of the gradient with respect to all parameters at every grid base point
+        grad2: np.array(shape=(rte_solver._nstokes, rte_solver._nbpts, self.num_derivatives), dtype=np.float32)
+            A part of the gradient with respect to all parameters at every grid base point
+        norm1: np.array(shape=(rte_solver._nstokes), dtype=np.float32)
+            The per stokes component norm of all synthetic pixels
+        norm2: np.array(shape=(rte_solver._nstokes), dtype=np.float32)
+            The per stokes component norm of all measurements
+        loss: float32
+            The per stokes component correlations of the measruements and synthetic pixels
+        images: np.array(shape=(rte_solver._nstokes, projection.npix), dtype=np.float32)
             The rendered (synthetic) images.
         """
         if isinstance(projection.npix, list):
@@ -978,7 +992,7 @@ class MediumEstimator(shdom.Medium):
         else:
             total_pix = projection.npix
 
-        gradient, loss, images = core.gradient(
+        grad1, grad2, norm1, norm2, loss, images = core.gradient_normcorr(
             exact_single_scatter=exact_single_scatter,
             nstphase=rte_solver._nstphase,
             dpath=self._direct_derivative_path, 
@@ -1072,9 +1086,134 @@ class MediumEstimator(shdom.Medium):
             radiance=rte_solver._radiance,
             total_ext=rte_solver._total_ext[:rte_solver._npts]
         )
+        return grad1, grad2, norm1, norm2, loss, images
+
+    def core_grad_l2(self, rte_solver, projection, pixels, exact_single_scatter):
+        """
+        The core l2 gradient method.
+
+        Parameters
+        ----------
+        rte_solver: shdom.RteSolver
+            A solver with all the associated parameters and the solution to the RTE
+        projection: shdom.Projection
+            A projection model which specified the position and direction of each and every pixel
+        pixels: np.array(shape=(projection.npix), dtype=np.float32)
+            The acquired pixels driving the error and optimization.
+        exact_single_scatter: bool
+            True will compute the exact single scattering gradient (using the direct solar beam)
+
+        Returns
+        -------
+        gradient: np.array(shape=(rte_solver._nbpts, self.num_derivatives), dtype=np.float64)
+            The gradient with respect to all parameters at every grid base point
+        loss: float64
+            The total loss accumulated over all pixels
+        images: np.array(shape=(rte_solver._nstokes, projection.npix), dtype=np.float32)
+            The rendered (synthetic) images.
+        """
+        if isinstance(projection.npix, list):
+            total_pix = np.sum(projection.npix)
+        else:
+            total_pix = projection.npix
+
+        gradient, loss, images = core.gradient_l2(
+            exact_single_scatter=exact_single_scatter,
+            nstphase=rte_solver._nstphase,
+            dpath=self._direct_derivative_path,
+            dptr=self._direct_derivative_ptr,
+            npx=rte_solver._pa.npx,
+            npy=rte_solver._pa.npy,
+            npz=rte_solver._pa.npz,
+            delx=rte_solver._pa.delx,
+            dely=rte_solver._pa.dely,
+            xstart=rte_solver._pa.xstart,
+            ystart=rte_solver._pa.ystart,
+            zlevels=rte_solver._pa.zlevels,
+            extdirp=rte_solver._pa.extdirp,
+            uniformzlev=rte_solver._uniformzlev,
+            partder=self.unknown_scatterers_indices,
+            numder=self.num_derivatives,
+            dext=rte_solver._dext,
+            dalb=rte_solver._dalb,
+            diphase=rte_solver._diphase,
+            dleg=rte_solver._dleg,
+            dphasetab=rte_solver._dphasetab,
+            dnumphase=rte_solver._dnumphase,
+            nscatangle=rte_solver._nscatangle,
+            phasetab=rte_solver._phasetab,
+            ylmsun=rte_solver._ylmsun,
+            nstokes=rte_solver._nstokes,
+            nstleg=rte_solver._nstleg,
+            nx=rte_solver._nx,
+            ny=rte_solver._ny,
+            nz=rte_solver._nz,
+            bcflag=rte_solver._bcflag,
+            ipflag=rte_solver._ipflag,
+            npts=rte_solver._npts,
+            nbpts=rte_solver._nbpts,
+            ncells=rte_solver._ncells,
+            nbcells=rte_solver._nbcells,
+            ml=rte_solver._ml,
+            mm=rte_solver._mm,
+            ncs=rte_solver._ncs,
+            nlm=rte_solver._nlm,
+            numphase=rte_solver._pa.numphase,
+            nmu=rte_solver._nmu,
+            nphi0max=rte_solver._nphi0max,
+            nphi0=rte_solver._nphi0,
+            maxnbc=rte_solver._maxnbc,
+            ntoppts=rte_solver._ntoppts,
+            nbotpts=rte_solver._nbotpts,
+            nsfcpar=rte_solver._nsfcpar,
+            gridptr=rte_solver._gridptr,
+            neighptr=rte_solver._neighptr,
+            treeptr=rte_solver._treeptr,
+            shptr=rte_solver._shptr,
+            bcptr=rte_solver._bcptr,
+            cellflags=rte_solver._cellflags,
+            iphase=rte_solver._iphase[:rte_solver._npts],
+            deltam=rte_solver._deltam,
+            solarflux=rte_solver._solarflux,
+            solarmu=rte_solver._solarmu,
+            solaraz=rte_solver._solaraz,
+            gndtemp=rte_solver._gndtemp,
+            gndalbedo=rte_solver._gndalbedo,
+            skyrad=rte_solver._skyrad,
+            waveno=rte_solver._waveno,
+            wavelen=rte_solver._wavelen,
+            mu=rte_solver._mu,
+            phi=rte_solver._phi,
+            wtdo=rte_solver._wtdo,
+            xgrid=rte_solver._xgrid,
+            ygrid=rte_solver._ygrid,
+            zgrid=rte_solver._zgrid,
+            gridpos=rte_solver._gridpos,
+            sfcgridparms=rte_solver._sfcgridparms,
+            bcrad=rte_solver._bcrad,
+            extinct=rte_solver._extinct[:rte_solver._npts],
+            albedo=rte_solver._albedo[:rte_solver._npts],
+            legen=rte_solver._legen,
+            dirflux=rte_solver._dirflux[:rte_solver._npts],
+            fluxes=rte_solver._fluxes,
+            source=rte_solver._source,
+            camx=projection.x,
+            camy=projection.y,
+            camz=projection.z,
+            cammu=projection.mu,
+            camphi=projection.phi,
+            npix=total_pix,
+            srctype=rte_solver._srctype,
+            sfctype=rte_solver._sfctype,
+            units=rte_solver._units,
+            measurements=pixels,
+            rshptr=rte_solver._rshptr,
+            radiance=rte_solver._radiance,
+            total_ext=rte_solver._total_ext[:rte_solver._npts]
+        )
         return gradient, loss, images
 
-    def compute_gradient(self, rte_solvers, measurements, n_jobs, exact_single_scatter=True):
+    def compute_gradient(self, rte_solvers, measurements, n_jobs, loss_type='l2', exact_single_scatter=True):
         """
         Compute the gradient with respect to the current state.
         If n_jobs>1 than parallel gradient computation is used with pixels are distributed amongst all workers
@@ -1087,6 +1226,10 @@ class MediumEstimator(shdom.Medium):
             A measurements object storing the acquired images and sensor geometry
         n_jobs: int,
             The number of jobs to divide the gradient computation into.
+        loss_type: str,
+            Either 'l2' or 'normcorr'.
+            l2 - used for l2 norm between the acquired and synthetic (rendered) measurements
+            normcorr - used for the normalized correlation between the acquired and synthetic (rendered) measurements
         exact_single_scatter: bool
             True will compute the exact single scattering gradient (using the direct solar beam)
 
@@ -1099,6 +1242,38 @@ class MediumEstimator(shdom.Medium):
         images: list of np.array(shape=(measurements.projection.resolution), dtype=np.float32)
             A list of the rendered (synthetic) images, used for display purposes.
         """
+
+        # Define the type off loss function
+        if loss_type == 'l2':
+            core_grad = self.core_grad_l2
+
+            def output_transform(output):
+                loss = np.sum(list(map(lambda x: x[1], output)))
+                gradient = np.sum(list(map(lambda x: x[0], output)), axis=0)
+                images = sensor.make_images(np.concatenate(list(map(lambda x: x[2], output)), axis=-1),
+                                            projection,
+                                            self.num_wavelengths)
+                return loss, gradient, images
+
+        elif loss_type == 'normcorr':
+            core_grad = self.core_grad_normcorr
+
+            def output_transform(output):
+                norm1 = np.sum(list(map(lambda x: x[2], output)), axis=0)[:, None, None]
+                norm2 = np.sum(list(map(lambda x: x[3], output)), axis=0)[:, None, None]
+                norm = np.sqrt(norm1 * norm2)
+                loss = np.sum(list(map(lambda x: x[4], output)), axis=0)[:, None, None]
+                grad_fn = lambda x: ((loss * x[0]) / norm1 - x[1]) / norm
+                gradient = np.mean(np.sum(list(map(grad_fn, output)), axis=0), axis=0)
+                loss = -np.mean(loss / norm, dtype=np.float64)
+                images = sensor.make_images(np.concatenate(list(map(lambda x: x[5], output)), axis=-1),
+                                            projection,
+                                            self.num_wavelengths)
+                return loss, gradient, images
+
+        else:
+            raise NotImplementedError('Loss type {} not implemented'.format(loss_type))
+
         # Pre-computation of phase-function and derivatives for all solvers.
         for rte_solver in rte_solvers.solver_list:
             rte_solver.precompute_phase()
@@ -1110,9 +1285,11 @@ class MediumEstimator(shdom.Medium):
         pixels = measurements.pixels
         
         # Sequential or parallel processing using multithreading (threadsafe Fortran)
+
+
         if n_jobs > 1:           
             output = Parallel(n_jobs=n_jobs, backend="threading", verbose=0)(
-                delayed(self.core_grad, check_pickle=False)(
+                delayed(core_grad, check_pickle=False)(
                     rte_solver=rte_solvers[channel],
                     projection=projection,
                     pixels=spectral_pixels[..., channel],
@@ -1122,23 +1299,18 @@ class MediumEstimator(shdom.Medium):
             )
         else:
             output = [
-                self.core_grad(rte_solvers[channel], projection, pixels[..., channel], exact_single_scatter)
+                core_grad(rte_solvers[channel], projection, pixels[..., channel], exact_single_scatter)
                 for channel in range(self.num_wavelengths)
             ]
         
         # Sum over all the losses of the different channels
-        loss = np.sum(list(map(lambda x: x[1], output)))
-        
-        # Project rte_solver base grid gradient to the state space
-        gradient = sum(list(map(lambda x: x[0], output)))
+        loss, gradient, images = output_transform(output)
+
         gradient = gradient.reshape(self.grid.shape + tuple([self.num_derivatives]))
         gradient = np.split(gradient, self.num_estimators, axis=-1)
         state_gradient = np.empty(shape=(0), dtype=np.float64)
         for estimator, gradient in zip(self.estimators.values(), gradient):
             state_gradient = np.concatenate((state_gradient, estimator.project_gradient(gradient, self.grid)))
-
-        # Gather pixels to make images for analysis purposes
-        images = sensor.make_images(np.concatenate(list(map(lambda x: x[2], output)), axis=-1), projection, self.num_wavelengths)
 
         return state_gradient, loss, images
 
@@ -1585,7 +1757,7 @@ class LocalOptimizer(object):
         True will re-initialize the solution process every iteration.
         False will use the previous step RTE solution to initialize the current RTE solution.
     method: str, default='L-BFGS-B'
-        The optimizer solution method
+        The optimizer solution method: 'L-BFGS-B', 'TNC'
 
     Notes
     -----
@@ -1593,7 +1765,7 @@ class LocalOptimizer(object):
     For documentation:
         https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html
     """
-    def __init__(self, options, n_jobs=1, init_solution=True, exact_single_scatter=True, method='L-BFGS-B'):
+    def __init__(self, method, options={}, n_jobs=1, init_solution=True, exact_single_scatter=True):
         self._medium = None
         self._rte_solver = None
         self._measurements = None
@@ -1604,7 +1776,7 @@ class LocalOptimizer(object):
         self._n_jobs = n_jobs
         self._exact_single_scatter = exact_single_scatter
         self._init_solution = init_solution
-        if method != 'L-BFGS-B':
+        if method not in ['L-BFGS-B', 'TNC']:
             raise NotImplementedError('Optimization method [{}] not implemented'.format(method))
         self._method = method
         self._options = options
@@ -1683,9 +1855,9 @@ class LocalOptimizer(object):
             rte_solvers=self.rte_solver,
             measurements=self.measurements,
             n_jobs=self._n_jobs,
-            exact_single_scatter=self._exact_single_scatter
+            exact_single_scatter=self._exact_single_scatter,
+            loss_type='normcorr'
         )
-        print(state, gradient, loss)
         self._loss = loss
         self._images = images
         return loss, gradient

@@ -2048,7 +2048,7 @@ Cf2py intent(in) :: DIRFLUX, SOURCE
 Cf2py intent(in) :: YLMDIR, YLMSUN, SINGSCAT
       REAL    OEXTINCT8(8), OSRCEXT8(8)
 Cf2py intent(in) :: OEXTINCT8, OSRCEXT8
-      REAL    EXTINCT8(8), SRCEXT8(8), EXT
+      REAL    EXTINCT8(8), SRCEXT8(8), EXT, W
 Cf2py intent(out) :: EXTINCT8, SRCEXT8
       DOUBLE PRECISION SUNDIRLEG(0:NLEG)
 Cf2py intent(in) :: SUNDIRLEG
@@ -2056,7 +2056,7 @@ Cf2py intent(in) :: SUNDIRLEG
 Cf2py intent(in) :: SRCTYPE
       INTEGER IP, J, L, M, MS, ME, K, IS, NS, N, I
       INTEGER IPA
-      DOUBLE PRECISION DA, F, A, SECMU0, W
+      DOUBLE PRECISION DA, F, A, SECMU0
  
       SECMU0 = 1.0D0/ABS(SOLARMU)
 
@@ -2088,7 +2088,7 @@ C             Special case for solar source and Delta-M
 	    
 	    DO IPA = 1, NPART
 	      IF (EXT.EQ.0.0) THEN
-		    W = 1.0D0
+		    W = 1.0
 	      ELSE
 		    W = EXTINCT(IP,IPA)/EXT
 	      ENDIF

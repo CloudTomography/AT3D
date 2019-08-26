@@ -102,7 +102,7 @@ def argument_parsing():
 
 def init_medium_estimation(wavelength):
     """
-    Initilize the medium for optimization.
+    Initialize the medium for optimization.
     
     Parameters
     ----------
@@ -133,7 +133,10 @@ def init_medium_estimation(wavelength):
     else:
         phase = cloud_generator.get_phase(wavelength, grid)
     
-    extinction = shdom.GridDataEstimator(cloud_generator.get_extinction(grid=grid), min_bound=0.0)
+    extinction = shdom.GridDataEstimator(cloud_generator.get_extinction(grid=grid),
+                                         min_bound=1e-3,
+                                         max_bound=3e2)
+
     cloud_estimator = shdom.OpticalScattererEstimator(wavelength, extinction, albedo, phase)
     
     # Set a cloud mask for non-cloudy voxels
@@ -195,7 +198,7 @@ if __name__ == "__main__":
         'gtol': 1e-18,
         'ftol': 1e-18
     }
-    optimizer = shdom.LocalOptimizer(options, n_jobs=args.n_jobs)
+    optimizer = shdom.LocalOptimizer('L-BFGS-B', options, n_jobs=args.n_jobs)
     optimizer.set_measurements(measurements)
     optimizer.set_rte_solver(rte_solver)
     optimizer.set_medium_estimator(medium_estimator)

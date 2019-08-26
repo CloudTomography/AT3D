@@ -346,7 +346,7 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .            ALBEDO(IP,IPA), LEGEN(1,0,IP), IPHASE(IP,IPA), 
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP(:,IPA),
-     .            ALBEDOP(:,IPA),LEGENP,IPHASEP(:,IPA),
+     .            ALBEDOP(:,IPA), LEGENP, IPHASEP(:,IPA),
      .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN)
 	  TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
 	ENDDO
@@ -443,7 +443,7 @@ Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
       SUBROUTINE PREPARE_PROP (ML, MM, NSTLEG, NLEG, NPTS, DELTAM, 
      .              NUMPHASE, SRCTYPE, UNITS, WAVENO, WAVELEN, ALBMAX, 
      .              EXTINCT, ALBEDO, LEGEN, TEMP, PLANCK, IPHASE,
-     .		     NPART, TOTAL_EXT)
+     .		         NPART, TOTAL_EXT)
 C       Prepares the grid arrays for the iterative solution process.
 C       If doing Delta-M scaling then the extinction, albedo, and Legendre
 C       terms are scaled first; only the 0 to ML LEGEN terms are scaled.
@@ -518,7 +518,7 @@ C             NUMPHASE=0 is standard property format, which is unpolarized
      .             EXTINCT, ALBEDO, LEGEN, TEMP, NUMPHASE, IPHASE,
      .             SRCTYPE, SOLARFLUX, SOLARMU, GNDALBEDO, GNDTEMP, 
      .             SKYRAD, UNITS, WAVENO, WAVELEN,  RADIANCE, NPART,
-     .		   TOTAL_EXT)
+     .		       TOTAL_EXT)
 C       Initializes radiance field by solving plane-parallel two-stream.
 C     Solves the L=1 M=0 SH system by transforming the pentadiagonal
 C     system to tridiagonal and calling solver.
@@ -614,10 +614,10 @@ C           Convert fluxes to first two moments of spherical harmonics
       END
 
 
- 
- 
-      SUBROUTINE EDDRTF (NLAYER, OPTDEPTHS, ALBEDOS, ASYMMETRIES, 
-     .              TEMPS, DELTAM, SRCTYPE, SOLARFLUX, SOLARMU, 
+
+
+      SUBROUTINE EDDRTF (NLAYER, OPTDEPTHS, ALBEDOS, ASYMMETRIES,
+     .              TEMPS, DELTAM, SRCTYPE, SOLARFLUX, SOLARMU,
      .              GNDTEMP, GNDEMIS, SKYRAD, UNITS, WAVENO,WAVELEN,
      .              FLUXES)
 C
@@ -2550,11 +2550,11 @@ C     for unscaled untruncated phase function.
       REAL    SINGSCAT(NSTOKES,NUMPHASE)
       REAL    OEXTINCT8(8), OSRCEXT8(NSTOKES,8)
       REAL    EXTINCT8(8), SRCEXT8(NSTOKES,8)
-      DOUBLE PRECISION SUNDIRLEG(0:NLEG), W
+      DOUBLE PRECISION SUNDIRLEG(0:NLEG)
       CHARACTER SRCTYPE*1
 
       INTEGER IP, J, JT, L, M, MS, ME, IPH, IS, NS, N, I,IPA
-      REAL    SECMU0, F, DA, A, A1, B1, EXT
+      REAL    SECMU0, F, DA, A, A1, B1, EXT, W
  
       SECMU0 = 1.0D0/ABS(SOLARMU)
 
@@ -2596,14 +2596,14 @@ C             of the source function
               SRCEXT8(4,N) = SRCEXT8(4,N) + SOURCE(4,IS+J)*YLMDIR(4,J)
             ENDDO
           ENDIF
-	  
+
 C             Special case for solar source and Delta-M
           IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
 	    DO IPA = 1, NPART
 	    
 	      
 	      IF (EXT.EQ.0.0) THEN
-		W = 1.0D0
+		W = 1.0
 	      ELSE
 		W = EXTINCT(IP,IPA)/EXT
 	      ENDIF
@@ -2637,7 +2637,7 @@ C               First subtract off the truncated single scattering
 		      J = J + 1
 		    ENDDO
 		  ENDIF  
-		ENDIF    
+		ENDIF
 	      ENDDO
 	      
 C               Then add in the single scattering contribution for the
@@ -2696,11 +2696,11 @@ C     for unscaled untruncated phase function.
       REAL    SINGSCAT(NUMPHASE)
       REAL    OEXTINCT8(8), OSRCEXT8(8)
       REAL    EXTINCT8(8), SRCEXT8(8)
-      DOUBLE PRECISION SUNDIRLEG(0:NLEG), W
+      DOUBLE PRECISION SUNDIRLEG(0:NLEG)
       CHARACTER SRCTYPE*1
 
       INTEGER IP, J, JT, L, M, MS, ME, IPH, IS, NS, N, IPA, I
-      REAL    SECMU0, F, DA, A, A1, B1, EXT
+      REAL    SECMU0, F, DA, A, A1, B1, EXT, W
  
       SECMU0 = 1.0D0/ABS(SOLARMU)
 
@@ -2732,7 +2732,7 @@ C             Special case for solar source and Delta-M
           IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
 	    DO IPA = 1, NPART
 	      IF (EXT.EQ.0.0) THEN
-		W = 1.0D0
+		W = 1.0
 	      ELSE
 		W = EXTINCT(IP,IPA)/EXT
 	      ENDIF

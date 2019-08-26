@@ -171,8 +171,205 @@ C      ENDIF
       RETURN
       END
 
+      SUBROUTINE GRADIENT_NORMCORR(NSTOKES, NX, NY, NZ, NPTS, NBPTS,
+     .           NCELLS,NBCELLS, ML, MM, NCS, NLM, NSTLEG, NLEG,
+     .           NUMPHASE, NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
+     .           BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, SOLARAZ,
+     .           SFCTYPE, NSFCPAR, SFCGRIDPARMS, MAXNBC, NTOPPTS,
+     .           NBOTPTS, BCPTR, BCRAD, GNDTEMP, GNDALBEDO, SKYRAD,
+     .           WAVENO, WAVELEN, UNITS, XGRID, YGRID, ZGRID, GRIDPOS,
+     .           GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS, EXTINCT,
+     .           ALBEDO, LEGEN, IPHASE, DIRFLUX, FLUXES, SHPTR, SOURCE,
+     .           CAMX, CAMY, CAMZ, CAMMU, CAMPHI, NPIX, GRAD1, GRAD2,
+     .           NORM1, NORM2, COST, MEASUREMENTS, RSHPTR, STOKESOUT,
+     .           NPART, TOTAL_EXT, RADIANCE, NUMDER, PARTDER, DEXT,
+     .           DALB, DIPHASE, DLEG, NSCATANGLE, YLMSUN, PHASETAB,
+     .           NSTPHASE, DPHASETAB, DNUMPHASE, SOLARFLUX, NPX, NPY,
+     .           NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS, EXTDIRP,
+     .           UNIFORMZLEV, DPATH, DPTR, EXACT_SINGLE_SCATTER)
+Cf2py threadsafe
+      IMPLICIT NONE
+      LOGICAL EXACT_SINGLE_SCATTER
+Cf2py intent(in) ::  EXACT_SINGLE_SCATTER
+      INTEGER NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS
+      INTEGER NBPTS, NCELLS, NBCELLS
+Cf2py intent(in) :: NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS, NBPTS, NBCELLS
+      INTEGER NPX, NPY, NPZ
+      REAL    DELX, DELY, XSTART, YSTART
+      REAL    ZLEVELS(*)
+      REAL    EXTDIRP(*)
+      DOUBLE PRECISION UNIFORMZLEV
+Cf2py intent(in) :: DELX, DELY, XSTART, YSTART NPX, NPY, NPZ, ZLEVELS, EXTDIRP, UNIFORMZLEV
+      INTEGER ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
+Cf2py intent(in) :: ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
+      INTEGER  DNUMPHASE
+Cf2py intent(in) :: DNUMPHASE
+      INTEGER NMU, NPHI0MAX, NPHI0(*)
+Cf2py intent(in) :: NMU, NPHI0MAX, NPHI0
+      INTEGER MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
+Cf2py intent(in) :: MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
+      INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
+Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
+      INTEGER SHPTR(*), BCPTR(MAXNBC,2), RSHPTR(*)
+Cf2py intent(in) :: SHPTR, BCPTR, RSHPTR
+      INTEGER*2 CELLFLAGS(*)
+      INTEGER IPHASE(NPTS,NPART)
+Cf2py intent(in) :: CELLFLAGS, IPHASE
+      LOGICAL DELTAM
+Cf2py intent(in) :: DELTAM
+      REAL    SOLARFLUX, SOLARMU, SOLARAZ
+Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ
+      REAL    GNDTEMP, GNDALBEDO, SKYRAD, WAVENO(2), WAVELEN
+Cf2py intent(in) :: GNDTEMP, GNDALBEDO, SKYRAD, WAVENO, WAVELEN
+      REAL    MU(*), PHI(NMU,*), WTDO(NMU,*)
+Cf2py intent(in) :: MU, PHI, WTDO
+      REAL    XGRID(*), YGRID(*), ZGRID(*), GRIDPOS(3,*)
+Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
+      REAL    SFCGRIDPARMS(*), BCRAD(NSTOKES,*)
+Cf2py intent(in) :: SFCGRIDPARMS, BCRAD
+      REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
+      REAL    TOTAL_EXT(NPTS), LEGEN(NSTLEG,0:NLEG,*)
+Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN, TOTAL_EXT
+      REAL    DIRFLUX(*), FLUXES(2,*)
+      REAL    SOURCE(NSTOKES, *), RADIANCE(NSTOKES,*)
+Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE, RADIANCE
+      REAL CAMX(*), CAMY(*), CAMZ(*)
+      DOUBLE PRECISION CAMMU(*), CAMPHI(*)
+Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
+      INTEGER  NPIX
+Cf2py intent(in) :: NPIX
+      REAL   MEASUREMENTS(NSTOKES,*), DLEG(NSTLEG,0:NLEG,DNUMPHASE)
+      REAL   DEXT(NBPTS,NUMDER), DALB(NBPTS,NUMDER)
+      INTEGER DIPHASE(NBPTS,NUMDER)
+Cf2py intent(in) :: MEASUREMENTS, DEXT ,DALB, DIPHASE, DLEG
 
-      SUBROUTINE GRADIENT(NSTOKES, NX, NY, NZ, NPTS, NBPTS, NCELLS,
+      REAL  STOKESOUT(NSTOKES,NPIX), COST(NSTOKES)
+      REAL  NORM1(NSTOKES), NORM2(NSTOKES)
+      REAL  GRAD1(NSTOKES,NBPTS,NUMDER)
+      REAL  GRAD2(NSTOKES,NBPTS,NUMDER)
+
+Cf2py intent(out) :: GRAD1, GRAD2, NORM1, NORM2, COST, STOKESOUT
+      CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
+Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
+      INTEGER NUMDER, PARTDER(NUMDER)
+Cf2py intent(in) :: NUMDER, PARTDER
+      INTEGER NSCATANGLE, NSTPHASE
+      REAL YLMSUN(NSTLEG,NLM), PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
+      REAL DPHASETAB(NSTPHASE,DNUMPHASE,NSCATANGLE)
+Cf2py intent(in) :: YLMSUN, PHASETAB
+Cf2py intent(in) :: NSCATANGLE, YLMSUN, PHASETAB, DPHASETAB, NSTPHASE
+      REAL DPATH(8*(NPX+NPY+NPZ),*)
+      INTEGER DPTR(8*(NPX+NPY+NPZ),*)
+Cf2py intent(in) :: DPATH, DPTR
+
+      REAL PIXEL_ERROR(NSTOKES)
+      DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER), VISRAD(NSTOKES)
+      INTEGER I, J, L, SIDE, IVIS
+      LOGICAL VALIDRAD
+      DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
+      DOUBLE PRECISION U, R, PI
+      DOUBLE PRECISION X0, Y0, Z0
+      DOUBLE PRECISION XE,YE,ZE, TRANSMIT
+      INTEGER M, ME, MS, NS
+
+      INTEGER, ALLOCATABLE :: LOFJ(:)
+      ALLOCATE (LOFJ(NLM))
+
+
+
+      J = 0
+      DO L = 0, ML
+        ME = MIN(L,MM)
+        MS = -ME
+        DO M = MS, ME
+          J = J + 1
+          LOFJ(J) = L
+        ENDDO
+      ENDDO
+
+C         Make the isotropic radiances for the top boundary
+      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
+     .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
+C         Make the bottom boundary radiances for the Lambertian surfaces.
+C          Compute the upwelling bottom radiances using the downwelling fluxes.
+      IF (SFCTYPE .EQ. 'FL') THEN
+        CALL FIXED_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
+     .             DIRFLUX, FLUXES, SRCTYPE, GNDTEMP, GNDALBEDO,
+     .             WAVENO, WAVELEN, UNITS, NSTOKES, BCRAD(1,1+NTOPPTS))
+      ELSE IF (SFCTYPE .EQ. 'VL') THEN
+        CALL VARIABLE_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
+     .               DIRFLUX, FLUXES, SRCTYPE, NSFCPAR, SFCGRIDPARMS,
+     .               NSTOKES, BCRAD(1,1+NTOPPTS))
+      ENDIF
+
+      PI = ACOS(-1.0D0)
+C         Loop over pixels in image
+      COST = 0.0; NORM1 = 0.0; NORM2 = 0.0; GRAD1 = 0.0; GRAD2 = 0.0
+      DO IVIS = 1, NPIX
+        X0 = CAMX(IVIS)
+        Y0 = CAMY(IVIS)
+        Z0 = CAMZ(IVIS)
+        MU2 = CAMMU(IVIS)
+        PHI2 = CAMPHI(IVIS)
+        MURAY = -MU2
+        PHIRAY = PHI2 - PI
+
+C             Extrapolate ray to domain top if above
+        IF (Z0 .GT. ZGRID(NZ)) THEN
+          IF (MURAY .GE. 0.0) THEN
+            VISRAD(:) = 0.0
+            GOTO 900
+          ENDIF
+          R = (ZGRID(NZ) - Z0)/MURAY
+          X0 = X0 + R*SQRT(1-MURAY**2)*COS(PHIRAY)
+          Y0 = Y0 + R*SQRT(1-MURAY**2)*SIN(PHIRAY)
+          Z0 = ZGRID(NZ)
+        ELSE IF (Z0 .LT. ZGRID(1)) THEN
+          WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
+          STOP
+        ENDIF
+
+C         Integrate the extinction and source function along this ray
+C         to calculate the Stokes radiance vector for this pixel
+        TRANSMIT = 1.0D0 ; VISRAD = 0.0D0; RAYGRAD = 0.0D0
+        CALL GRAD_INTEGRATE_1RAY (BCFLAG, IPFLAG, NSTOKES, NSTLEG,
+     .             NSTPHASE, NSCATANGLE, PHASETAB,
+     .             NX, NY, NZ, NPTS, NCELLS,
+     .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
+     .             XGRID, YGRID, ZGRID, GRIDPOS,
+     .             ML, MM, NLM, NLEG, NUMPHASE,
+     .             NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
+     .             DELTAM, SRCTYPE, WAVELEN, SOLARMU,SOLARAZ,
+     .             EXTINCT, ALBEDO, LEGEN,
+     .             IPHASE, DIRFLUX, SHPTR, SOURCE,
+     .             YLMSUN, MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD,
+     .             SFCTYPE, NSFCPAR, SFCGRIDPARMS, MU2, PHI2,
+     .             X0, Y0, Z0, XE, YE, ZE, SIDE, TRANSMIT, VISRAD,
+     .   	       VALIDRAD, TOTAL_EXT, NPART, RAYGRAD, RSHPTR,
+     .             RADIANCE, LOFJ, PARTDER, NUMDER, DEXT, DALB,
+     .             DIPHASE, DLEG, NBPTS, DNUMPHASE, SOLARFLUX, NPX,
+     .             NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
+     .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
+     .             EXACT_SINGLE_SCATTER)
+900     CONTINUE
+        STOKESOUT(:,IVIS) = VISRAD(:)
+        DO NS = 1, NSTOKES
+          NORM1(NS) = NORM1(NS) + STOKESOUT(NS,IVIS)**2
+          NORM2(NS) = NORM2(NS) + MEASUREMENTS(NS,IVIS)**2
+          GRAD1(NS,:,:) = GRAD1(NS,:,:)  + STOKESOUT(NS,IVIS) *
+     .                                                 RAYGRAD(NS,:,:)
+          GRAD2(NS,:,:)  = GRAD2(NS,:,:)  + MEASUREMENTS(NS,IVIS) *
+     .                                                 RAYGRAD(NS,:,:)
+          COST(NS) = COST(NS) + MEASUREMENTS(NS,IVIS) * VISRAD(NS)
+        ENDDO
+
+      ENDDO
+
+      RETURN
+      END
+
+
+      SUBROUTINE GRADIENT_L2(NSTOKES, NX, NY, NZ, NPTS, NBPTS, NCELLS,
      .           NBCELLS, ML, MM, NCS, NLM, NSTLEG, NLEG, NUMPHASE,
      .           NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .           BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, SOLARAZ,
@@ -185,7 +382,7 @@ C      ENDIF
      .           GRADOUT, COST, MEASUREMENTS, RSHPTR, STOKESOUT,
      .           NPART, TOTAL_EXT, RADIANCE, NUMDER, PARTDER, DEXT,
      .           DALB, DIPHASE, DLEG, NSCATANGLE, YLMSUN, PHASETAB,
-     .           NSTPHASE, DPHASETAB, DNUMPHASE, SOLARFLUX, NPX, NPY, 
+     .           NSTPHASE, DPHASETAB, DNUMPHASE, SOLARFLUX, NPX, NPY,
      .           NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS, EXTDIRP, 
      .           UNIFORMZLEV, DPATH, DPTR, EXACT_SINGLE_SCATTER)
 Cf2py threadsafe
@@ -273,7 +470,7 @@ Cf2py intent(in) :: DPATH, DPTR
       INTEGER, ALLOCATABLE :: LOFJ(:)
       ALLOCATE (LOFJ(NLM))
       GRADOUT = 0.0D0
-      
+
       J = 0
       DO L = 0, ML
         ME = MIN(L,MM)
@@ -310,7 +507,7 @@ C         Loop over pixels in image
         PHI2 = CAMPHI(IVIS)
         MURAY = -MU2
         PHIRAY = PHI2 - PI
-  
+
 C             Extrapolate ray to domain top if above
         IF (Z0 .GT. ZGRID(NZ)) THEN
           IF (MURAY .GE. 0.0) THEN
@@ -325,11 +522,11 @@ C             Extrapolate ray to domain top if above
           WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
           STOP
         ENDIF
-        
+
 C         Integrate the extinction and source function along this ray
 C         to calculate the Stokes radiance vector for this pixel
         TRANSMIT = 1.0D0 ; VISRAD = 0.0D0; RAYGRAD = 0.0D0
-        CALL GRAD_INTEGRATE_1RAY (BCFLAG, IPFLAG, NSTOKES, NSTLEG, 
+        CALL GRAD_INTEGRATE_1RAY (BCFLAG, IPFLAG, NSTOKES, NSTLEG,
      .             NSTPHASE, NSCATANGLE, PHASETAB,
      .             NX, NY, NZ, NPTS, NCELLS,
      .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
@@ -339,22 +536,22 @@ C         to calculate the Stokes radiance vector for this pixel
      .             DELTAM, SRCTYPE, WAVELEN, SOLARMU,SOLARAZ,
      .             EXTINCT, ALBEDO, LEGEN,
      .             IPHASE, DIRFLUX, SHPTR, SOURCE,
-     .             YLMSUN, MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD, 
-     .             SFCTYPE, NSFCPAR, SFCGRIDPARMS, MU2, PHI2,  
-     .             X0, Y0, Z0, XE, YE, ZE, SIDE, TRANSMIT, VISRAD, 
+     .             YLMSUN, MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD,
+     .             SFCTYPE, NSFCPAR, SFCGRIDPARMS, MU2, PHI2,
+     .             X0, Y0, Z0, XE, YE, ZE, SIDE, TRANSMIT, VISRAD,
      .   	       VALIDRAD, TOTAL_EXT, NPART, RAYGRAD, RSHPTR,
      .             RADIANCE, LOFJ, PARTDER, NUMDER, DEXT, DALB,
      .             DIPHASE, DLEG, NBPTS, DNUMPHASE, SOLARFLUX, NPX,
      .             NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER)
-900   CONTINUE
-      STOKESOUT(:,IVIS) = VISRAD(:)
-      PIXEL_ERROR = STOKESOUT(:,IVIS) - MEASUREMENTS(:,IVIS)
-      DO NS = 1, NSTOKES
-        GRADOUT = GRADOUT + PIXEL_ERROR(NS)*RAYGRAD(NS,:,:)/NSTOKES
-      ENDDO
-      COST = COST + (0.5/NSTOKES)*SUM(PIXEL_ERROR**2)
+900     CONTINUE
+        STOKESOUT(:,IVIS) = VISRAD(:)
+        PIXEL_ERROR = STOKESOUT(:,IVIS) - MEASUREMENTS(:,IVIS)
+        DO NS = 1, NSTOKES
+          GRADOUT = GRADOUT + PIXEL_ERROR(NS)*RAYGRAD(NS,:,:)
+        ENDDO
+        COST = COST + 0.5*SUM(PIXEL_ERROR**2)
       ENDDO
 
       RETURN
@@ -411,7 +608,6 @@ C     5=-Z,6=+Z).
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL    LEGEN(NSTLEG,0:NLEG,*)
       DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER)
-      DOUBLE PRECISION DIRGRAD(NSTOKES,NBPTS,NUMDER)
       REAL    DIRFLUX(*), SOURCE(NSTOKES,*), RADIANCE(NSTOKES,*)
       REAL    TOTAL_EXT(*), YLMSUN(NSTLEG,*)
       REAL    PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
@@ -462,7 +658,7 @@ C         TRANSCUT is the transmission to stop the integration at
       TRANSCUT = 5.0E-5
 C         TAUTOL is the maximum optical path for the subgrid intervals
       TAUTOL = 0.2
-      
+
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
       MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
       PI = ACOS(-1.0D0)
@@ -562,9 +758,9 @@ c     .     'INTEGRATE_1RAY:',X0,Y0,Z0,MU2,PHI2,ICELL
 C         Loop until reach a Z boundary or transmission is very small
       VALIDRAD = .FALSE.
       DO WHILE (.NOT. VALIDRAD .AND. ICELL .GT. 0)
-      
-        CALL GET_BASE_GRID_CELL(BCELL, ICELL, TREEPTR) 
-        
+
+        CALL GET_BASE_GRID_CELL(BCELL, ICELL, TREEPTR)
+
 C           Make sure current cell is valid
         IF (ICELL .LE. 0) THEN
           WRITE (6,*)'INTEGRATE_1RAY: ICELL=',ICELL,
@@ -900,8 +1096,8 @@ C     for unscaled untruncated phase function.
       REAL    YLMDIR(NSTLEG,*), YLMSUN(NSTLEG,*)
       REAL    SINGSCAT(NSTOKES,NUMPHASE)
       REAL    OEXTINCT8(8), OSRCEXT8(NSTOKES,8)
-      REAL    EXTINCT8(8), SRCEXT8(NSTOKES,8)
-      DOUBLE PRECISION SUNDIRLEG(0:NLEG), W
+      REAL    EXTINCT8(8), SRCEXT8(NSTOKES,8), W
+      DOUBLE PRECISION SUNDIRLEG(0:NLEG)
       CHARACTER SRCTYPE*1
       INTEGER*2 CELLFLAGS(*)
       LOGICAL OUTOFDOMAIN
@@ -1084,12 +1280,12 @@ C             of the source function
               SRCEXT8(4,N) = SRCEXT8(4,N) + SOURCE(4,IS+J)*YLMDIR(4,J)
             ENDDO
           ENDIF
-          
+
 C
           DO IPA = 1, NPART
 
             IF (EXT.EQ.0.0) THEN
-              W = 1.0D0
+              W = 1.0
             ELSE
               W = EXTINCT(IP,IPA)/EXT
             ENDIF
@@ -1155,7 +1351,6 @@ C             original unscaled phase function.
             ENDIF
           ENDDO
 
-          
           SRCEXT8(:,N) = SRCEXT8(:,N)*EXT
           EXTINCT8(N) = EXT
         ENDIF
@@ -1203,9 +1398,9 @@ C     for unscaled untruncated phase function.
       REAL    DLEG(0:NLEG,DNUMPHASE), DEXT(NBPTS,NUMDER)
       REAL    DALB(NBPTS,NUMDER), DEXTM, DALBM, DLEGM
       LOGICAL OUTOFDOMAIN
-      REAL    DSINGSCAT(DNUMPHASE)
+      REAL    DSINGSCAT(DNUMPHASE), W
       INTEGER DIPHASE(NBPTS,NUMDER), KK
-      DOUBLE PRECISION SUNDIRLEG(0:NLEG), W
+      DOUBLE PRECISION SUNDIRLEG(0:NLEG)
       CHARACTER SRCTYPE*1
       INTEGER LOFJ(NLM), PARTDER(NUMDER), RNS, RIS, IDR, IB
       INTEGER IP, J, JT, L, M, MS, ME, IPH, IS, NS, N, IPA, I, K
@@ -1312,7 +1507,7 @@ C             Special case for solar source and Delta-M
           IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
             DO IPA = 1, NPART
               IF (EXT.EQ.0.0) THEN
-                W = 1.0D0
+                W = 1.0
               ELSE
                 W = EXTINCT(IP,IPA)/EXT
               ENDIF

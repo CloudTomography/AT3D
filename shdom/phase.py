@@ -95,12 +95,12 @@ class LegendreTable(object):
         legenp = self.data
         
         # Scalar (unpolarized) table
-        if self.table_type=='SCALAR':
+        if self.table_type == 'SCALAR':
             legenp = legenp[1:]
             if nleg > self.maxleg:
                 legenp = np.pad(legenp, ((0, nleg - self.maxleg), (0,0)), 'constant')
         
-        if (self.table_type=='VECTOR') and (nleg>self.maxleg):
+        if (self.table_type == 'VECTOR') and (nleg > self.maxleg):
             legenp = np.pad(legenp, ((0,0), (0, nleg - self.maxleg), (0,0)) , 'constant')
         
         return legenp.ravel(order='F')
