@@ -1594,6 +1594,7 @@ c          FY = -C*RADIANCE(1,IR+2)
           IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
             F0 = SECSOL*DIRFLUX(I)
           ENDIF
+
           DO J = 5, RSHPTR(I+1)-IR
             HORMS = HORMS + (F0*YLMSUN(J)+RADIANCE(1,IR+J))**2
           ENDDO

@@ -49,7 +49,7 @@ class OpticalScatterer(Scatterer):
     """
     def __init__(self, wavelength, extinction=None, albedo=None, phase=None):
         self._wavelength = wavelength
-        super(OpticalScatterer, self).__init__()
+        super().__init__()
         if (extinction is not None) and (albedo is not None) and (phase is not None):
             self.grid = extinction.grid + albedo.grid + phase.grid
         self.extinction = extinction
@@ -139,7 +139,7 @@ class MicrophysicalScatterer(Scatterer):
         A GridData object containing effective variances on a 3D grid.
     """
     def __init__(self, lwc=None, reff=None, veff=None):
-        super(MicrophysicalScatterer, self).__init__()
+        super().__init__()
         self._mie = OrderedDict()
         self._wavelength = []
         self._min_reff = np.Inf
@@ -172,6 +172,72 @@ class MicrophysicalScatterer(Scatterer):
         if (lwc is not None) and (reff is not None) and (veff is not None):
             self._grid = lwc.grid + reff.grid + veff.grid
 
+    def get_extinction(self, wavelength):
+        """
+        Get the optical extinction from microphysics and Mie scattering model for a given wavelength.
+
+        Parameters
+        ----------
+        wavelength: float
+            Wavelength in microns.
+
+        Returns
+        -------
+        extinction: shdom.GridData
+            A GridData with the optical extinction
+
+        Notes
+        -----
+        A Mie scattering model must be defined at the input wavelength by use of the add_mie method.
+        The input wavelength is rounded to three decimals.
+        """
+        extinction = self.mie[float_round(wavelength)].get_extinction(self.lwc, self.reff, self.veff)
+        return extinction
+
+    def get_albedo(self, wavelength):
+        """
+        Get the optical single scattering albedo from microphysics and Mie scattering model for a given wavelength.
+
+        Parameters
+        ----------
+        wavelength: float
+            Wavelength in microns.
+
+        Returns
+        -------
+        albedo: shdom.GridData
+            A GridData with the optical single scattering albedo
+
+        Notes
+        -----
+        A Mie scattering model must be defined at the input wavelength by use of the add_mie method.
+        The input wavelength is rounded to three decimals.
+        """
+        albedo = self.mie[float_round(wavelength)].get_albedo(self.reff, self.veff)
+        return albedo
+
+    def get_phase(self, wavelength):
+        """
+        Get the optical phase function from microphysics and Mie scattering model for a given wavelength.
+
+        Parameters
+        ----------
+        wavelength: float
+            Wavelength in microns.
+
+        Returns
+        -------
+        phase: shdom.GridPhase
+            A GridPhase with the optical phase function
+
+        Notes
+        -----
+        A Mie scattering model must be defined at the input wavelength by use of the add_mie method.
+        The input wavelength is rounded to three decimals.
+        """
+        phase = self.mie[float_round(wavelength)].get_phase(self.reff, self.veff)
+        return phase
+
     def get_optical_scatterer(self, wavelength):
         """
         Get the optical scatterer out of the microphysics and Mie scattering model for a given wavelength.
@@ -179,7 +245,12 @@ class MicrophysicalScatterer(Scatterer):
         Parameters
         ----------
         wavelength: float of list of floats
-            Wavelength in microns. An OpticalScatterer object is returned for an input float and a MultispectralScatterer for a list.
+            Wavelength in microns.
+
+        Returns
+        -------
+        scatterer: shdom.OpticalScatterer or shdom.MultispectralScatterer
+            An OpticalScatterer object is returned for an input float and a MultispectralScatterer for a list.
 
         Notes
         -----
@@ -188,19 +259,13 @@ class MicrophysicalScatterer(Scatterer):
         """
         if isinstance(wavelength, list):
             scatterer_list = [
-                shdom.OpticalScatterer(
-                    wl,
-                    extinction=self.mie[float_round(wl)].get_extinction(self.lwc, self.reff, self.veff),
-                    albedo=self.mie[float_round(wl)].get_albedo(self.reff, self.veff),
-                    phase=self.mie[float_round(wl)].get_phase(self.reff, self.veff)) for wl in wavelength
+                shdom.OpticalScatterer(wl, self.get_extinction(wl), self.get_albedo(wl), self.get_phase(wl)) for wl in wavelength
             ]
             scatterer = shdom.MultispectralScatterer(scatterer_list)
         else:
             scatterer = shdom.OpticalScatterer(
-                wavelength,
-                extinction=self.mie[float_round(wavelength)].get_extinction(self.lwc, self.reff, self.veff),
-                albedo=self.mie[float_round(wavelength)].get_albedo(self.reff, self.veff),
-                phase=self.mie[float_round(wavelength)].get_phase(self.reff, self.veff))
+                wavelength, self.get_extinction(wavelength), self.get_albedo(wavelength),  self.get_phase(wavelength)
+            )
         return scatterer
     
     def resample(self, grid):
@@ -271,11 +336,11 @@ class MicrophysicalScatterer(Scatterer):
         if self.veff is not None:
             min_val = self.veff.data[self.veff.data>0.0].min()            
             assert self.veff.max_value < self.max_veff+1e-3, \
-                    'Maximum medium effective radius [{:2.2f}] is larger than the pre-computed table maximum variance [{:2.2f}]. ' \
-                    'Recompute Mie table with larger maximum radius.'.format(self.veff.max_value, self.max_veff)
+                    'Maximum medium effective variance [{:2.2f}] is larger than the pre-computed table maximum variance [{:2.2f}]. ' \
+                    'Recompute Mie table with larger maximum variance.'.format(self.veff.max_value, self.max_veff)
             assert min_val > self.min_veff-1e-3, \
-                    'Minimum medium effective radius [{:2.2f}] is smaller than the pre-computed table minimum variance [{:2.2f}]. ' \
-                    'Recompute Mie table with smaller minimum radius.'.format(min_val, self.min_veff)
+                    'Minimum medium effective variance [{:2.2f}] is smaller than the pre-computed table minimum variance [{:2.2f}]. ' \
+                    'Recompute Mie table with smaller minimum variance.'.format(min_val, self.min_veff)
 
     def load_grid(self, path):
         """

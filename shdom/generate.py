@@ -403,9 +403,6 @@ class SingleVoxel(CloudGenerator):
                             default=0.1,
                             type=np.float32,
                             help='(default value: %(default)s) Effective variance of the center voxel')
-        parser.add_argument('--mie_table_path',
-                            help='Path to a precomputed Mie scattering table. \
-                                  See notebooks/Make Mie Table.ipynb for more details')
         return parser
 
     def get_grid(self):
@@ -580,9 +577,6 @@ class Homogeneous(CloudGenerator):
                             default=0.1,
                             type=np.float32,
                             help='(default value: %(default)s) Effective variance')
-        parser.add_argument('--mie_table_path',
-                            help='Path to a precomputed polydisperse Mie scattering table. \
-                                  See notebooks/Make Mie Table.ipynb for more details')
         return parser
 
     def get_grid(self):
@@ -651,7 +645,12 @@ class Homogeneous(CloudGenerator):
 
         lwc = self.args.lwc
         if lwc is not None:
-            lwc_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=lwc, dtype=np.float32)
+            if grid.type == 'Homogeneous':
+                lwc_data = self.args.lwc
+            elif grid.type == '1D':
+                lwc_data = np.full(shape=(grid.nz), fill_value=self.args.lwc, dtype=np.float32)
+            elif grid.type == '3D':
+                lwc_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=self.args.lwc, dtype=np.float32)
             lwc = shdom.GridData(grid, lwc_data)
         return lwc
 
@@ -671,7 +670,12 @@ class Homogeneous(CloudGenerator):
         """
         if grid is None:
             grid = self.get_grid()
-        reff_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=self.args.reff, dtype=np.float32)
+        if grid.type == 'Homogeneous':
+            reff_data = self.args.reff
+        elif grid.type == '1D':
+            reff_data = np.full(shape=(grid.nz), fill_value=self.args.reff, dtype=np.float32)
+        elif grid.type == '3D':
+            reff_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=self.args.reff, dtype=np.float32)
         return shdom.GridData(grid, reff_data)
 
     def get_veff(self, grid=None):
@@ -690,7 +694,12 @@ class Homogeneous(CloudGenerator):
         """
         if grid is None:
             grid = self.get_grid()
-        veff_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=self.args.veff, dtype=np.float32)
+        if grid.type == 'Homogeneous':
+            veff_data = self.args.veff
+        elif grid.type == '1D':
+            veff_data = np.full(shape=(grid.nz), fill_value=self.args.veff, dtype=np.float32)
+        elif grid.type == '3D':
+            veff_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=self.args.veff, dtype=np.float32)
         return shdom.GridData(grid, veff_data)
 
 
@@ -733,9 +742,7 @@ class LesFile(CloudGenerator):
                             default=0.1,
                             type=np.float32, 
                             help='(default value: %(default)s) Effective variance (if not provided as a 3D field)')         
-        parser.add_argument('--mie_table_path', 
-                            help='Path to a precomputed Mie scattering table. \
-                                  See notebooks/Make Mie Table.ipynb for more details')    
+
         return parser
     
     def get_grid(self):
@@ -1556,9 +1563,6 @@ class StochasticCloud(CloudGenerator):
                             type=str,
                             help='(default value: %(default)s) The choice of cloud geometries. Choose from \
                             Blob, Stochastic, Sphere, Cylinder & Cuboid.')
-        parser.add_argument('--mie_table_path',
-                            help='Path to a precomputed polydisperse Mie scattering table. \
-                            See notebooks/Make Mie Table.ipynb for more details')
         parser.add_argument('--lwc_mean',
                             default=0.1,
                             type=np.float32,

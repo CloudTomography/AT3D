@@ -186,7 +186,8 @@ C      ENDIF
      .           DALB, DIPHASE, DLEG, NSCATANGLE, YLMSUN, PHASETAB,
      .           NSTPHASE, DPHASETAB, DNUMPHASE, SOLARFLUX, NPX, NPY,
      .           NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS, EXTDIRP,
-     .           UNIFORMZLEV, DPATH, DPTR, EXACT_SINGLE_SCATTER)
+     .           UNIFORMZLEV, DPATH, DPTR, EXACT_SINGLE_SCATTER,
+     .           WEIGHTS)
 Cf2py threadsafe
       IMPLICIT NONE
       LOGICAL EXACT_SINGLE_SCATTER
@@ -258,9 +259,9 @@ Cf2py intent(in) :: NUMDER, PARTDER
       REAL DPHASETAB(NSTPHASE,DNUMPHASE,NSCATANGLE)
 Cf2py intent(in) :: YLMSUN, PHASETAB
 Cf2py intent(in) :: NSCATANGLE, YLMSUN, PHASETAB, DPHASETAB, NSTPHASE
-      REAL DPATH(8*(NPX+NPY+NPZ),*)
+      REAL DPATH(8*(NPX+NPY+NPZ),*), WEIGHTS(NSTOKES)
       INTEGER DPTR(8*(NPX+NPY+NPZ),*)
-Cf2py intent(in) :: DPATH, DPTR
+Cf2py intent(in) :: DPATH, DPTR, WEIGHTS
 
       REAL PIXEL_ERROR(NSTOKES)
       DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER), VISRAD(NSTOKES)
@@ -274,8 +275,6 @@ Cf2py intent(in) :: DPATH, DPTR
 
       INTEGER, ALLOCATABLE :: LOFJ(:)
       ALLOCATE (LOFJ(NLM))
-
-
 
       J = 0
       DO L = 0, ML
@@ -384,7 +383,8 @@ C         to calculate the Stokes radiance vector for this pixel
      .           DALB, DIPHASE, DLEG, NSCATANGLE, YLMSUN, PHASETAB,
      .           NSTPHASE, DPHASETAB, DNUMPHASE, SOLARFLUX, NPX, NPY,
      .           NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS, EXTDIRP, 
-     .           UNIFORMZLEV, DPATH, DPTR, EXACT_SINGLE_SCATTER)
+     .           UNIFORMZLEV, DPATH, DPTR, EXACT_SINGLE_SCATTER,
+     .           WEIGHTS)
 Cf2py threadsafe
       IMPLICIT NONE
       LOGICAL EXACT_SINGLE_SCATTER
@@ -453,11 +453,11 @@ Cf2py intent(in) :: NUMDER, PARTDER
       REAL DPHASETAB(NSTPHASE,DNUMPHASE,NSCATANGLE)
 Cf2py intent(in) :: YLMSUN, PHASETAB
 Cf2py intent(in) :: NSCATANGLE, YLMSUN, PHASETAB, DPHASETAB, NSTPHASE
-      REAL DPATH(8*(NPX+NPY+NPZ),*)
+      REAL DPATH(8*(NPX+NPY+NPZ),*), WEIGHTS(NSTOKES)
       INTEGER DPTR(8*(NPX+NPY+NPZ),*)
-Cf2py intent(in) :: DPATH, DPTR
+Cf2py intent(in) :: DPATH, DPTR, WEIGHTS
 
-      REAL PIXEL_ERROR(NSTOKES)
+      REAL PIXEL_ERROR
       DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER), VISRAD(NSTOKES)
       INTEGER I, J, L, SIDE, IVIS
       LOGICAL VALIDRAD
@@ -469,6 +469,7 @@ Cf2py intent(in) :: DPATH, DPTR
 
       INTEGER, ALLOCATABLE :: LOFJ(:)
       ALLOCATE (LOFJ(NLM))
+
       GRADOUT = 0.0D0
 
       J = 0
@@ -546,12 +547,13 @@ C         to calculate the Stokes radiance vector for this pixel
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER)
 900     CONTINUE
-        STOKESOUT(:,IVIS) = VISRAD(:)
-        PIXEL_ERROR = STOKESOUT(:,IVIS) - MEASUREMENTS(:,IVIS)
+
         DO NS = 1, NSTOKES
-          GRADOUT = GRADOUT + PIXEL_ERROR(NS)*RAYGRAD(NS,:,:)
+          STOKESOUT(NS,IVIS) = VISRAD(NS)
+          PIXEL_ERROR = STOKESOUT(NS,IVIS) - MEASUREMENTS(NS,IVIS)
+          GRADOUT = GRADOUT + WEIGHTS(NS)*PIXEL_ERROR*RAYGRAD(NS,:,:)
+          COST = COST + 0.5 * WEIGHTS(NS)*PIXEL_ERROR**2
         ENDDO
-        COST = COST + 0.5*SUM(PIXEL_ERROR**2)
       ENDDO
 
       RETURN
@@ -946,7 +948,6 @@ C                 Linear extinction, linear source*extinction, to second order
           ENDIF
 
           RADOUT(:) = RADOUT(:) + TRANSMIT*SRC(:)*ABSCELL
-
           IF (.NOT. OUTOFDOMAIN) THEN
             DO KK = 1, 8
               GRIDPOINT = GRIDPTR(KK,BCELL)
@@ -1153,7 +1154,7 @@ C           at the viewing angle from the spherical harmonics source function.
               
               DA = DIRFLUX(IP)*SECMU0
               FULL_SINGSCAT = 0.0
-              
+
               IF (DELTAM) THEN
                 F = LEGEN(1,ML+1,K)
               ELSE 
@@ -1174,16 +1175,18 @@ C             of the source function
      .              DEXTM*(ALBEDO(IP,IPA)*LEGEN(1,L,K)-1.0) +
      .              EXTINCT(IP,IPA)*DALBM*LEGEN(1,L,K) +
      .              EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(1))
+
                 IF (NSTOKES .GT. 1) THEN
-                  GRAD8(1,N,IDR) = GRAD8(1,N,IDR) + 
+                  GRAD8(1,N,IDR) = GRAD8(1,N,IDR) +
      .              RADIANCE(2,RIS+J)*YLMDIR(1,J)*(
-     .              DEXTM*(ALBEDO(IP,IPA)*LEGEN(5,L,K)-1.0) +
+     .              DEXTM*ALBEDO(IP,IPA)*LEGEN(5,L,K) +
      .              EXTINCT(IP,IPA)*DALBM*LEGEN(5,L,K) + 
      .              EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(5))
+
                   IF (J .GE. 5) THEN
                     GRAD8(2,N,IDR) = GRAD8(2,N,IDR) + 
      .                RADIANCE(1,RIS+J)*YLMDIR(2,J)*(
-     .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(5,L,K)-1.0) +
+     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(5,L,K) +
      .                EXTINCT(IP,IPA)*DALBM*LEGEN(5,L,K) + 
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(5))
                     GRAD8(2,N,IDR) = GRAD8(2,N,IDR) + 
@@ -1193,18 +1196,18 @@ C             of the source function
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(2))
                     GRAD8(2,N,IDR) = GRAD8(2,N,IDR) + 
      .                RADIANCE(3,RIS+J)*YLMDIR(5,J)*(
-     .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(3,L,K)-1.0) +
+     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(3,L,K)  +
      .                EXTINCT(IP,IPA)*DALBM*LEGEN(3,L,K) + 
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(3))
 
                     GRAD8(3,N,IDR) = GRAD8(3,N,IDR) + 
      .                RADIANCE(1,RIS+J)*YLMDIR(6,J)*(
-     .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(5,L,K)-1.0) +
+     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(5,L,K) +
      .                EXTINCT(IP,IPA)*DALBM*LEGEN(5,L,K) + 
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(5))
                     GRAD8(3,N,IDR) = GRAD8(3,N,IDR) + 
      .                RADIANCE(2,RIS+J)*YLMDIR(6,J)*(
-     .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(2,L,K)-1.0) +
+     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(2,L,K) +
      .                EXTINCT(IP,IPA)*DALBM*LEGEN(2,L,K) + 
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(2))
                     GRAD8(3,N,IDR) = GRAD8(3,N,IDR) + 
@@ -1217,20 +1220,19 @@ C             of the source function
                 IF (NSTOKES .EQ. 4) THEN
                     GRAD8(2,N,IDR) = GRAD8(2,N,IDR) + 
      .                RADIANCE(4,RIS+J)*YLMDIR(5,J)*(
-     .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(6,L,K)-1.0) +
+     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(6,L,K) +
      .                EXTINCT(IP,IPA)*DALBM*LEGEN(6,L,K) + 
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(6))
 
                     GRAD8(3,N,IDR) = GRAD8(3,N,IDR) + 
      .                RADIANCE(4,RIS+J)*YLMDIR(3,J)*(
-     .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(6,L,K)-1.0) +
+     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(6,L,K) +
      .                EXTINCT(IP,IPA)*DALBM*LEGEN(6,L,K) + 
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(6))
-     
 
                     GRAD8(4,N,IDR) = GRAD8(4,N,IDR) - 
      .                RADIANCE(3,RIS+J)*YLMDIR(4,J)*(
-     .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(6,L,K)+1.0) +
+     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(6,L,K) +
      .                EXTINCT(IP,IPA)*DALBM*LEGEN(6,L,K) + 
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(6))
 
@@ -1350,7 +1352,7 @@ C             original unscaled phase function.
               ENDDO
             ENDIF
           ENDDO
-
+          SINGSCAT8(:,N) = SINGSCAT8(:,N)*EXT
           SRCEXT8(:,N) = SRCEXT8(:,N)*EXT
           EXTINCT8(N) = EXT
         ENDIF

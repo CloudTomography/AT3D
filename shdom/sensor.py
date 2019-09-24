@@ -115,7 +115,7 @@ class RadianceSensor(Sensor):
     A Radiance sensor measures monochromatic radiances.
     """
     def __init__(self):
-        super(RadianceSensor, self).__init__()
+        super().__init__()
         self._type = 'RadianceSensor'
         
     def render(self, rte_solver, projection, n_jobs=1, verbose=0):
@@ -166,7 +166,7 @@ class RadianceSensor(Sensor):
                 delayed(super(RadianceSensor, self).render, check_pickle=False)(
                     rte_solver=rte_solver,
                     projection=projection) for rte_solver, projection in 
-                itertools.product(rte_solvers, projection.split(n_jobs)))  
+                itertools.product(rte_solvers, projection.split(n_jobs)))
             
         # Sequential rendering
         else:
@@ -198,12 +198,12 @@ class RadianceSensor(Sensor):
         multichannel = num_channels > 1
         
         if multichannel:
-            radiance = np.array(np.split(radiance, num_channels)).T     
-            
-        if multiview: 
-            split_indices = np.cumsum(projection.npix[:-1])        
+            radiance = np.array(np.split(radiance, num_channels)).T
+
+        if multiview:
+            split_indices = np.cumsum(projection.npix[:-1])
             radiance = np.split(radiance, split_indices)
-            
+
             if multichannel:
                 radiance = [
                     image.reshape(resolution + [num_channels], order='F')
@@ -211,14 +211,14 @@ class RadianceSensor(Sensor):
                 ]
             else:
                 radiance = [
-                    image.reshape(resolution, order='F') 
+                    image.reshape(resolution, order='F')
                     for image, resolution in zip(radiance, projection.resolution) 
                 ]                  
         else:
             new_shape = projection.resolution
             if multichannel:
                 new_shape.append(num_channels)       
-            radiance = radiance.reshape(new_shape, order='F') 
+            radiance = radiance.reshape(new_shape, order='F')
                 
         return radiance         
     
@@ -228,12 +228,12 @@ class StokesSensor(Sensor):
     A StokesSensor measures monochromatic stokes vector [I, U, Q, V].
     """
     def __init__(self):
-        super(StokesSensor, self).__init__()
+        super().__init__()
         self._type = 'StokesSensor'
     
     def render(self, rte_solver, projection, n_jobs=1, verbose=0):
         """      
-        The render method integrates a pre-computed stokes vector in-scatter field (source function) J over the sensor gemoetry.
+        The render method integrates a pre-computed stokes vector in-scatter field (source function) J over the sensor geometry.
         The source code for this function is in src/polarized/shdomsub4.f. 
         It is a modified version of the original SHDOM visualize_radiance subroutine in src/polarized/shdomsub2.f.
         
@@ -341,7 +341,7 @@ class StokesSensor(Sensor):
             new_shape = [stokes.shape[0]] + projection.resolution
             if multichannel:
                 new_shape.append(num_channels)       
-            stokes = stokes.reshape(new_shape, order='F')        
+            stokes = stokes.reshape(new_shape, order='F')
             
         return stokes
 
@@ -351,12 +351,12 @@ class DolpAolpSensor(StokesSensor):
     A DolpAolp measures monochromatic Degree and Angle of Linear Polarization.
     """
     def __init__(self):
-        super(StokesSensor, self).__init__()
+        super().__init__()
         self._type = 'DolpAolpSensor'
     
     def render(self, rte_solver, projection, n_jobs=1, verbose=0):
         """   
-        The render method integrates a pre-computed stokes vector in-scatter field (source function) J over the sensor gemoetry.
+        The render method integrates a pre-computed stokes vector in-scatter field (source function) J over the sensor geometry.
         The source code for this function is in src/polarized/shdomsub4.f. 
         It is a modified version of the original SHDOM subroutine in src/polarized/shdomsub2.f.
         
@@ -381,7 +381,7 @@ class DolpAolpSensor(StokesSensor):
         aolp: np.array(shape=(sensor.resolution), dtype=np.float32)
             Angle of Linear Polarization
         """
-        stokes = super(DolpAolpSensor, self).render(rte_solver, projection, n_jobs, verbose)
+        stokes = super().render(rte_solver, projection, n_jobs, verbose)
         
         indices = stokes[0] > 0.0
         dolp = np.zeros_like(stokes[0])
@@ -521,7 +521,7 @@ class HomographyProjection(Projection):
     A Homography has a projective tansformation that relates 3D coordinates to pixels.
     """
     def __init__(self):
-        super(HomographyProjection, self).__init__()
+        super().__init__()
         
     def project(self, projection_matrix, point_array):
         """
@@ -560,7 +560,7 @@ class OrthographicProjection(HomographyProjection):
     """
     
     def __init__(self, bounding_box, x_resolution, y_resolution, azimuth, zenith, altitude='TOA'):
-        super(OrthographicProjection, self).__init__()       
+        super().__init__()
         self._x_resolution = x_resolution
         self._y_resolution = y_resolution
         
@@ -635,7 +635,7 @@ class PerspectiveProjection(HomographyProjection):
         Location in global z coordinates [km] (Up)
     """
     def __init__(self, fov, nx, ny, x, y, z):
-        super(PerspectiveProjection, self).__init__()
+        super().__init__()
         self._resolution = [nx, ny]
         self._npix = nx*ny
         self._position = np.array([x, y, z], dtype=np.float32)
@@ -774,7 +774,7 @@ class PrincipalPlaneProjection(Projection):
         Angular resolution of the measurements in [deg]
     """
     def __init__(self, source, x, y, z, resolution=1.0):
-        super(PrincipalPlaneProjection, self).__init__()
+        super().__init__()
         self._angles = np.arange(-89.0, 89.0, resolution)
         self._npix = len(self._angles)
         self._x = np.full(self.npix, x, dtype=np.float32)
@@ -807,7 +807,7 @@ class AlmucantarProjection(Projection):
         Angular resolution of the measurements in [deg]
     """
     def __init__(self, source, x, y, z, resolution=1.0):
-        super(AlmucantarProjection, self).__init__()
+        super().__init__()
         self._phi = np.deg2rad(np.arange(180.0, 360.0, resolution)).astype(np.float64)
         self._npix = len(self._phi)
         self._mu = np.full(self.npix, np.cos(np.deg2rad(source.zenith - 180)), dtype=np.float64)
@@ -834,7 +834,7 @@ class HemisphericProjection(Projection):
         Angular resolution of the measurements in [deg]
     """
     def __init__(self, x, y, z, resolution=5.0):
-        super(HemisphericProjection, self).__init__()
+        super().__init__()
         mu = np.cos(np.deg2rad(np.arange(0.0, 80.0+resolution, resolution)))
         phi = np.deg2rad(np.arange(0.0, 360.0+resolution, resolution))
         self._x, self._y, self._z, self._mu, self._phi = np.meshgrid(x, y, z, mu, phi)
@@ -845,7 +845,6 @@ class HemisphericProjection(Projection):
         self._phi = self._phi.ravel().astype(np.float64)
         self._npix = self.x.size
         self._resolution = [phi.size, mu.size]
-            
 
 class Measurements(object):
     """
@@ -862,42 +861,42 @@ class Measurements(object):
     pixels: np.array(dtype=float)
         pixels are a flattened version of the image list where the channel dimension is kept (1 for monochrome).
     """
-    def __init__(self, camera=None, images=None, pixels=None):
+    def __init__(self, camera=None, images=None, pixels=None, wavelength=None):
         self._camera = camera
         self._images = images
-        num_channels = 1
+        self._wavelength = np.atleast_1d(wavelength)
 
+        num_channels = 0
         if images is not None:
 
             if type(images) is not list:
                 self._images = [images]
 
-            # Check if images have the same number of channels
-            num_channels_list = list(map(lambda img: img.shape[-1] if img.ndim > 2 else 1, self.images))
-            if all([elem == num_channels_list[0] for elem in num_channels_list]):
-                num_channels = num_channels_list[0]
-            else:
-                NotImplementedError('unequal number of channels not implemented')
-
             pixels = []
             for image in self.images:
-                if ((image.ndim == 3 or image.ndim == 2) and camera.sensor.type == 'Radiance'):
+                if camera.sensor.type == 'RadianceSensor':
+                    num_channels = image.shape[-1] if image.ndim == 3 else 1
                     pixels.append(image.reshape((-1, num_channels), order='F'))
-                elif ((image.ndim == 3 or image.ndim == 4) and camera.sensor.type == 'StokesSensor'):
+
+                elif camera.sensor.type == 'StokesSensor':
+                    num_channels = image.shape[-1] if image.ndim == 4 else 1
                     pixels.append(image.reshape((image.shape[0], -1, num_channels), order='F'))
+
                 else:
                     AttributeError('Error image dimensions: {}'.format(image.ndim))
             pixels = np.concatenate(pixels, axis=-2)
 
         elif pixels is not None:
-            if (pixels.ndim == 1 and camera.sensor.type == 'Radiance') or (pixels.ndim == 2 and camera.sensor.type == 'StokesSensor'):
+            if (pixels.ndim == 1 and camera.sensor.type == 'RadianceSensor') or (pixels.ndim == 2 and camera.sensor.type == 'StokesSensor'):
                 num_channels = 1
                 pixels = pixels[..., None]
-            elif (pixels.ndim == 2 and camera.sensor.type == 'Radiance') or (pixels.ndim == 3 and camera.sensor.type == 'StokesSensor'):
+            elif (pixels.ndim == 2 and camera.sensor.type == 'RadianceSensor') or (pixels.ndim == 3 and camera.sensor.type == 'StokesSensor'):
                 num_channels = pixels.shape[-1]
             else:
                 AttributeError('Pixels should be a flat along spatial dimensions while maintaining channels/stokes dimension')
 
+        if num_channels > 1:
+            assert num_channels == len(self._wavelength), 'Number of channels = {} differs from len(wavelength)={}'.format(num_channels, len(self._wavelength))
         self._pixels = pixels
         self._num_channels = num_channels
 
@@ -910,7 +909,7 @@ class Measurements(object):
         path: str,
             Full path to file. 
         """
-        file = open(path,'wb')
+        file = open(path, 'wb')
         file.write(pickle.dumps(self.__dict__, -1))
         file.close()
 
@@ -923,7 +922,7 @@ class Measurements(object):
         path: str,
             Full path to file. 
         """        
-        file = open(path,'rb')
+        file = open(path, 'rb')
         data = file.read()
         file.close()
         self.__dict__ = pickle.loads(data)
@@ -973,6 +972,14 @@ class Measurements(object):
     @property
     def num_channels(self):
         return self._num_channels
+
+    @property
+    def wavelength(self):
+        if self.num_channels == 1:
+            return self._wavelength[0]
+        else:
+            return self._wavelength
+
 
 class Camera(object):
     """
@@ -1048,7 +1055,7 @@ class MultiViewProjection(Projection):
         A list of Sensor objects
     """
     def __init__(self, projection_list=None):
-        super(MultiViewProjection, self).__init__()
+        super().__init__()
         self._num_projections = 0
         self._projection_list = []
         self._names = []

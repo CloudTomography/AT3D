@@ -489,7 +489,7 @@ C         as long as SPLITTESTING is true.
       A = 0.0
 
       IF (VERBOSE) THEN
-        WRITE (6,*) ' ! Iter Log(Sol)  SplitCrit  Npoints  Nsh(avg)', 
+        WRITE (6,*) ' ! Iter Log(Sol)  SplitCrit  Npoints  Nsh(avg)',
      .              '   [', RUNNAME,']'
       ENDIF
 
@@ -598,7 +598,7 @@ C           If it is a not scattering medium then do only one iteration
         IF (VERBOSE) THEN
 C           Print out the log solution criterion, number of points, 
 C             and average SH truncation.
-          WRITE (6,'(2X,I4,F8.3,1X,E10.3,1X,I8,1X,F8.2,1X,F6.3,A,A,A)') 
+          WRITE (6,'(2X,I4,F8.3,1X,E10.3,1X,I8,1X,F8.2,1X,F6.3,A,A,A)')
      .          ITER, LOG10(MAX(SOLCRIT,1.0E-20)), 
      .          SPLITCRIT, NPTS, FLOAT(SHPTR(NPTS+1))/NPTS, 
      .          FLOAT(SHPTR(NPTS+1))/(NPTS*NLM), '   [', RUNNAME,']'
@@ -1228,7 +1228,7 @@ C     boundary points.
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NSTOKES, NSTLEG, ML, MM, NLM
 Cf2py intent(in) :: NX, NY, NZ, NSTOKES, NSTLEG, ML, MM, NLM
-      INTEGER NMU, NPHI0MAX, NPHI0(*), NANG
+      INTEGER NMU, NPHI0MAX, NPHI0(NMU), NANG
 Cf2py intent(in) :: NMU, NPHI0MAX, NPHI0, NANG
       INTEGER BCFLAG, IPFLAG
 Cf2py intent(in) :: BCFLAG, IPFLAG
@@ -1260,10 +1260,10 @@ Cf2py intent(in,out) :: SFCPARMS, SFCGRIDPARMS
 Cf2py intent(in) :: WAVENO, WAVELEN
       REAL    XGRID(*), YGRID(*), ZGRID(*), GRIDPOS(3,*)
 Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
-      REAL    MU(*), PHI(NMU,*), WTDO(NMU,*)
+      REAL    MU(NMU), PHI(NMU,NPHI0MAX), WTDO(NMU,NPHI0MAX)
 Cf2py intent(in) ::  MU, PHI, WTDO
-      REAL    CMU1(NLM,NMU), CPHI1(-16:16,32,NMU)
-      REAL    CMU2(NMU,NLM), CPHI2(32,-16:16,NMU)
+      REAL    CMU1(NSTLEG,NLM,NMU), CPHI1(-16:16,32,NMU)
+      REAL    CMU2(NSTLEG,NMU,NLM), CPHI2(32,-16:16,NMU)
       REAL    WSAVE(3*NPHI0MAX+15,NMU)
 Cf2py intent(in) :: CMU1, CPHI1, CMU2, CPHI2, WSAVE
       REAL    BCRAD(NSTOKES, *)
@@ -1294,7 +1294,7 @@ C         Make the new grid cell/point sweeping order if need to
       IF (NPTS .NE. OLDNPTS) THEN
         CALL SWEEPING_ORDER (NX, NY, NZ, NPTS, NCELLS,
      .                       GRIDPTR, TREEPTR, CELLFLAGS,
-     .                       BCFLAG, IPFLAG,  SWEEPORD, GRIDRAD,
+     .                       BCFLAG, IPFLAG, SWEEPORD, GRIDRAD,
      .                       SP, STACK, IX, IY, IZ, SIX, SIY,
      .                       SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ)
       ENDIF
@@ -1447,7 +1447,6 @@ C               GRIDRAD to the work array.
               WRITE (6,*) 'PATH_INTEGRATION: Grid point has no value',
      .          I,MU(IMU),PHI(IMU,IPHI),GRIDRAD(1,I),XGRID(1),YGRID(1),
      .          GRIDPOS(1,I),GRIDPOS(2,I),GRIDPOS(3,I)
-              STOP
               GRIDRAD(1,I)=0.0
             ELSE
               WORK(:,IPHI,I) = GRIDRAD(:,I)
@@ -1963,7 +1962,7 @@ C     each grid point must be the maximum m for the particular l term.
       INTEGER ML, MM, NLM, NMU, NPHI0MAX, NPHI0
       INTEGER IMU, SHPTR(NPTS+1)
       LOGICAL FFTFLAG(NMU)
-      REAL    INDATA(NSTOKES,*), OUTDATA(NSTOKES,NPHI0MAX,NPTS)
+      REAL    INDATA(NSTOKES,*), OUTDATA(NSTOKES,NPHI0MAX,*)
       REAL    CMU1(NSTLEG,NLM,NMU), CPHI1(-16:16,32,NMU)
       REAL    WSAVE(3*NPHI0MAX+15,NMU)
       INTEGER I, J, K, L, M, M2, N, IPHI, MS, ME, MR, IS, NSH
@@ -2386,7 +2385,7 @@ C             transform by summing over l for each m.
 
       SUBROUTINE SWEEPING_ORDER (NX, NY, NZ, NPTS, NCELLS,
      .                          GRIDPTR, TREEPTR, CELLFLAGS,
-     .                          BCFLAG, IPFLAG,  SWEEPORD, GRIDRAD,
+     .                          BCFLAG, IPFLAG, SWEEPORD, GRIDRAD,
      .       SP,STACK,IX,IY,IZ,SIX,SIY,SIZ,EIX,EIY,EIZ,DIX,DIY,DIZ)
 C       Make the array of grid point sweeping order for each discrete
 C     ordinate octant (SWEEPORD).  Rather than pointing to the grid points
@@ -2477,10 +2476,6 @@ C             Fill in the next entry with the grid cell and corner of this point
       END
 
 
-
-
-
-
       SUBROUTINE BACK_INT_GRID3D (NX,NY,NZ, NA, NPTS, NCELLS,
      .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .             GRIDPOS, XGRID, YGRID, ZGRID, SWEEPORD,
@@ -2500,12 +2495,12 @@ C     radiances on the face.  The resulting radiances are put in GRIDRAD.
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NA, NPTS, NCELLS, NSTOKES, KANG
       INTEGER BCFLAG, IPFLAG
-      INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
+      INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
       INTEGER SWEEPORD(NPTS,*)
-      INTEGER*2 CELLFLAGS(*)
-      REAL    GRIDPOS(3,*), XGRID(*), YGRID(*), ZGRID(*)
+      INTEGER*2 CELLFLAGS(NCELLS)
+      REAL    GRIDPOS(3,NPTS), XGRID(*), YGRID(*), ZGRID(NZ)
       REAL    MU, PHI, TRANSMIN
-      REAL    EXTINCT(*), SOURCE(NSTOKES,NA,*)
+      REAL    EXTINCT(NPTS), SOURCE(NSTOKES,NA,*)
       REAL    GRIDRAD(NSTOKES,*)
       INTEGER BITX, BITY, BITZ, IOCT, JOCT
       INTEGER IPCELL, ICELL, INEXTCELL, IPT, IFACE
@@ -2525,7 +2520,6 @@ C     radiances on the face.  The resulting radiances are put in GRIDRAD.
       DATA GRIDFACE/1,3,5,7, 2,4,6,8,  1,2,5,6, 3,4,7,8,
      .              1,2,3,4, 5,6,7,8/, OPPFACE/2,1,4,3,6,5/
       DATA JOCTORDER3/1,3,5,7,2,4,6,8/, JOCTORDER2/1,3,1,3,2,4,2,4/
-
 
       EPS = 1.0E-3*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
 
@@ -4086,8 +4080,7 @@ C     function for the new points.
       LOGICAL VALIDBEAM
       REAL    X, Y, Z, F, BB, C, D, SECMU0
       REAL    RAD1(NSTOKES), RAD2(NSTOKES)
-      REAL    UNIFZLEV, XO, YO, ZO, DIRPATH, EXT
-      DOUBLE PRECISION W
+      REAL    UNIFZLEV, XO, YO, ZO, DIRPATH, EXT, W
       INTEGER, ALLOCATABLE :: LOFJ(:)
       REAL, ALLOCATABLE :: SOURCET(:,:)
 

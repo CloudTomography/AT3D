@@ -2,7 +2,7 @@ Summary: pyshdom is available for non-commercial use only. For commercial use, c
 
 ---
 
-Copyright (C) 2019, Amit Aides & Aviad Levis, all rights reserved.
+Copyright (C) 2019, Aviad Levis & Amit Aides, all rights reserved.
 
 pyshdom includes the source code of SHDOM by Frank Evens (http://nit.colorado.edu/shdom.html).
 Please contact Frank Evens for the license of SHDOM source. The license hereinafter refers to the pyshdom code only without the SHDOM sources.
@@ -14,7 +14,9 @@ Redistribution and use in source and binary forms, with or without modification,
 * Redistributions in binary form must reproduce the above copyright notice, this list of conditions (license) and the following disclaimer in the documentation and/or other materials provided with the distribution.
 * The name of the author may not be used to endorse or promote products derived from this software without specific prior written permission.
 * As this software depends on other libraries, the user must adhere to and keep in place any licensing terms of those libraries.
-* Any publications arising from the use of this software, including but not limited to academic journal and conference publications, technical reports and manuals, must cite the following work: `Levis, Aviad, et al. "Airborne three-dimensional cloud tomography." Proceedings of the IEEE International Conference on Computer Vision. 2015.`
+* Any publications arising from the use of this software, including but not limited to academic journal and conference publications, technical reports and manuals, must cite at least one following papers:
+    - `Levis, Aviad, et al. "Airborne Three-Dimensional Cloud Tomography." Proceedings of the IEEE International Conference on Computer Vision. 2015.`
+    - `Levis, Aviad, et al. "Multiple-Scattering Microphysical Tomography." Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition. 2017.`
 * Any publications using the synthetic les cloud which is included in the distribution must cite the following work:  G. Matheou and D. Chung. "Large-eddy simulation of stratified turbulence. Part II: Application of the stretched-vortex model to the atmospheric boundary layer." Journal of Atmospheric Science, 71:4439–4460, 2014.
 
 THIS SOFTWARE IS PROVIDED BY THE AUTHOR "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

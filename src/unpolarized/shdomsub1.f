@@ -1347,7 +1347,6 @@ C               GRIDRAD to the work array.
               WRITE (6,*) 'PATH_INTEGRATION: Grid point has no value',
      .           I,MU(IMU),PHI(IMU,IPHI),GRIDRAD(I),XGRID(1),YGRID(1),
      .           GRIDPOS(1,I),GRIDPOS(2,I),GRIDPOS(3,I)
-              STOP
               GRIDRAD(I)=0.0
             ELSE
               WORK(IPHI,I) = GRIDRAD(I)

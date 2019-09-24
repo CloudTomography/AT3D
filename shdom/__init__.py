@@ -405,7 +405,7 @@ class GridData(object):
     def __init__(self, grid, data):
         self._type = grid.type
         self._grid = grid
-        self._data = np.array(data).squeeze()
+        self._data = data
         self._shape = self._data.shape[:3]
         self._ndim = self._data.ndim    
         if self.type == 'Homogeneous' and self.ndim is not 0:
@@ -440,8 +440,7 @@ class GridData(object):
             grid = self.grid + other.grid
             data = self.resample(grid).data + other.resample(grid).data
         return GridData(grid, data)
-    
-    
+
     def __sub__(self, other):
         """Subtract two GridData objects by resampling to a common grid."""
         if self.grid == other.grid:
@@ -450,8 +449,7 @@ class GridData(object):
         else:
             grid = self.grid + other.grid
             data = self.resample(grid).data - other.resample(grid).data
-        return GridData(grid, data)       
-    
+        return GridData(grid, data)
     
     def __mul__(self, other):
         """Multiply two GridData objects by resampling to a common grid."""
@@ -462,8 +460,7 @@ class GridData(object):
             grid = self.grid + other.grid
             data = self.resample(grid).data * other.resample(grid).data
          
-        return GridData(grid, data) 
-    
+        return GridData(grid, data)
     
     def squeeze_dims(self):
         """Squeezes grid dimensions for which the data is constant"""
@@ -489,7 +486,6 @@ class GridData(object):
                     grid = shdom.Grid(bounding_box=grid.bounding_box)   
         return GridData(grid, np.nan_to_num(data))
 
-        
     def resample(self, grid, method='linear'):
         """
         Resample data to a new Grid
@@ -542,8 +538,20 @@ class GridData(object):
                     elif method == 'nearest':
                         data = self._nearest_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1)) 
         return GridData(grid, data.astype(self.data.dtype))
-    
-    
+
+    def apply_mask(self, mask):
+        """
+        Zero data points outside of a masked region.
+
+        Parameters
+        ----------
+        mask: shdom.GridData object
+            A GridData object with boolean data. True is for data points that will be estimated.
+        """
+        if self.type != 'Homogeneous':
+            mask = mask.resample(self.grid, method='nearest')
+            self._data[np.bitwise_not(mask.data)] = 0.0
+
     @property
     def grid(self):
         return self._grid

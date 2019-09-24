@@ -167,7 +167,7 @@ class GridPhase(object):
             index = self.index.resample(grid, method='nearest')
             index._data = index.data.clip(1)
             grid_phase = shdom.GridPhase(self.legendre_table, index)
-        return grid_phase     
+        return grid_phase
 
     @property
     def iphasep(self):
@@ -886,9 +886,9 @@ class MiePolydisperse(object):
         legen_index = np.transpose(np.array(np.meshgrid(range(self.size_distribution.nretab),
                                                         range(self.size_distribution.nvetab), 
                                                         indexing='ij')), [1, 2, 0])
-        
+
         self._ext_interpolator = RegularGridInterpolator((reff, veff), extinct, method=method, bounds_error=False, fill_value=0.0)
-        self._ssalb_interpolator = RegularGridInterpolator((reff, veff), ssalb, method=method, bounds_error=False, fill_value=0.0)
+        self._ssalb_interpolator = RegularGridInterpolator((reff, veff), ssalb, method=method, bounds_error=False, fill_value=1.0)
         self._nleg_interpolator = RegularGridInterpolator((reff, veff), nleg, method='nearest', bounds_error=False, fill_value=0)
         self._legen_index_interpolator = RegularGridInterpolator((reff, veff), legen_index, method='nearest', bounds_error=False, fill_value=0)
 
@@ -1083,15 +1083,25 @@ class Rayleigh(object):
             A list of GridData objects containing the extinction on a 1D grid.
             The length of the list is the number of wavelengths.
         """
-        ext_profile = [core.rayleigh_extinct(
-            nzt=grid.nz,
-            zlevels=grid.z,
-            temp=self.temperature_profile.data,
-            raysfcpres=self.surface_pressure,
-            raylcoef=raylcoef
-        )  for raylcoef in self._raylcoef]
-
-        return [shdom.GridData(grid, ext) for ext in ext_profile]
+        if self.num_wavelengths == 1:
+            ext_profile = core.rayleigh_extinct(
+                nzt=grid.nz,
+                zlevels=grid.z,
+                temp=self.temperature_profile.data,
+                raysfcpres=self.surface_pressure,
+                raylcoef=self._raylcoef
+            )
+            extinction = shdom.GridData(grid, ext_profile)
+        else:
+            ext_profile = [core.rayleigh_extinct(
+                nzt=grid.nz,
+                zlevels=grid.z,
+                temp=self.temperature_profile.data,
+                raysfcpres=self.surface_pressure,
+                raylcoef=raylcoef
+            ) for raylcoef in self._raylcoef]
+            extinction = [shdom.GridData(grid, ext) for ext in ext_profile]
+        return extinction
         
     def get_albedo(self, grid):
         """
@@ -1108,7 +1118,11 @@ class Rayleigh(object):
             A list of GridData objects containing the single scattering albedo [0,1] on a grid.
             The length of the list is the number of wavelengths.
         """
-        return [shdom.GridData(grid, data=np.full(shape=grid.shape, fill_value=1.0, dtype=np.float32)) for wavelength in self._wavelength]
+        if self.num_wavelengths == 1:
+            albedo = shdom.GridData(grid, data=np.full(shape=grid.shape, fill_value=1.0, dtype=np.float32))
+        else:
+            albedo = [shdom.GridData(grid, data=np.full(shape=grid.shape, fill_value=1.0, dtype=np.float32)) for wavelength in self._wavelength]
+        return albedo
 
     def get_phase(self, grid):
         """
@@ -1131,6 +1145,9 @@ class Rayleigh(object):
             table, table_type = core.rayleigh_phase_function(wavelen=wavelength)
             table = LegendreTable(table.astype(np.float32), table_type.decode())
             phase.append(GridPhase(table, index))
+
+        if self.num_wavelengths == 1:
+            phase = phase[0]
         return phase
     
     def set_profile(self, temperature_profile, surface_pressure=1013.0):
@@ -1154,6 +1171,8 @@ class Rayleigh(object):
         self._raylcoef = [
             0.03370 * (surface_pressure/1013.25) * 0.0021520 * (1.0455996 - 341.29061/wl**2 - 0.90230850*wl**2) / (1 + 0.0027059889/wl**2 - 85.968563*wl**2) for wl in self._wavelength
         ]
+        if self.num_wavelengths == 1:
+            self._raylcoef = self._raylcoef[0]
         self._extinction = self.get_extinction(self.grid)
         self._albedo = self.get_albedo(self.grid)
         self._phase = self.get_phase(self.grid)
@@ -1171,13 +1190,13 @@ class Rayleigh(object):
         -----
         For a single band a shdom.OpticalScatterer is returned and for multiple wavelengths a shdom.MultispectralScatterer object.
         """
-        scatterer_list = [
-            shdom.OpticalScatterer(wavelength, extinction, albedo, phase) for \
-            wavelength, extinction, albedo, phase in zip(self._wavelength, self._extinction, self._albedo, self._phase)
-        ]
         if self.num_wavelengths == 1:
-            scatterer = scatterer_list[0]
+            scatterer = shdom.OpticalScatterer(self.wavelength, self.extinction, self.albedo, self.phase)
         else:
+            scatterer_list = [
+                shdom.OpticalScatterer(wavelength, extinction, albedo, phase) for \
+                wavelength, extinction, albedo, phase in zip(self._wavelength, self._extinction, self._albedo, self._phase)
+            ]
             scatterer = shdom.MultispectralScatterer(scatterer_list)
         return scatterer
 
@@ -1194,31 +1213,19 @@ class Rayleigh(object):
 
     @property
     def raylcoef(self):
-        if self.num_wavelengths == 1:
-            return self._raylcoef[0]
-        else:
-            return self._raylcoef
+        return self._raylcoef
     
     @property
     def extinction(self):
-        if self.num_wavelengths == 1:
-            return self._extinction[0]
-        else:
-            return self._extinction
+        return self._extinction
     
     @property
     def albedo(self):
-        if self.num_wavelengths == 1:
-            return self._albedo[0]
-        else:
-            return self._albedo
+        return self._albedo
     
     @property
     def phase(self):
-        if self.num_wavelengths == 1:
-            return self._phase[0]
-        else:
-            return self._phase
+        return self._phase
 
     @property
     def temperature_profile(self):

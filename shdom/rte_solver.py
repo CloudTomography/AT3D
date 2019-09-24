@@ -93,7 +93,7 @@ class LambertianSurface(Surface):
     Parameter: ground_temperature, is used for Thermal source and is not supported. 
     """
     def __init__(self, albedo):
-        super(LambertianSurface, self).__init__()
+        super().__init__()
         self.type = 'Lambertian'
         self.albedo = albedo
         self.ground_temperature = 298.15
@@ -103,7 +103,7 @@ class LambertianSurface(Surface):
         """
         Print out all the surface parameters.        
         """        
-        return super(LambertianSurface, self).info + ', albedo: {}'.format(self.albedo)
+        return super().info + ', albedo: {}'.format(self.albedo)
     
         
 class NumericalParameters(object):
@@ -671,8 +671,12 @@ class RteSolver(object):
         self._ml = self._nmu - 1
         self._mm = max(0, int(self._nphi / 2) - 1)
         self._nlm = (2 * self._mm + 1) * (self._ml + 1) - self._mm * (self._mm + 1)
-    
-        self._nphi0max = self._nphi
+        if self._ncs == 1 :
+            self._nphi0max = int((self._nphi+2)/2)
+        elif self._ncs == 2:
+            self._nphi0max = self._nphi
+        else:
+            raise AttributeError
         self._memword = self._nmu*(2 + 2 * self._nphi + 2 * self._nlm + 2 * 33 *32)
     
         # Guess maximum number of grid points, cells, SH vector size needed
@@ -1100,6 +1104,7 @@ class RteSolverArray(object):
     def __init__(self, solver_list=None):
         self._num_solvers = 0
         self._solver_list = []
+        self._wavelength = []
         self._name = []
         self._type = None
         self._maxiters = 0
@@ -1121,8 +1126,7 @@ class RteSolverArray(object):
         -----
         medium wavelengths must match solver wavelengths
         """
-        solver_wavelengths = [solver.wavelength for solver in self.solver_list]
-        assert np.allclose(medium.wavelength, solver_wavelengths), 'medium wavelength {} differs from solver wavelengh {}'.format(medium.wavelength, solver_wavelengths)
+        assert np.allclose(medium.wavelength, self.wavelength), 'medium wavelength {} differs from solver wavelengh {}'.format(medium.wavelength, self.wavelength)
         for solver in self.solver_list:
             solver.set_medium(medium)
 
@@ -1196,12 +1200,12 @@ class RteSolverArray(object):
     
     def add_solver(self, rte_solver):
         """
-        Add a rte_solver to the RteSolverArray
+        Add an rte_solver or solvers to the RteSolverArray
         
         Parameters
         ----------
-        rte_solver: RteSolver object
-            A RteSolver object to add to the RteSolverArray
+        rte_solver: RteSolver object or list of RteSolvers or RteSolverArray
+            Add RteSolver or solvers to the RteSolverArray
         """
         
         if self.type is None:
@@ -1209,10 +1213,18 @@ class RteSolverArray(object):
         else:
             assert self.type == rte_solver.type, \
                    '[add_solver] Assert: RteSolverArray is of type {} and new solver is of type {}'.format(self.type, rte_solver.type)
-            
-        self._solver_list.append(rte_solver)
-        self._name.append(rte_solver.name)
-        self._num_solvers += 1
+
+        if isinstance(rte_solver, RteSolver):
+            self._solver_list.append(rte_solver)
+            self._name.append(rte_solver.name)
+            self._wavelength.append(rte_solver.wavelength)
+            self._num_solvers += 1
+        else:
+            for solver in rte_solver:
+                self._solver_list.append(solver)
+                self._name.append(solver.name)
+                self._wavelength.append(solver.wavelength)
+                self._num_solvers += 1
       
     def init_solution(self):
         """
@@ -1288,3 +1300,10 @@ class RteSolverArray(object):
     @property
     def type(self):
         return self._type
+
+    @property
+    def wavelength(self):
+        if self.num_solvers == 1:
+            return self._wavelength[0]
+        else:
+            return self._wavelength

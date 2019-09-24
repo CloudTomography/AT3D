@@ -6,17 +6,19 @@ NAME = "shdom"
 EXTENSION_NAME = "pyshdom"
 DESCRIPTION = "3D Radiative Transfer Inversion using the SHDOM forward algorithm"
 LONG_DESCRIPTION ="""
-The Spherical Harmonic Discrete Ordinate Method (SHDOM) for Atmospheric Radiative Transfer
-Developed by Frank Evans (http://nit.colorado.edu/shdom.html).
+Pyshdom performs 3D reconstruction of cloud microphysical properties from multi-angle, multi-spectral solar reflected 
+radiation using a non-linear optimization procedure. The core radiative transfer routines are sourced from the 
+Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [1]. 
+The python package was created by Aviad Levis [2], Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois).
+The inversion algorithms for can be found in the following papers:
+ - `Levis, Aviad, et al. "Airborne Three-Dimensional Cloud Tomography." Proceedings of the IEEE International Conference on Computer Vision. 2015.`
+ - `Levis, Aviad, et al. "Multiple-Scattering Microphysical Tomography." Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition. 2017.`
 
-The python wrapper for SHDOM was developed by Amit Aides.
-
-The inversion algorithm for 3D ratiative transfer was developed and contributed to by:
-Aviad Levis, Yoav Schechner, Amit Aides, Anthony B. Davis.
-(https://www.aviadlevis.com/3d-remote-sensing).
+[1] http://nit.colorado.edu/shdom.html
+[2] https://www.aviadlevis.com/3d-remote-sensing
 """
 
-MAINTAINER = "Aviad Levis"
+MAINTAINER = "Aviad Levis; Jesse Loveridge"
 MAINTAINER_EMAIL = "aviad.levis@gmail.com"
 URL = "https://github.com/aviadlevis/pyshdom"
 LICENSE = "MIT"
@@ -106,11 +108,6 @@ F2PY_CORE_API = [
     'precompute_phase_check'
 ]
 
-
-#if POLARIZED_SHDOM:
-    #F2PY_CORE_API.extend([])
-
-
 def _run_command(cmd):
     proc = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
     out_file = proc.stdout.read()
@@ -165,9 +162,6 @@ def configuration(parent_package='',top_path=None):
 
     return config
 
-
-
-
 def multiple_configurations(name):
     return lambda parent_package='', top_path=None: configuration(name, parent_package,top_path)
 
@@ -187,6 +181,7 @@ if __name__ == "__main__":
         test_suite = 'nose.collector',
         zip_safe = True,
         install_requires=[
+            'numdifftools',
             'tensorboardX'
         ],        
         classifiers = classifiers
