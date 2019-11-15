@@ -955,7 +955,7 @@ class Measurements(object):
     
     def add_noise(self):
         """Add sensor modeled noise to the measurements"""
-        raise NotImplemented
+        raise NotImplementedError
     
     @property
     def camera(self):

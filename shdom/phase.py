@@ -466,7 +466,7 @@ class SizeDistribution(object):
         elif type == 'lognormal':
             self._distflag = 'L'
         else:
-            raise NotImplementedError('Distribution type {} not supported'.format(distibution))
+            raise NotImplementedError('Distribution type {} not supported'.format(type))
         
         self._alpha = None
         self._reff = None

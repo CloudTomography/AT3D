@@ -753,7 +753,7 @@ class MediumEstimator(shdom.Medium):
         self._num_estimators = 0
         self._exact_single_scatter = exact_single_scatter
         self._core_grad, self._output_transform = self.init_loss_function(loss_type)
-        self._stokes_weights = stokes_weights if stokes_weights is not None else np.array([1.0], dtype=float32)
+        self._stokes_weights = stokes_weights if stokes_weights is not None else np.array([1.0], dtype=np.float32)
 
     def init_loss_function(self, loss_type):
         """
@@ -1302,11 +1302,7 @@ class MediumEstimator(shdom.Medium):
 
     @property
     def num_parameters(self):
-        return self._num_parameters
-    
-    @property
-    def num_parameters(self):
-        return self._num_parameters    
+        return self._num_parameters  
 
     @property
     def unknown_scatterers_indices(self):
@@ -1581,7 +1577,7 @@ class SummaryWriter(object):
             keyword arguments
         """
         timestr = time.strftime("%H%M%S")
-        path = os.path.join(self.tf_writer.log_dir,  timestr + '.ckpt')
+        path = os.path.join(self.tf_writer.logdir,  timestr + '.ckpt')
         self.optimizer.save_state(path)
         
     def loss_cbfn(self, kwargs):
@@ -1715,7 +1711,6 @@ class SummaryWriter(object):
                 ax.set_title('{} {}'.format(scatterer_name, parameter_name), fontsize=16)
                 ax.plot(est_param, parameter.grid.z, label='Estimated')
                 ax.plot(gt_param, ground_truth.grid.z, label='True')
-                max_val = max(gt_param.max(), est_param.max())
                 ax.legend()
                 ax.set_ylabel('Altitude [km]', fontsize=14)
                 self.tf_writer.add_figure(
@@ -1780,7 +1775,7 @@ class SummaryWriter(object):
             vmax = [vmax]*len(images)        
     
         assert len(images) == len(titles), 'len(images) != len(titles): {} != {}'.format(len(images), len(titles))
-        assert len(vmax) == len(titles), 'len(vmax) != len(images): {} != {}'.format(len(vmax), len(times))
+        assert len(vmax) == len(titles), 'len(vmax) != len(images): {} != {}'.format(len(vmax), len(titles))
     
         for image, title, vm in zip(images, titles, vmax):
 

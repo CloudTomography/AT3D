@@ -75,7 +75,7 @@ class Generator(object):
         -----
         Dummy method which will be overwritten.
         """
-        self._albedo = albedo
+        return None
 
     def get_phase(self, grid=None):
         """
