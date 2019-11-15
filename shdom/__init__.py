@@ -29,6 +29,7 @@ cluster) using the Message Passing Interface (MPI).
 from scipy.interpolate import interp1d, RegularGridInterpolator
 import warnings
 import numpy as np
+import os
 
 def float_round(x):
     """Round a float or np.float32 to a 3 digits float"""
@@ -408,9 +409,9 @@ class GridData(object):
         self._data = data
         self._shape = self._data.shape[:3]
         self._ndim = self._data.ndim    
-        if self.type == 'Homogeneous' and self.ndim is not 0:
+        if self.type == 'Homogeneous' and self.ndim != 0:
             raise AttributeError('Grid is Homogeneous but data dimension is:{}'.format(self.ndim))
-        if self.type == '1D' and self.ndim is not 1:
+        if self.type == '1D' and self.ndim != 1:
             raise AttributeError('Grid is 1D but data dimension is:{}'.format(self.ndim))
         if self.type == '3D' and self.ndim < 3:
             raise AttributeError('Grid is 3D but data dimension is:{}'.format(self.ndim))

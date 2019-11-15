@@ -447,7 +447,6 @@ class MicrophysicalScatterer(Scatterer):
         else:
             veff = veff * np.ones_like(reff)
 
-        particle_levels = np.array([z in grid_index[:, 2] for z in range(grid.nz)], dtype=int)
         lwc_data  = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=np.nan)
         reff_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=np.nan)
         veff_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=np.nan)
