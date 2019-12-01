@@ -521,9 +521,10 @@ class RteSolver(object):
             self._nleg = self._mm
         self._nleg = self._maxleg = max(legendre_table.maxleg, self._nleg)
         self._nscatangle = max(36, min(721, 2*self._nleg))
+        legendre_table.pad(self._nleg)
 
         # Legenp is without the zero order term which is 1.0 for normalized phase function
-        self._pa.legenp = legendre_table.get_legenp(self._nleg).astype(np.float32)
+        self._pa.legenp = legendre_table.get_legenp()
         self._maxasym = legendre_table.maxasym
         self._maxpgl = medium.grid.num_points * legendre_table.maxleg         
 

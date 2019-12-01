@@ -461,7 +461,11 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         """
         extinction = shdom.GridData(self.extinction.grid, np.ones_like(self.extinction.data))
         albedo = shdom.GridData(self.albedo.grid, np.zeros_like(self.albedo.data))
-        legen_table = shdom.LegendreTable(np.zeros((self.phase.legendre_table.maxleg+1), dtype=np.float32), table_type=self.phase.legendre_table.table_type)
+        if self.phase.legendre_table.table_type == 'SCALAR':
+            legcoef = np.zeros((self.phase.legendre_table.maxleg + 1), dtype=np.float32)
+        elif self.phase.legendre_table.table_type == 'VECTOR':
+            legcoef = np.zeros((self.phase.legendre_table.nstleg, self.phase.legendre_table.maxleg + 1), dtype=np.float32)
+        legen_table = shdom.LegendreTable(legcoef, table_type=self.phase.legendre_table.table_type)
         phase = shdom.GridPhase(legen_table, shdom.GridData(self.phase.index.grid, np.ones_like(self.phase.index.data)))
         derivative = shdom.OpticalScattererDerivative(self.wavelength, extinction, albedo, phase)        
         return derivative
@@ -478,7 +482,11 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         """
         extinction = shdom.GridData(self.extinction.grid, np.zeros_like(self.extinction.data))
         albedo = shdom.GridData(self.albedo.grid, np.ones_like(self.albedo.data))
-        legen_table = shdom.LegendreTable(np.zeros((self.phase.legendre_table.maxleg+1), dtype=np.float32), table_type=self.phase.legendre_table.table_type)
+        if self.phase.legendre_table.table_type == 'SCALAR':
+            legcoef = np.zeros((self.phase.legendre_table.maxleg + 1), dtype=np.float32)
+        elif self.phase.legendre_table.table_type == 'VECTOR':
+            legcoef = np.zeros((self.phase.legendre_table.nstleg, self.phase.legendre_table.maxleg + 1), dtype=np.float32)
+        legen_table = shdom.LegendreTable(legcoef, table_type=self.phase.legendre_table.table_type)
         phase = shdom.GridPhase(legen_table, shdom.GridData(self.phase.index.grid, np.ones_like(self.phase.index.data)))
         derivative = shdom.OpticalScattererDerivative(self.wavelength, extinction, albedo, phase)
         return derivative
@@ -914,6 +922,7 @@ class MediumEstimator(shdom.Medium):
                     leg_table.append(copy.deepcopy(resampled_derivative.phase.legendre_table))                
                 i += 1
                 
+        leg_table.pad(rte_solver._nleg)
         dleg = leg_table.data
         dnumphase = leg_table.numphase
         dphasetab = core.precompute_phase_check(
@@ -1488,7 +1497,7 @@ class SummaryWriter(object):
         else:
             self._ground_truth = OrderedDict({estimator_name: ground_truth})
 
-    def monitor_horizontal_mean(self, estimator_name, ground_truth, ground_truth_mask, ckpt_period=-1):
+    def monitor_horizontal_mean(self, estimator_name, ground_truth, ground_truth_mask=None, ckpt_period=-1):
         """
         Monitor horizontally averaged quantities and compare to ground truth over iterations.
 
@@ -1498,6 +1507,8 @@ class SummaryWriter(object):
             The name of the scatterer to monitor
         ground_truth: shdom.Scatterer
             The ground truth medium.
+        ground_truth_mask: shdom.GridData
+            The ground-truth mask of the estimator
         ckpt_period: float
            time [seconds] between updates. setting ckpt_period=-1 will log at every iteration.
         """
@@ -1577,7 +1588,7 @@ class SummaryWriter(object):
             keyword arguments
         """
         timestr = time.strftime("%H%M%S")
-        path = os.path.join(self.tf_writer.logdir,  timestr + '.ckpt')
+        path = os.path.join(self.tf_writer.log_dir,  timestr + '.ckpt')
         self.optimizer.save_state(path)
         
     def loss_cbfn(self, kwargs):
@@ -1704,7 +1715,8 @@ class SummaryWriter(object):
                         gt_param = ground_truth.data
                     else:
                         gt_param = copy.copy(ground_truth.data)
-                        gt_param[kwargs['mask'].data == False] = np.nan
+                        if kwargs['mask']:
+                            gt_param[kwargs['mask'].data == False] = np.nan
                         gt_param = np.nan_to_num(np.nanmean(gt_param, axis=(0, 1)))
 
                 fig, ax = plt.subplots()
@@ -1732,6 +1744,8 @@ class SummaryWriter(object):
             est_scatterer = self.optimizer.medium.get_scatterer(scatterer_name)
             parameters = est_scatterer.estimators.keys() if kwargs['parameters']=='all' else kwargs['parameters']
             for parameter_name in parameters:
+                if parameter_name not in est_scatterer.estimators.keys():
+                    continue
                 parameter = est_scatterer.estimators[parameter_name]
                 est_param = parameter.data.ravel()
                 ground_truth = getattr(gt_scatterer, parameter_name)
@@ -2226,6 +2240,7 @@ class ProximalProjection(object):
             self.optimizer.writer.attach_optimizer(self.optimizer)
         self.optimizer.minimize()
 
+
 class LocalOptimizerADMM(LocalOptimizer):
     """"TODO"""
     def __init__(self, method, options={}, n_jobs=1):
@@ -2236,66 +2251,46 @@ class LocalOptimizerADMM(LocalOptimizer):
 
     def init_optimizer(self):
         """TODO"""
+        self._iter = 0
         if self.medium.num_estimators > 1:
             raise NotImplementedError('Multiple medium estimators not implemented')
 
         scatterer_estimator = next(iter(self.medium.estimators.values()))
         for param, param_estimator in scatterer_estimator.estimators.items():
-            if param == 'lwc':
-                optimizer = shdom.LocalOptimizer(self.method, 'l2', self.options, n_jobs=self.n_jobs, init_solution=False)
-                optimizer.set_measurements(self.measurements)
-                optimizer.set_rte_solver(self.rte_solver)
-                optimizer.set_writer(self.writer)
-                medium_estimator = shdom.MediumEstimator(self.medium.grid)
-                for name, scatterer in self.medium.scatterers.items():
-                    if scatterer == scatterer_estimator:
-                        proximal_scatterer = shdom.MicrophysicalScattererEstimator(
-                            scatterer.mie,
-                            scatterer.lwc,
-                            shdom.GridData(scatterer.reff.grid, scatterer.reff.data),
-                            shdom.GridData(scatterer.veff.grid, scatterer.veff.data)
-                        )
-                        medium_estimator.add_scatterer(proximal_scatterer, name)
-                    else:
-                        medium_estimator.add_scatterer(scatterer, name)
-            if param == 'reff':
-                optimizer = shdom.LocalOptimizer(self.method, 'normcorr', self.options, n_jobs=self.n_jobs)
-                optimizer.set_measurements(self.measurements)
-                optimizer.set_rte_solver(self.rte_solver)
-                optimizer.set_writer(self.writer)
-                medium_estimator = shdom.MediumEstimator(self.medium.grid)
-                for name, scatterer in self.medium.scatterers.items():
-                    if scatterer == scatterer_estimator:
-                        proximal_scatterer = shdom.MicrophysicalScattererEstimator(
-                            scatterer.mie,
-                            shdom.GridData(scatterer.lwc.grid, scatterer.lwc.data),
-                            scatterer.reff,
-                            shdom.GridData(scatterer.veff.grid, scatterer.veff.data)
-                        )
-                        medium_estimator.add_scatterer(proximal_scatterer, name)
-                    else:
-                        medium_estimator.add_scatterer(scatterer, name)
-            if param == 'veff':
-                optimizer = shdom.LocalOptimizer(self.method, 'normcorr', self.options, n_jobs=self.n_jobs)
-                optimizer.set_measurements(self.measurements)
-                optimizer.set_rte_solver(self.rte_solver)
-                optimizer.set_writer(self.writer)
-                medium_estimator = shdom.MediumEstimator(self.medium.grid)
-                for name, scatterer in self.medium.scatterers.items():
-                    if scatterer == scatterer_estimator:
-                        proximal_scatterer = shdom.MicrophysicalScattererEstimator(
-                            scatterer.mie,
-                            shdom.GridData(scatterer.lwc.grid, scatterer.lwc.data),
-                            shdom.GridData(scatterer.reff.grid, scatterer.reff.data),
-                            scatterer.veff
-                        )
-                        medium_estimator.add_scatterer(proximal_scatterer, name)
-                    else:
-                        medium_estimator.add_scatterer(scatterer, name)
+            optimizer = shdom.LocalOptimizer(method=self.method, options=self.options, n_jobs=self.n_jobs)
+            optimizer.set_measurements(self.measurements)
+            optimizer.set_rte_solver(self.rte_solver)
+            optimizer.set_writer(self.writer)
+            medium_estimator = shdom.MediumEstimator(
+                grid=self.medium.grid,
+                loss_type=self.medium._loss_type,
+                exact_single_scatter=self.medium._exact_single_scatter,
+                stokes_weights=self.medium._stokes_weights
+            )
+
+            for name, scatterer in self.medium.scatterers.items():
+                if scatterer == scatterer_estimator:
+                    if param == 'lwc':
+                        lwc = scatterer.lwc
+                        reff = shdom.GridData(scatterer.reff.grid, scatterer.reff.data)
+                        veff = shdom.GridData(scatterer.veff.grid, scatterer.veff.data)
+                    elif param == 'reff':
+                        lwc = shdom.GridData(scatterer.lwc.grid, scatterer.lwc.data)
+                        reff = scatterer.reff
+                        veff = shdom.GridData(scatterer.veff.grid, scatterer.veff.data)
+                    elif param == 'veff':
+                        lwc = shdom.GridData(scatterer.lwc.grid, scatterer.lwc.data)
+                        reff = shdom.GridData(scatterer.reff.grid, scatterer.reff.data)
+                        veff = scatterer.veff
+                    proximal_scatterer = shdom.MicrophysicalScattererEstimator(scatterer.mie, lwc, reff, veff)
+                    medium_estimator.add_scatterer(proximal_scatterer, name)
+                else:
+                    medium_estimator.add_scatterer(scatterer, name)
+
             optimizer.set_medium_estimator(medium_estimator)
             self.proximal_projections.append(shdom.ProximalProjection(optimizer))
 
-    def minimize(self, maxiter):
+    def minimize(self):
         """TODO"""
         self.init_optimizer()
         iter = 0

@@ -68,7 +68,7 @@ class OptimizationScript(object):
         parser.add_argument('--maxiter',
                             default=1000,
                             type=int,
-                            help='(default value: %(default)s) Maximum number of optimization iterations.'
+                            help='(default value: %(default)s) Maximum number of L-BFGS iterations.'
                                  'For more info: https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html')
         parser.add_argument('--maxls',
                             default=30,
@@ -91,6 +91,15 @@ class OptimizationScript(object):
                             type=np.float32,
                             help='(default value: %(default)s) Stop criteria for the relative change in loss function.'
                                  'For more info: https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html')
+        parser.add_argument('--stokes_weights',
+                            nargs=4,
+                            default=[1.0, 0.0, 0.0, 0.0],
+                            type=float,
+                            help='(default value: %(default)s) Loss function weights for stokes vector components [I, Q, U, V]')
+        parser.add_argument('--loss_type',
+                            choices=['l2', 'normcorr'],
+                            default='l2',
+                            help='Different loss functions for optimization. Currently only l2 is supported.')
         return parser
 
     def medium_args(self, parser):

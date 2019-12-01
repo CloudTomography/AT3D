@@ -9,7 +9,60 @@ Source Fortran files were created by Frank Evans University of Colorado May 2003
 import numpy as np
 import shdom
 from shdom import core, find_nearest
-from scipy.interpolate import RegularGridInterpolator
+from scipy.interpolate import interp1d, RegularGridInterpolator
+
+
+class RefractiveIndexTable(object):
+    """
+     Loads and interpolates a refractive index table from ancillary_data.
+     Returns the refractive index at specified monochromatic wavelengths.
+
+    Parameters
+    ----------
+    filename: str
+        Directory path to the database.
+    """
+    def __init__(self, filename):
+        self.filename = filename
+        self._load()
+        self._interpolate()
+
+    def _load(self):
+        """
+        Read Data from csv file
+        """
+        self.wavelengths = np.genfromtxt(self.filename, usecols=0, dtype=np.float32)
+        self.n = np.genfromtxt(self.filename, usecols=1, dtype=np.float32)
+        self.k = np.genfromtxt(self.filename, usecols=2, dtype=np.float32)
+        self.refractive_index = self.n - self.k * np.complex(0, 1)
+
+    def _interpolate(self):
+        """
+        Interpolates the Spectrum so it can be retrieved at any wavelength
+        """
+        self.interpolater = interp1d(self.wavelengths, self.refractive_index)
+
+    def get_monochrome_refractive_index(self, wavelengths):
+        """
+        Returns the complex refractive index interpolated to the provided wavelengths.
+
+        Parameters
+        ----------
+        wavelengths: array_like
+            Wavelengths in units of micrometers.
+
+        Returns
+        -------
+        Interpolated_Refractive_Index: np.array
+            The refractive index interpolated to each of the input wavelengths.
+        """
+        if type(wavelengths) == list:
+            wavelengths = np.array(wavelengths)
+        if np.any(wavelengths <= np.min(self.wavelengths)) or np.any(wavelengths >= np.max(self.wavelengths)):
+            raise AttributeError('Wavelengths must be in Range {} - {} Micrometer'.format(
+                np.round(np.min(self.wavelengths) / 1000.0, 6), np.max(self.wavelengths) / 1000.0))
+        refractive_index = self.interpolater(wavelengths)
+        return refractive_index
 
 
 class LegendreTable(object):
@@ -53,35 +106,32 @@ class LegendreTable(object):
         """
         assert self.table_type==table.table_type, 'Cannot append new table of type {} '\
                'to current table of type {}'.format(table.table_type, self.table_type)
-        
-        nleg = table.maxleg
-        table_data = table.data
-        curr_table_data = self.data
-        if self.table_type == 'SCALAR':
-            if self.maxleg > nleg :
-                table_data = np.pad(table_data, ((0, self.maxleg - nleg), (0,0)), 'constant')            
-            elif nleg > self.maxleg:
-                curr_table_data = np.pad(curr_table_data, ((0, nleg - self.maxleg), (0,0)), 'constant')            
-        
-        elif self.table_type == 'VECTOR':
-            if self.maxleg > nleg :
-                table_data = np.pad(table_data, ((0,0), (0, self.maxleg - nleg), (0,0)), 'constant')            
-            elif nleg > self.maxleg:
-                curr_table_data = np.pad(curr_table_data, ((0,0), (0, nleg - self.maxleg), (0,0)), 'constant')  
-        
-        self._data = np.append(curr_table_data, table_data, axis=-1)
+        table.pad(self.maxleg)
+        self.pad(table.maxleg)
+        self._data = np.append(self.data, table.data, axis=-1)
         self._maxasym = max(self.maxasym, table.maxasym)
         self._maxleg = max(self.maxleg, table.maxleg)
         self._numphase += table.numphase
 
-    def get_legenp(self, nleg):
+    def pad(self, nleg):
         """ 
-        Retrieves a flattened table to be used by the shdom.RteSolver.
+        Pads the table to a nleg number of coeffcients.
 
         Parameters
         ----------
         nleg: int
             The number of legendre coefficients. If nleg > self.maxleg then the table is padded with zeros to match nleg.
+        """
+        if self.table_type == 'SCALAR':
+            if nleg > self.maxleg:
+                self._data = np.pad(self.data, ((0, nleg - self.maxleg), (0, 0)), 'constant')
+
+        if (self.table_type == 'VECTOR') and (nleg > self.maxleg):
+            self._data = np.pad(self.data, ((0, 0), (0, nleg - self.maxleg), (0, 0)), 'constant')
+
+    def get_legenp(self):
+        """
+        Retrieves a flattened table to be used by the shdom.RteSolver.
 
         Returns
         -------
@@ -93,17 +143,9 @@ class LegendreTable(object):
         For a SCALAR table the zero order term, which is 1.0 for normalized phase function, is removed.
         """
         legenp = self.data
-        
-        # Scalar (unpolarized) table
         if self.table_type == 'SCALAR':
             legenp = legenp[1:]
-            if nleg > self.maxleg:
-                legenp = np.pad(legenp, ((0, nleg - self.maxleg), (0,0)), 'constant')
-        
-        if (self.table_type == 'VECTOR') and (nleg > self.maxleg):
-            legenp = np.pad(legenp, ((0,0), (0, nleg - self.maxleg), (0,0)) , 'constant')
-        
-        return legenp.ravel(order='F')
+        return legenp.ravel(order='F').astype(np.float32)
     
     @property
     def data(self):
@@ -194,20 +236,14 @@ class MieMonodisperse(object):
     ----------
     particle_type: string
         Options are 'Water' or 'Aerosol'. Default is 'Water'.
-        
-    Notes
-    -----
-    Aerosol particle type not supported.
+    refractive_index: complex number or shdom.RefractiveIndexTable
+        Either a pre-loaded table or a constant float
+    particle_density: float
+        Particle bulk density in g/cm^3 (Water is ~1.0)
     """    
-    def __init__(self, particle_type='Water'):
-        
-        if particle_type == 'Water':
-            self._partype = 'W'
-            self._rindex = 1.0
-            self._pardens = 1.0
-        else:
-            raise NotImplementedError('Particle type {} not supported'.format(particle_type))
-        
+    def __init__(self, particle_type='Water', refractive_index=1.0, particle_density=1.0):
+        self._rindex = None
+        self._pardens = None
         self._table_type = None        
         self._partype = particle_type
         self._wavelen1 = None
@@ -222,6 +258,16 @@ class MieMonodisperse(object):
         self._legcoef = None
         self._extinct = None
         self._scatter = None
+        self._rindex = refractive_index
+        self._pardens = particle_density
+
+        if particle_type == 'Water':
+            self._partype = 'W'
+            self._rindex = 1.0
+            self._pardens = 1.0
+
+        elif particle_type == 'Aerosol':
+            self._partype = 'A'
 
     def set_wavelength_integration(self,
                                    wavelength_band,
@@ -259,12 +305,15 @@ class MieMonodisperse(object):
             wavelen2=self._wavelen2
         )
         
-        self._rindex = core.get_refract_index(
-            partype=self._partype, 
-            wavelen1=self._wavelen1, 
-            wavelen2=self._wavelen2
-        )
-        
+        if (self._partype == 'W') or (self._partype == 'I'):
+            self._rindex = core.get_refract_index(
+                partype=self._partype,
+                wavelen1=self._wavelen1,
+                wavelen2=self._wavelen2
+            )
+        elif (self._partype == 'A') and isinstance(self._rindex, RefractiveIndexTable):
+            self._rindex = self._rindex.get_monochrome_refractive_index(self._wavelencen)
+
     def set_radius_integration(self,
                                minimum_effective_radius,
                                max_integration_radius):

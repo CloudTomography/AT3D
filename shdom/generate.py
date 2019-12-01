@@ -13,6 +13,8 @@ import numpy.fft as fft
 import random as rand
 from scipy.spatial import cKDTree
 import numpy.ma as ma
+import pandas as pd
+
 
 class Generator(object):
     """
@@ -281,6 +283,10 @@ class AirGenerator(Generator):
         parser: argparse.ArgumentParser()
             The updated parser.
         """
+        parser.add_argument('--air_path',
+                            default='ancillary_data/AFGL_summer_mid_lat.txt',
+                            help='Path to csv file which contains temperature measurements')
+
         parser.add_argument('--air_max_alt',
                             default=20.0,
                             type=np.float32,
@@ -303,6 +309,17 @@ class AirGenerator(Generator):
         """
         self._temperature_profile = temperature_profile
 
+    def get_grid(self):
+        """
+        Retrieve the scatterer grid.
+
+        Returns
+        -------
+        grid: shdom.Grid
+            A Grid object for this scatterer
+        """
+        return shdom.Grid(z=np.linspace(0.0, self.args.air_max_alt, self.args.air_num_points))
+
     def get_scatterer(self, wavelength):
         """
         Parameters
@@ -314,9 +331,8 @@ class AirGenerator(Generator):
         -------
         scatterer: shdom.Scatterer or shdom.MultispectralScatterer
         """
-        altitudes = shdom.Grid(z=np.linspace(0.0, self.args.air_max_alt, self.args.air_num_points))
         rayleigh = shdom.Rayleigh(wavelength)
-        rayleigh.set_profile(self.temperature_profile.resample(altitudes))
+        rayleigh.set_profile(self.temperature_profile.resample(self.get_grid()))
         return rayleigh.get_scatterer()
 
     @property
@@ -334,12 +350,11 @@ class AFGLSummerMidLatAir(AirGenerator):
         Arguments required for this generator.
     """
     def __init__(self, args):
-        super(AFGLSummerMidLatAir, self).__init__(args)
-        temperatures = np.array([292.220, 292.040, 291.860, 291.680, 291.500, 291.320, 291.140, 290.960, 290.780,
-                                 290.600, 290.420, 290.240, 290.060, 289.880, 289.700, 289.920, 290.140, 290.360,
-                                 290.580, 290.800, 291.020, 291.240, 291.460, 291.680, 291.900])
-        temp_grid = shdom.Grid(z=np.linspace(0.0, 20.0, len(temperatures)))
-        temperature_profile = shdom.GridData(temp_grid, temperatures)
+        super().__init__(args)
+        df = pd.read_csv(args.air_path, comment='#', sep=' ')
+        altitudes = df['Altitude(km)'].to_numpy(dtype=np.float32)
+        temperatures = df['Temperature(k)'].to_numpy(dtype=np.float32)
+        temperature_profile = shdom.GridData(shdom.Grid(z=altitudes), temperatures)
         self.set_temperature_profile(temperature_profile)
 
 
@@ -616,7 +631,12 @@ class Homogeneous(CloudGenerator):
             grid = self.get_grid()
 
         if self.args.lwc is None:
-            ext_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=self.args.extinction, dtype=np.float32)
+            if grid.type == 'Homogeneous':
+                ext_data = self.args.extinction
+            elif grid.type == '1D':
+                ext_data = np.full(shape=(grid.nz), fill_value=self.args.extinction, dtype=np.float32)
+            elif grid.type == '3D':
+                ext_data = np.full(shape=(grid.nx, grid.ny, grid.nz), fill_value=self.args.extinction, dtype=np.float32)
             extinction = shdom.GridData(grid, ext_data)
         else:
             assert wavelength is not None, 'No wavelength provided'
@@ -770,6 +790,7 @@ class LesFile(CloudGenerator):
             self._droplets.add_mie(mie)
         return self._droplets
     
+
 class GaussianFieldGenerator(object):
     """
         An object that stochastically generates 3D fields in a cubic domain drawn from
@@ -989,6 +1010,7 @@ class GaussianFieldGenerator(object):
         
         return scaled_field
     
+
 class StochasticCloudGenerator(object):
     """
     Generates clouds with either idealised geometry or a cloud mask from thresholding a stochastic field.
@@ -1475,6 +1497,7 @@ class StochasticCloudGenerator(object):
         deterministic_field = deterministic_field - (deterministic_field.mean(axis=(0,1))-vertical_field.mean(axis=(0,1)))
         
         return deterministic_field
+
 
 class StochasticCloud(CloudGenerator):
     """

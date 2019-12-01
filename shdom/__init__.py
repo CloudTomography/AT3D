@@ -74,8 +74,7 @@ class Grid(object):
         Grid along y axis. Must be specified with x,z grids. 
     z: np.array(dtype=float, shape=(nz,)), optional
         Grid along z axis. Either specified with x,y grids (3D grid) or by itself (1D grid).
-    """    
-    
+    """
     def __init__(self, **kwargs):
         self._type = self.get_grid_type(kwargs)
         
@@ -106,9 +105,7 @@ class Grid(object):
         elif self.type == 'Homogeneous':
             self._nx = self._ny = self._nz = 1
             self._x = self._y = self._z = None         
-            
 
-    
     def get_grid_type(self, kwargs):
         """
         Retrieve the grid type.
@@ -116,6 +113,7 @@ class Grid(object):
         Parameters
         ----------
         kwargs: dict
+           0. kwargs = None --> Empty Grid
            1. kwargs = {'x', 'y', 'z'} --> grid_type = '3D'
            2. kwargs = {'nx', 'ny', 'z'} --> grid_type = '3D'
            3. kwargs = {'nx', 'ny', 'nz', 'bounding_box'} --> grid_type = '3D'
@@ -127,18 +125,17 @@ class Grid(object):
         grid_type: str
             type could be one of the following: '3D', '1D', 'Homogeneous'
         """
-        if 'x' in kwargs and 'y' in kwargs and 'z' in kwargs or \
+        if not kwargs:
+            grid_type = 'Empty'
+        elif 'x' in kwargs and 'y' in kwargs and 'z' in kwargs or \
            'nx' in kwargs and 'ny' in kwargs and 'nz' in kwargs and 'bounding_box' in kwargs or \
            'nx' in kwargs and 'ny' in kwargs and 'z' in kwargs:
             grid_type = '3D'
-        
         elif 'z' in kwargs: 
             grid_type = '1D'
-            
         else: 
             grid_type = 'Homogeneous'
         return grid_type
-            
 
     def get_common_x(self, other):
         """
@@ -165,8 +162,7 @@ class Grid(object):
         dx = min(self.dx, other.dx)
         nx = int(x_size / dx)        
         return np.linspace(xmin, xmax, nx, dtype=np.float32)  
-    
-    
+
     def get_common_y(self, other):
         """
         Find the common y which maintains a minimum dy (distance between two grid points).
@@ -195,8 +191,7 @@ class Grid(object):
         dy = min(self.dy, other.dy)
         ny = int(y_size / dy)        
         return np.linspace(ymin, ymax, ny, dtype=np.float32)              
-       
-        
+
     def get_common_z(self, other):
         """
         Find the common z which maintains the high resolution z grid.
@@ -254,9 +249,14 @@ class Grid(object):
     
         return np.concatenate((z_bottom, z_middle, z_top))      
 
-
     def __add__(self, other):
         """Add two grids by finding the common grid which maintains the higher resolution grid."""
+
+        if self.type == 'Empty':
+            return other
+        if other.type == 'Empty':
+            return self
+
         x = self.get_common_x(other)
         y = self.get_common_y(other)
         z = self.get_common_z(other)
@@ -275,8 +275,7 @@ class Grid(object):
             elif x is None and y is None and z is None:
                 grid = Grid(bounding_box=bounding_box)
         return grid
-    
-    
+
     def __eq__(self, other):
         """Compare two grid objects."""
         for key, item in self.__dict__.items():
@@ -436,7 +435,7 @@ class GridData(object):
         """Add two GridData objects by resampling to a common grid."""
         if self.grid == other.grid:
             grid = self.grid
-            data = self.data * other.data
+            data = self.data + other.data
         else:
             grid = self.grid + other.grid
             data = self.resample(grid).data + other.resample(grid).data
@@ -472,7 +471,7 @@ class GridData(object):
             if self.type == '3D':
                 std_x = np.nanstd(data, axis=0, ddof=-1) 
                 std_y = np.nanstd(data, axis=1, ddof=-1)
-                if (np.nanmax(std_x) < 1e-5 and np.nanmax(std_y) < 1e-5):
+                if np.nanmax(std_x) < 1e-5 and np.nanmax(std_y) < 1e-5:
                     std_z = np.nanstd(data, axis=2, ddof=-1)
                     if np.nanmax(std_z) < 1e-5:
                         data = np.nanmean(data)
@@ -531,8 +530,14 @@ class GridData(object):
                 if grid.type == 'Homogeneous':
                     data = np.mean(self.data)
                 elif grid.type == '1D':
-                    data = self._linear_interpolator1d(grid.z)
-                    data = np.mean(np.mean(data, axis=0), axis=0)
+                        if not np.all(self.grid.z == grid.z):
+                            if method == 'linear':
+                                data = self._linear_interpolator1d(grid.z)
+                            elif method == 'nearest':
+                                data = self._nearest_interpolator1d(grid.z)
+                        else:
+                            data = self.data
+                        data = np.mean(np.mean(data, axis=0), axis=0)
                 else:
                     if method == 'linear':
                         data = self._linear_interpolator3d(np.stack(np.meshgrid(grid.x, grid.y, grid.z, indexing='ij'), axis=-1))
@@ -708,6 +713,7 @@ def load_forward_model(directory):
         solver.load_params(path=os.path.join(directory, 'solver_parameters'))   
         
     return medium, solver, measurements
+
 
 class SolarSpectrum(object):
     """

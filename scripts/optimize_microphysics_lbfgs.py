@@ -80,32 +80,6 @@ class OptimizationScript(ExtinctionOptimizationScript):
                             help='(default value: %(default)s) Pre-conditioning scale factor for effective variance estimation')
         return parser
 
-    def optimization_args(self, parser):
-        """
-        Add common optimization arguments that may be shared across scripts.
-
-        Parameters
-        ----------
-        parser: argparse.ArgumentParser()
-            parser initialized with basic arguments that are common to most rendering scripts.
-
-        Returns
-        -------
-        parser: argparse.ArgumentParser()
-            parser initialized with basic arguments that are common to most rendering scripts.
-        """
-        parser = super().optimization_args(parser)
-        parser.add_argument('--stokes_weights',
-                            nargs=4,
-                            default=[1.0, 1.0, 1.0, 0.0],
-                            type=float,
-                            help='(default value: %(default)s) Loss function weights for stokes vector components [I, Q, U, V]')
-        parser.add_argument('--loss_type',
-                            choices=['l2', 'normcorr'],
-                            default='l2',
-                            help='Different loss functions for optimization. Currently only l2 is supported.')
-        return parser
-
     def get_medium_estimator(self, measurements, ground_truth):
         """
         Generate the medium estimator for optimization.
@@ -136,7 +110,7 @@ class OptimizationScript(ExtinctionOptimizationScript):
             mask = ground_truth.get_mask(threshold=0.01)
         else:
             carver = shdom.SpaceCarver(measurements)
-            mask = carver.carve(grid, agreement=0.75, thresholds=self.args.radiance_threshold)
+            mask = carver.carve(grid, agreement=0.85, thresholds=self.args.radiance_threshold)
 
         # Define micro-physical parameters: either optimize, keep constant at a specified value or use ground-truth
         if self.args.use_forward_lwc:

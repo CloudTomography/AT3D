@@ -699,7 +699,11 @@ class Medium(object):
         scatterer: shdom.Scatterer
             The scatterer with the name matching the query
         """
-        return self.scatterers[name]
+        if isinstance(name, str):
+            scatterer = self.scatterers[name]
+        elif isinstance(name, list):
+            scatterer = {n: self.scatterers[n] for n in name}
+        return scatterer
 
     def save(self, path):
         """
