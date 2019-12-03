@@ -110,7 +110,7 @@ class OptimizationScript(ExtinctionOptimizationScript):
             mask = ground_truth.get_mask(threshold=0.01)
         else:
             carver = shdom.SpaceCarver(measurements)
-            mask = carver.carve(grid, agreement=0.85, thresholds=self.args.radiance_threshold)
+            mask = carver.carve(grid, agreement=0.9, thresholds=self.args.radiance_threshold)
 
         # Define micro-physical parameters: either optimize, keep constant at a specified value or use ground-truth
         if self.args.use_forward_lwc:
