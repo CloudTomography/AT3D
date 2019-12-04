@@ -57,6 +57,10 @@ class OptimizationScript(object):
                             action='store_true',
                             help='Use the ground-truth cloud mask. This is an inverse crime which is \
                                   usefull for debugging/development.')
+        parser.add_argument('--add_noise',
+                            action='store_true',
+                            help='currently only supports AirMSPI noise model. \
+                                  See shdom.AirMSPINoise object for more info.')
         parser.add_argument('--n_jobs',
                             default=1,
                             type=int,
@@ -324,6 +328,11 @@ class OptimizationScript(object):
         self.parse_arguments()
 
         ground_truth, rte_solver, measurements = self.load_forward_model(self.args.input_dir)
+
+        # Add noise (currently only supports AirMSPI noise model)
+        if self.args.add_noise:
+            noise = shdom.AirMSPINoise()
+            measurements = noise.apply(measurements)
 
         # Initialize a Medium Estimator
         medium_estimator = self.get_medium_estimator(measurements, ground_truth)

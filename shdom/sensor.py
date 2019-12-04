@@ -846,6 +846,7 @@ class HemisphericProjection(Projection):
         self._npix = self.x.size
         self._resolution = [phi.size, mu.size]
 
+
 class Measurements(object):
     """
     A Measurements object bundles together the imaging geometry and sensor measurements for later optimization.
@@ -883,7 +884,7 @@ class Measurements(object):
                     pixels.append(image.reshape((image.shape[0], -1, num_channels), order='F'))
 
                 else:
-                    AttributeError('Error image dimensions: {}'.format(image.ndim))
+                    raise AttributeError('Error image dimensions: {}'.format(image.ndim))
             pixels = np.concatenate(pixels, axis=-2)
 
         elif pixels is not None:
@@ -893,7 +894,7 @@ class Measurements(object):
             elif (pixels.ndim == 2 and camera.sensor.type == 'RadianceSensor') or (pixels.ndim == 3 and camera.sensor.type == 'StokesSensor'):
                 num_channels = pixels.shape[-1]
             else:
-                AttributeError('Pixels should be a flat along spatial dimensions while maintaining channels/stokes dimension')
+                raise AttributeError('Pixels should be a flat along spatial dimensions while maintaining channels/stokes dimension')
 
         if num_channels > 1:
             assert num_channels == len(self._wavelength), 'Number of channels = {} differs from len(wavelength)={}'.format(num_channels, len(self._wavelength))
@@ -952,11 +953,7 @@ class Measurements(object):
             pixels=pixel) for projection, pixel in zip(projections, pixels)
         ]
         return measurements
-    
-    def add_noise(self):
-        """Add sensor modeled noise to the measurements"""
-        raise NotImplementedError
-    
+
     @property
     def camera(self):
         return self._camera
@@ -1104,3 +1101,140 @@ class MultiViewProjection(Projection):
     @property
     def num_projections(self):
         return self._num_projections
+
+
+class Noise(object):
+    """
+    An abstract noise object to be inherited by specific noise models
+
+    Parameters
+    ----------
+    full_well: integer
+      full well in electrons. Translates radiance measurements and electron counts.
+    quantum_efficiency: float
+      in range [0,1]. Translates electrons and photon counts.
+    """
+
+    def __init__(self, full_well, quantum_efficiency):
+        self.full_well = full_well
+        self.qe = quantum_efficiency
+
+    def apply(self, measurements):
+        """
+        Dummy function to apply noise to measurements
+        """
+        return None
+
+
+class AirMSPINoise(Noise):
+    """
+    AirMSPI noise modeled accroding to:
+        [1] Van Harten, G., Diner, D.J., Daugherty, B.J., Rheingans, B.E., Bull, M.A., Seidel, F.C.,
+            Chipman, R.A., Cairns, B., Wasilewski, A.P. and Knobelspiesse, K.D., 2018.
+            Calibration and validation of airborne multiangle spectropolarimetric imager (AirMSPI) polarization
+            measurements. Applied optics, 57(16), pp.4499-4513.
+        [2] Diner, D.J., Davis, A., Hancock, B., Geier, S., Rheingans, B., Jovanovic, V., Bull, M.,
+            Rider, D.M., Chipman, R.A., Mahler, A.B. and McClain, S.C., 2010.
+            First results from a dual photoelastic-modulator-based polarimetric camera.
+            Applied optics, 49(15), pp.2929-2946.
+
+    Notes
+    -----
+    The maximum radiance measurement is transformed to 0.85*max_well (200K electrons) before Poisson noise is applied
+    35% Quantum effciency at 660nm according to [2]
+    """
+
+    def __init__(self):
+        super().__init__(full_well=200000, quantum_efficiency=0.35)
+
+        from scipy.special import j0, jv
+
+        self.polarized_bands = [0.47, 0.66, 0.865]  # microns
+        num_subframes = 23
+        p = np.linspace(0.0, 1.0, num_subframes + 1)
+        p1 = p[0:-1]
+        p2 = p[1:]
+        x = 0.5 * (p1 + p2 - 1)
+        delta0_list = [4.472, 3.081, 2.284]
+        r = 0.0
+        eta = 0.009
+
+        self.pq, self.pu, self.w = dict(), dict(), dict()
+        for wavelength, delta0 in zip(self.polarized_bands, delta0_list):
+            # Define z'(x_n) (Eq. 8in [1])
+            z_idx = np.pi * x != eta
+            z = np.full_like(x, r)
+            z[z_idx] = -2 * delta0 * np.sin(np.pi * x - eta)[z_idx] * np.sqrt(
+                1 + r ** 2 / np.tan(np.pi * x - eta)[z_idx])
+
+            # Define s_n (Eq. 9 in [1])
+            s = np.ones(shape=(num_subframes))
+            s_idx = z_idx if r == 0 else np.ones_like(x, dtype=np.bool)
+            s[s_idx] = (np.tan(np.pi * x - eta) ** 2 - r)[s_idx] / (np.tan(np.pi * x - eta) ** 2 + r)[s_idx]
+
+            # Define F(x_n) (Eq. 7 in [1])
+            f = j0(z) + (1 / 3) * (np.pi * (p2 - p1) / 2) ** 2 * delta0 ** 2 * (1 - r ** 2) * (
+                    s * jv(2, z) - np.cos(2 * (np.pi * x - eta)) * j0(z))
+
+            # P modulation matrix for I, Q, U with and idealized modulator (without the linear correction factor)
+            # Eq. 15 of [1]
+            self.pq[wavelength] = np.vstack((np.ones_like(x), f, np.zeros_like(x))).T
+            self.pu[wavelength] = np.vstack((np.ones_like(x), np.zeros_like(x), f)).T
+
+            # W demodulation matrix (Eq. 16 of [1])
+            self.w[wavelength] = np.linalg.pinv(np.vstack((self.pq[wavelength], self.pu[wavelength])))
+
+    def apply(self, measurements):
+        """
+        Apply the AirMSPI poisson noise model according to the modulation and de-modulation matrices.
+
+        Parameters
+        ----------
+        measurements: shdom.Measurements
+            input clean measurements
+
+        Returns
+        -------
+        noisy_measurements: shdom.Measurements
+            output noisy measurements
+        """
+        images = []
+        for view in measurements.images:
+            multi_spectral_image = []
+            for i, wavelength in enumerate(measurements.wavelength):
+                image = view[..., i]
+                if isinstance(measurements.camera.sensor, shdom.StokesSensor):
+                    if wavelength not in self.polarized_bands:
+                        raise AttributeError('wavelength {} is not in AirMSPI polarized channels ({})'.format(
+                            wavelength, self.polarized_bands)
+                        )
+
+                    image0 = np.matmul(self.pq[wavelength], np.rollaxis(image, 1))
+                    image45 = np.matmul(self.pu[wavelength], np.rollaxis(image, 1))
+                    image0_sign = np.sign(image0)
+                    image45_sign = np.sign(image45)
+                    image0_mag = np.abs(image0)
+                    image45_mag = np.abs(image45)
+
+                    # Gain
+                    g0 = (1.0 / self.qe) * 0.85 * self.full_well / image0_mag.max()
+                    g45 = (1.0 / self.qe) * 0.85 * self.full_well / image45_mag.max()
+
+                    # Digital number d with Poisson noise
+                    d0 = (self.qe * image0_mag.max() / (0.85 * self.full_well)) * \
+                         np.random.poisson(np.round(g0 * image0_mag)).astype(np.float32) * image0_sign
+                    d45 = (self.qe * image45_mag.max() / (0.85 * self.full_well)) * \
+                          np.random.poisson(np.round(g45 * image45_mag)).astype(np.float32) * image45_sign
+                    d = np.concatenate((d0, d45), axis=1)
+
+                    # Back to I, Q, U using W demodulation matrix
+                    noisy_image = np.rollaxis(np.matmul(self.w[wavelength], d), 1)
+                else:
+                    g = 0.85 * self.full_well / image.max()
+                    noisy_image = (image.max() / (0.85 * self.full_well)) * np.random.poisson(
+                        np.round(g * image)).astype(np.float32)
+                multi_spectral_image.append(noisy_image)
+
+            images.append(np.stack(multi_spectral_image, axis=-1))
+        noisy_measurements = shdom.Measurements(measurements.camera, images=images, wavelength=measurements.wavelength)
+        return noisy_measurements

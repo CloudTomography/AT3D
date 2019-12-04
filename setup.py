@@ -176,7 +176,7 @@ if __name__ == "__main__":
         packages = setuptools.find_packages(),
         include_package_data = True,
         platforms = ["any"],
-        requires = ["numpy"],
+        requires = ["numpy", "scipy"],
         tests_require = ['nose',],
         test_suite = 'nose.collector',
         zip_safe = True,
