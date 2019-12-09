@@ -56,7 +56,7 @@ source activate pyshdom
 
 Install required packages
 ```
-conda install anaconda dill tensorflow tensorboard pillow
+conda install anaconda dill tensorflow tensorboard pillow joblib
 ```
 
 Install pyshdom distribution with (either install or develop flag)
