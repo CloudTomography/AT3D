@@ -263,7 +263,7 @@ class MieMonodisperse(object):
 
         if particle_type == 'Water':
             self._partype = 'W'
-            self._rindex = 1.0
+            self._rindex = 1.33
             self._pardens = 1.0
 
         elif particle_type == 'Aerosol':
@@ -685,8 +685,10 @@ class MiePolydisperse(object):
        - notebooks/Make Mie Table.ipynb for usage examples. 
        - notebooks/Make Mie Table Polarized.ipynb for usage examples. 
     """    
-    def __init__(self, mono_disperse=MieMonodisperse(), size_distribution=SizeDistribution()):
+    def __init__(self, mono_disperse=None, size_distribution=None):
         self._table_type = None
+        mono_disperse = shdom.MieMonodisperse() if mono_disperse is None else mono_disperse
+        size_distribution = shdom.SizeDistribution() if size_distribution is None else size_distribution
         self.set_mono_disperse(mono_disperse)
         self.set_size_distribution(size_distribution)
         self._extinct = None

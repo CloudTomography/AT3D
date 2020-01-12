@@ -331,8 +331,7 @@ class OptimizationScript(object):
 
         # Add noise (currently only supports AirMSPI noise model)
         if self.args.add_noise:
-            noise = shdom.AirMSPINoise()
-            measurements = noise.apply(measurements)
+            measurements.set_noise(shdom.AirMSPINoise())
 
         # Initialize a Medium Estimator
         medium_estimator = self.get_medium_estimator(measurements, ground_truth)

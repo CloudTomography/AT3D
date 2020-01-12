@@ -135,7 +135,7 @@ class MicrophysicalScatterer(Scatterer):
         A GridData object containing liquid water content (g/m^3) on a 3D grid.
     reff: shdom.GridData
         A GridData object containing effective radii (micron) on a 3D grid.
-    veff: shdom.GridPhase
+    veff: shdom.GridData
         A GridData object containing effective variances on a 3D grid.
     """
     def __init__(self, lwc=None, reff=None, veff=None):
@@ -405,8 +405,9 @@ class MicrophysicalScatterer(Scatterer):
         np.savetxt(path, X=np.array([self.grid.shape]), fmt='%d', header=comment_line)
         f = open(path, 'ab')
         np.savetxt(f, X=np.concatenate((np.array([self.grid.dx, self.grid.dy]), self.grid.z)).reshape(1,-1), fmt='%2.3f')
-        y, x, z = np.meshgrid(range(self.grid.nx), range(self.grid.ny), range(self.grid.nz))
-        data = np.vstack((x.ravel(), y.ravel(), z.ravel(), self.lwc.data.ravel(), self.reff.data.ravel())).T
+        x, y, z = np.meshgrid(range(self.grid.nx), range(self.grid.ny), range(self.grid.nz), indexing='ij')
+        idx = self.lwc.data.ravel() > 1e-8
+        data = np.vstack((x.ravel()[idx], y.ravel()[idx], z.ravel()[idx], self.lwc.data.ravel()[idx], self.reff.data.ravel()[idx])).T
         np.savetxt(f, X=data, fmt='%d %d %d %.5f %.3f')        
         f.close()
         

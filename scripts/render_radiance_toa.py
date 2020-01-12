@@ -257,7 +257,7 @@ class RenderScript(object):
             adapt_grid_factor=self.args.adapt_grid_factor,
             solution_accuracy=self.args.solution_accuracy
         )
-        for wavelength, solar_flux in zip(self.args.wavelength, solar_fluxes):
+        for wavelength, solar_flux in zip(medium.wavelength, solar_fluxes):
             scene_params = shdom.SceneParameters(
                 wavelength=wavelength,
                 source=shdom.SolarSource(self.args.solar_azimuth, self.args.solar_zenith, solar_flux),

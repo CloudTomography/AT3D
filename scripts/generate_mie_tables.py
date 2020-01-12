@@ -38,6 +38,14 @@ def argument_parsing():
                         type=np.float32,
                         help='Wavelengths [Micron] for which to compute the polarized mie table' \
                         'The output file name is formated as: Water_<wavelength[nm]>nm.scat<pol>')
+    parser.add_argument('--bandwidth',
+                        nargs='+',
+                        type=np.float32,
+                        help='Spectral bandwidth [nm]')
+    parser.add_argument('--wavelength_resolution',
+                        default=5,
+                        type=np.float32,
+                        help='(default value: %(default)s) Wavelength integration resolutions [nm]')
     parser.add_argument('--num_reff',
                         default=50,
                         type=int,
@@ -113,14 +121,16 @@ def get_file_paths(wavelength, args):
     return mono_path, poly_path
 
 
-def compute_mie_table(wavelength, args):
+def compute_mie_table(wavelength, bandwidth, args):
     """
     Compute and save the monodisperse and polydisperse Mie tables.
     
     Parameters
     ----------
     wavelength: float
-            Wavelength in microns
+        Wavelength in microns
+    bandwidth: float
+        Wavelength bandwidth in nanometer
     args: arguments from argparse.ArgumentParser()
         Arguments required for this function
     """
@@ -130,15 +140,23 @@ def compute_mie_table(wavelength, args):
     if os.path.exists(mono_path):
         mie_mono.read_table(mono_path)
     else:
-        mie_mono.set_wavelength_integration(wavelength_band=(wavelength, wavelength))   
+        if bandwidth is not None:
+            wavelength_averaging = True
+            wavelength_band = (wavelength - bandwidth/2000.0, wavelength + bandwidth/2000.0)
+        else:
+            wavelength_averaging = False
+            wavelength_band = (wavelength, wavelength)
+        mie_mono.set_wavelength_integration(wavelength_band=wavelength_band,
+                                            wavelength_averaging=wavelength_averaging,
+                                            wavelength_resolution=args.wavelength_resolution/1000.0)
         mie_mono.set_radius_integration(minimum_effective_radius=args.start_reff, 
                                         max_integration_radius=args.radius_cutoff)
         mie_mono.compute_table()
         mie_mono.write_table(mono_path)
         
     size_dist = shdom.SizeDistribution(type='gamma')
-    size_dist.set_parameters(reff=np.linspace(args.start_reff, args.end_reff, args.num_reff), 
-                                     veff=np.linspace(args.start_veff, args.end_veff, args.num_veff))
+    size_dist.set_parameters(reff=np.linspace(args.start_reff, args.end_reff, args.num_reff),
+                             veff=np.linspace(args.start_veff, args.end_veff, args.num_veff))
     size_dist.compute_nd(radii=mie_mono.radii, particle_density=mie_mono.pardens)
     mie_poly = shdom.MiePolydisperse(mie_mono, size_dist)
     mie_poly.compute_table()
@@ -147,5 +165,11 @@ def compute_mie_table(wavelength, args):
 
 if __name__ == "__main__":
     args = argument_parsing()
-    for wavelength in args.wavelength:
-        compute_mie_table(wavelength, args)
+    bandwidths = np.atleast_1d(args.bandwidth)
+    if len(bandwidths) == 1:
+        bandwidths = np.full(len(args.wavelength), bandwidths)
+    else:
+        assert len(bandwidths) == len(args.wavelength), \
+            'Number of bandwidths should be either 1 or the same as wavelengths'
+    for wavelength, bandwidth in zip(args.wavelength, bandwidths):
+        compute_mie_table(wavelength, bandwidth, args)

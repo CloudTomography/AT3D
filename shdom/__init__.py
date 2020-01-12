@@ -298,7 +298,7 @@ class Grid(object):
     def x(self, val):
         val = np.array(val, dtype=np.float32)
         spacing = np.diff(val)
-        assert np.all(np.isclose(spacing, spacing[0])), 'x grid supoprt equally spacing only'
+        assert np.all(np.isclose(spacing, spacing[0], atol=1e-6)), 'x grid supoprt equally spacing only'
         self._x = val
         self._dx = spacing[0]  
         self._nx = len(val)
@@ -312,7 +312,7 @@ class Grid(object):
     def y(self, val):
         val = np.array(val, dtype=np.float32)
         spacing = np.diff(val)
-        assert np.all(np.isclose(spacing, spacing[0])), 'y grid supoprt equally spacing only'
+        assert np.all(np.isclose(spacing, spacing[0], atol=1e-6)), 'y grid supoprt equally spacing only'
         self._y = val
         self._dy = spacing[0] 
         self._ny = len(val)

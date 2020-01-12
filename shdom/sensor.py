@@ -220,9 +220,9 @@ class RadianceSensor(Sensor):
                 new_shape.append(num_channels)       
             radiance = radiance.reshape(new_shape, order='F')
                 
-        return radiance         
-    
- 
+        return radiance
+
+
 class StokesSensor(Sensor):
     """
     A StokesSensor measures monochromatic stokes vector [I, U, Q, V].
@@ -862,44 +862,84 @@ class Measurements(object):
     pixels: np.array(dtype=float)
         pixels are a flattened version of the image list where the channel dimension is kept (1 for monochrome).
     """
-    def __init__(self, camera=None, images=None, pixels=None, wavelength=None):
+    def __init__(self, camera=None, images=None, pixels=None, wavelength=None, uncertainties=None):
         self._camera = camera
         self._images = images
         self._wavelength = np.atleast_1d(wavelength)
+        self._noise = None
+        self._uncertainties = uncertainties
 
-        num_channels = 0
         if images is not None:
+            pixels = self.images_to_pixels(images)
 
-            if type(images) is not list:
-                self._images = [images]
-
-            pixels = []
-            for image in self.images:
-                if camera.sensor.type == 'RadianceSensor':
-                    num_channels = image.shape[-1] if image.ndim == 3 else 1
-                    pixels.append(image.reshape((-1, num_channels), order='F'))
-
-                elif camera.sensor.type == 'StokesSensor':
-                    num_channels = image.shape[-1] if image.ndim == 4 else 1
-                    pixels.append(image.reshape((image.shape[0], -1, num_channels), order='F'))
-
-                else:
-                    raise AttributeError('Error image dimensions: {}'.format(image.ndim))
-            pixels = np.concatenate(pixels, axis=-2)
-
-        elif pixels is not None:
-            if (pixels.ndim == 1 and camera.sensor.type == 'RadianceSensor') or (pixels.ndim == 2 and camera.sensor.type == 'StokesSensor'):
-                num_channels = 1
-                pixels = pixels[..., None]
-            elif (pixels.ndim == 2 and camera.sensor.type == 'RadianceSensor') or (pixels.ndim == 3 and camera.sensor.type == 'StokesSensor'):
-                num_channels = pixels.shape[-1]
-            else:
-                raise AttributeError('Pixels should be a flat along spatial dimensions while maintaining channels/stokes dimension')
-
-        if num_channels > 1:
-            assert num_channels == len(self._wavelength), 'Number of channels = {} differs from len(wavelength)={}'.format(num_channels, len(self._wavelength))
         self._pixels = pixels
-        self._num_channels = num_channels
+        self._num_channels = pixels.shape[-1] if pixels is not None else None
+        if self.num_channels is not None and self.num_channels > 1:
+            assert self.num_channels == len(self._wavelength), 'Number of channels = {} differs from len(wavelength)={}'.format(num_channels, len(self._wavelength))
+
+    def images_to_pixels(self, images):
+        """
+        Set image list.
+
+        Parameters
+        ----------
+        images: list of images,
+            A list of images (multiview camera)
+
+        Returns
+        -------
+        pixels: a flattened version of the image list
+        """
+        pixels = []
+
+        if type(images) is not list:
+            images = [images]
+
+        for image in images:
+            if self.camera.sensor.type == 'RadianceSensor':
+                num_channels = image.shape[-1] if image.ndim == 3 else 1
+                pixels.append(image.reshape((-1, num_channels), order='F'))
+
+            elif self.camera.sensor.type == 'StokesSensor':
+                num_channels = image.shape[-1] if image.ndim == 4 else 1
+                pixels.append(image.reshape((image.shape[0], -1, num_channels), order='F'))
+
+            else:
+                raise AttributeError('Error image dimensions: {}'.format(image.ndim))
+        pixels = np.concatenate(pixels, axis=-2)
+        return pixels
+
+    def uncertainty_to_pixels(self, uncertainties):
+        """
+        Set uncertainty pixel list.
+
+        Parameters
+        ----------
+        uncertainties: list of uncertainties,
+            A list of images (multiview camera)
+
+        Returns
+        -------
+        pixels: a flattened version of the uncertainties list
+        """
+        pixels = []
+
+        if type(uncertainties) is not list:
+            uncertainties = [uncertainties]
+
+        for uncertainty in uncertainties:
+            if self.camera.sensor.type == 'RadianceSensor':
+                raise NotImplementedError
+
+            elif self.camera.sensor.type == 'StokesSensor':
+                num_channels = uncertainty.shape[-1] if uncertainty.ndim == 5 else 1
+                pixels.append(uncertainty.reshape((uncertainty.shape[0], uncertainty.shape[1], -1, num_channels), order='F'))
+
+            else:
+                raise AttributeError('Error image dimensions: {}'.format(uncertainty.ndim))
+        pixels = np.concatenate(pixels, axis=-2)
+        return pixels
+
 
     def save(self, path):
         """
@@ -954,6 +994,23 @@ class Measurements(object):
         ]
         return measurements
 
+    def set_noise(self, noise):
+        """
+        Set sensor modeled noise to the measurements
+
+        Parameters
+        ----------
+        noise: shdom.Noise
+            A noise model
+        """
+        assert hasattr(noise, 'correlation'), "Noise has to have correlation attribute"
+        self._noise = noise
+        images, uncertainties = noise.apply(self)
+        self._images = images
+        self._pixels = self.images_to_pixels(images)
+        self._uncertainties = self.uncertainty_to_pixels(uncertainties)
+        self._num_channels = self.pixels.shape[-1]
+
     @property
     def camera(self):
         return self._camera
@@ -961,7 +1018,11 @@ class Measurements(object):
     @property
     def pixels(self):
         return self._pixels
-    
+
+    @property
+    def uncertainties(self):
+        return self._uncertainties
+
     @property
     def images(self):
         return self._images
@@ -976,6 +1037,10 @@ class Measurements(object):
             return self._wavelength[0]
         else:
             return self._wavelength
+
+    @property
+    def noise(self):
+        return self._noise
 
 
 class Camera(object):
@@ -1107,17 +1172,9 @@ class Noise(object):
     """
     An abstract noise object to be inherited by specific noise models
 
-    Parameters
-    ----------
-    full_well: integer
-      full well in electrons. Translates radiance measurements and electron counts.
-    quantum_efficiency: float
-      in range [0,1]. Translates electrons and photon counts.
     """
-
-    def __init__(self, full_well, quantum_efficiency):
-        self.full_well = full_well
-        self.qe = quantum_efficiency
+    def __init__(self):
+        self.correlation = None
 
     def apply(self, measurements):
         """
@@ -1137,19 +1194,18 @@ class AirMSPINoise(Noise):
             Rider, D.M., Chipman, R.A., Mahler, A.B. and McClain, S.C., 2010.
             First results from a dual photoelastic-modulator-based polarimetric camera.
             Applied optics, 49(15), pp.2929-2946.
-
-    Notes
-    -----
-    The maximum radiance measurement is transformed to 0.85*max_well (200K electrons) before Poisson noise is applied
-    35% Quantum effciency at 660nm according to [2]
     """
 
     def __init__(self):
-        super().__init__(full_well=200000, quantum_efficiency=0.35)
-
         from scipy.special import j0, jv
 
-        self.polarized_bands = [0.47, 0.66, 0.865]  # microns
+        self.full_well = 200000
+        # Table 5 of [1]
+        bandwidths = [45, 46, 47]
+        optical_throughput = [0.516, 0.605, 0.602]
+        quantum_efficiencies = [0.4, 0.35, 0.13]
+        self.polarized_bands = [0.47, 0.66, 0.862]
+
         num_subframes = 23
         p = np.linspace(0.0, 1.0, num_subframes + 1)
         p1 = p[0:-1]
@@ -1159,8 +1215,10 @@ class AirMSPINoise(Noise):
         r = 0.0
         eta = 0.009
 
-        self.pq, self.pu, self.w = dict(), dict(), dict()
-        for wavelength, delta0 in zip(self.polarized_bands, delta0_list):
+        self.p, self.correlation, self.w, self.reflectance_to_electrons = dict(), dict(), dict(), dict()
+        for wavelength, delta0, ot, qe, bw in zip(self.polarized_bands, delta0_list, optical_throughput,
+                                                  quantum_efficiencies, bandwidths):
+
             # Define z'(x_n) (Eq. 8in [1])
             z_idx = np.pi * x != eta
             z = np.full_like(x, r)
@@ -1178,11 +1236,17 @@ class AirMSPINoise(Noise):
 
             # P modulation matrix for I, Q, U with and idealized modulator (without the linear correction factor)
             # Eq. 15 of [1]
-            self.pq[wavelength] = np.vstack((np.ones_like(x), f, np.zeros_like(x))).T
-            self.pu[wavelength] = np.vstack((np.ones_like(x), np.zeros_like(x), f)).T
+            pq = np.vstack((np.ones_like(x), f, np.zeros_like(x))).T
+            pu = np.vstack((np.ones_like(x), np.zeros_like(x), f)).T
+            self.p[wavelength] = np.vstack((pq, pu))
+            self.correlation[wavelength] = np.matmul(self.p[wavelength].T, self.p[wavelength])
 
             # W demodulation matrix (Eq. 16 of [1])
-            self.w[wavelength] = np.linalg.pinv(np.vstack((self.pq[wavelength], self.pu[wavelength])))
+            self.w[wavelength] = np.linalg.pinv(self.p[wavelength])
+
+            # Transform rho into S (Eq. (24) of [1])
+            self.reflectance_to_electrons[wavelength] = (1.408 * 10**18 * ot * qe * bw) / \
+                                                      ((1000*wavelength)**4 * (np.exp(2489.7/(1000*wavelength))) - 1)
 
     def apply(self, measurements):
         """
@@ -1195,12 +1259,20 @@ class AirMSPINoise(Noise):
 
         Returns
         -------
-        noisy_measurements: shdom.Measurements
-            output noisy measurements
+        images: list of images
+            A list of images (multiview camera)
+        uncertainties: list of image pixel uncertainties
+           A list of uncertainty images (multiview camera)
+
+        Notes
+        -----
+        Non-polarized bands are not implemented.
         """
         images = []
+        uncertainties = []
         for view in measurements.images:
             multi_spectral_image = []
+            multi_spectral_uncertainty = []
             for i, wavelength in enumerate(measurements.wavelength):
                 image = view[..., i]
                 if isinstance(measurements.camera.sensor, shdom.StokesSensor):
@@ -1209,32 +1281,34 @@ class AirMSPINoise(Noise):
                             wavelength, self.polarized_bands)
                         )
 
-                    image0 = np.matmul(self.pq[wavelength], np.rollaxis(image, 1))
-                    image45 = np.matmul(self.pu[wavelength], np.rollaxis(image, 1))
-                    image0_sign = np.sign(image0)
-                    image45_sign = np.sign(image45)
-                    image0_mag = np.abs(image0)
-                    image45_mag = np.abs(image45)
+                    # Reflectance at 0, 45 degrees concatenated (total of 46 subframe measurements)
+                    reflectance = np.matmul(self.p[wavelength], np.rollaxis(image, 1))
 
-                    # Gain
-                    g0 = (1.0 / self.qe) * 0.85 * self.full_well / image0_mag.max()
-                    g45 = (1.0 / self.qe) * 0.85 * self.full_well / image45_mag.max()
+                    # Electrons from reflectance
+                    electrons = self.reflectance_to_electrons[wavelength] * reflectance
 
-                    # Digital number d with Poisson noise
-                    d0 = (self.qe * image0_mag.max() / (0.85 * self.full_well)) * \
-                         np.random.poisson(np.round(g0 * image0_mag)).astype(np.float32) * image0_sign
-                    d45 = (self.qe * image45_mag.max() / (0.85 * self.full_well)) * \
-                          np.random.poisson(np.round(g45 * image45_mag)).astype(np.float32) * image45_sign
-                    d = np.concatenate((d0, d45), axis=1)
+                    # Adjust gain induced by exposure, gain, lens size etc to make maximum signal reach a max well
+                    gain = self.full_well / electrons.max()
+                    electrons = np.round(electrons * gain)
+
+                    # Apply Poisson noise
+                    electrons = np.random.poisson(electrons)
+
+                    # Compute the Poisson induced uncertainty
+                    uncertainty = np.sqrt(electrons / (self.reflectance_to_electrons[wavelength] * gain))
+                    correlated_uncertainty = np.dot(
+                        self.p[wavelength].T,
+                        np.rollaxis(self.p[wavelength][None, :, None] / uncertainty[..., None], -1)
+                    )
 
                     # Back to I, Q, U using W demodulation matrix
-                    noisy_image = np.rollaxis(np.matmul(self.w[wavelength], d), 1)
-                else:
-                    g = 0.85 * self.full_well / image.max()
-                    noisy_image = (image.max() / (0.85 * self.full_well)) * np.random.poisson(
-                        np.round(g * image)).astype(np.float32)
-                multi_spectral_image.append(noisy_image)
+                    noisy_image = np.rollaxis(np.matmul(self.w[wavelength], electrons), 1) / \
+                                  (self.reflectance_to_electrons[wavelength] * gain)
 
+                else:
+                    raise NotImplementedError
+                multi_spectral_uncertainty.append(correlated_uncertainty)
+                multi_spectral_image.append(noisy_image)
+            uncertainties.append(np.stack(multi_spectral_uncertainty, axis=-1))
             images.append(np.stack(multi_spectral_image, axis=-1))
-        noisy_measurements = shdom.Measurements(measurements.camera, images=images, wavelength=measurements.wavelength)
-        return noisy_measurements
+        return images, uncertainties

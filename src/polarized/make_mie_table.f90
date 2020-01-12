@@ -422,6 +422,7 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
     SUMP = 0.0
     WAVE = WAVELEN1
     DO WHILE (WAVE <= WAVELEN2)   ! Loop over the wavelengths
+      WRITE(*,*) 'Computing mie for wavelength: ', WAVE, ' microns'
       IF (BBTEMP > 0) PLANCK = (1.19E8/WAVE**5)/(EXP(1.439E4/(WAVE*BBTEMP))-1)
       SUMP = SUMP + PLANCK
       IF (PARTYPE == 'I') THEN   ! Get the index of refraction of water or ice
@@ -431,6 +432,8 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
       ENDIF
       REFIND = CMPLX(MRE,-MIM)
       DO I = 1, NSIZE
+        WRITE(*,*) 'Computing mie for radius: ', RADII(I), &
+                ' microns [wavelength = ', WAVE, 'microns]'
         CALL MIE_ONE (WAVE, REFIND, RADII(I), MAXLEG, EXT, SCAT, NL, COEF)
         EXTINCT1(I) = EXTINCT1(I) + PLANCK*EXT
         SCATTER1(I) = SCATTER1(I) + PLANCK*SCAT

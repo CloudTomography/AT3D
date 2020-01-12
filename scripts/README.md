@@ -32,15 +32,15 @@ python scripts/render_radiance_toa.py experiments/single_voxel/monochromatic 0.6
 
 Render an LES cloud field (rico) at 9 view angles, 10m resolution, 672nm, with a rayleigh scattering atmosphere and parallelization
 ```sh
-python scripts/render_radiance_toa.py experiments/rico32x36x25/monochromatic 0.672 \
-        --generator LesFile --path synthetic_cloud_fields/jpl_les/rico32x36x25.txt \
+python scripts/render_radiance_toa.py experiments/rico32x37x26/monochromatic 0.672 \
+        --generator LesFile --path synthetic_cloud_fields/jpl_les/rico32x37x26.txt \
         --x_res 0.01 --y_res 0.01 --azimuth 90 90 90 90 0 -90 -90 -90 -90 --zenith 70.5 60 45.6 26.1 0.0 26.1 45.6 60 70.5 \
         --add_rayleigh --n_jobs 40
 ```
 
 Render a single voxel atmosphere at 9 view angles, 5 spectral bands 20m resolution
 ```sh
-python scripts/render_radiance_toa.py experiments/single_voxel/polychromatic 0.935 0.865  0.672 0.55 0.445\
+python scripts/render_radiance_toa.py experiments/single_voxel/polychromatic 0.935 0.865 0.672 0.55 0.445\
         --generator SingleVoxel --nx 10 --ny 10 --nz 10 --domain_size 1.0 --x_res 0.02 --y_res 0.02 \
         --azimuth 90 90 90 90 0 -90 -90 -90 -90 --zenith 70.5 60 45.6 26.1 0.0 26.1 45.6 60 70.5 \
         --solar_zenith 165 --solar_azimuth 90 --lwc 0.135 --reff 12.3 --veff 0.1 --add_rayleigh --n_jobs 40
@@ -48,8 +48,8 @@ python scripts/render_radiance_toa.py experiments/single_voxel/polychromatic 0.9
         
 Render an LES cloud field (rico) at 9 view angles, 3 spectral bands, 10m resolution, with a rayleigh scattering atmosphere
 ```sh
-python scripts/render_radiance_toa.py experiments/rico32x36x25/polychromatic 0.672 0.55 0.445 \
-        --generator LesFile --path synthetic_cloud_fields/jpl_les/rico32x36x25.txt --x_res 0.01 --y_res 0.01 \
+python scripts/render_radiance_toa.py experiments/rico32x37x26/polychromatic 0.672 0.55 0.445 \
+        --generator LesFile --path synthetic_cloud_fields/jpl_les/rico32x37x26.txt --x_res 0.01 --y_res 0.01 \
         --azimuth 90 90 90 90 0 -90 -90 -90 -90 --zenith 70.5 60 45.6 26.1 0.0 26.1 45.6 60 70.5 \
         --add_rayleigh --n_jobs 40
 ```
@@ -84,7 +84,7 @@ The inputs are measurements and the outputs are estimated medium properties. Bel
 Estimate extinction with the ground truth phase function, grid and cloud mask for precomputed LES measurements
 ```sh
 python scripts/optimize_extinction_lbfgs.py \
-        --input_dir experiments/rico32x36x25/monochromatic --add_rayleigh \
+        --input_dir experiments/rico32x37x26/monochromatic --add_rayleigh \
         --use_forward_grid  --use_forward_albedo --use_forward_phase  --use_forward_mask \
         --init Homogeneous --extinction 0.01 --log log_name --n_jobs 40 
 ```  
@@ -92,7 +92,7 @@ python scripts/optimize_extinction_lbfgs.py \
 Estimate extinction with the ground truth phase function and grid for precomputed LES measurements
 ```sh 
 python scripts/optimize_extinction_lbfgs.py \
-        --input_dir experiments/rico32x36x25/monochromatic --add_rayleigh \
+        --input_dir experiments/rico32x37x26/monochromatic --add_rayleigh \
         --use_forward_grid  --use_forward_albedo --use_forward_phase   \
         --init Homogeneous --extinction 0.01 --radiance_threshold 0.055 --log log_name --n_jobs 40 
 ```
