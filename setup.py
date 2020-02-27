@@ -106,6 +106,7 @@ F2PY_CORE_API = [
     'gradient_l2',
     'space_carve',
     'precompute_phase_check',
+    'precompute_phase_check_grad',
     'optical_depth'
 ]
 
