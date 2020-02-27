@@ -925,28 +925,26 @@ class MediumEstimator(shdom.Medium):
         leg_table.pad(rte_solver._nleg)
         dleg = leg_table.data
         dnumphase = leg_table.numphase
-        
         # zero the first term of the first component of the phase function
         # gradient.
         if dleg.ndim == 2:
             dleg[0,:] = 0.0
         elif dleg.ndim ==3:
             dleg[0,0,:] = 0.0
-
+        
         dphasetab = core.precompute_phase_check_grad(
-            negcheck=False,
-            nstphase=rte_solver._nstphase,
-            nstleg=rte_solver._nstleg,
-            nscatangle=rte_solver._nscatangle,
-            nstokes=rte_solver._nstokes,
-            dnumphase=dnumphase,
-            ml=rte_solver._ml,
-            nlm=rte_solver._nlm,
-            nleg=rte_solver._nleg,
-            dleg=dleg,
-            deltam=rte_solver._deltam
-        )
-
+                                                     negcheck=False,
+                                                     nstphase=rte_solver._nstphase,
+                                                     nstleg=rte_solver._nstleg,
+                                                     nscatangle=rte_solver._nscatangle,
+                                                     nstokes=rte_solver._nstokes,
+                                                     dnumphase=dnumphase,
+                                                     ml=rte_solver._ml,
+                                                     nlm=rte_solver._nlm,
+                                                     nleg=rte_solver._nleg,
+                                                     dleg=dleg,
+                                                     deltam=rte_solver._deltam
+                                                     )
         return dext, dalb, diphase, dleg, dphasetab, dnumphase
 
     def compute_direct_derivative(self, rte_solver):
@@ -1000,7 +998,7 @@ class MediumEstimator(shdom.Medium):
                 delyd=rte_solver._delyd
             )       
         
-    def grad_normcorr(self, rte_solver, projection, pixels):
+    def grad_normcorr(self, rte_solver, projection, pixels, sigma):
         """
         The core normalized correlation gradient method.
 
@@ -1012,6 +1010,8 @@ class MediumEstimator(shdom.Medium):
             A projection model which specified the position and direction of each and every pixel
         pixels: np.array(shape=(projection.npix), dtype=np.float32)
             The acquired pixels driving the error and optimization.
+        sigma: np.array(shape=(nstokes, nstokes), dtype=np.float32)
+            The noise correlation matrix.
 
         Returns
         -------
@@ -1130,7 +1130,7 @@ class MediumEstimator(shdom.Medium):
         )
         return grad1, grad2, norm1, norm2, loss, images
 
-    def grad_l2(self, rte_solver, projection, pixels):
+    def grad_l2(self, rte_solver, projection, pixels, uncertainties):
         """
         The core l2 gradient method.
 
@@ -1142,6 +1142,8 @@ class MediumEstimator(shdom.Medium):
             A projection model which specified the position and direction of each and every pixel
         pixels: np.array(shape=(projection.npix), dtype=np.float32)
             The acquired pixels driving the error and optimization.
+        uncertainties: np.array(shape=(projection.npix), dtype=np.float32)
+            The pixel uncertainties.
 
         Returns
         -------
@@ -1158,6 +1160,7 @@ class MediumEstimator(shdom.Medium):
             total_pix = projection.npix
 
         gradient, loss, images = core.gradient_l2(
+            uncertainties=uncertainties,
             weights=self._stokes_weights[:rte_solver._nstokes],
             exact_single_scatter=self._exact_single_scatter,
             nstphase=rte_solver._nstphase,
@@ -1250,8 +1253,7 @@ class MediumEstimator(shdom.Medium):
             measurements=pixels,
             rshptr=rte_solver._rshptr,
             radiance=rte_solver._radiance,
-            total_ext=rte_solver._total_ext[:rte_solver._npts],
-            uncertainties = np.ones((rte_solver._nstokes,rte_solver._nstokes,pixels.shape[-1]))
+            total_ext=rte_solver._total_ext[:rte_solver._npts]
         )
         return gradient, loss, images
 
@@ -1287,20 +1289,24 @@ class MediumEstimator(shdom.Medium):
         projection = measurements.camera.projection
         sensor = measurements.camera.sensor
         pixels = measurements.pixels
-        
+        uncertainties = measurements.uncertainties
+
         # Sequential or parallel processing using multithreading (threadsafe Fortran)
         if n_jobs > 1:           
             output = Parallel(n_jobs=n_jobs, backend="threading", verbose=0)(
                 delayed(self.core_grad, check_pickle=False)(
                     rte_solver=rte_solvers[channel],
                     projection=projection,
-                    pixels=spectral_pixels[..., channel]
-                ) for channel, (projection, spectral_pixels) in
-                itertools.product(range(self.num_wavelengths), zip(projection.split(n_jobs), np.array_split(pixels, n_jobs, axis=-2)))
+                    pixels=spectral_pixels[..., channel],
+                    uncertainties=spectral_uncertainties[...,channel],
+                ) for channel, (projection, spectral_pixels, spectral_uncertainties) in
+                itertools.product(range(self.num_wavelengths), zip(projection.split(n_jobs),
+                                                                   np.array_split(pixels, n_jobs, axis=-2),
+                                                                   np.array_split(uncertainties, n_jobs, axis=-2)))
             )
         else:
             output = [
-                self.core_grad(rte_solvers[channel], projection, pixels[..., channel])
+                self.core_grad(rte_solvers[channel], projection, pixels[..., channel], uncertainties[...,channel])
                 for channel in range(self.num_wavelengths)
             ]
         
@@ -1951,6 +1957,52 @@ class SpaceCarver(object):
         return self._grid
 
 
+class OpticalDepth(object):
+    """
+    TODO
+    """
+
+    def __init__(self, rte_solver):
+        self._rte_solver = rte_solver
+
+    def integrate(self, projection):
+        """
+        TODO
+        """
+        if isinstance(projection, shdom.MultiViewProjection):
+            projections = projection.projection_list
+        else:
+            projections = [projection]
+        optical_depth = np.full(self._rte_solver._npts, 999)
+        for projection in projections:
+            tau = core.optical_depth(
+                nx=self._rte_solver._nx,
+                ny=self._rte_solver._ny,
+                nz=self._rte_solver._nz,
+                npts=self._rte_solver._npts,
+                ncells=self._rte_solver._ncells,
+                gridptr=self._rte_solver._gridptr,
+                neighptr=self._rte_solver._neighptr,
+                treeptr=self._rte_solver._treeptr,
+                cellflags=self._rte_solver._cellflags,
+                bcflag=self._rte_solver._bcflag,
+                ipflag=self._rte_solver._ipflag,
+                xgrid=self._rte_solver._xgrid,
+                ygrid=self._rte_solver._ygrid,
+                zgrid=self._rte_solver._zgrid,
+                gridpos=self._rte_solver._gridpos,
+                camx=projection.x,
+                camy=projection.y,
+                camz=projection.z,
+                cammu=projection.mu,
+                camphi=projection.phi,
+                npix=projection.npix,
+                total_ext=self._rte_solver._total_ext[:self._rte_solver._npts]
+            )
+            optical_depth = np.minimum(tau, optical_depth)
+        return optical_depth.reshape(self._rte_solver._nx, self._rte_solver._ny, self._rte_solver._nz)
+
+
 class LocalOptimizer(object):
     """
     The LocalOptimizer class takes care of the under the hood of the optimization process.
@@ -2068,7 +2120,6 @@ class LocalOptimizer(object):
             measurements=self.measurements,
             n_jobs=self.n_jobs
         )
-        print(state, gradient, loss)
         self._loss = loss
         self._images = images
         return loss, gradient
