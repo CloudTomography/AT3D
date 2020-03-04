@@ -925,12 +925,17 @@ class MediumEstimator(shdom.Medium):
         leg_table.pad(rte_solver._nleg)
         dleg = leg_table.data
         dnumphase = leg_table.numphase
+        
         # zero the first term of the first component of the phase function
-        # gradient.
+        # gradient. Pre-scale the legendre moments by 1/(2*l+1) which
+        # is done in the forward problem in TRILIN_INTERP_PROP
+        scaling_factor =np.array([2.0*i+1.0 for i in range(0,rte_solver._nleg+1)])
         if dleg.ndim == 2:
             dleg[0,:] = 0.0
+            dleg /= scaling_factor[:,np.newaxis]
         elif dleg.ndim ==3:
             dleg[0,0,:] = 0.0
+            dleg /= scaling_factor[np.newaxis,:,np.newaxis]
         
         dphasetab = core.precompute_phase_check_grad(
                                                      negcheck=False,
