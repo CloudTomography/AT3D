@@ -14,6 +14,7 @@ from collections import OrderedDict
 import tensorboardX as tb
 import matplotlib.pyplot as plt
 import warnings
+from scipy import stats
 
 class OpticalScattererDerivative(shdom.OpticalScatterer):
     """
@@ -33,7 +34,7 @@ class OpticalScattererDerivative(shdom.OpticalScatterer):
     """
     def __init__(self, wavelength, extinction=None, albedo=None, phase=None):
         super().__init__(wavelength, extinction, albedo, phase)
-        
+
     def resample(self, grid):
         """
         The resample method resamples the OpticalScatterer (extinction, albedo, phase).
@@ -50,25 +51,25 @@ class OpticalScattererDerivative(shdom.OpticalScatterer):
         """
         extinction = self.extinction.resample(grid)
         albedo = self.albedo.resample(grid)
-        phase = self.phase.resample(grid)            
+        phase = self.phase.resample(grid)
         return shdom.OpticalScattererDerivative(self.wavelength, extinction, albedo, phase)
-    
+
     @property
     def extinction(self):
         return self._extinction
-    
+
     @extinction.setter
     def extinction(self, val):
         self._extinction = val
-    
+
     @property
     def albedo(self):
         return self._albedo
-    
+
     @albedo.setter
     def albedo(self, val):
         self._albedo = val
-        
+
 
 class GridPhaseEstimator(shdom.GridPhase):
     """
@@ -81,7 +82,7 @@ class GridPhaseEstimator(shdom.GridPhase):
     def __init__(self, legendre_table, index):
         super().__init__(legendre_table, index)
 
-   
+
 class GridDataEstimator(shdom.GridData):
     """
     A GridDataEstimator defines unknown shdom.GridData to be estimated.
@@ -102,7 +103,7 @@ class GridDataEstimator(shdom.GridData):
         self._mask = None
         self._num_parameters = self.init_num_parameters()
         self._precondition_scale_factor = precondition_scale_factor
-              
+
     def set_state(self, state):
         """
         Set the estimator state.
@@ -214,31 +215,31 @@ class GridDataEstimator(shdom.GridData):
     @property
     def mask(self):
         return self._mask
-    
+
     @property
     def precondition_scale_factor(self):
         return self._precondition_scale_factor
-    
+
     @property
     def num_parameters(self):
         return self._num_parameters
-    
+
     @property
     def min_bound(self):
         return self._min_bound
-    
+
     @property
     def max_bound(self):
         return self._max_bound
-    
-    
+
+
 class ScattererEstimator(object):
     """
     A ScattererEstimator defines an unknown shdom.Scatterer to be estimated.
     A scatterer estimator contains more basic estimators such as GridDataEstimators which define the parameters of the Scatterer that are to be estimated.
     This is an abstract method that is inherited by a specific type of scatterer estimator (e.g. OpticalScatterEstimator, MicrophysicalScattererEstimator)
     """
-    def __init__(self):      
+    def __init__(self):
         self._mask = None
         self._estimators = self.init_estimators()
         self._derivatives = self.init_derivatives()
@@ -259,7 +260,7 @@ class ScattererEstimator(object):
         This is a dummy method that is overwritten by inheritance.
         """
         return OrderedDict()
-    
+
     def init_derivatives(self):
         """
         Initialize the internal derivatives.
@@ -274,7 +275,7 @@ class ScattererEstimator(object):
         -----
         This is a dummy method that is overwritten by inheritance.
         """
-        return OrderedDict()    
+        return OrderedDict()
 
     def init_num_parameters(self):
         """
@@ -293,7 +294,7 @@ class ScattererEstimator(object):
     def set_mask(self, mask):
         """
         Set a mask for data points that will be estimated.
-        
+
         Parameters
         ----------
         mask: shdom.GridData object
@@ -303,7 +304,7 @@ class ScattererEstimator(object):
         for estimator in self.estimators.values():
             estimator.set_mask(mask)
         self._num_parameters = self.init_num_parameters()
-       
+
     def set_state(self, state):
         """
         Set the estimator state by setting all the internal estimators states.
@@ -315,7 +316,7 @@ class ScattererEstimator(object):
         """
         states = np.split(state, np.cumsum(self.num_parameters[:-1]))
         for estimator, state in zip(self.estimators.values(), states):
-            estimator.set_state(state)        
+            estimator.set_state(state)
 
     def get_state(self):
         """
@@ -361,7 +362,7 @@ class ScattererEstimator(object):
         for estimator, gradient in zip(self.estimators.values(), gradient):
             state_gradient = np.concatenate((state_gradient, estimator.project_gradient(gradient, grid)))
         return state_gradient
-        
+
     @property
     def estimators(self):
         return self._estimators
@@ -372,8 +373,8 @@ class ScattererEstimator(object):
 
     @property
     def derivatives(self):
-        return self._derivatives    
-    
+        return self._derivatives
+
     @property
     def num_parameters(self):
         return self._num_parameters
@@ -382,7 +383,7 @@ class ScattererEstimator(object):
     def mask(self):
         return self._mask
 
-    
+
 class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
     """
     An OpticalScattererEstimator defines an unknown shdom.OpticalScatterer to be estimated.
@@ -406,7 +407,7 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
     def __init__(self, wavelength, extinction, albedo, phase):
         shdom.OpticalScatterer.__init__(self, wavelength, extinction, albedo, phase)
         ScattererEstimator.__init__(self)
-        
+
     def init_estimators(self):
         """
         Initialize the internal estimators: extinction, albedo, phase
@@ -426,7 +427,7 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         if isinstance(self.albedo, shdom.GridDataEstimator):
             raise NotImplementedError("Albedo estimation not implemented")
         if isinstance(self.phase, shdom.GridPhaseEstimator):
-            raise NotImplementedError("Phase estimation not implemented")           
+            raise NotImplementedError("Phase estimation not implemented")
         return estimators
 
     def init_derivatives(self):
@@ -446,7 +447,7 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         if isinstance(self.albedo, shdom.GridDataEstimator):
             derivatives['albedo'] = self.init_albedo_derivative()
         if isinstance(self.phase, shdom.GridPhaseEstimator):
-            derivatives['phase'] = self.init_phase_derivative()   
+            derivatives['phase'] = self.init_phase_derivative()
         return derivatives
 
     def init_extinction_derivative(self):
@@ -467,7 +468,7 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
             legcoef = np.zeros((self.phase.legendre_table.nstleg, self.phase.legendre_table.maxleg + 1), dtype=np.float32)
         legen_table = shdom.LegendreTable(legcoef, table_type=self.phase.legendre_table.table_type)
         phase = shdom.GridPhase(legen_table, shdom.GridData(self.phase.index.grid, np.ones_like(self.phase.index.data)))
-        derivative = shdom.OpticalScattererDerivative(self.wavelength, extinction, albedo, phase)        
+        derivative = shdom.OpticalScattererDerivative(self.wavelength, extinction, albedo, phase)
         return derivative
 
     def init_albedo_derivative(self):
@@ -490,7 +491,7 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         phase = shdom.GridPhase(legen_table, shdom.GridData(self.phase.index.grid, np.ones_like(self.phase.index.data)))
         derivative = shdom.OpticalScattererDerivative(self.wavelength, extinction, albedo, phase)
         return derivative
-    
+
     def init_phase_derivative(self):
         """
         Initialize the derivatives of the optical fields with respect to the phase function.
@@ -499,7 +500,7 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         -----
         This is a dummy method which is not implemented.
         """
-        raise NotImplementedError("Phase estimation not implemented")  
+        raise NotImplementedError("Phase estimation not implemented")
 
     def get_derivative(self, derivative_type, wavelength):
         """
@@ -528,12 +529,12 @@ class OpticalScattererEstimator(shdom.OpticalScatterer, ScattererEstimator):
         elif derivative_type == 'albedo':
             derivative = self.derivatives['albedo']
         elif derivative_type == 'phase':
-            derivative = self.derivatives['phase']   
+            derivative = self.derivatives['phase']
         else:
             raise AttributeError('derivative type {} not supported'.format(derivative_type))
         return derivative
-        
-        
+
+
 class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEstimator):
     """
     An MicrophysicalScattererEstimator defines an unknown shdom.MicrophysicalScatterer to be estimated.
@@ -554,7 +555,7 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
         shdom.MicrophysicalScatterer.__init__(self, lwc, reff, veff)
         self.add_mie(mie)
         ScattererEstimator.__init__(self)
-        
+
     def init_estimators(self):
         """
         Initialize the internal estimators: lwc, reff, veff
@@ -650,10 +651,10 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
                 derivative.legcoef = dlegcoef.reshape((mie.maxleg+1, -1), order='F')
             elif mie.table_type == 'VECTOR':
                 derivative.legcoef = dlegcoef.reshape((mie.legendre_table.nstleg, mie.maxleg+1, -1), order='F')
-    
+
             derivative.init_intepolators()
             derivatives[float_round(wavelength)] = derivative
-        return derivatives         
+        return derivatives
 
     def get_lwc_derivative(self, wavelength):
         """
@@ -677,10 +678,10 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
             legen_table = shdom.LegendreTable(np.zeros((mie.legendre_table.nstleg, mie.maxleg + 1), dtype=np.float32), mie.table_type)
         derivative = self.derivatives['lwc']
         scatterer = shdom.OpticalScattererDerivative(
-            wavelength, 
+            wavelength,
             extinction=mie.get_extinction(derivative['lwc'], self.reff, self.veff),
             albedo=derivative['albedo'],
-            phase=shdom.GridPhase(legen_table, index)) 
+            phase=shdom.GridPhase(legen_table, index))
         return scatterer
 
     def get_mie_derivative(self, derivative, wavelength):
@@ -700,11 +701,11 @@ class MicrophysicalScattererEstimator(shdom.MicrophysicalScatterer, ScattererEst
             The Mie derivative at a single wavelength
         """
         scatterer = shdom.OpticalScattererDerivative(
-            wavelength, 
+            wavelength,
             extinction=derivative[float_round(wavelength)].get_extinction(self.lwc, self.reff, self.veff),
             albedo=derivative[float_round(wavelength)].get_albedo(self.reff, self.veff),
-            phase=derivative[float_round(wavelength)].get_phase(self.reff, self.veff)) 
-        return scatterer  
+            phase=derivative[float_round(wavelength)].get_phase(self.reff, self.veff))
+        return scatterer
 
     def get_derivative(self, derivative_type, wavelength):
         """
@@ -833,7 +834,7 @@ class MediumEstimator(shdom.Medium):
             self._estimators[name] = scatterer
             self._num_parameters.append(np.sum(scatterer.num_parameters))
             self._unknown_scatterers_indices = np.concatenate((
-                self.unknown_scatterers_indices, 
+                self.unknown_scatterers_indices,
                 np.full(total_num_estimators, self.num_scatterers, dtype=np.int32)))
             self._num_derivatives += total_num_estimators
 
@@ -906,11 +907,11 @@ class MediumEstimator(shdom.Medium):
         dext = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.float32)
         dalb = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.float32)
         diphase = np.zeros(shape=[rte_solver._nbpts, self.num_derivatives], dtype=np.int32)
-    
+
         i=0
         for estimator in self.estimators.values():
             for dtype in estimator.derivatives.keys():
-                derivative = estimator.get_derivative(dtype, rte_solver.wavelength)       
+                derivative = estimator.get_derivative(dtype, rte_solver.wavelength)
                 resampled_derivative = derivative.resample(self.grid)
                 dext[:, i] = resampled_derivative.extinction.data.ravel()
                 dalb[:, i] = resampled_derivative.albedo.data.ravel()
@@ -919,13 +920,13 @@ class MediumEstimator(shdom.Medium):
                 if i == 0:
                     leg_table = copy.deepcopy(resampled_derivative.phase.legendre_table)
                 else:
-                    leg_table.append(copy.deepcopy(resampled_derivative.phase.legendre_table))                
+                    leg_table.append(copy.deepcopy(resampled_derivative.phase.legendre_table))
                 i += 1
-                
+
         leg_table.pad(rte_solver._nleg)
         dleg = leg_table.data
         dnumphase = leg_table.numphase
-        
+
         # zero the first term of the first component of the phase function
         # gradient. Pre-scale the legendre moments by 1/(2*l+1) which
         # is done in the forward problem in TRILIN_INTERP_PROP
@@ -936,7 +937,7 @@ class MediumEstimator(shdom.Medium):
         elif dleg.ndim ==3:
             dleg[0,0,:] = 0.0
             dleg /= scaling_factor[np.newaxis,:,np.newaxis]
-        
+
         dphasetab = core.precompute_phase_check_grad(
                                                      negcheck=False,
                                                      nstphase=rte_solver._nstphase,
@@ -956,7 +957,7 @@ class MediumEstimator(shdom.Medium):
         """
         Compute the derivative with respect to the direct solar beam. This is a ray for every point in 3D space.
         Internally this method stores for every point the indices and paths traversed by the direct solar beam to reach it.
-        
+
         Parameters
         ----------
         rte_solver: shdom.RteSolver
@@ -970,7 +971,7 @@ class MediumEstimator(shdom.Medium):
             rte_solver = rte_solver[0]
         else:
             uniformzlev = rte_solver._uniformzlev
-            
+
         self._direct_derivative_path, self._direct_derivative_ptr = \
             core.make_direct_derivative(
                 npts=rte_solver._npts,
@@ -1001,8 +1002,8 @@ class MediumEstimator(shdom.Medium):
                 uniformzlev=uniformzlev,
                 delxd=rte_solver._delxd,
                 delyd=rte_solver._delyd
-            )       
-        
+            )
+
     def grad_normcorr(self, rte_solver, projection, pixels, sigma):
         """
         The core normalized correlation gradient method.
@@ -1042,16 +1043,16 @@ class MediumEstimator(shdom.Medium):
             weights=self._stokes_weights[:rte_solver._nstokes],
             exact_single_scatter=self._exact_single_scatter,
             nstphase=rte_solver._nstphase,
-            dpath=self._direct_derivative_path, 
+            dpath=self._direct_derivative_path,
             dptr=self._direct_derivative_ptr,
             npx=rte_solver._pa.npx,
             npy=rte_solver._pa.npy,
             npz=rte_solver._pa.npz,
             delx=rte_solver._pa.delx,
-            dely=rte_solver._pa.dely,                
+            dely=rte_solver._pa.dely,
             xstart=rte_solver._pa.xstart,
             ystart=rte_solver._pa.ystart,
-            zlevels=rte_solver._pa.zlevels, 
+            zlevels=rte_solver._pa.zlevels,
             extdirp=rte_solver._pa.extdirp,
             uniformzlev=rte_solver._uniformzlev,
             partder=self.unknown_scatterers_indices,
@@ -1071,7 +1072,7 @@ class MediumEstimator(shdom.Medium):
             ny=rte_solver._ny,
             nz=rte_solver._nz,
             bcflag=rte_solver._bcflag,
-            ipflag=rte_solver._ipflag,   
+            ipflag=rte_solver._ipflag,
             npts=rte_solver._npts,
             nbpts=rte_solver._nbpts,
             ncells=rte_solver._ncells,
@@ -1090,7 +1091,7 @@ class MediumEstimator(shdom.Medium):
             nsfcpar=rte_solver._nsfcpar,
             gridptr=rte_solver._gridptr,
             neighptr=rte_solver._neighptr,
-            treeptr=rte_solver._treeptr,             
+            treeptr=rte_solver._treeptr,
             shptr=rte_solver._shptr,
             bcptr=rte_solver._bcptr,
             cellflags=rte_solver._cellflags,
@@ -1124,7 +1125,7 @@ class MediumEstimator(shdom.Medium):
             camz=projection.z,
             cammu=projection.mu,
             camphi=projection.phi,
-            npix=total_pix,       
+            npix=total_pix,
             srctype=rte_solver._srctype,
             sfctype=rte_solver._sfctype,
             units=rte_solver._units,
@@ -1266,7 +1267,7 @@ class MediumEstimator(shdom.Medium):
         """
         Compute the gradient with respect to the current state.
         If n_jobs>1 than parallel gradient computation is used with pixels are distributed amongst all workers
-        
+
         Parameters
         ----------
         rte_solvers: shdom.RteSolverArray
@@ -1294,10 +1295,13 @@ class MediumEstimator(shdom.Medium):
         projection = measurements.camera.projection
         sensor = measurements.camera.sensor
         pixels = measurements.pixels
-        uncertainties = measurements.uncertainties
-
+        if measurements.uncertainties is None:
+            uncertainties = np.repeat(np.ones(pixels.shape,order='F',dtype=np.float32)[np.newaxis,:]*1.0,rte_solver._nstokes,axis=0)
+        else:
+            uncertainties = measurements.uncertainties
+        #measurements.uncertainties*pixels*0.02
         # Sequential or parallel processing using multithreading (threadsafe Fortran)
-        if n_jobs > 1:           
+        if n_jobs > 1:
             output = Parallel(n_jobs=n_jobs, backend="threading", verbose=0)(
                 delayed(self.core_grad, check_pickle=False)(
                     rte_solver=rte_solvers[channel],
@@ -1314,9 +1318,16 @@ class MediumEstimator(shdom.Medium):
                 self.core_grad(rte_solvers[channel], projection, pixels[..., channel], uncertainties[...,channel])
                 for channel in range(self.num_wavelengths)
             ]
-        
+
         # Sum over all the losses of the different channels
         loss, gradient, images = self.output_transform(output, projection, sensor, self.num_wavelengths)
+        import pylab as py
+        for image in images:
+            py.figure()
+            py.imshow(image[0])
+            py.colorb
+            print(image.shape)
+            py.show()
 
         gradient = gradient.reshape(self.grid.shape + tuple([self.num_derivatives]))
         gradient = np.split(gradient, self.num_estimators, axis=-1)
@@ -1332,7 +1343,7 @@ class MediumEstimator(shdom.Medium):
 
     @property
     def num_parameters(self):
-        return self._num_parameters  
+        return self._num_parameters
 
     @property
     def unknown_scatterers_indices(self):
@@ -1340,7 +1351,7 @@ class MediumEstimator(shdom.Medium):
 
     @property
     def num_derivatives(self):
-        return self._num_derivatives 
+        return self._num_derivatives
 
     @property
     def num_estimators(self):
@@ -1361,7 +1372,7 @@ class SummaryWriter(object):
     This wrapper enables logging of images, error measures and loss with pre-determined temporal intervals into tensorboard.
 
     To view the summary of this run (and comparisons to all subdirectories):
-        tensorboard --logdir LOGDIR 
+        tensorboard --logdir LOGDIR
 
     Parameters
     ----------
@@ -1404,7 +1415,7 @@ class SummaryWriter(object):
     def monitor_loss(self, ckpt_period=-1):
         """
         Monitor the loss.
-        
+
         Parameters
         ----------
         ckpt_period: float
@@ -1420,7 +1431,7 @@ class SummaryWriter(object):
     def save_checkpoints(self, ckpt_period=-1):
         """
         Save a checkpoint of the Optimizer
-        
+
         Parameters
         ----------
         ckpt_period: float
@@ -1450,7 +1461,7 @@ class SummaryWriter(object):
 
     def monitor_shdom_iterations(self, ckpt_period=-1):
         """Monitor the number of SHDOM forward iterations.
-        
+
         Parameters
         ----------
         ckpt_period: float
@@ -1467,7 +1478,7 @@ class SummaryWriter(object):
         """
         Monitor relative and overall mass error (epsilon, delta) as defined at:
           Amit Aides et al, "Multi sky-view 3D aerosol distribution recovery".
-        
+
         Parameters
         ----------
         estimator_name: str
@@ -1572,7 +1583,7 @@ class SummaryWriter(object):
     def monitor_images(self, measurements, ckpt_period=-1):
         """
         Monitor the synthetic images and compare to the acquired images
-    
+
         Parameters
         ----------
         measurements: shdom.Measurements
@@ -1599,6 +1610,21 @@ class SummaryWriter(object):
         acq_titles = ['Acquired/view{}'.format(view) for view in range(num_images)]
         self.write_image_list(0, acquired_images, acq_titles, vmax=kwargs['vmax'])
 
+    def monitor_power_spectrum(self, estimator_name, ground_truth, ckpt_period=-1):
+        """
+        TODO
+        """
+        kwargs = {
+            'ckpt_period': ckpt_period,
+            'ckpt_time': time.time(),
+            'title': '{}/isotropic_power_spectrum/{}',
+        }
+        self.add_callback_fn(self.isotropic_power_spectrum_cbfn, kwargs)
+        if hasattr(self, '_ground_truth'):
+            self._ground_truth[estimator_name] = ground_truth
+        else:
+            self._ground_truth = OrderedDict({estimator_name: ground_truth})
+
     def save_ckpt_cbfn(self, kwargs=None):
         """
         Callback function that saves checkpoints .
@@ -1611,7 +1637,7 @@ class SummaryWriter(object):
         timestr = time.strftime("%H%M%S")
         path = os.path.join(self.tf_writer.log_dir,  timestr + '.ckpt')
         self.optimizer.save_state(path)
-        
+
     def loss_cbfn(self, kwargs):
         """
         Callback function that is called (every optimizer iteration) for loss monitoring.
@@ -1648,7 +1674,7 @@ class SummaryWriter(object):
             keyword arguments
         """
         self.write_image_list(self.optimizer.iteration, self.optimizer.images, kwargs['title'], kwargs['vmax'])
-    
+
     def shdom_iterations_cbfn(self, kwargs):
         """
         Callback function that is called (every optimizer iteration) for shdom iteration monitoring.
@@ -1659,7 +1685,7 @@ class SummaryWriter(object):
             keyword arguments
         """
         self.tf_writer.add_scalar(kwargs['title'], self.optimizer.rte_solver.num_iterations, self.optimizer.iteration)
-        
+
     def scatterer_error_cbfn(self, kwargs):
         """
         Callback function for monitoring parameter error measures.
@@ -1671,15 +1697,28 @@ class SummaryWriter(object):
         """
         for scatterer_name, gt_scatterer in self._ground_truth.items():
             est_scatterer = self.optimizer.medium.get_scatterer(scatterer_name)
+
+            common_grid = est_scatterer.grid + gt_scatterer.grid
+            a = est_scatterer.get_mask(threshold=0.0).resample(common_grid,method='nearest')
+            b = gt_scatterer.get_mask(threshold=0.0).resample(common_grid,method='nearest')
+            common_mask = shdom.GridData(data=np.bitwise_or(a.data,b.data),grid=common_grid)
+
             for parameter_name, parameter in est_scatterer.estimators.items():
                 ground_truth = getattr(gt_scatterer, parameter_name)
-                est_param = (parameter.resample(ground_truth.grid)).data.ravel()
-                gt_param = ground_truth.data.ravel()
+
+                est_parameter_masked = copy.copy(parameter).resample(common_grid)
+                est_parameter_masked.apply_mask(common_mask)
+                est_param = est_parameter_masked.data.ravel()
+
+                gt_param_masked = copy.copy(ground_truth).resample(common_grid)
+                gt_param_masked.apply_mask(common_mask)
+                gt_param = gt_param_masked.data.ravel()
+
                 delta = (np.linalg.norm(est_param, 1) - np.linalg.norm(gt_param, 1)) / np.linalg.norm(gt_param, 1)
                 epsilon = np.linalg.norm((est_param - gt_param), 1) / np.linalg.norm(gt_param,1)
                 self.tf_writer.add_scalar(kwargs['title'][0].format(scatterer_name, parameter_name), delta, self.optimizer.iteration)
                 self.tf_writer.add_scalar(kwargs['title'][1].format(scatterer_name, parameter_name), epsilon, self.optimizer.iteration)
-        
+
     def domain_mean_cbfn(self, kwargs):
         """
         Callback function for monitoring domain averages of parameters.
@@ -1720,30 +1759,35 @@ class SummaryWriter(object):
         """
         for scatterer_name, gt_scatterer in self._ground_truth.items():
             est_scatterer = self.optimizer.medium.get_scatterer(scatterer_name)
+
+            common_grid = est_scatterer.grid + gt_scatterer.grid
+            a = est_scatterer.get_mask(threshold=0.0).resample(common_grid,method='nearest')
+            b = gt_scatterer.get_mask(threshold=0.0).resample(common_grid,method='nearest')
+            common_mask = shdom.GridData(data=np.bitwise_or(a.data,b.data),grid=common_grid)
+
             for parameter_name, parameter in est_scatterer.estimators.items():
                 ground_truth = getattr(gt_scatterer, parameter_name)
 
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", category=RuntimeWarning)
-                    if parameter.type == 'Homogeneous' or parameter.type == '1D':
-                        est_param = parameter.data
-                    else:
-                        est_param = copy.copy((parameter.resample(ground_truth.grid)).data)
-                        est_param[parameter.mask.data == False] = np.nan
-                        est_param = np.nan_to_num(np.nanmean(est_param, axis=(0, 1)))
 
-                    if ground_truth.type == 'Homogeneous' or ground_truth.type == '1D':
-                        gt_param = ground_truth.data
-                    else:
-                        gt_param = copy.copy(ground_truth.data)
-                        if kwargs['mask']:
-                            gt_param[kwargs['mask'].data == False] = np.nan
-                        gt_param = np.nan_to_num(np.nanmean(gt_param, axis=(0, 1)))
+
+                    est_parameter_masked = copy.deepcopy(parameter).resample(common_grid)
+                    est_parameter_masked.apply_mask(common_mask)
+                    est_param = est_parameter_masked.data
+                    est_param[np.bitwise_not(common_mask.data)] = np.nan
+                    est_param = np.nan_to_num(np.nanmean(est_param,axis=(0,1)))
+
+                    gt_param_masked = copy.deepcopy(ground_truth).resample(common_grid)
+                    gt_param_masked.apply_mask(common_mask)
+                    gt_param = gt_param_masked.data
+                    gt_param[np.bitwise_not(common_mask.data)] = np.nan
+                    gt_param = np.nan_to_num(np.nanmean(gt_param,axis=(0,1)))
 
                 fig, ax = plt.subplots()
                 ax.set_title('{} {}'.format(scatterer_name, parameter_name), fontsize=16)
-                ax.plot(est_param, parameter.grid.z, label='Estimated')
-                ax.plot(gt_param, ground_truth.grid.z, label='True')
+                ax.plot(est_param, est_scatterer.grid.z, label='Estimated')
+                ax.plot(gt_param, est_scatterer.grid.z, label='True')
                 ax.legend()
                 ax.set_ylabel('Altitude [km]', fontsize=14)
                 self.tf_writer.add_figure(
@@ -1762,15 +1806,28 @@ class SummaryWriter(object):
             keyword arguments
         """
         for scatterer_name, gt_scatterer in self._ground_truth.items():
+
             est_scatterer = self.optimizer.medium.get_scatterer(scatterer_name)
+            common_grid = est_scatterer.grid + gt_scatterer.grid
+            a = est_scatterer.get_mask(threshold=0.0).resample(common_grid,method='nearest')
+            b = gt_scatterer.get_mask(threshold=0.0).resample(common_grid,method='nearest')
+            common_mask = shdom.GridData(data=np.bitwise_or(a.data,b.data),grid=common_grid)
+
             parameters = est_scatterer.estimators.keys() if kwargs['parameters']=='all' else kwargs['parameters']
             for parameter_name in parameters:
                 if parameter_name not in est_scatterer.estimators.keys():
                     continue
                 parameter = est_scatterer.estimators[parameter_name]
-                est_param = parameter.data.ravel()
                 ground_truth = getattr(gt_scatterer, parameter_name)
-                gt_param = ground_truth.data.ravel()
+
+                est_parameter_masked = copy.copy(parameter).resample(common_grid)
+                est_parameter_masked.apply_mask(common_mask)
+                est_param = est_parameter_masked.data.ravel()
+
+                gt_param_masked = copy.copy(ground_truth).resample(common_grid)
+                gt_param_masked.apply_mask(common_mask)
+                gt_param = gt_param_masked.data.ravel()
+
                 rho = np.corrcoef(est_param, gt_param)[1, 0]
                 num_params = gt_param.size
                 rand_ind = np.unique(np.random.randint(0, num_params, int(kwargs['percent'] * num_params)))
@@ -1791,10 +1848,59 @@ class SummaryWriter(object):
                     global_step=self.optimizer.iteration
                 )
 
+    def isotropic_power_spectrum_cbfn(self, kwargs):
+        """
+        TODO
+        """
+        for scatterer_name, gt_scatterer in self._ground_truth.items():
+
+            est_scatterer = self.optimizer.medium.get_scatterer(scatterer_name)
+            grid = est_scatterer.grid + gt_scatterer.grid
+            a = est_scatterer.get_mask(threshold=0.0).resample(grid,method='nearest')
+            b = gt_scatterer.get_mask(threshold=0.0).resample(grid,method='nearest')
+            common_mask = shdom.GridData(data=np.bitwise_or(a.data,b.data),grid=grid)
+
+            x,y,z = np.fft.fftfreq(grid.nx,d=grid.x[1]-grid.x[0]),np.fft.fftfreq(grid.ny,d=grid.y[1]-grid.y[0]), \
+                np.fft.fftfreq(grid.nz,d=grid.z[1]-grid.z[0])
+            X,Y,Z = np.meshgrid(np.fft.fftshift(y),np.fft.fftshift(x),np.fft.fftshift(z))
+            isotropic_wavenumber = np.sqrt(X**2+Y**2+Z**2)
+            nyquist_mask = (np.abs(X)<0.5/(grid.x[1]-grid.x[0])) & (np.abs(Y)<0.5/(grid.y[1]-grid.y[0])) & (np.abs(Z)<0.5/(grid.z[1]-grid.z[0]))
+            bins = stats.mstats.mquantiles(isotropic_wavenumber[nyquist_mask],[i/20 for i in range(21)])
+            bin_centres = np.array([(bins[i+1]+bins[i])/2.0 for i in range(len(bins)-1)])
+
+
+            for parameter_name, parameter in est_scatterer.estimators.items():
+                ground_truth = getattr(gt_scatterer, parameter_name)
+
+                grid_gt = copy.copy(ground_truth).resample(grid)
+                grid_gt.apply_mask(common_mask)
+                grid_parameter = copy.copy(parameter).resample(grid)
+                grid_parameter.apply_mask(common_mask)
+
+                gt_spec = np.abs(np.fft.fftshift(np.fft.fftn((grid_gt.data - grid_gt.data.mean())/grid_gt.data.std())))**2
+                param_spec = np.abs(np.fft.fftshift(np.fft.fftn((grid_parameter.data - grid_parameter.data.mean())/grid_parameter.data.std())))**2
+
+                gt_resampled, bin_edge, number = stats.binned_statistic_dd(isotropic_wavenumber[nyquist_mask], gt_spec[nyquist_mask],
+                                bins=[bins,],statistic='mean')
+                param_resampled, bin_edge, number = stats.binned_statistic_dd(isotropic_wavenumber[nyquist_mask], param_spec[nyquist_mask],
+                                bins=[bins,],statistic='mean')
+
+                fig, ax = plt.subplots()
+                ax.set_title(r'{} {}: Isotropic power spectrum'.format(scatterer_name, parameter_name ),
+                             fontsize=16)
+                ax.loglog(bin_centres, gt_resampled, '-o',label='True')
+                ax.loglog(bin_centres, param_resampled, 'x-', label='Estimated')
+                ax.legend()
+                self.tf_writer.add_figure(
+                    tag=kwargs['title'].format(scatterer_name, parameter_name),
+                    figure=fig,
+                    global_step=self.optimizer.iteration
+                )
+
     def write_image_list(self, global_step, images, titles, vmax=None):
         """
         Write an image list to tensorboardX.
-    
+
         Parameters
         ----------
         global_step: integer,
@@ -1807,39 +1913,26 @@ class SummaryWriter(object):
             List or a single of scaling factor for the image contrast equalization
         """
         if np.isscalar(vmax) or vmax is None:
-            vmax = [vmax]*len(images)        
-    
+            vmax = [vmax]*len(images)
+
         assert len(images) == len(titles), 'len(images) != len(titles): {} != {}'.format(len(images), len(titles))
         assert len(vmax) == len(titles), 'len(vmax) != len(images): {} != {}'.format(len(vmax), len(titles))
-    
+
         for image, title, vm in zip(images, titles, vmax):
+            if (image.shape[0] in (1,3,4)): #polarized
+                #there is some overlap in this condition with a multispectral unpolarized case
+                # with a very small number of pixels in the first dimension.
+                image = image[0]
 
-            # for polarization
-            if image.ndim == 4:
-                stoke_title = ['V', 'U', 'Q', 'I']
-                for v, stokes in zip(vm, image):
-                    self.tf_writer.add_images(
-                        tag=title + '/' + stoke_title.pop(),
-                        img_tensor=(np.repeat(np.expand_dims(stokes, 2), 3, axis=2) / v),
-                        dataformats='HWCN',
-                        global_step=global_step
-                    )
+            if image.ndim==3: # polychromatic
+                img_tensor = image[:,:,:]/ image.max()
 
-            # for polychromatic
-            elif image.ndim == 3:
-                self.tf_writer.add_images(
-                    tag=title, 
-                    img_tensor=(np.repeat(np.expand_dims(image, 2), 3, axis=2) / vm),
-                    dataformats='HWCN',
-                    global_step=global_step
-                )
-            # for monochromatic
             else:
-                self.tf_writer.add_image(
-                    tag=title, 
-                    img_tensor=(image / vm),
-                    dataformats='HW',
-                    global_step=global_step
+                img_tensor = image[:,:,np.newaxis] / image.max()
+            self.tf_writer.add_images(tag=title,
+                img_tensor=img_tensor,
+                dataformats='HWN',
+                global_step=global_step
                 )
 
     @property
@@ -1857,27 +1950,27 @@ class SummaryWriter(object):
     @property
     def optimizer(self):
         return self._optimizer
-    
+
     @property
     def tf_writer(self):
         return self._tf_writer
-    
+
 
 class SpaceCarver(object):
     """
     SpaceCarver object recovers the convex hull of the cloud based on multi-view sensor geometry and pixel segmentation.
-    
+
     Parameters
     ----------
     measurements: shdom.Measurements
         A measurements object storing the images and sensor geometry
     """
     def __init__(self, measurements):
-    
+
         self._rte_solver = shdom.RteSolver(shdom.SceneParameters(), shdom.NumericalParameters())
-        
+
         self._measurements = measurements
-        
+
         if isinstance(measurements.camera.projection, shdom.MultiViewProjection):
             self._projections = measurements.camera.projection.projection_list
         else:
@@ -1886,9 +1979,9 @@ class SpaceCarver(object):
 
     def carve(self, grid, thresholds, agreement=0.75):
         """
-        Carves out the cloud geometry on the grid. 
+        Carves out the cloud geometry on the grid.
         A threshold on radiances is used to produce a pixel mask and preform space carving.
-        
+
         Parameters
         ----------
         grid: shdom.Grid
@@ -1897,7 +1990,7 @@ class SpaceCarver(object):
             Either a constant threshold or a list of len(thresholds)=num_projections is used as for masking.
         agreement: float
             the precentage of pixels that should agree on a cloudy voxels to set it to True in the mask
-        
+
         Returns
         -------
         mask: shdom.GridData object
@@ -1909,14 +2002,14 @@ class SpaceCarver(object):
         """
         self._rte_solver.set_grid(grid)
         volume = np.zeros((grid.nx, grid.ny, grid.nz))
-        
+
         thresholds = np.array(thresholds)
         if thresholds.size == 1:
             thresholds = np.repeat(thresholds, len(self._images))
         else:
             assert thresholds.size == len(self._images), 'thresholds (len={}) should be of the same' \
                    'length as the number of images (len={})'.format(thresholds.size,  len(self._images))
-            
+
         for projection, image, threshold in zip(self._projections, self._images, thresholds):
 
             if self._measurements.num_channels > 1:
@@ -1925,9 +2018,9 @@ class SpaceCarver(object):
                 image = image[0]
 
             image_mask = image > threshold
-                
+
             projection = projection[image_mask.ravel(order='F') == 1]
-            
+
             carved_volume = core.space_carve(
                 nx=grid.nx,
                 ny=grid.ny,
@@ -1952,9 +2045,9 @@ class SpaceCarver(object):
                 npix=projection.npix,
             )
             volume += carved_volume.reshape(grid.nx, grid.ny, grid.nz)
-        
+
         volume = volume * 1.0 / len(self._images)
-        mask = GridData(grid, volume > agreement) 
+        mask = GridData(grid, volume > agreement)
         return mask
 
     @property
@@ -2014,7 +2107,7 @@ class LocalOptimizer(object):
     To run the optimization the following methods should be called:
        [required] optimizer.set_measurements()
        [required] optimizer.set_rte_solver()
-       [required] optimizer.set_medium_estimator() 
+       [required] optimizer.set_medium_estimator()
        [optional] optimizer.set_writer()
 
     Parameters
@@ -2049,22 +2142,22 @@ class LocalOptimizer(object):
             raise NotImplementedError('Optimization method [{}] not implemented'.format(method))
         self._method = method
         self._options = options
-        
+
     def set_measurements(self, measurements):
         """
         Set the measurements (data-fit constraints)
-        
+
         Parameters
         ----------
         measurements: shdom.Measurements
             A measurements object storing the acquired images and sensor geometry
         """
         self._measurements = measurements
-    
+
     def set_medium_estimator(self, medium_estimator):
         """
         Set the MediumEstimator for the optimizer.
-        
+
         Parameters
         ----------
         medium_estimator: shdom.MediumEstimator
@@ -2075,7 +2168,7 @@ class LocalOptimizer(object):
     def set_rte_solver(self, rte_solver):
         """
         Set the RteSolver for the SHDOM iterations.
-        
+
         Parameters
         ----------
         rte_solver: shdom.RteSolver
@@ -2089,7 +2182,7 @@ class LocalOptimizer(object):
     def set_writer(self, writer):
         """
         Set a log writer to upload summaries into tensorboard.
-        
+
         Parameters
         ----------
         writer: shdom.SummaryWriter
@@ -2097,8 +2190,8 @@ class LocalOptimizer(object):
         """
         self._writer = writer
         if writer is not None:
-            self._writer.attach_optimizer(self)        
-        
+            self._writer.attach_optimizer(self)
+
     def objective_fun(self, state):
         """
         The objective function (cost) and gradient at the current state.
@@ -2125,13 +2218,14 @@ class LocalOptimizer(object):
             measurements=self.measurements,
             n_jobs=self.n_jobs
         )
+        print(state,gradient,loss)
         self._loss = loss
         self._images = images
         return loss, gradient
-            
+
     def callback(self, state):
         """
-        The callback function invokes the callbacks defined by the writer (if any). 
+        The callback function invokes the callbacks defined by the writer (if any).
         Additionally it keeps track of the iteration number.
 
         Parameters
@@ -2140,7 +2234,7 @@ class LocalOptimizer(object):
             The current state vector
         """
         self._iteration += 1
-        
+
         # Writer callback functions
         if self.writer is not None:
             for callbackfn, kwargs in zip(self.writer.callback_fns, self.writer.kwargs):
@@ -2164,7 +2258,7 @@ class LocalOptimizer(object):
                           options=self.options,
                           callback=self.callback)
         return result
-    
+
     def init_optimizer(self):
         """
         Initialize the optimizer.
@@ -2182,7 +2276,7 @@ class LocalOptimizer(object):
         self.rte_solver.init_solution()
         self.medium.compute_direct_derivative(self.rte_solver)
         self._num_parameters = self.medium.num_parameters
-        
+
     def get_bounds(self):
         """
         Retrieve the bounds for every parameter from the MediumEstimator (used by scipy.minimize)
@@ -2193,7 +2287,7 @@ class LocalOptimizer(object):
             The lower and upper bound of each parameter
         """
         return self.medium.get_bounds()
-    
+
     def get_state(self):
         """
         Retrieve MediumEstimator state
@@ -2204,7 +2298,7 @@ class LocalOptimizer(object):
             The state of the medium estimator
         """
         return self.medium.get_state()
-    
+
     def set_state(self, state):
         """
         Set the state of the optimization. This means:
@@ -2223,15 +2317,15 @@ class LocalOptimizer(object):
         if self._init_solution is False:
             self.rte_solver.make_direct()
         self.rte_solver.solve(maxiter=100, init_solution=self._init_solution, verbose=False)
-        
+
     def save_state(self, path):
         """
         Save Optimizer state to file.
-        
+
         Parameters
         ----------
         path: str,
-            Full path to file. 
+            Full path to file.
         """
         file = open(path, 'wb')
         file.write(pickle.dumps(self.get_state(), -1))
@@ -2240,15 +2334,15 @@ class LocalOptimizer(object):
     def load_state(self, path):
         """
         Load Optimizer from file.
-        
+
         Parameters
         ----------
         path: str,
-            Full path to file. 
+            Full path to file.
         """
         file = open(path,'rb')
         data = file.read()
-        file.close()        
+        file.close()
         state = pickle.loads(data)
         self.set_state(state)
 
@@ -2263,23 +2357,23 @@ class LocalOptimizer(object):
     @property
     def rte_solver(self):
         return self._rte_solver
-    
+
     @property
     def medium(self):
-        return self._medium    
-    
+        return self._medium
+
     @property
     def measurements(self):
         return self._measurements
-    
+
     @property
     def num_parameters(self):
         return self._num_parameters
 
     @property
     def writer(self):
-        return self._writer      
-    
+        return self._writer
+
     @property
     def iteration(self):
         return self._iteration
@@ -2290,8 +2384,8 @@ class LocalOptimizer(object):
 
     @property
     def loss(self):
-        return self._loss        
-    
+        return self._loss
+
     @property
     def images(self):
         return self._images
