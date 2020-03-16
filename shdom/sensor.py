@@ -171,7 +171,7 @@ class RadianceSensor(Sensor):
         # Sequential rendering
         else:
             radiance = [super(RadianceSensor, self).render(rte_solver, projection) for rte_solver in rte_solvers]
-        #print(radiance[0].shape)
+
         radiance = np.concatenate(radiance[0])
         images = self.make_images(radiance, projection, num_channels)
         return images
@@ -219,7 +219,6 @@ class RadianceSensor(Sensor):
             if multichannel:
                 new_shape.append(num_channels)
             radiance = radiance.reshape(new_shape, order='F')
-        import pylab as py
         
         return radiance
 

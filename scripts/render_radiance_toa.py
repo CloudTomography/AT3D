@@ -257,13 +257,13 @@ class RenderScript(object):
             adapt_grid_factor=self.args.adapt_grid_factor,
             solution_accuracy=self.args.solution_accuracy
         )
-        for wavelength, solar_flux in zip(medium.wavelength, solar_fluxes):
+        for wavelength, solar_flux in zip(np.atleast_1d(medium.wavelength), solar_fluxes):
             scene_params = shdom.SceneParameters(
                 wavelength=wavelength,
                 source=shdom.SolarSource(self.args.solar_azimuth, self.args.solar_zenith, solar_flux),
                 surface=shdom.LambertianSurface(albedo=self.args.surface_albedo)
             )
-            rte_solver = shdom.RteSolver(scene_params, numerical_params, num_stokes=self.num_stokes)
+            rte_solver = shdom.RteSolver(scene_params, numerical_params, num_stokes=self.args.num_stokes)#self.args.num_stokes)
             rte_solver.set_medium(medium)
             rte_solvers.add_solver(rte_solver)
         return rte_solvers
@@ -298,6 +298,17 @@ class RenderScript(object):
         camera = shdom.Camera(self.sensor, projection)
         images = camera.render(rte_solver, self.args.n_jobs)
         measurements = shdom.Measurements(camera, images=images, wavelength=rte_solver.wavelength)
+
+        for i,image in enumerate(images):
+            if image.shape[0] in (1,3,4): #test for polarization
+                maxes = np.max(image[0],axis=(0,1))
+            else:
+                maxes=  np.max(image,axis=(0,1))
+            for j,channel in enumerate(np.atleast_1d(maxes)):
+                if channel == 0:
+                    print('Image {}, channel {} has a maximum Radiance of {}'.format(i,j,channel),
+                    'There is likely a lack of convergence in the forward model solution.')
+
         return measurements
 
     def main(self):
@@ -309,7 +320,12 @@ class RenderScript(object):
         rte_solver = self.get_solver(medium)
         rte_solver.solve(maxiter=100)
         measurements = self.render(medium.get_scatterer('cloud').bounding_box, rte_solver)
-
+        import pylab as py
+        for image in measurements.images:
+            py.figure()
+            py.imshow(image[0])
+            py.colorbar()
+            py.show()
         # Save measurements, medium and solver parameters
         shdom.save_forward_model(self.args.output_dir, medium, rte_solver, measurements)
 

@@ -2328,6 +2328,8 @@ class LocalOptimizer(object):
             Full path to file.
         """
         file = open(path, 'wb')
+        self.medium
+        
         file.write(pickle.dumps(self.get_state(), -1))
         file.close()
 
