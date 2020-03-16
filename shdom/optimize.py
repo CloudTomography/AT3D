@@ -1259,7 +1259,7 @@ class MediumEstimator(shdom.Medium):
             measurements=pixels,
             rshptr=rte_solver._rshptr,
             radiance=rte_solver._radiance,
-            total_ext=rte_solver._total_ext[:rte_solver._npts]
+            total_ext=rte_solver._total_ext[:rte_solver._npts],
         )
         return gradient, loss, images
 
@@ -1321,13 +1321,13 @@ class MediumEstimator(shdom.Medium):
 
         # Sum over all the losses of the different channels
         loss, gradient, images = self.output_transform(output, projection, sensor, self.num_wavelengths)
-        import pylab as py
-        for image in images:
-            py.figure()
-            py.imshow(image[0])
-            py.colorb
-            print(image.shape)
-            py.show()
+        # import pylab as py
+        # for image in images:
+        #     py.figure()
+        #     py.imshow(image[0])
+        #     py.colorb
+        #     print(image.shape)
+        #     py.show()
 
         gradient = gradient.reshape(self.grid.shape + tuple([self.num_derivatives]))
         gradient = np.split(gradient, self.num_estimators, axis=-1)
@@ -2329,7 +2329,7 @@ class LocalOptimizer(object):
         """
         file = open(path, 'wb')
         self.medium
-        
+
         file.write(pickle.dumps(self.get_state(), -1))
         file.close()
 
