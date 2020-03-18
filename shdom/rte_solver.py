@@ -614,9 +614,9 @@ class RteSolver(object):
 
         # Set up base grid point actual size (NX1xNY1xNZ)
         self._nx1, self._ny1 = self._nx+1, self._ny+1
-        if self._bcflag & 5:
+        if self._bcflag & 5 or ibits(self._ipflag,0,1):
             self._nx1 -= 1
-        if self._bcflag & 7:
+        if self._bcflag & 7 or ibits(self._ipflag,1,1):
             self._ny1 -= 1
         self._nbpts = self._nx * self._ny * self._nz
 

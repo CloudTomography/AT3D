@@ -320,12 +320,12 @@ class RenderScript(object):
         rte_solver = self.get_solver(medium)
         rte_solver.solve(maxiter=100)
         measurements = self.render(medium.get_scatterer('cloud').bounding_box, rte_solver)
-        import pylab as py
-        for image in measurements.images:
-            py.figure()
-            py.imshow(image[0])
-            py.colorbar()
-            py.show()
+        # import pylab as py
+        # for image in measurements.images:
+        #     py.figure()
+        #     py.imshow(image[0])
+        #     py.colorbar()
+        #     py.show()
         # Save measurements, medium and solver parameters
         shdom.save_forward_model(self.args.output_dir, medium, rte_solver, measurements)
 

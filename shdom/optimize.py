@@ -15,6 +15,8 @@ import tensorboardX as tb
 import matplotlib.pyplot as plt
 import warnings
 from scipy import stats
+from scipy import sparse
+import sparsesvd
 
 class OpticalScattererDerivative(shdom.OpticalScatterer):
     """
@@ -791,7 +793,10 @@ class MediumEstimator(shdom.Medium):
                 images = sensor.make_images(np.concatenate(list(map(lambda x: x[2], output)), axis=-1),
                                             projection,
                                             num_wavelengths)
-                return loss, gradient, images
+                jacobian = np.concatenate(list(map(lambda x: x[3], output)),axis=-1)
+                jacobian_ptr = np.concatenate(list(map(lambda x: x[4], output)), axis=-1)
+                counter = np.concatenate(list(map(lambda x: x[5], output)),axis=-1)
+                return loss, gradient, images, jacobian, jacobian_ptr, counter
 
         elif loss_type == 'normcorr':
             core_grad = self.grad_normcorr
@@ -1136,7 +1141,8 @@ class MediumEstimator(shdom.Medium):
         )
         return grad1, grad2, norm1, norm2, loss, images
 
-    def grad_l2(self, rte_solver, projection, pixels, uncertainties):
+    def grad_l2(self, rte_solver, projection, pixels, uncertainties,
+                jacobian_flag=True):
         """
         The core l2 gradient method.
 
@@ -1165,7 +1171,17 @@ class MediumEstimator(shdom.Medium):
         else:
             total_pix = projection.npix
 
-        gradient, loss, images = core.gradient_l2(
+        if jacobian_flag:
+            #maximum size is hard coded - should be roughly an order of magnitude
+            #larger than the maximum necssary size but is possible source of seg faults.
+            largest_dim = int(100*np.sqrt(rte_solver._nx**2+rte_solver._ny**2+rte_solver._nz**2))
+            jacobian = np.zeros((self.num_derivatives,total_pix*largest_dim),order='F',dtype=np.float32)
+            jacobian_ptr = np.zeros((2,total_pix*largest_dim),order='F',dtype=np.int32)
+        else:
+            jacobian = np.zeros((self.num_derivatives,1),order='F',dtype=np.float32)
+            jacobian_ptr = np.zeros((2,1),order='F',dtype=np.int32)
+
+        gradient, loss, images, jacobian, jacobian_ptr, counter = core.gradient_l2(
             uncertainties=uncertainties,
             weights=self._stokes_weights[:rte_solver._nstokes],
             exact_single_scatter=self._exact_single_scatter,
@@ -1260,10 +1276,15 @@ class MediumEstimator(shdom.Medium):
             rshptr=rte_solver._rshptr,
             radiance=rte_solver._radiance,
             total_ext=rte_solver._total_ext[:rte_solver._npts],
+            jacobian=jacobian,
+            jacobianptr=jacobian_ptr,
+            makejacobian=jacobian_flag
         )
-        return gradient, loss, images
+        jacobian = jacobian[:,:counter-1]
+        jacobian_ptr = jacobian_ptr[:,:counter-1]
+        return gradient, loss, images, jacobian, jacobian_ptr, np.array([counter-1])
 
-    def compute_gradient(self, rte_solvers, measurements, n_jobs):
+    def compute_gradient(self, rte_solvers, measurements, n_jobs, jacobian_flag=False):
         """
         Compute the gradient with respect to the current state.
         If n_jobs>1 than parallel gradient computation is used with pixels are distributed amongst all workers
@@ -1296,7 +1317,7 @@ class MediumEstimator(shdom.Medium):
         sensor = measurements.camera.sensor
         pixels = measurements.pixels
         if measurements.uncertainties is None:
-            uncertainties = np.repeat(np.ones(pixels.shape,order='F',dtype=np.float32)[np.newaxis,:]*1.0,rte_solver._nstokes,axis=0)
+            uncertainties = np.repeat(np.ones(pixels.shape,order='F',dtype=np.float32)[np.newaxis,:],rte_solver._nstokes,axis=0)
         else:
             uncertainties = measurements.uncertainties
         #measurements.uncertainties*pixels*0.02
@@ -1308,6 +1329,7 @@ class MediumEstimator(shdom.Medium):
                     projection=projection,
                     pixels=spectral_pixels[..., channel],
                     uncertainties=spectral_uncertainties[...,channel],
+                    jacobian_flag=jacobian_flag,
                 ) for channel, (projection, spectral_pixels, spectral_uncertainties) in
                 itertools.product(range(self.num_wavelengths), zip(projection.split(n_jobs),
                                                                    np.array_split(pixels, n_jobs, axis=-2),
@@ -1315,19 +1337,17 @@ class MediumEstimator(shdom.Medium):
             )
         else:
             output = [
-                self.core_grad(rte_solvers[channel], projection, pixels[..., channel], uncertainties[...,channel])
+                self.core_grad(rte_solvers[channel], projection, pixels[..., channel], uncertainties[...,channel],jacobian_flag)
                 for channel in range(self.num_wavelengths)
             ]
 
         # Sum over all the losses of the different channels
-        loss, gradient, images = self.output_transform(output, projection, sensor, self.num_wavelengths)
-        # import pylab as py
-        # for image in images:
-        #     py.figure()
-        #     py.imshow(image[0])
-        #     py.colorb
-        #     print(image.shape)
-        #     py.show()
+        loss, gradient, images, jacobian, jacobian_ptr, counters = self.output_transform(output, projection, sensor, self.num_wavelengths)
+
+        if jacobian_flag:
+            jacobian = Jacobians(jacobian,jacobian_ptr, projection,rte_solvers, self.estimators, counters)
+        else:
+            jacobian=jacobian_flag
 
         gradient = gradient.reshape(self.grid.shape + tuple([self.num_derivatives]))
         gradient = np.split(gradient, self.num_estimators, axis=-1)
@@ -1335,7 +1355,7 @@ class MediumEstimator(shdom.Medium):
         for estimator, gradient in zip(self.estimators.values(), gradient):
             state_gradient = np.concatenate((state_gradient, estimator.project_gradient(gradient, self.grid)))
 
-        return state_gradient, loss, images
+        return state_gradient, loss, images, jacobian
 
     @property
     def estimators(self):
@@ -1935,6 +1955,8 @@ class SummaryWriter(object):
                 global_step=global_step
                 )
 
+#    def jacobian
+
     @property
     def callback_fns(self):
         return self._callback_fns
@@ -2128,7 +2150,7 @@ class LocalOptimizer(object):
     For documentation:
         https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html
     """
-    def __init__(self, method, options={}, n_jobs=1, init_solution=True):
+    def __init__(self, method, options={}, n_jobs=1, init_solution=True, jacobian_flag=True):
         self._medium = None
         self._rte_solver = None
         self._measurements = None
@@ -2136,6 +2158,8 @@ class LocalOptimizer(object):
         self._images = None
         self._iteration = 0
         self._loss = None
+        self._jacobian = None
+        self._jacobian_flag = jacobian_flag
         self._n_jobs = n_jobs
         self._init_solution = init_solution
         if method not in ['L-BFGS-B', 'TNC']:
@@ -2213,14 +2237,47 @@ class LocalOptimizer(object):
         This function also saves the current synthetic images for visualization purpose
         """
         self.set_state(state)
-        gradient, loss, images = self.medium.compute_gradient(
+        gradient, loss, images, jacobian = self.medium.compute_gradient(
             rte_solvers=self.rte_solver,
             measurements=self.measurements,
-            n_jobs=self.n_jobs
+            n_jobs=self.n_jobs,
+            jacobian_flag=self._jacobian_flag
         )
         print(state,gradient,loss)
         self._loss = loss
         self._images = images
+        if self._jacobian_flag:
+            self._jacobian = jacobian
+            import pylab as py
+            py.figure()
+            max_s = min(self._jacobian.npts,len(self._jacobian.npix))
+            print(max_s)
+            # s1 = self._jacobian.svd('cloud','lwc',0.66,k=5)
+            # s2 = self._jacobian.svd('cloud','lwc',0.66,k=10)
+            # s3 = self._jacobian.svd('cloud','lwc',0.66,k=50)
+            # s4 = self._jacobian.svd('cloud','lwc',0.66,k=200)
+            # py.plot(s1[1][::-1],label='5_full')
+            # py.plot(s2[1][::-1],label='10_full')
+            # py.plot(s3[1][::-1],label='50_full')
+            # py.plot(s4[1][::-1],label='200_full')
+            # s5 = self._jacobian.svd('cloud','lwc',0.66,k=5,tol=0.001)
+            # s6 = self._jacobian.svd('cloud','lwc',0.66,k=10,tol=0.001)
+            # s7 = self._jacobian.svd('cloud','lwc',0.66,k=50,tol=0.001)
+            # s8 = self._jacobian.svd('cloud','lwc',0.66,k=200,tol=0.001)
+            # py.plot(s5[1][::-1],label='5_0.001')
+            # py.plot(s6[1][::-1],label='10_0.001')
+            # py.plot(s7[1][::-1],label='50_0.001')
+            # py.plot(s8[1][::-1],label='200_0.001')
+            #s4 = self._jacobian.svd('cloud','lwc',0.66,k=200)
+            s5 = self._jacobian.svd('cloud','lwc',0.66,k=max_s,tol=0.001)
+            print(s5[0],s5[1],s5[2])
+            py.plot(s5[1],label='0.66')
+            # u,s,vt = self._jacobian.svd('cloud','lwc',0.47,k=200)
+            # py.plot(s,label='0.47')
+            py.legend()
+            py.show()
+            py.pause(5)
+            py.close()
         return loss, gradient
 
     def callback(self, state):
@@ -2392,6 +2449,13 @@ class LocalOptimizer(object):
     def images(self):
         return self._images
 
+    @property
+    def jacobian(self):
+        return self._jacobian
+
+    @property
+    def jacobian_flag(self):
+        return self._jacobian_flag
 
 class ProximalProjection(object):
     """TODO"""
@@ -2673,3 +2737,128 @@ class RandomStep(object):
     def __call__(self, x):
         x += np.random.uniform(-self.stepsize, self.stepsize)
         return np.clip(x, self.min_bound, self.max_bound)
+
+
+class Jacobians(object):
+    """
+    TODO
+    """
+    def __init__(self,jacobian,jacobian_ptr, projection, rte_solvers,estimators,counters):
+
+        if isinstance(projection.npix, list):
+            total_pix = np.sum(projection.npix)
+        else:
+            total_pix = projection.npix
+
+        self._npix = projection.npix
+        self._total_pix = total_pix
+        self._npts = rte_solvers.solver_list[0]._nbpts
+        self._wavelengths = np.atleast_1d(rte_solvers.wavelength)
+        self._jacobians = OrderedDict()
+        self._image_reduced_jacobians = OrderedDict()
+
+        #deal with the fact that jacobian_ptr[0] only contains relative ptrs
+        #not absolute due n_job projection split.
+        total = []
+        for i,proj in enumerate(projection.split(len(counters)//len(self.wavelengths))):
+            total.append(np.sum(proj.npix))
+        total = np.tile(np.cumsum(np.array([0]+total),axis=-1)[:-1],[len(self.wavelengths)])
+        total = np.array([[total[i]]*counters[i] for i in range(len(counters))])
+        total = np.concatenate(total,axis=-1).astype(np.int32)
+        jacobian_ptr[0] += total
+        jacobian_ptr -= 1 # change to zero indexing. . .
+
+        counter_reduced = np.array(np.split(counters,len(self.wavelengths),axis=-1)).sum(axis=-1)
+        split_jacobian = np.split(jacobian, np.cumsum(counter_reduced),axis=-1)
+        split_ptr = np.split(jacobian_ptr,np.cumsum(counter_reduced),axis=-1)
+
+        image_ptrs_0 = [np.digitize(jacobian_ptr[0],bins=np.cumsum(np.array([0]+self.npix)))-1 for jacobian_ptr in split_ptr]
+        for i,estimator_name in enumerate(estimators.keys()):
+            tmp = OrderedDict()
+            tmp_image = OrderedDict()
+            for parameter in estimators[estimator_name].derivatives.keys():
+                tmp2 = OrderedDict()
+                tmp2_image = OrderedDict()
+                for j,wavelength in enumerate(self.wavelengths):
+                    jacob = split_jacobian[j][i]
+                    ptr = split_ptr[j]
+                    image_ptr_0 = image_ptrs_0[j]
+                    sparse_matrix = sparse.csc_matrix((jacob,(ptr[0],ptr[1])),shape=(self.total_pix,self.npts))
+                    print(image_ptr_0.min(),image_ptr_0.max(),len(self.npix))
+                    sparse_image_reduced = sparse.coo_matrix((jacob, (image_ptr_0,ptr[1])),shape=(len(self.npix),self.npts))
+                    tmp2[wavelength] = sparse_matrix
+                    tmp2_image[wavelength] = sparse_image_reduced
+                tmp[parameter] = tmp2
+                tmp_image[parameter] = tmp2_image
+            self.jacobians[estimator_name] = tmp
+            self.image_reduced_jacobians[estimator_name] = tmp_image
+
+    def toarray(self, estimator,scatterer, wavelength):
+        """
+        """
+        return self.jacobians[estimator_name][wavelength].todense().A
+
+    def tomatrix(self, estimator,scatterer, wavelength):
+        """
+        """
+        return self.jacobians[estimator_name][wavelength].todense()
+
+    def svd(self, estimator,scatterer, wavelength,**kwargs):
+        """
+        """
+        sparse_matrix = self.image_reduced_jacobians[estimator][scatterer][wavelength]
+        time1 = time.time()
+        import scipy.linalg as linalg
+        out = linalg.svd(sparse_matrix.todense(),full_matrices=False)#,**kwargs)
+        print('1',kwargs['k'],time.time()-time1)
+        # time2 = time.time()
+        # out2 = sparsesvd.sparsesvd(sparse_matrix,kwargs['k'])
+        # print('2',kwargs['k'],time.time()-time2)
+        return out
+
+    def svd_all(self, **kwargs):
+        svd_output = OrderedDict()
+        for name in self.jacobians.keys():
+            temp = OrderedDict()
+            for wv in self.jacobians[name].keys():
+                u,s,vt = self.svd(name,wv, **kwargs)
+                temp['u'] = u
+                temp['s'] = s
+                temp['vt'] = vt
+            svd_output[name] = temp
+
+    @property
+    def estimator_names(self):
+        return self.jacobians.keys()
+
+    @property
+    def jacobian_tree(self):
+        out = []
+        for key1 in self.jacobians.keys():
+            for key2 in self.jacobians[key1]:
+                out.append([key1,key2,self.jacobians[key1][key2].keys()])
+        return out
+
+    @property
+    def image_reduced_jacobians(self):
+        return self._image_reduced_jacobians
+
+    @property
+    def npix(self):
+        return self._npix
+
+    @property
+    def wavelengths(self):
+        return self._wavelengths
+
+    @property
+    def npts(self):
+        return self._npts
+
+    @property
+    def total_pix(self):
+        return self._total_pix
+
+    @property
+    def jacobians(self):
+        return self._jacobians

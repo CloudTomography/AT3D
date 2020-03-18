@@ -331,13 +331,13 @@ class OptimizationScript(object):
         self.parse_arguments()
 
         ground_truth, rte_solver, measurements = self.load_forward_model(self.args.input_dir)
-        import pylab as py
-        for image in measurements.images:
-            py.figure()
-            py.imshow(image[0])
-            py.colorbar()
-            print(image.shape)
-            py.show()
+        # import pylab as py
+        # for image in measurements.images:
+        #     py.figure()
+        #     py.imshow(image[0])
+        #     py.colorbar()
+        #     print(image.shape)
+        #     py.show()
         # Add noise (currently only supports AirMSPI noise model)
         if self.args.add_noise:
             measurements.set_noise(shdom.AirMSPINoise())

@@ -384,7 +384,8 @@ C         to calculate the Stokes radiance vector for this pixel
      .           NSTPHASE, DPHASETAB, DNUMPHASE, SOLARFLUX, NPX, NPY,
      .           NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS, EXTDIRP,
      .           UNIFORMZLEV, DPATH, DPTR, EXACT_SINGLE_SCATTER,
-     .           WEIGHTS, UNCERTAINTIES)
+     .           WEIGHTS, UNCERTAINTIES, JACOBIAN,MAKEJACOBIAN,
+     .           JACOBIANPTR, COUNTER)
 Cf2py threadsafe
       IMPLICIT NONE
       LOGICAL EXACT_SINGLE_SCATTER
@@ -458,6 +459,15 @@ Cf2py intent(in) :: NSCATANGLE, YLMSUN, PHASETAB, DPHASETAB, NSTPHASE
       INTEGER DPTR(8*(NPX+NPY+NPZ),*)
 Cf2py intent(in) :: DPATH, DPTR, WEIGHTS, UNCERTAINTIES
 
+      REAL JACOBIAN(NUMDER,*)
+Cf2py intent(in,out) :: JACOBIAN
+      LOGICAL MAKEJACOBIAN
+Cf2py intent(in) :: MAKEJACOBIAN
+      INTEGER JI, JACOBIANPTR(2,*)
+Cf2py intent(in,out) JACOBIANPTR
+      INTEGER COUNTER
+Cf2py intent(out) COUNTER
+
       REAL PIXEL_ERROR
       DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER), VISRAD(NSTOKES)
       INTEGER I, J, L, SIDE, IVIS
@@ -472,6 +482,7 @@ Cf2py intent(in) :: DPATH, DPTR, WEIGHTS, UNCERTAINTIES
       ALLOCATE (LOFJ(NLM))
 
       GRADOUT = 0.0D0
+      COUNTER = 1
 
       J = 0
       DO L = 0, ML
@@ -552,14 +563,41 @@ C         to calculate the Stokes radiance vector for this pixel
         DO NS = 1, NSTOKES
           STOKESOUT(NS,IVIS) = VISRAD(NS)
           PIXEL_ERROR = STOKESOUT(NS,IVIS) - MEASUREMENTS(NS,IVIS)
+C          IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
+C              DO JI = 1, NBPTS
+C                IF (ANY(ABS(RAYGRAD(1,JI,:))>0.0)) THEN
+C                  JACOBIANPTR(1,COUNTER) = IVIS
+C                  JACOBIANPTR(2,COUNTER) = JI
+C                  JACOBIAN(:,COUNTER) = JACOBIAN(:,COUNTER) +
+C     .            WEIGHTS(NS)*RAYGRAD(NS,JI,:)
+C                  IF (NS .EQ. 1) THEN
+C                    COUNTER = COUNTER + 1
+C                  ENDIF
+C                ENDIF
+C              ENDDO
+C          ENDIF
           DO NS1 = 1, NSTOKES
             WEIGHT = UNCERTAINTIES(NS,NS1,IVIS)*WEIGHTS(NS)
             GRADOUT = GRADOUT + WEIGHT*PIXEL_ERROR*RAYGRAD(NS,:,:)
             COST = COST + 0.5 * WEIGHT*PIXEL_ERROR**2
           ENDDO
         ENDDO
-      ENDDO
 
+        IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
+          DO JI = 1, NBPTS
+            IF (ANY(ABS(RAYGRAD(1,JI,:))>0.0)) THEN
+              JACOBIANPTR(1,COUNTER) = IVIS
+              JACOBIANPTR(2,COUNTER) = JI
+              DO NS =1,NSTOKES
+                JACOBIAN(:,COUNTER) = JACOBIAN(:,COUNTER) +
+     .          WEIGHTS(NS)*RAYGRAD(NS,JI,:)
+              ENDDO
+              COUNTER = COUNTER + 1
+            ENDIF
+          ENDDO
+        ENDIF
+
+      ENDDO
       RETURN
       END
 
