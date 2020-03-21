@@ -153,7 +153,7 @@ class OptimizationScript(ExtinctionOptimizationScript):
         # Create a medium estimator object (optional Rayleigh scattering)
         medium_estimator = shdom.MediumEstimator(
             loss_type=self.args.loss_type,
-            stokes_weights=self.args.stokes_weights
+            stokes_weights=self.args.stokes_weights,
         )
         if self.args.add_rayleigh:
             air = self.air_generator.get_scatterer(cloud_estimator.wavelength)
@@ -225,6 +225,3 @@ class OptimizationScript(ExtinctionOptimizationScript):
 if __name__ == "__main__":
     script = OptimizationScript(scatterer_name='cloud')
     script.main()
-
-
-

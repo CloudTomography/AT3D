@@ -459,7 +459,7 @@ Cf2py intent(in) :: NSCATANGLE, YLMSUN, PHASETAB, DPHASETAB, NSTPHASE
       INTEGER DPTR(8*(NPX+NPY+NPZ),*)
 Cf2py intent(in) :: DPATH, DPTR, WEIGHTS, UNCERTAINTIES
 
-      REAL JACOBIAN(NUMDER,*)
+      REAL JACOBIAN(NSTOKES,NUMDER,*)
 Cf2py intent(in,out) :: JACOBIAN
       LOGICAL MAKEJACOBIAN
 Cf2py intent(in) :: MAKEJACOBIAN
@@ -588,10 +588,8 @@ C          ENDIF
             IF (ANY(ABS(RAYGRAD(1,JI,:))>0.0)) THEN
               JACOBIANPTR(1,COUNTER) = IVIS
               JACOBIANPTR(2,COUNTER) = JI
-              DO NS =1,NSTOKES
-                JACOBIAN(:,COUNTER) = JACOBIAN(:,COUNTER) +
-     .          WEIGHTS(NS)*RAYGRAD(NS,JI,:)
-              ENDDO
+              JACOBIAN(:,:,COUNTER) = JACOBIAN(:,:,COUNTER) +
+     .        RAYGRAD(:,JI,:)
               COUNTER = COUNTER + 1
             ENDIF
           ENDDO
@@ -699,7 +697,8 @@ C     5=-Z,6=+Z).
 
 
 C         TRANSCUT is the transmission to stop the integration at
-      TRANSCUT = 5.0E-5
+      TRANSCUT = 0.0D0
+C5.0E-5
 C         TAUTOL is the maximum optical path for the subgrid intervals
       TAUTOL = 0.2
 
