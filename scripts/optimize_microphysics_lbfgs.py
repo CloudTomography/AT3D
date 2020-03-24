@@ -104,7 +104,7 @@ class OptimizationScript(ExtinctionOptimizationScript):
         else:
             lwc_grid = reff_grid = veff_grid = self.cloud_generator.get_grid()
         grid = lwc_grid + reff_grid + veff_grid
-
+        
         # Find a cloud mask for non-cloudy grid points
         if self.args.use_forward_mask:
             mask = ground_truth.get_mask(threshold=0.01)

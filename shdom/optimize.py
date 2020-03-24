@@ -1172,11 +1172,11 @@ class MediumEstimator(shdom.Medium):
             #maximum size is hard coded - should be roughly an order of magnitude
             #larger than the maximum necssary size but is possible source of seg faults.
             largest_dim = int(100*np.sqrt(rte_solver._nx**2+rte_solver._ny**2+rte_solver._nz**2))
-            jacobian = np.zeros((rte_solver._nstokes,self.num_derivatives,total_pix*largest_dim),order='F',dtype=np.float32)
-            jacobian_ptr = np.zeros((2,total_pix*largest_dim),order='F',dtype=np.int32)
+            jacobian = np.empty((rte_solver._nstokes,self.num_derivatives,total_pix*largest_dim),order='F',dtype=np.float32)
+            jacobian_ptr = np.empty((2,total_pix*largest_dim),order='F',dtype=np.int32)
         else:
-            jacobian = np.zeros((rte_solver._nstokes,self.num_derivatives,1),order='F',dtype=np.float32)
-            jacobian_ptr = np.zeros((2,1),order='F',dtype=np.int32)
+            jacobian = np.empty((rte_solver._nstokes,self.num_derivatives,1),order='F',dtype=np.float32)
+            jacobian_ptr = np.empty((2,1),order='F',dtype=np.int32)
 
         gradient, loss, images, jacobian, jacobian_ptr, counter = core.gradient_l2(
             uncertainties=uncertainties,
@@ -2950,8 +2950,9 @@ class Jacobians(object):
         grid = self.get_grid(estimator_name=estimator_name)
         data=column_data.reshape(grid.nx,grid.ny,grid.nz)
         grid_data = shdom.GridData(data=data,grid=grid)
-        mask = self.get_mask(estimator_name=estimator_name)
-        grid_data.apply_mask(mask)
+        if apply_mask:
+            mask = self.get_mask(estimator_name=estimator_name)
+            grid_data.apply_mask(mask)
         return grid_data
 
     def column_as_images(self,grid_indices,estimator_name='cloud',parameter_name='lwc'):

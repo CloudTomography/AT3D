@@ -149,7 +149,7 @@ class NumericalParameters(object):
                  adapt_grid_factor=5,
                  num_sh_term_factor=5,
                  cell_to_point_ratio=1.5,
-                 high_order_radiance=True):
+                 high_order_radiance=False):
 
         self.num_mu_bins = num_mu_bins
         self.num_phi_bins = num_phi_bins
