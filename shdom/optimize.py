@@ -764,7 +764,7 @@ class MediumEstimator(shdom.Medium):
         self._num_estimators = 0
         self._exact_single_scatter = exact_single_scatter
         self._core_grad, self._output_transform = self.init_loss_function(loss_type)
-        self._stokes_weights = stokes_weights if stokes_weights is not None else np.array([1.0], dtype=np.float32)
+        self._stokes_weights = stokes_weights if stokes_weights is not None else np.array([1.0,0.0,0.0,0.0], dtype=np.float32)
 
     def init_loss_function(self, loss_type):
         """
@@ -2718,6 +2718,8 @@ class Jacobians(object):
     """
     def __init__(self,projection=None, rte_solver=None, estimators=None,output=None):
 
+        #JACOBIAN ERROR WHEN RTE_SOVER GRID IS NOT SAME AS ESTIMATOR GRID
+        #
         self._projection = None
         self._total_pix = None
         self._npts = None
@@ -2980,6 +2982,51 @@ class Jacobians(object):
         images = sensor.make_images(pixels,self.projection,len(self.wavelengths))
         return images
 
+    def squeeze_jacobians(self,estimator_name='cloud'):
+        """
+        Generates the subset of Jacobian's data and coords corresponding to a matrix of size:
+        number_of_valid_pixels x number_of_state_elements.
+        """
+        mask = self.get_mask(estimator_name=estimator_name)
+        raveled_mask = mask.data.ravel().astype(bool)
+        number_of_state_elements = raveled_mask[np.where(raveled_mask==True)].size
+        valid_state_indices = np.where(raveled_mask==True)[0]
+
+        squeezed_ptrs = []
+        squeezed_jacobian = []
+        squeezed_image_ptrs = []
+        new_ptrs = []
+        new_shape = []
+
+        for i,(wv,jac,ptrs,img_ptrs) in enumerate(zip(self.wavelengths,
+                                                    self._split_jacobian,
+                                                    self._split_ptrs,
+                                                    self._image_ptrs)):
+            print('blah1')
+            valid_pixel_indices,new_pixel_ptr = np.unique(ptrs[0],return_inverse=True)#list(set(ptrs[0]))
+            number_of_valid_pixels = len(valid_pixel_indices)
+            print('blah2')
+            # new_pixel_ptr = np.ones(ptrs[0].shape,dtype=np.int)*-1
+            # for j,valid_pixel in enumerate(valid_pixel_indices):
+            #     new_pixel_ptr[np.where(ptrs[0]==valid_pixel)] = j
+            #valid_state_indices, new_state_ptr = np.unique(ptrs[1],return_inverse=True)
+
+            data_condition = raveled_mask[ptrs[1].astype(np.int)]
+            ptrs_update = ptrs[:,data_condition]
+            valid_state_indices, new_state_ptr = np.unique(ptrs_update[1],return_inverse=True)
+            # new_state_ptr = np.ones(ptrs[1].shape,dtype=np.int)*-1
+            # for k,valid_state in enumerate(valid_state_indices):
+            #      new_state_ptr[np.where(ptrs[1]==valid_state)] = k
+            #      print(k)
+            # print('blah3')
+            # data_condition = np.where((new_state_ptr>=0))[0]
+
+            squeezed_ptrs.append(ptrs_update)
+            squeezed_jacobian.append(jac[:,:,data_condition])
+            squeezed_image_ptrs.append(img_ptrs[data_condition])
+            new_ptrs.append(np.stack([new_pixel_ptr[data_condition],new_state_ptr],axis=0))
+            new_shape.append((number_of_valid_pixels,number_of_state_elements))
+        return squeezed_ptrs, squeezed_jacobian, squeezed_image_ptrs, new_ptrs, new_shape
 
     # def svd(self, estimator,scatterer, wavelength,**kwargs):
     #     """
