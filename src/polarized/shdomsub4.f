@@ -659,6 +659,7 @@ C     5=-Z,6=+Z).
       CHARACTER SRCTYPE*1, SFCTYPE*2
       REAL      DLEG(NSTLEG,0:NLEG,*), DEXT(NBPTS,NUMDER)
       REAL      DALB(NBPTS,NUMDER)
+      REAL      UNSCALED_ALBEDO
       REAL      SINGSCAT8(NSTOKES,8), OSINGSCAT8(NSTOKES,8)
       INTEGER   PARTDER(NUMDER), NUMDER, DIPHASE(NBPTS,NUMDER)
       REAL      SINGSCAT0(NSTOKES,8), SINGSCAT1(NSTOKES,8)
@@ -1005,9 +1006,13 @@ C             Add gradient component due to the direct solar beam propogation
 
                     IF (DELTAM) THEN
                       IF (NUMPHASE .GT. 0) THEN
-                        DEXTM = (1.0-ALBEDO(SSP,IPA)*
+                        UNSCALED_ALBEDO = ALBEDO(SSP,IPA)/
+     .          (LEGEN(1,ML+1,IPHASE(SSP,IPA))*(ALBEDO(SSP,IPA)- 1.0)+ 1.0)
+                        DEXTM = (1.0-UNSCALED_ALBEDO*
      .                    LEGEN(1,ML+1,IPHASE(SSP,IPA)))*DEXT(SSP,IDR)
                       ELSE
+                        UNSCALED_ALBEDO = ALBEDO(SSP,IPA)/
+     .          (LEGEN(1,ML+1,SSP)*(ALBEDO(SSP,IPA)- 1.0)+ 1.0)
                         DEXTM = (1.0-ALBEDO(SSP,IPA)*LEGEN(1,ML+1,SSP))
      .                           *DEXT(SSP,IDR)
                       ENDIF

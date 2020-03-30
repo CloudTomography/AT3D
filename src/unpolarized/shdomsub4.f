@@ -554,6 +554,7 @@ C     outgoing radiance (RAD) at the point X0,Y0,Z0.
       DOUBLE PRECISION X0, Y0, Z0
       CHARACTER SRCTYPE*1, SFCTYPE*2
       REAL      DLEG(0:NLEG,DNUMPHASE), DEXT(NBPTS,NUMDER)
+      REAL      UNSCALED_ALBEDO
       REAL      DALB(NBPTS,NUMDER), SINGSCAT8(8), OSINGSCAT8(8)
       INTEGER   PARTDER(NUMDER), NUMDER, DIPHASE(NBPTS,NUMDER)
       INTEGER BITX, BITY, BITZ, IOCT, ICELL, INEXTCELL, IFACE
@@ -846,10 +847,14 @@ C             Add gradient component due to the direct solar beam propogation
 
                     IF (DELTAM) THEN
                       IF (NUMPHASE .GT. 0) THEN
-                        DEXTM = (1.0-ALBEDO(SSP,IPA)*
-     .                     LEGEN(ML+1,IPHASE(SSP,IPA)))*DEXT(SSP,IDR)
+                        UNSCALED_ALBEDO = ALBEDO(SSP,IPA)/
+     .          (LEGEN(1,ML+1,IPHASE(SSP,IPA))*(ALBEDO(SSP,IPA)- 1.0)+ 1.0)
+                        DEXTM = (1.0-UNSCALED_ALBEDO*
+     .                    LEGEN(1,ML+1,IPHASE(SSP,IPA)))*DEXT(SSP,IDR)
                       ELSE
-                        DEXTM = (1.0-ALBEDO(SSP,IPA)*LEGEN(ML+1,SSP))
+                        UNSCALED_ALBEDO = ALBEDO(SSP,IPA)/
+     .          (LEGEN(1,ML+1,SSP)*(ALBEDO(SSP,IPA)- 1.0)+ 1.0)
+                        DEXTM = (1.0-ALBEDO(SSP,IPA)*LEGEN(1,ML+1,SSP))
      .                           *DEXT(SSP,IDR)
                       ENDIF
                     ELSE
