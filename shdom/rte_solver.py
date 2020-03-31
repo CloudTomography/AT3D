@@ -524,7 +524,11 @@ class RteSolver(object):
         legendre_table.pad(self._nleg)
         # Legenp is without the zero order term which is 1.0 for normalized phase function
 
-        self._pa.legenp = legendre_table.get_legenp()
+        self._pa.legenp = legendre_table.get_legenp(self._nstokes)
+        if self._nstokes == 1:
+            self._nstleg = 1
+        else:
+            self._nstleg = 6
         self._maxasym = legendre_table.maxasym
         self._maxpgl = medium.grid.num_points * legendre_table.maxleg
 
@@ -534,7 +538,6 @@ class RteSolver(object):
             self._maxigl = self._maxig*(legendre_table.maxleg + 1)
 
         self._npart = medium.num_scatterers
-        self._nstleg = legendre_table.nstleg
         self._nstphase = min(self._nstleg, 2)
 
         self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
