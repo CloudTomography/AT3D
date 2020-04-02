@@ -912,9 +912,9 @@ class MediumEstimator(shdom.Medium):
 
         i=0
         for estimator in self.estimators.values():
-            for dtype in estimator.derivatives.keys():
-                derivative = estimator.get_derivative(dtype, rte_solver.wavelength)
-                resampled_derivative = derivative.resample(self.grid)
+            resampled_estimator = estimator.resample(self.grid)
+            for dtype in resampled_estimator.derivatives.keys():
+                derivative = resampled_estimator.get_derivative(dtype, rte_solver.wavelength)
                 dext[:, i] = resampled_derivative.extinction.data.ravel()
                 dalb[:, i] = resampled_derivative.albedo.data.ravel()
                 diphase[:, i] = resampled_derivative.phase.iphasep.ravel() + diphase.max()

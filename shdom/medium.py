@@ -285,6 +285,7 @@ class MicrophysicalScatterer(Scatterer):
         reff = self.reff.resample(grid)
         veff = self.veff.resample(grid)
         self.set_microphysics(lwc, reff, veff)
+        return self
 
     def get_mask(self, threshold):
         """
