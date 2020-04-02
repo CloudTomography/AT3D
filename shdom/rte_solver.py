@@ -497,7 +497,7 @@ class RteSolver(object):
         self._pa.iphasep = np.zeros(shape=[self._nbpts, medium.num_scatterers], dtype=np.int32)
 
         for i, scatterer in enumerate(medium.scatterers.values()):
-            resampled_scatterer = scatter.resample(medium.grid)
+            resampled_scatterer = scatterer.resample(medium.grid)
             if isinstance(scatterer, shdom.MicrophysicalScatterer) or isinstance(scatterer, shdom.MultispectralScatterer):
                 resampled_scatterer= resampled_scatterer.get_optical_scatterer(self.wavelength)
 
