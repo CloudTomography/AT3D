@@ -290,9 +290,7 @@ class RteSolver(object):
     k-distribution not supported.
     """
 
-    def __init__(self, scene_params=None, numerical_params=None, num_stokes=1, name=None,
-    round_phase_weights=False):
-        #round_phase_weights does nothing.
+    def __init__(self, scene_params=None, numerical_params=None, num_stokes=1, name=None):
         self._name = name
 
         assert num_stokes in [1, 3, 4], 'num_stokes should be {1, 3, 4}'
