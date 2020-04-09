@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import warnings
 from scipy import stats
 from scipy import sparse
-import sparsesvd
+# import sparsesvd
 
 class OpticalScattererDerivative(shdom.OpticalScatterer):
     """
