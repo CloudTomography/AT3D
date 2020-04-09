@@ -5,11 +5,11 @@ import numpy as np
 import itertools
 import dill as pickle
 from joblib import Parallel, delayed
-import shdom 
+import shdom
 from shdom import core
 
 norm = lambda x: x / np.linalg.norm(x, axis=0)
-    
+
 class Sensor(object):
     """
     A sensor class to be inherited by specific sensor types (e.g. Radiance, Polarization).
@@ -17,24 +17,24 @@ class Sensor(object):
     """
     def __init__(self):
         self._type = 'Sensor'
-    
+
     def render(self, rte_solver, projection):
         """
         The core rendering method.
-        
+
         Parameters
         ----------
         rte_solver: shdom.RteSolver
             A solver with all the associated parameters and the solution to the RTE
-        projection: shdom.Projection 
-            A projection model which specified the position and direction of each and every pixel 
+        projection: shdom.Projection
+            A projection model which specified the position and direction of each and every pixel
         """
 
         if isinstance(projection.npix, list):
             total_pix = np.sum(projection.npix)
         else:
-            total_pix = projection.npix 
-            
+            total_pix = projection.npix
+
         output = core.render(
             nstphase=rte_solver._nstphase,
             ylmsun=rte_solver._ylmsun,
@@ -48,12 +48,12 @@ class Sensor(object):
             camz=projection.z,
             cammu=projection.mu,
             camphi=projection.phi,
-            npix=total_pix,             
+            npix=total_pix,
             nx=rte_solver._nx,
             ny=rte_solver._ny,
             nz=rte_solver._nz,
             bcflag=rte_solver._bcflag,
-            ipflag=rte_solver._ipflag,   
+            ipflag=rte_solver._ipflag,
             npts=rte_solver._npts,
             ncells=rte_solver._ncells,
             ml=rte_solver._ml,
@@ -69,7 +69,7 @@ class Sensor(object):
             nsfcpar=rte_solver._nsfcpar,
             gridptr=rte_solver._gridptr,
             neighptr=rte_solver._neighptr,
-            treeptr=rte_solver._treeptr,             
+            treeptr=rte_solver._treeptr,
             shptr=rte_solver._shptr,
             bcptr=rte_solver._bcptr,
             cellflags=rte_solver._cellflags,
@@ -93,23 +93,23 @@ class Sensor(object):
             bcrad=rte_solver._bcrad,
             extinct=rte_solver._extinct[:rte_solver._npts],
             albedo=rte_solver._albedo[:rte_solver._npts],
-            legen=rte_solver._legen,            
+            legen=rte_solver._legen,
             dirflux=rte_solver._dirflux,
             fluxes=rte_solver._fluxes,
-            source=rte_solver._source,          
+            source=rte_solver._source,
             srctype=rte_solver._srctype,
             sfctype=rte_solver._sfctype,
             units=rte_solver._units,
             total_ext=rte_solver._total_ext[:rte_solver._npts],
-            npart=rte_solver._npart)    
-        
+            npart=rte_solver._npart)
+
         return output
 
     @property
     def type(self):
         return self._type
-    
-    
+
+
 class RadianceSensor(Sensor):
     """
     A Radiance sensor measures monochromatic radiances.
@@ -117,16 +117,16 @@ class RadianceSensor(Sensor):
     def __init__(self):
         super().__init__()
         self._type = 'RadianceSensor'
-        
+
     def render(self, rte_solver, projection, n_jobs=1, verbose=0):
         """
         The render method integrates a pre-computed in-scatter field (source function) J over the projection gemoetry.
-        The source code for this function is in src/unoplarized/shdomsub4.f. 
+        The source code for this function is in src/unoplarized/shdomsub4.f.
         It is a modified version of the original SHDOM visualize_radiance subroutine in src/unpolarized/shdomsub2.f.
-        
+
         If n_jobs>1 than parallel rendering is used with pixels distributed amongst all workers
-        
-        
+
+
         Parameters
         ----------
         rte_solver: shdom.RteSolver object
@@ -137,25 +137,25 @@ class RadianceSensor(Sensor):
             The number of jobs to divide the rendering.
         verbose: int, default=0
             How much verbosity in the parallel rendering proccess.
-            
+
         Returns
         -------
         radiance: np.array(shape=(projection.resolution), dtype=np.float32)
             The rendered radiances.
-        
+
         Notes
         -----
         For a small amout of pixels parallel rendering is slower due to communication overhead.
         """
-        
+
         # If rendering several atmospheres (e.g. multi-spectral rendering)
         if isinstance(rte_solver, shdom.RteSolverArray):
-            num_channels = rte_solver.num_solvers  
+            num_channels = rte_solver.num_solvers
             rte_solvers = rte_solver
         else:
             num_channels = 1
             rte_solvers = [rte_solver]
-            
+
         # Pre-computation of phase-function for all solvers.
         for rte_solver in rte_solvers:
             rte_solver.precompute_phase()
@@ -165,21 +165,21 @@ class RadianceSensor(Sensor):
             radiance = Parallel(n_jobs=n_jobs, backend="threading", verbose=verbose)(
                 delayed(super(RadianceSensor, self).render, check_pickle=False)(
                     rte_solver=rte_solver,
-                    projection=projection) for rte_solver, projection in 
+                    projection=projection) for rte_solver, projection in
                 itertools.product(rte_solvers, projection.split(n_jobs)))
-            
+
         # Sequential rendering
         else:
             radiance = [super(RadianceSensor, self).render(rte_solver, projection) for rte_solver in rte_solvers]
 
-        radiance = np.concatenate(radiance) 
+        radiance = np.concatenate(radiance[0])
         images = self.make_images(radiance, projection, num_channels)
         return images
 
     def make_images(self, radiance, projection, num_channels):
         """
         Split radiances into Multiview, Multi-channel images (channel last)
-        
+
         Parameters
         ----------
         radiance: np.array(dtype=np.float32)
@@ -188,7 +188,7 @@ class RadianceSensor(Sensor):
             The projection geometry
         num_channels: int
             The number of channels
-            
+
         Returns
         -------
         radiance: np.array(dtype=np.float32)
@@ -196,7 +196,7 @@ class RadianceSensor(Sensor):
         """
         multiview = isinstance(projection, shdom.MultiViewProjection)
         multichannel = num_channels > 1
-        
+
         if multichannel:
             radiance = np.array(np.split(radiance, num_channels)).T
 
@@ -212,14 +212,14 @@ class RadianceSensor(Sensor):
             else:
                 radiance = [
                     image.reshape(resolution, order='F')
-                    for image, resolution in zip(radiance, projection.resolution) 
-                ]                  
+                    for image, resolution in zip(radiance, projection.resolution)
+                ]
         else:
             new_shape = projection.resolution
             if multichannel:
-                new_shape.append(num_channels)       
+                new_shape.append(num_channels)
             radiance = radiance.reshape(new_shape, order='F')
-                
+        
         return radiance
 
 
@@ -230,15 +230,15 @@ class StokesSensor(Sensor):
     def __init__(self):
         super().__init__()
         self._type = 'StokesSensor'
-    
+
     def render(self, rte_solver, projection, n_jobs=1, verbose=0):
-        """      
+        """
         The render method integrates a pre-computed stokes vector in-scatter field (source function) J over the sensor geometry.
-        The source code for this function is in src/polarized/shdomsub4.f. 
+        The source code for this function is in src/polarized/shdomsub4.f.
         It is a modified version of the original SHDOM visualize_radiance subroutine in src/polarized/shdomsub2.f.
-        
+
         If n_jobs > 1 than parallel rendering is used where all pixels are distributed amongst all workers
-        
+
         Parameters
         ----------
         rte_solver: shdom.RteSolver object
@@ -266,7 +266,7 @@ class StokesSensor(Sensor):
         else:
             num_channels = 1
             rte_solvers = [rte_solver]
-        
+
         # Pre-computation of phase-function for all solvers.
         for rte_solver in rte_solvers:
             rte_solver._phasetab = core.precompute_phase_check(
@@ -282,27 +282,27 @@ class StokesSensor(Sensor):
                 legen=rte_solver._legen,
                 deltam=rte_solver._deltam
             )
-            
+
         # Parallel rendering using multithreading (threadsafe Fortran)
         if n_jobs > 1:
             stokes = Parallel(n_jobs=n_jobs, backend="threading", verbose=verbose)(
                 delayed(super(StokesSensor, self).render, check_pickle=False)(
                     rte_solver=rte_solver,
-                    projection=projection) for rte_solver, projection in 
-                itertools.product(rte_solvers, projection.split(n_jobs)))  
-            
+                    projection=projection) for rte_solver, projection in
+                itertools.product(rte_solvers, projection.split(n_jobs)))
+
         # Sequential rendering
-        else:      
+        else:
             stokes = [super(StokesSensor, self).render(rte_solver, projection) for rte_solver in rte_solvers]
-          
-        stokes = np.hstack(stokes) 
+
+        stokes = np.hstack(stokes)
         images = self.make_images(stokes, projection, num_channels)
         return images
-        
+
     def make_images(self, stokes, projection, num_channels):
         """
         Split into Multiview, Multi-channel Stokes images (channel last)
-        
+
         Parameters
         ----------
         stokes: np.array(dtype=np.float32)
@@ -311,22 +311,22 @@ class StokesSensor(Sensor):
             The projection geometry
         num_channels: int
             The number of channels
-            
+
         Returns
         -------
         stokes: np.array(dtype=np.float32)
             An array of stokes pixels with the shape (NSTOKES,H,W,C) or (NSTOKES,H,W) for a single channel.
         """
         multiview = isinstance(projection, shdom.MultiViewProjection)
-        multichannel = num_channels > 1        
+        multichannel = num_channels > 1
 
         if multichannel:
-            stokes = np.array(np.split(stokes, num_channels, axis=-1)).transpose([1, 2, 0]).squeeze()      
-    
-        if multiview: 
-            split_indices = np.cumsum(projection.npix[:-1])        
+            stokes = np.array(np.split(stokes, num_channels, axis=-1)).transpose([1, 2, 0]).squeeze()
+
+        if multiview:
+            split_indices = np.cumsum(projection.npix[:-1])
             stokes = np.split(stokes, split_indices, axis=1)
-    
+
             if multichannel:
                 stokes = [
                     image.reshape([image.shape[0]] + resolution + [num_channels], order='F')
@@ -335,14 +335,14 @@ class StokesSensor(Sensor):
             else:
                 stokes = [
                     image.reshape([image.shape[0]] + resolution, order='F')
-                    for image, resolution in zip(stokes, projection.resolution) 
-                ]                  
+                    for image, resolution in zip(stokes, projection.resolution)
+                ]
         else:
             new_shape = [stokes.shape[0]] + projection.resolution
             if multichannel:
-                new_shape.append(num_channels)       
+                new_shape.append(num_channels)
             stokes = stokes.reshape(new_shape, order='F')
-            
+
         return stokes
 
 
@@ -353,15 +353,15 @@ class DolpAolpSensor(StokesSensor):
     def __init__(self):
         super().__init__()
         self._type = 'DolpAolpSensor'
-    
+
     def render(self, rte_solver, projection, n_jobs=1, verbose=0):
-        """   
+        """
         The render method integrates a pre-computed stokes vector in-scatter field (source function) J over the sensor geometry.
-        The source code for this function is in src/polarized/shdomsub4.f. 
+        The source code for this function is in src/polarized/shdomsub4.f.
         It is a modified version of the original SHDOM subroutine in src/polarized/shdomsub2.f.
-        
+
         If n_jobs>1 than parallel rendering is used where all pixels are distributed amongst all workers
-        
+
         Parameters
         ----------
         rte_solver: shdom.RteSolver object
@@ -372,8 +372,8 @@ class DolpAolpSensor(StokesSensor):
             The number of jobs to divide the rendering into.
         verbose: int, default=0
             How much verbosity in the parallel rendering proccess.
-            
-            
+
+
         Returns
         -------
         dolp: np.array(shape=(sensor.resolution), dtype=np.float32)
@@ -382,14 +382,14 @@ class DolpAolpSensor(StokesSensor):
             Angle of Linear Polarization
         """
         stokes = super().render(rte_solver, projection, n_jobs, verbose)
-        
+
         indices = stokes[0] > 0.0
         dolp = np.zeros_like(stokes[0])
         aolp = np.zeros_like(stokes[0])
         i, q, u = stokes[0][indices], stokes[1][indices], stokes[2][indices]
         dolp[indices] = np.sqrt(q**2 + u**2) / i
         aolp[indices] = (180.0/np.pi) * 0.5 * np.arctan2(u, q)
-        
+
         # Choose the best range for the angle of linear polarization (-90 to 90 or 0 to 180)
         aolp1 = aolp.reshape(-1, aolp.shape[-1])
         aolp2 = aolp1.copy()
@@ -397,7 +397,7 @@ class DolpAolpSensor(StokesSensor):
         std1 = np.std(aolp1, axis=0)
         std2 = np.std(aolp2, axis=0)
         aolp[..., std2 < std1] = aolp2.reshape(aolp.shape)[..., std2 < std1]
-        
+
         return dolp, aolp
 
 
@@ -405,7 +405,7 @@ class Projection(object):
     """
     Abstract Projection class to be inherited by the different types of projections.
     Each projection defines an arrays of pixel locations (x,y,z) in km and directions (phi, mu).
-    
+
     Parameters
     ----------
     x: np.array(np.float32)
@@ -420,7 +420,7 @@ class Projection(object):
         Azimuth angle [rad] of the measurements (direction of photons)
     resolution: list
         Resolution is the number of pixels in each dimension (H,W) used to reshape arrays into images.
-        
+
     Notes
     -----
     All input arrays are raveled and should be of the same size.
@@ -436,97 +436,97 @@ class Projection(object):
             assert x.size==y.size==z.size==mu.size==phi.size, 'All input arrays must be of equal size'
             self._npix = x.size
         self._resolution = resolution
-        
+
     def __getitem__(self, val):
         projection = Projection(
-            x=np.array(self._x[val]), 
+            x=np.array(self._x[val]),
             y=np.array(self._y[val]),
-            z=np.array(self._z[val]), 
-            mu=np.array(self._mu[val]), 
+            z=np.array(self._z[val]),
+            mu=np.array(self._mu[val]),
             phi=np.array(self._phi[val]),
         )
         return projection
-    
+
     def split(self, n_parts):
         """
         Split the projection geometry.
-        
+
         Parameters
         ----------
         n_parts: int
-            The number of parts to split the projection geometry to 
-        
+            The number of parts to split the projection geometry to
+
         Returns
         -------
         projections: list
             A list of projections each with n_parts
-            
+
         Notes
         -----
         An even split doesnt always exist, in which case some parts will have slightly more pixels.
         """
-        x_split = np.array_split(self.x, n_parts) 
-        y_split = np.array_split(self.y, n_parts) 
-        z_split = np.array_split(self.z, n_parts) 
-        mu_split = np.array_split(self.mu, n_parts) 
-        phi_split = np.array_split(self.phi, n_parts)        
+        x_split = np.array_split(self.x, n_parts)
+        y_split = np.array_split(self.y, n_parts)
+        z_split = np.array_split(self.z, n_parts)
+        mu_split = np.array_split(self.mu, n_parts)
+        phi_split = np.array_split(self.phi, n_parts)
         projections = [
-            Projection(x, y, z, mu, phi) for 
+            Projection(x, y, z, mu, phi) for
             x, y, z, mu, phi in zip(x_split, y_split, z_split, mu_split, phi_split)
         ]
         return projections
-    
+
     @property
     def x(self):
         return self._x
-    
+
     @property
     def y(self):
         return self._y
-    
+
     @property
     def z(self):
         return self._z
-    
+
     @property
     def mu(self):
         return self._mu
-    
+
     @property
     def phi(self):
         return self._phi
-    
+
     @property
     def zenith(self):
         return np.rad2deg(np.arccos(self.mu))
- 
+
     @property
     def azimuth(self):
         return np.rad2deg(self.phi)
-    
-    @property 
+
+    @property
     def npix(self):
-        return self._npix    
-    
+        return self._npix
+
     @property
     def resolution(self):
         if self._resolution is None:
             return [self.npix, ]
         else:
-            return self._resolution  
-    
-    
+            return self._resolution
+
+
 class HomographyProjection(Projection):
     """
     A Homography has a projective tansformation that relates 3D coordinates to pixels.
     """
     def __init__(self):
         super().__init__()
-        
+
     def project(self, projection_matrix, point_array):
         """
         Project 3D coordinates according to the sensor projection matrix
-        
+
         Parameters
         ----------
         projection matrix: np.array(shape=(3,4), dtype=float)
@@ -535,13 +535,13 @@ class HomographyProjection(Projection):
             An array of num_points 3D points (x,y,z) [km]
         """
         homogenic_point_array = np.pad(point_array,((0,1),(0,0)),'constant', constant_values=1)
-        return np.dot(projection_matrix, homogenic_point_array)  
-  
+        return np.dot(projection_matrix, homogenic_point_array)
+
 
 class OrthographicProjection(HomographyProjection):
     """
-    A parallel ray projection. 
-    
+    A parallel ray projection.
+
     Parameters
     ----------
     bounding_box: shdom.BoundingBox object
@@ -556,22 +556,22 @@ class OrthographicProjection(HomographyProjection):
         Zenith angle [deg] of the measurements (direction of photons)
     altitude: float or 'TOA' (default)
        1. 'TOA': Top of the atmosphere.
-       2. float: Altitude of the  measurements.    
+       2. float: Altitude of the  measurements.
     """
-    
+
     def __init__(self, bounding_box, x_resolution, y_resolution, azimuth, zenith, altitude='TOA'):
         super().__init__()
         self._x_resolution = x_resolution
         self._y_resolution = y_resolution
-        
+
         mu = np.cos(np.deg2rad(zenith))
         phi = np.deg2rad(azimuth)
         if altitude == 'TOA':
             self._altitude = bounding_box.zmax
         else:
             assert (type(altitude) == float or type(altitude) == int), 'altitude of incorrect type'
-            self._altitude = altitude        
-            
+            self._altitude = altitude
+
         # Project the bounding box onto the image plane
         alpha = np.sqrt(1 - mu**2) * np.cos(phi) / mu
         beta  = np.sqrt(1 - mu**2) * np.sin(phi) / mu
@@ -580,13 +580,13 @@ class OrthographicProjection(HomographyProjection):
             [0, 1,  -beta, beta * self.altitude],
             [0, 0,      0,        self.altitude]
         ])
-        
+
         self.projection_matrix = projection_matrix
-        bounding_box_8point_array = np.array(list(itertools.product([bounding_box.xmin, bounding_box.xmax], 
+        bounding_box_8point_array = np.array(list(itertools.product([bounding_box.xmin, bounding_box.xmax],
                                                                     [bounding_box.ymin, bounding_box.ymax],
                                                                     [bounding_box.zmin, bounding_box.zmax]))).T
         projected_bounding_box = self.project(projection_matrix, bounding_box_8point_array)
-            
+
         # Use projected bounding box to define image sampling
         x_s, y_s = projected_bounding_box[:2,:].min(axis=1)
         x_e, y_e = projected_bounding_box[:2,:].max(axis=1)
@@ -602,23 +602,23 @@ class OrthographicProjection(HomographyProjection):
         self._npix = self.x.size
         self._resolution = [x.size, y.size]
 
-    @property 
+    @property
     def altitude(self):
         return self._altitude
-    
-    @property 
+
+    @property
     def x_resolution(self):
         return self._x_resolution
-     
-    @property 
+
+    @property
     def y_resolution(self):
         return self._y_resolution
-    
-    
+
+
 class PerspectiveProjection(HomographyProjection):
     """
     A Perspective trasnormation (pinhole camera).
-    
+
     Parameters
     ----------
     fov: float
@@ -646,7 +646,7 @@ class PerspectiveProjection(HomographyProjection):
                             [0, 0, 1]], dtype=np.float32)
         self._inv_k = np.linalg.inv(self._k)
         self._rotation_matrix = np.eye(3)
-        x_c, y_c, z_c = np.meshgrid(np.linspace(-1, 1, nx), np.linspace(-1, 1, ny), 1.0)        
+        x_c, y_c, z_c = np.meshgrid(np.linspace(-1, 1, nx), np.linspace(-1, 1, ny), 1.0)
         self._homogeneous_coordinates = np.stack([x_c.ravel(), y_c.ravel(), z_c.ravel()])
         self.update_global_coordinates()
 
@@ -666,7 +666,7 @@ class PerspectiveProjection(HomographyProjection):
     def look_at_transform(self, point, up):
         """
         A look at transform is defined with a point and an up vector.
-        
+
         Parameters
         ----------
         point: np.array(shape=(3,), dtype=float)
@@ -681,18 +681,18 @@ class PerspectiveProjection(HomographyProjection):
         yaxis = np.cross(zaxis, xaxis)
         self._rotation_matrix = np.stack((xaxis, yaxis, zaxis), axis=1)
         self.update_global_coordinates()
-        
+
     def rotate_transform(self, axis, angle):
         """
         Rotate the camera with respect to one of it's (local) axis
-        
+
         Parameters
         ----------
         axis: 'x', 'y' or 'z'
             The rotation axis
         angle: float
             The angle of rotation [deg]
-            
+
         Notes
         -----
         The axis are in the camera coordinates
@@ -711,15 +711,15 @@ class PerspectiveProjection(HomographyProjection):
         elif axis == 'z':
             rot = np.array([[np.cos(angle), -np.sin(angle), 0],
                             [np.sin(angle), np.cos(angle), 0],
-                            [0, 0, 1]], dtype=np.float32)        
-        
+                            [0, 0, 1]], dtype=np.float32)
+
         self._rotation_matrix = np.matmul(self._rotation_matrix, rot)
         self.update_global_coordinates()
 
     def plot(self, ax, xlim, ylim, zlim, length=0.1):
         """
         Plot the cameras and their orientation in 3D space using matplotlib's quiver.
-        
+
         Parameters
         ----------
         ax: matplotlib.pyplot.axis
@@ -729,14 +729,14 @@ class PerspectiveProjection(HomographyProjection):
         ylim: list
             [ymin, ymax] to set the domain limits
         zlim: list
-            [zmin, zmax] to set the domain limits 
+            [zmin, zmax] to set the domain limits
         length: float, default=0.1
             The length of the quiver arrows in the plot
-            
+
         Notes
         -----
         The axis are in the camera coordinates
-        """        
+        """
         mu = -self.mu.reshape(self.resolution)[[0, -1, 0, -1],[0, 0, -1, -1]]
         phi = np.pi + self.phi.reshape(self.resolution)[[0, -1, 0, -1],[0, 0, -1, -1]]
         u = np.sqrt(1 - mu**2) * np.cos(phi)
@@ -754,12 +754,12 @@ class PerspectiveProjection(HomographyProjection):
     @property
     def position(self):
         return self._position
-    
-    
+
+
 class PrincipalPlaneProjection(Projection):
     """
     Measurments along the principal solar plane.
-    
+
     Parameters
     ----------
     source: shdom.SolarSource
@@ -770,7 +770,7 @@ class PrincipalPlaneProjection(Projection):
         Location in global y coordinates [km] (East)
     z: float
         Location in global z coordinates [km] (Up)
-    resolution: float 
+    resolution: float
         Angular resolution of the measurements in [deg]
     """
     def __init__(self, source, x, y, z, resolution=1.0):
@@ -783,16 +783,16 @@ class PrincipalPlaneProjection(Projection):
         self._mu = (np.cos(np.deg2rad(self._angles))).astype(np.float64)
         self._phi = np.deg2rad(180 * (self._angles < 0.0).astype(np.float64) + source.azimuth)
         self._source = source
-    
-    @property 
+
+    @property
     def angles(self):
         return self._angles
-        
-        
+
+
 class AlmucantarProjection(Projection):
     """
     Measurments along the solar almucantar.
-    
+
     Parameters
     ----------
     source: shdom.SolarSource
@@ -803,7 +803,7 @@ class AlmucantarProjection(Projection):
         Location in global y coordinates [km] (East)
     z: float
         Location in global z coordinates [km] (Up)
-    resolution: float 
+    resolution: float
         Angular resolution of the measurements in [deg]
     """
     def __init__(self, source, x, y, z, resolution=1.0):
@@ -819,7 +819,7 @@ class AlmucantarProjection(Projection):
 class HemisphericProjection(Projection):
     """
     Measurments on a hemisphere.
-    
+
     Parameters
     ----------
     source: shdom.SolarSource
@@ -830,7 +830,7 @@ class HemisphericProjection(Projection):
         Location in global y coordinates [km] (East)
     z: float
         Location in global z coordinates [km] (Up)
-    resolution: float 
+    resolution: float
         Angular resolution of the measurements in [deg]
     """
     def __init__(self, x, y, z, resolution=5.0):
@@ -944,11 +944,11 @@ class Measurements(object):
     def save(self, path):
         """
         Save Measurements to file.
-    
+
         Parameters
         ----------
         path: str,
-            Full path to file. 
+            Full path to file.
         """
         file = open(path, 'wb')
         file.write(pickle.dumps(self.__dict__, -1))
@@ -961,27 +961,27 @@ class Measurements(object):
         Parameters
         ----------
         path: str,
-            Full path to file. 
-        """        
+            Full path to file.
+        """
         file = open(path, 'rb')
         data = file.read()
         file.close()
         self.__dict__ = pickle.loads(data)
-    
+
     def split(self, n_parts):
         """
         Split the measurements and projection.
-        
+
         Parameters
         ----------
         n_parts: int
-            The number of parts to split the measurements to 
-        
+            The number of parts to split the measurements to
+
         Returns
         -------
         measurements: list
             A list of measurements each with n_parts
-            
+
         Notes
         -----
         An even split doesnt always exist, in which case some parts will have slightly more pixels.
@@ -989,7 +989,7 @@ class Measurements(object):
         projections = self.camera.projection.split(n_parts)
         pixels = np.array_split(self.pixels, n_parts)
         measurements = [shdom.Measurements(
-            camera=shdom.Camera(self.camera.sensor, projection), 
+            camera=shdom.Camera(self.camera.sensor, projection),
             pixels=pixel) for projection, pixel in zip(projections, pixels)
         ]
         return measurements
@@ -1014,7 +1014,7 @@ class Measurements(object):
     @property
     def camera(self):
         return self._camera
-    
+
     @property
     def pixels(self):
         return self._pixels
@@ -1046,7 +1046,7 @@ class Measurements(object):
 class Camera(object):
     """
     An Camera object ecapsulates both sensor and projection.
-    
+
     Parameters
     ----------
     sensor: shdom.Sensor
@@ -1057,33 +1057,33 @@ class Camera(object):
     def __init__(self, sensor=Sensor(), projection=Projection()):
         self.set_sensor(sensor)
         self.set_projection(projection)
-        
+
     def set_projection(self, projection):
         """
         Add a projection.
-        
+
         Parameters
         ----------
         projection: shdom.Projection
             A projection geomtry
         """
         self._projection = projection
-        
+
     def set_sensor(self, sensor):
         """
         Add a sensor.
-        
+
         Parameters
         ----------
         sensor: shdom.Sensor
             A sensor object
-            
+
         Notes
         -----
         This method also updates the docstring of the render method according to the specific sensor
-        """        
+        """
         self._sensor = sensor
-        
+
         # Update function docstring
         if sensor.render.__doc__ is not None:
             self.render.__func__.__doc__ += sensor.render.__doc__
@@ -1091,7 +1091,7 @@ class Camera(object):
     def render(self, rte_solver, n_jobs=1, verbose=0):
         """
         Render an image according to the render function defined by the sensor.
-        
+
         Notes
         -----
         This is a dummy docstring that is overwritten when the set_sensor method is used.
@@ -1101,16 +1101,16 @@ class Camera(object):
     @property
     def projection(self):
         return self._projection
-    
+
     @property
     def sensor(self):
         return self._sensor
-    
+
 
 class MultiViewProjection(Projection):
     """
     A MultiViewProjection object encapsulate several projection geometries for multi-view imaging of a domain.
-    
+
     Parameters
     ----------
     projection_list: list, optional
@@ -1124,24 +1124,24 @@ class MultiViewProjection(Projection):
         if projection_list:
             for projection in projection_list:
                 self.add_projection(projection)
-    
+
     def add_projection(self, projection, name=None):
         """
         Add a projection to the projection list
-        
+
         Parameters
         ----------
         projection: Projection object
             A Projection object to add to the MultiViewProjection
         name: str, optional
-            An ID for the projection. 
+            An ID for the projection.
         """
         # Set a default name for the projection
         if name is None:
             name = 'View{}'.format(self.num_projections)
 
         attributes = ['x', 'y', 'z', 'mu', 'phi']
-        
+
         if self.num_projections == 0:
             for attr in attributes:
                 self.__setattr__('_' + attr, projection.__getattribute__(attr))
@@ -1150,19 +1150,19 @@ class MultiViewProjection(Projection):
             self._names = [name]
         else:
             for attr in attributes:
-                self.__setattr__('_' + attr, np.concatenate((self.__getattribute__(attr), 
+                self.__setattr__('_' + attr, np.concatenate((self.__getattribute__(attr),
                                                              projection.__getattribute__(attr))))
             self._npix.append(projection.npix)
-            self._names.append(name)  
+            self._names.append(name)
             self._resolution.append(projection.resolution)
-                                    
+
         self._projection_list.append(projection)
-        self._num_projections += 1 
+        self._num_projections += 1
 
     @property
     def projection_list(self):
         return self._projection_list
-    
+
     @property
     def num_projections(self):
         return self._num_projections
@@ -1181,6 +1181,12 @@ class Noise(object):
         Dummy function to apply noise to measurements
         """
         return None
+
+
+class GaussianNoise(Noise):
+    """
+    TODO
+    """
 
 
 class AirMSPINoise(Noise):

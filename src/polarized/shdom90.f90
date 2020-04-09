@@ -10,10 +10,10 @@
                      ZCKD, GASABS, EXTMIN, SCATMIN)
 !      Trilinearly interpolates the quantities on the input property
 !     grid at the single point (X,Y,Z) to get the output TEMP,EXTINCT,
-!     ALBEDO, and LEGEN or IPHASE.  Interpolation is done on the 
+!     ALBEDO, and LEGEN or IPHASE.  Interpolation is done on the
 !     volume coefficients.  Also adds in the separate gaseous absorption.
 !     Divides the phase function Legendre coefficients LEGEN by 2*l+1.
-!     The phase function pointer IPHASE (for tabulated phase functions) 
+!     The phase function pointer IPHASE (for tabulated phase functions)
 !     is that of the maximum weighted scattering property grid point.
 !     If INIT=.TRUE. then transfers the tabulated phase functions.
       IMPLICIT NONE
@@ -26,7 +26,7 @@
       DOUBLE PRECISION U, V, W, F1, F2, F3, F4, F5, F6, F7, F8, F
       DOUBLE PRECISION SCAT1,SCAT2,SCAT3,SCAT4,SCAT5,SCAT6,SCAT7,SCAT8
       DOUBLE PRECISION SCATTER, MAXSCAT, KG, EXTMIN, SCATMIN
-      
+
       INTEGER NPX, NPY, NPZ
       INTEGER NUMPHASE
       REAL DELX, DELY, XSTART, YSTART
@@ -36,7 +36,7 @@
       INTEGER IPHASEP(*)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
-      
+
       IF (INIT) THEN
 !         If there are tabulated phase functions, then transfer them
         DO I = 1, NUMPHASE
@@ -125,7 +125,7 @@
       ELSE
         ALBEDO = SCATTER/EXTMIN
       ENDIF
-            
+
 !         For tabulated phase functions pick the one we are on top of
 !         or the one with the most scattering weight.
       IF (NUMPHASE .GT. 0) THEN
@@ -208,13 +208,13 @@
       ENDIF
       RETURN
       END
- 
- 
 
 
- 
+
+
+
       SUBROUTINE DIRECT_BEAM_PROP (INIT, XI, YI, ZI, BCFLAG, IPFLAG, &
-                     DELTAM, ML, NSTLEG, NLEG, SOLARFLUX, SOLARMU, SOLARAZ, & 
+                     DELTAM, ML, NSTLEG, NLEG, SOLARFLUX, SOLARMU, SOLARAZ, &
                      DIRFLUX,  UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM, &
                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY, &
                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
@@ -224,24 +224,24 @@
                      XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,&
                      NBPTS)
 !       Computes the direct beam flux at point (XI,YI,ZI) by integrating
-!     the extinction through the property grid.  If called with 
+!     the extinction through the property grid.  If called with
 !     INIT=1 then the property grid extinction array, solar direction
 !     terms, and lowest uniform level are computed and saved.  If called
 !     with INIT=2 then the input lowest uniform level (UNIFZLEV) is stored.
 !     Call with INIT=0 to do the path integration and return the direct
 !     beam flux on the horizontal (DIRFLUX) at XI,YI,ZI.
-!     The DELTAM flag is used to determine whether to delta-M scale the 
-!     extinction for the direct beam computation.  The extinction includes 
+!     The DELTAM flag is used to determine whether to delta-M scale the
+!     extinction for the direct beam computation.  The extinction includes
 !     the gaseous absorption.  If the IPFLAG has bit 2 set then the direct
 !     beam tracing is done in 3D, otherwise the lower two bits determine
-!     the type of tracing: 0 for 3D tracing, 1 for XZ only tracing, 
-!     2 for YZ only tracing, and 3 for Z only tracing.  If BCFLAG bits 0 
-!     or 1 are set then have open boundary conditions in X and/or Y.  In 
-!     this case when the ray tracing back to the sun reaches the boundary 
-!     then independent pixel mode is entered so that only Z grid 
+!     the type of tracing: 0 for 3D tracing, 1 for XZ only tracing,
+!     2 for YZ only tracing, and 3 for Z only tracing.  If BCFLAG bits 0
+!     or 1 are set then have open boundary conditions in X and/or Y.  In
+!     this case when the ray tracing back to the sun reaches the boundary
+!     then independent pixel mode is entered so that only Z grid
 !     intersections occur.
-!       For use with multiple processors (bit 2 or 3 set in BCFLAG), 
-!     the VALIDBEAM flag is returned true if the ray to the sun made it 
+!       For use with multiple processors (bit 2 or 3 set in BCFLAG),
+!     the VALIDBEAM flag is returned true if the ray to the sun made it
 !     to the top of the domain before hitting the subdomain side.  If the
 !     flag is false SIDE is returned with the boundary hit (1=-X, 2=+X,
 !     3=-Y, 4=+Y).  XE,YE,ZE returns the location of the exitting ray,
@@ -267,11 +267,11 @@
       DOUBLE PRECISION U0, V0, W0, U1, V1, W1, AX, AY, AZ
       DOUBLE PRECISION U0M, V0M, W0M, U1M, V1M, W1M, DU, DV, DW
       DOUBLE PRECISION E1,E2,E3,E4,E5,E6,E7,E8,  A, B, C, D
-      DOUBLE PRECISION B1,B2,B3,B4,B5,B6,B7,B8,C1,C2,C3,C4,C5,C6,C7,C8 
+      DOUBLE PRECISION B1,B2,B3,B4,B5,B6,B7,B8,C1,C2,C3,C4,C5,C6,C7,C8
       DOUBLE PRECISION UV,UMV,UVM,UMVM,UW,UMW,UWM,UMWM,VW,VMW,VWM,VMWM
       DOUBLE PRECISION VWU,VWUM,UWV,UWVM,UVW,UVWM
       REAL GASEXT(NPZ), EXTMIN(NPZ), EXTMAX(NPZ)
-      
+
       INTEGER NPX, NPY, NPZ
       INTEGER NUMPHASE, NPART
       REAL DELX, DELY, XSTART, YSTART
@@ -426,7 +426,7 @@
       X = XI - XSTART
       Y = YI - YSTART
 
-!         Find the grid location 
+!         Find the grid location
       IL=0
       IU=NPZ
       DO WHILE (IU-IL .GT. 1)
@@ -465,7 +465,7 @@
       IF (BTEST(BCFLAG,1) .AND. (ABS(Y) .LT. 0.01*DELYD  &
          .OR. ABS(Y-(NPY-1)*DELYD) .LT. 0.01*DELYD))  CONSTY = .TRUE.
 
-       ! If have multiple subdomains (processors) and ray is going outwards 
+       ! If have multiple subdomains (processors) and ray is going outwards
        !   from a boundary then set the HITBOUNDARY flag
       HITBOUNDARY = .FALSE.
       IF (BTEST(BCFLAG,2)) THEN
@@ -476,7 +476,7 @@
           SIDE = 1
           HITBOUNDARY = .TRUE.
         ENDIF
-      ENDIF 
+      ENDIF
       IF (BTEST(BCFLAG,3)) THEN
         IF (CY .GT. 0.0 .AND. ABS(Y-YDOMAIN) .LT. 0.001*DELYD) THEN
           SIDE = 4
@@ -486,7 +486,7 @@
           SIDE = 3
           HITBOUNDARY = .TRUE.
         ENDIF
-      ENDIF 
+      ENDIF
 
 !           Grid cell loop begin
       PATH = DIRPATH
@@ -497,16 +497,16 @@
             IP=NPX
           ELSE
             IP = 1
-          ENDIF   
-        ENDIF     
+          ENDIF
+        ENDIF
         JP = J + 1
         IF (J .EQ. NPY) THEN
           IF (BTEST(BCFLAG,1) .OR. BTEST(BCFLAG,3)) THEN
             JP=NPY
           ELSE
             JP = 1
-          ENDIF   
-        ENDIF     
+          ENDIF
+        ENDIF
         X0 = DELXD*(I-1)
         X1 = X0 + DELXD
         Y0 = DELYD*(J-1)
@@ -567,7 +567,7 @@
         ELSE
           SOZ = 1.0E30
         ENDIF
-        
+
 !           The shortest distance is the plane we stop at:
 !             get the exitting location and increment the cell
         XOFFS = 0.0
@@ -686,7 +686,7 @@
         B6 =  DU*VMW  - DV*UW   + DW*UVM
         B7 = -DU*VW   + DV*UMW  + DW*UMV
         B8 =  DU*VW   + DV*UW   + DW*UV
-        B = B1*E1 +B2*E2 +B3*E3 +B4*E4 +B5*E5 +B6*E6 +B7*E7 +B8*E8 
+        B = B1*E1 +B2*E2 +B3*E3 +B4*E4 +B5*E5 +B6*E6 +B7*E7 +B8*E8
         VW = DV*DW
         VWU  = VW*U0
         VWUM = VW*U0M
@@ -704,7 +704,7 @@
         C6 = - VWU  + UWVM - UVW
         C7 = + VWUM - UWV  - UVW
         C8 = + VWU  + UWV  + UVW
-        C = C1*E1 +C2*E2 +C3*E3 +C4*E4 +C5*E5 +C6*E6 +C7*E7 +C8*E8 
+        C = C1*E1 +C2*E2 +C3*E3 +C4*E4 +C5*E5 +C6*E6 +C7*E7 +C8*E8
         D = DU*DV*DW*(E2+E3+E5+E8-E1-E4-E6-E7)
 !            Compute the path through the cell: integration of extinction
         PATH = PATH + SO*(A +0.5D0*B +0.3333333333333333D0*C +0.25D0*D)
@@ -720,4 +720,3 @@
       IF (VALIDBEAM) SIDE=6
       RETURN
       END
-      

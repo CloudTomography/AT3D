@@ -104,7 +104,7 @@ class OptimizationScript(ExtinctionOptimizationScript):
         else:
             lwc_grid = reff_grid = veff_grid = self.cloud_generator.get_grid()
         grid = lwc_grid + reff_grid + veff_grid
-
+        
         # Find a cloud mask for non-cloudy grid points
         if self.args.use_forward_mask:
             mask = ground_truth.get_mask(threshold=0.01)
@@ -153,7 +153,7 @@ class OptimizationScript(ExtinctionOptimizationScript):
         # Create a medium estimator object (optional Rayleigh scattering)
         medium_estimator = shdom.MediumEstimator(
             loss_type=self.args.loss_type,
-            stokes_weights=self.args.stokes_weights
+            stokes_weights=self.args.stokes_weights,
         )
         if self.args.add_rayleigh:
             air = self.air_generator.get_scatterer(cloud_estimator.wavelength)
@@ -215,8 +215,9 @@ class OptimizationScript(ExtinctionOptimizationScript):
 
             # Compare estimator to ground-truth
             writer.monitor_scatterer_error(estimator_name=self.scatterer_name, ground_truth=ground_truth)
-            writer.monitor_scatter_plot(estimator_name=self.scatterer_name, ground_truth=ground_truth, dilute_percent=0.4, parameters=['lwc'])
+            writer.monitor_scatter_plot(estimator_name=self.scatterer_name, ground_truth=ground_truth, dilute_percent=0.4, parameters=['all'])
             writer.monitor_horizontal_mean(estimator_name=self.scatterer_name, ground_truth=ground_truth, ground_truth_mask=ground_truth.get_mask(threshold=0.01))
+            writer.monitor_scatter_plot(estimator_name=self.scatterer_name, ground_truth=ground_truth, dilute_percent=0.4, parameters=['all'])
 
         return writer
 
@@ -224,6 +225,3 @@ class OptimizationScript(ExtinctionOptimizationScript):
 if __name__ == "__main__":
     script = OptimizationScript(scatterer_name='cloud')
     script.main()
-
-
-

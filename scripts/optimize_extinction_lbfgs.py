@@ -228,12 +228,12 @@ class OptimizationScript(object):
             self.cloud_generator.add_mie(table_path)
 
         if self.args.use_forward_albedo:
-            albedo = ground_truth.albedo
+            albedo = ground_truth.albedo.resample(grid,method='nearest')
         else:
             albedo = self.cloud_generator.get_albedo(wavelength, albedo_grid)
 
         if self.args.use_forward_phase:
-            phase = ground_truth.phase
+            phase = ground_truth.phase.resample(grid)
         else:
             phase = self.cloud_generator.get_phase(wavelength, phase_grid)
 
@@ -244,14 +244,16 @@ class OptimizationScript(object):
         cloud_estimator.set_mask(mask)
 
         # Create a medium estimator object (optional Rayleigh scattering)
-        medium_estimator = shdom.MediumEstimator()
+        medium_estimator = shdom.MediumEstimator(
+                                                 loss_type=self.args.loss_type,
+                                                 stokes_weights=self.args.stokes_weights
+                                                 )
         if self.args.add_rayleigh:
             air = self.air_generator.get_scatterer(wavelength)
             medium_estimator.set_grid(cloud_estimator.grid + air.grid)
             medium_estimator.add_scatterer(air, 'air')
         else:
             medium_estimator.set_grid(cloud_estimator.grid)
-
         medium_estimator.add_scatterer(cloud_estimator, self.scatterer_name)
 
         return medium_estimator
@@ -279,12 +281,13 @@ class OptimizationScript(object):
             writer.save_checkpoints(ckpt_period=20 * 60)
             writer.monitor_loss()
             writer.monitor_shdom_iterations()
-            writer.monitor_images(measurements=measurements, ckpt_period=5 * 60)
+            writer.monitor_images(measurements=measurements, ckpt_period=-1)
 
-            # Compare estimator to ground-truth
+            #             Compare estimator to ground-truth
+            writer.monitor_power_spectrum(estimator_name=self.scatterer_name, ground_truth=ground_truth)
             writer.monitor_scatterer_error(estimator_name=self.scatterer_name, ground_truth=ground_truth)
             writer.monitor_domain_mean(estimator_name=self.scatterer_name, ground_truth=ground_truth)
-            writer.monitor_scatter_plot(estimator_name=self.scatterer_name, ground_truth=ground_truth, dilute_percent=0.4)
+            writer.monitor_scatter_plot(estimator_name=self.scatterer_name, ground_truth=ground_truth, dilute_percent=1.0)
             writer.monitor_horizontal_mean(estimator_name=self.scatterer_name, ground_truth=ground_truth, ground_truth_mask=ground_truth.get_mask(threshold=1.0))
 
         return writer
@@ -328,7 +331,13 @@ class OptimizationScript(object):
         self.parse_arguments()
 
         ground_truth, rte_solver, measurements = self.load_forward_model(self.args.input_dir)
-
+        # import pylab as py
+        # for image in measurements.images:
+        #     py.figure()
+        #     py.imshow(image[0])
+        #     py.colorbar()
+        #     print(image.shape)
+        #     py.show()
         # Add noise (currently only supports AirMSPI noise model)
         if self.args.add_noise:
             measurements.set_noise(shdom.AirMSPINoise())
@@ -390,7 +399,3 @@ class OptimizationScript(object):
 if __name__ == "__main__":
     script = OptimizationScript(scatterer_name='cloud')
     script.main()
-
-
-
-
