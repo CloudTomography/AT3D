@@ -3,7 +3,7 @@ import numpy as np
 import warnings
 import shdom
 import pandas as pd
-
+import core
 
 @xr.register_dataarray_accessor("shdomSampling")
 class shdomSampling(object):
@@ -66,6 +66,8 @@ reff = reff.shdomSampling.resample(grid, inplace=False)
 
 
 ### Mie
+
+
 class Mie(object):
     """
     Mie monodisperse scattering for spherical particles.
@@ -73,53 +75,26 @@ class Mie(object):
     Parameters
     ----------
     particle_type: string
-        Options are 'Water' or 'Aerosol'. Default is 'Water'.
-    refractive_index: complex number or shdom.RefractiveIndexTable
-        Either a pre-loaded table or a constant float
-    particle_density: float
-        Particle bulk density in g/cm^3 (Water is ~1.0)
+        Options are 'Water' or 'Aerosol'.
+    wavelength_band: (float, float)
+        (minimum, maximum) wavelength in microns.
+        This defines the spectral band over which to integrate, if both are equal monochrome quantities are computed.
+    minimum_effective_radius: float
+        Minimum effective radius in microns. Used to compute minimum radius for integration.
+    max_integration_radius: float
+        Maximum radius in microns - cutoff for the size distribution integral
+    wavelength_averaging: bool
+        True - average scattering properties over the wavelength_band.
+        False - scattering properties of the central wavelength.
+    wavelength_resolution: float
+        The distance between two wavelength samples in the band. Used only if wavelength_averaging is True.
+    refractive_index: complex number or path to refractive index table (CSV)
     """
 
-    def __init__(self, particle_type='Water', refractive_index=1.0, particle_density=1.0):
-        self._rindex = None
-        self._partype = particle_type
-        self._wavelen1 = None
-        self._wavelen2 = None
-        self._avgflag = None
-        self._deltawave = None
-        self._wavelencen = None
-        self._nsize = None
-        self._radii = None
-        self._maxleg = None
-        self._rindex = refractive_index
-        self._pardens = particle_density
+    def __init__(self, particle_type, wavelength_band, minimum_effective_radius=4.0, max_integration_radius=65.0,
+                 wavelength_averaging=False, wavelength_resolution=0.001, refractive_index=None):
 
-        if particle_type == 'Water':
-            self._partype = 'W'
-            self._rindex = 1.33
-            self._pardens = 1.0
-
-        elif particle_type == 'Aerosol':
-            self._partype = 'A'
-
-    def set_wavelength_integration(self,
-                                   wavelength_band,
-                                   wavelength_averaging=False,
-                                   wavelength_resolution=0.001):
-        """
-        Set the wavelength integration parameters to compute a scattering table.
-
-        Parameters
-        ----------
-        wavelength_band: (float, float)
-            (minimum, maximum) wavelength in microns.
-            This defines the spectral band over which to integrate, if both are equal monochrome quantities are computed.
-        wavelength_averaging: bool
-            True - average scattering properties over the wavelength_band.
-            False - scattering properties of the central wavelength.
-        wavelength_resolution: float
-            The distance between two wavelength samples in the band. Used only if wavelength_averaging is True.
-        """
+        # Set wavelength integration parameters
         self._wavelen1, self._wavelen2 = wavelength_band
         assert self._wavelen1 <= self._wavelen2, 'Minimum wavelength is smaller than maximum'
 
@@ -138,29 +113,31 @@ class Mie(object):
             wavelen2=self._wavelen2
         )
 
-        if (self._partype == 'W') or (self._partype == 'I'):
+        # Set particle type properties
+        if (particle_type == 'Water'):
+            self._partype = 'W'
             self._rindex = core.get_refract_index(
                 partype=self._partype,
                 wavelen1=self._wavelen1,
                 wavelen2=self._wavelen2
             )
-        elif (self._partype == 'A') and isinstance(self._rindex, RefractiveIndexTable):
-            self._rindex = self._rindex.get_monochrome_refractive_index(self._wavelencen)
 
-    def set_radius_integration(self,
-                               minimum_effective_radius,
-                               max_integration_radius):
-        """
-        Set the radius integration parameters to compute a scattering table.
+        elif (particle_type == 'Aerosol'):
+            self._partype = 'A'
+            assert refractive_index is not None, "Refractive index is not specified. \
+            This could be a complex number or string path to csv (a function of wavelength)"
+            if isinstance(refractive_index, str):
+                rindex_df = pd.read_csv('../ancillary_data/dust_volz_1972.ri', comment='#', sep=' ',
+                                        names=['wavelength', 'n', 'k'], index_col='wavelength')
+                refractive_index = xr.Dataset.from_dataframe(rindex_df).interp({'wavelength': self._wavelencen})
+                self._rindex = np.complex(refractive_index['n'], - refractive_index['k'])
+            else:
+                self._rindex = refractive_index
 
-        Parameters
-        ----------
-        minimum_effective_radius: float
-            Minimum effective radius in microns. Used to compute minimum radius for integration.
-        max_integration_radius: float
-            Maximum radius in microns - cutoff for the size distribution integral
-        """
+        else:
+            raise AttributeError('Particle type note implemented')
 
+        # Set radius integration parameters
         self._nsize = core.get_nsize(
             sretab=minimum_effective_radius,
             maxradius=max_integration_radius,
@@ -210,7 +187,7 @@ class Mie(object):
                 'nleg': (['radius'], nleg),
                 'legendre': (['stokes_index', 'legendre_index', 'radius'], legcoef)
             },
-            coords={'radius': radii},
+            coords={'radius': self._radii},
             attrs={
                 'Table type': table_type.decode(),
                 'radius units': '[micron]'
@@ -218,8 +195,11 @@ class Mie(object):
         )
         return table
 
+mie = Mie(particle_type='Aerosol',
+          refractive_index='../ancillary_data/dust_volz_1972.ri',
+          wavelength_band=(0.8, 0.8), max_integration_radius=20)
+table_aerosol = mie.compute_table()
 
-mie = Mie(particle_type='Water')
-mie.set_wavelength_integration(wavelength_band=(0.8, 0.8))
-mie.set_radius_integration(minimum_effective_radius=5.0, max_integration_radius=20)
-table = mie.compute_table()
+mie = Mie(particle_type='Water',
+          wavelength_band=(0.8, 0.8), max_integration_radius=20)
+table_water = mie.compute_table()
