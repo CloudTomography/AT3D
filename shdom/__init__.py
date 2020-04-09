@@ -31,23 +31,6 @@ import warnings
 import numpy as np
 import os
 
-def float_round(x):
-    """Round a float or np.float32 to a 3 digits float"""
-    if type(x) == np.float32:
-        x = x.item()
-    return round(x,3) 
-
-def int_round(x):
-    """Round a float or np.float32 to a 3 digits integer by 1000x scaling"""
-    return int(np.round(x*1000))
-
-def find_nearest(array, value):
-    """Find the nearest element index in an array"""
-    array = np.asarray(array)
-    idx = (np.abs(array - value)).argmin()
-    return idx
-
-
 class Grid(object):
     """ 
     A Grid object defining the 3D or 1D grid of the atmopshere. 
@@ -630,6 +613,7 @@ class BoundingBox(object):
         return BoundingBox(xmin, ymin, zmin, xmax, ymax, zmax)
 
 
+from shdom.util import *
 from shdom.phase import *
 from shdom.medium import *
 from shdom.sensor import *
