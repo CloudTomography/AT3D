@@ -490,80 +490,41 @@ class MieMonodisperse(object):
 
 
 class SizeDistribution(object):
-    """
-    Size distribution object to compute Polydisprese scattering.
 
-    Parameters
-    ----------
-    type: string
-        Particle size-distribution type options are 'gamma' or 'log-normal'.
+    def __init__(self, reff, distribution_type='gamma',particle_density=1.0,
+                veff=None,alpha=None):
 
-    Notes
-    -----
-    gamma:
-      n(r) = a r^alpha exp(-b*r).
-      r - droplet radius.
-      a, b, alpha - gamma distribution parameters.
+        self.distribution_type = distribution_type
 
-    lognormal:
-      n(r) = a/r exp( -[ln(r/r0)]^2 / (2*alpha^2) ).
-      r0 - logarithmic mode.
-      alpha - standard deviation of the log.
-
-    Modified gamma not supported yet.
-    """
-    def __init__(self, type='gamma'):
-
-        if type == 'gamma':
+        if distribution_type == 'gamma':
             self._distflag = 'G'
-        elif type == 'lognormal':
+        elif distribution_type == 'lognormal':
             self._distflag = 'L'
         else:
             raise NotImplementedError('Distribution type {} not supported'.format(type))
 
-        self._alpha = None
-        self._reff = None
-        self._veff = None
-        self._nd = None
-        self._nd_interpolator = None
+        self.gamma=0.0
 
-        # For modified gamma, currently unused
-        self._gamma = 0.0
+        self.reff = np.atleast_1d(reff)
+        self._nretab = self.reff.shape[0]
 
-    def set_parameters(self, reff, **kwargs):
-        """
-        Set size-distribution parameters.
+        assert (veff is not None) or (alpha is not None), 'One of veff and alpha must be specified.'
 
-        Parameters
-        ----------
-        reff: np.array(shape=(nretab,), dtype=float)
-            Effective radius array in microns
-        veff: np.array(shape=(nvetab,), dtype=float), optional
-            Effective variance array for the size distribution
-        alpha: np.array(shape=(nvetab,), dtype=float), optional
-            Shape parameter array for the size distribution
+        if alpha is not None:
+            self.alpha = np.atleast_1d(alpha)
+            self._nvetab = self.alpha.shape[0]
+            if self._distflag == 'G':
+                self.veff = 1.0 / (alpha + 3.0)
+            if self._distflag == 'L':
+                self.veff = np.exp(alpha**2) - 1.0
+        elif veff is not None:
 
-        Notes
-        -----
-        Either veff or alpha must be specified (not both).
-        The reff, veff, N, alpha relationships are as follows:
-          Gamma:
-            N = a Gamma(alpha+1)/ b^(alpha+1) - number concentration.
-            r_eff = (alpha+3)/b - effective radius.
-            v_eff = 1/(alpha+3) - effective variance.
-
-          Log-normal:
-            N = sqrt(2*pi)*alpha*a - number concentration.
-            r_eff = r0*exp(2.5*alpha^2) - effective radius.
-            v_eff = exp(alpha^2)-1  - effective variance.
-        """
-        self.reff = reff
-        if 'alpha' in kwargs:
-            self.alpha = kwargs['alpha']
-        elif 'veff' in kwargs:
-            self.veff = kwargs['veff']
-        else:
-            raise AttributeError('Neither veff or alpha were specified.')
+            self.veff = np.atleast_1d(veff)
+            self._nvetab = self.veff.shape[0]
+            if self._distflag == 'G':
+                self.alpha = 1.0 / veff - 3.0
+            if self._distflag == 'L':
+                self.alpha = np.sqrt(np.log(veff + 1.0))
 
     def compute_nd(self, radii, particle_density=1.0):
         """
@@ -577,99 +538,37 @@ class SizeDistribution(object):
             Particle density [g/cm^3] is used to normalize the size-distribution for 1.0 [g/cm^3]
             liquid water content or mass content. particle_density=1.0 is used for water particles.
         """
-        self._radii = radii
+        self.radii = radii
         self._nsize = radii.shape[0]
         self._pardens = particle_density
 
-        reff, alpha = np.meshgrid(self.reff, self.alpha)
-        self._nd = core.make_multi_size_dist(
-            distflag=self.distflag,
-            pardens=self.pardens,
-            nsize=self.nsize,
-            radii=self.radii,
-            reff=reff.ravel(),
-            alpha=alpha.ravel(),
-            gamma=self.gamma,
-            ndist=reff.size)
+        reff,alpha,gamma = np.meshgrid(self.reff,self.alpha,self.gamma)
 
-        nd = self.nd.T.reshape((self.nretab, self.nvetab, self.nsize), order='F')
-        self._nd_interpolator = RegularGridInterpolator(
-                (self.reff, self.veff), nd, bounds_error=False, fill_value=0.0)
+        nd = core.make_multi_size_dist(
+                    distflag=self._distflag,
+                    pardens=self._pardens,
+                    nsize=self._nsize,
+                    radii=self.radii,
+                    reff=reff.ravel(),
+                    alpha=alpha.ravel(),
+                    gamma=gamma.ravel(),
+                    ndist=reff.size)
+        nd = nd.T.reshape((self._nretab, self._nvetab, self._nsize), order='F')
 
-    def get_nd(self, reff, veff):
-        return self._nd_interpolator((reff, veff)).T
 
-    @property
-    def radii(self):
-        return self._radii
+        dataset = xr.Dataset(
+                data_vars = {
+                    'numberdensity': (['reff','veff','radii'], nd)
 
-    @property
-    def pardens(self):
-        return self._pardens
-
-    @property
-    def distflag(self):
-        return self._distflag
-
-    @property
-    def nsize(self):
-        return self._nsize
-
-    @property
-    def ndist(self):
-        return self.nretab * self.nvetab
-
-    @property
-    def nretab(self):
-        return self._nretab
-
-    @property
-    def nvetab(self):
-        return self._nvetab
-
-    @property
-    def alpha(self):
-        return self._alpha
-
-    @alpha.setter
-    def alpha(self, val):
-        self._alpha = val
-        self._nvetab = 1 if np.isscalar(val) else val.shape[0]
-        if self.distflag == 'G':
-            self._veff = 1.0 / (val + 3.0)
-        if self.distflag == 'L':
-            self._veff = np.exp(val**2) - 1.0
-
-    @property
-    def gamma(self):
-        return self._gamma
-
-    @property
-    def reff(self):
-        return self._reff
-
-    @reff.setter
-    def reff(self, val):
-        self._reff = val
-        self._nretab = 1 if np.isscalar(val) else val.shape[0]
-
-    @property
-    def veff(self):
-        return self._veff
-
-    @veff.setter
-    def veff(self, val):
-        self._veff = val
-        self._nvetab = 1 if np.isscalar(val) else val.shape[0]
-        if self.distflag == 'G':
-            self._alpha = 1.0 / val - 3.0
-        if self.distflag == 'L':
-            self._alpha = np.sqrt(np.log(val + 1.0))
-
-    @property
-    def nd(self):
-        return self._nd
-
+                },
+                coords={'reff': self.reff,
+                       'veff': self.veff,
+                       'radii': self.radii},
+                attrs={
+                    'distribution_type': self.distribution_type,
+                    'particle_density': particle_density
+                })
+        return dataset
 
 class MiePolydisperse(object):
     """
