@@ -10,6 +10,7 @@ import numpy as np
 import shdom
 from shdom import core, find_nearest
 from scipy.interpolate import interp1d, RegularGridInterpolator
+import xarray as xr
 
 
 class RefractiveIndexTable(object):
