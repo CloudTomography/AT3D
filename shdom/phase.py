@@ -8,61 +8,10 @@ Source Fortran files were created by Frank Evans University of Colorado May 2003
 """
 import numpy as np
 import shdom
+import xarray as xr
+import pandas as pd
 from shdom import core, find_nearest
-from scipy.interpolate import interp1d, RegularGridInterpolator
-
-
-class RefractiveIndexTable(object):
-    """
-     Loads and interpolates a refractive index table from ancillary_data.
-     Returns the refractive index at specified monochromatic wavelengths.
-
-    Parameters
-    ----------
-    filename: str
-        Directory path to the database.
-    """
-    def __init__(self, filename):
-        self.filename = filename
-        self._load()
-        self._interpolate()
-
-    def _load(self):
-        """
-        Read Data from csv file
-        """
-        self.wavelengths = np.genfromtxt(self.filename, usecols=0, dtype=np.float32)
-        self.n = np.genfromtxt(self.filename, usecols=1, dtype=np.float32)
-        self.k = np.genfromtxt(self.filename, usecols=2, dtype=np.float32)
-        self.refractive_index = self.n - self.k * np.complex(0, 1)
-
-    def _interpolate(self):
-        """
-        Interpolates the Spectrum so it can be retrieved at any wavelength
-        """
-        self.interpolater = interp1d(self.wavelengths, self.refractive_index)
-
-    def get_monochrome_refractive_index(self, wavelengths):
-        """
-        Returns the complex refractive index interpolated to the provided wavelengths.
-
-        Parameters
-        ----------
-        wavelengths: array_like
-            Wavelengths in units of micrometers.
-
-        Returns
-        -------
-        Interpolated_Refractive_Index: np.array
-            The refractive index interpolated to each of the input wavelengths.
-        """
-        if type(wavelengths) == list:
-            wavelengths = np.array(wavelengths)
-        if np.any(wavelengths <= np.min(self.wavelengths)) or np.any(wavelengths >= np.max(self.wavelengths)):
-            raise AttributeError('Wavelengths must be in Range {} - {} Micrometer'.format(
-                np.round(np.min(self.wavelengths) / 1000.0, 6), np.max(self.wavelengths) / 1000.0))
-        refractive_index = self.interpolater(wavelengths)
-        return refractive_index
+from scipy.interpolate import RegularGridInterpolator
 
 
 class LegendreTable(object):
@@ -231,66 +180,37 @@ class GridPhase(object):
     def index(self):
         return self._index
 
-
-class MieMonodisperse(object):
+class Mie(object):
     """
     Mie monodisperse scattering for spherical particles.
+    This object computes Legendre coefficients and outputs Mie tables as xarrays.
 
     Parameters
     ----------
     particle_type: string
-        Options are 'Water' or 'Aerosol'. Default is 'Water'.
-    refractive_index: complex number or shdom.RefractiveIndexTable
-        Either a pre-loaded table or a constant float
-    particle_density: float
-        Particle bulk density in g/cm^3 (Water is ~1.0)
+        Options are 'Water' or 'Aerosol'.
+    wavelength_band: (float, float)
+        (minimum, maximum) wavelength in microns.
+        This defines the spectral band over which to integrate, if both are equal monochrome quantities are computed.
+    minimum_effective_radius: float
+        Minimum effective radius in microns. Used to compute minimum radius for integration.
+    max_integration_radius: float
+        Maximum radius in microns - cutoff for the size distribution integral
+    wavelength_averaging: bool
+        True - average scattering properties over the wavelength_band.
+        False - scattering properties of the central wavelength.
+    wavelength_resolution: float
+        The distance between two wavelength samples in the band. Used only if wavelength_averaging is True.
+    refractive_index: complex number or path to refractive index table (CSV)
+        The refractive index should have a negative imaginary part. ri = n - ik
     """
-    def __init__(self, particle_type='Water', refractive_index=1.0, particle_density=1.0):
-        self._rindex = None
-        self._pardens = None
-        self._table_type = None
+
+    def __init__(self, particle_type, wavelength_band, minimum_effective_radius=4.0, max_integration_radius=65.0,
+                 wavelength_averaging=False, wavelength_resolution=0.001, refractive_index=None):
+
         self._partype = particle_type
-        self._wavelen1 = None
-        self._wavelen2 = None
-        self._avgflag = None
-        self._deltawave = None
-        self._wavelencen = None
-        self._nsize = None
-        self._radii = None
-        self._maxleg = None
-        self._nleg = None
-        self._legcoef = None
-        self._extinct = None
-        self._scatter = None
-        self._rindex = refractive_index
-        self._pardens = particle_density
 
-        if particle_type == 'Water':
-            self._partype = 'W'
-            self._rindex = 1.33
-            self._pardens = 1.0
-
-        elif particle_type == 'Aerosol':
-            self._partype = 'A'
-
-    def set_wavelength_integration(self,
-                                   wavelength_band,
-                                   wavelength_averaging=False,
-                                   wavelength_resolution=0.001):
-        """
-        Set the wavelength integration parameters to compute a scattering table.
-
-        Parameters
-        ----------
-        wavelength_band: (float, float)
-            (minimum, maximum) wavelength in microns.
-            This defines the spectral band over which to integrate, if both are equal monochrome quantities are computed.
-        wavelength_averaging: bool
-            True - average scattering properties over the wavelength_band.
-            False - scattering properties of the central wavelength.
-        wavelength_resolution: float
-            The distance between two wavelength samples in the band. Used only if wavelength_averaging is True.
-        """
+        # Set wavelength integration parameters
         self._wavelen1, self._wavelen2 = wavelength_band
         assert self._wavelen1 <= self._wavelen2, 'Minimum wavelength is smaller than maximum'
 
@@ -309,29 +229,30 @@ class MieMonodisperse(object):
             wavelen2=self._wavelen2
         )
 
-        if (self._partype == 'W') or (self._partype == 'I'):
+        # Set particle type properties
+        if (particle_type == 'Water'):
             self._rindex = core.get_refract_index(
                 partype=self._partype,
                 wavelen1=self._wavelen1,
                 wavelen2=self._wavelen2
             )
-        elif (self._partype == 'A') and isinstance(self._rindex, RefractiveIndexTable):
-            self._rindex = self._rindex.get_monochrome_refractive_index(self._wavelencen)
 
-    def set_radius_integration(self,
-                               minimum_effective_radius,
-                               max_integration_radius):
-        """
-        Set the radius integration parameters to compute a scattering table.
+        elif (particle_type == 'Aerosol'):
+            self._partype = 'A'
+            assert refractive_index is not None, "Refractive index is not specified. \
+            This could be a complex number or string path to csv (a function of wavelength)"
+            if isinstance(refractive_index, str):
+                rindex_df = pd.read_csv('../ancillary_data/dust_volz_1972.ri', comment='#', sep=' ',
+                                        names=['wavelength', 'n', 'k'], index_col='wavelength')
+                refractive_index = xr.Dataset.from_dataframe(rindex_df).interp({'wavelength': self._wavelencen})
+                self._rindex = np.complex(refractive_index['n'], - refractive_index['k'])
+            else:
+                self._rindex = refractive_index
 
-        Parameters
-        ----------
-        minimum_effective_radius: float
-            Minimum effective radius in microns. Used to compute minimum radius for integration.
-        max_integration_radius: float
-            Maximum radius in microns - cutoff for the size distribution integral
-        """
+        else:
+            raise AttributeError('Particle type note implemented')
 
+        # Set radius integration parameters
         self._nsize = core.get_nsize(
             sretab=minimum_effective_radius,
             maxradius=max_integration_radius,
@@ -350,7 +271,7 @@ class MieMonodisperse(object):
             xmax = 2 * np.pi * max_integration_radius / self._wavelen1
         else:
             xmax = 2 * np.pi * max_integration_radius / self._wavelencen
-        self._maxleg = int(np.round(2.0 * (xmax + 4.0*xmax**0.3334 + 2.0)))
+        self._maxleg = int(np.round(2.0 * (xmax + 4.0 * xmax ** 0.3334 + 2.0)))
 
     def compute_table(self):
         """
@@ -360,7 +281,7 @@ class MieMonodisperse(object):
         -----
         This is a time consuming method.
         """
-        self._extinct, self._scatter, self._nleg, self._legcoef, table_type = \
+        extinct, scatter, nleg, legcoef, table_type = \
             core.compute_mie_all_sizes(
                 nsize=self._nsize,
                 maxleg=self._maxleg,
@@ -371,122 +292,30 @@ class MieMonodisperse(object):
                 radii=self._radii,
                 rindex=self._rindex,
                 avgflag=self._avgflag,
-                partype=self._partype
+                partype=self._partype[0]
             )
-        self._table_type = table_type.decode()
 
-    def write_table(self, file_path):
-        """
-        Write a pre-computed table to <file_path>.
-
-        Parameters
-        ----------
-        file_path: str
-            Path to file.
-
-        Notes
-        -----
-        This function must be ran after pre-computing a scattering table with compute_table().
-        """
-        print('Writing Mie monodisperse table to file: {}'.format(file_path))
-        core.write_mono_table(
-            mietabfile=file_path,
-            wavelen1=self._wavelen1,
-            wavelen2=self._wavelen2,
-            deltawave=self._deltawave,
-            partype=self._partype,
-            pardens=self._pardens,
-            rindex=self._rindex,
-            radii=self._radii,
-            extinct=self._extinct,
-            scatter=self._scatter,
-            nleg=self._nleg,
-            maxleg=self._maxleg,
-            legcoef=self._legcoef
+        table = xr.Dataset(
+            data_vars={
+                'extinction': (['radius'], extinct),
+                'scatter': (['radius'], scatter),
+                'nleg': (['radius'], nleg),
+                'legendre': (['stokes_index', 'legendre_index', 'radius'], legcoef)
+            },
+            coords={'radius': self._radii},
+            attrs={
+                'Particle type': self._partype,
+                'Refractive index': self._rindex,
+                'Table type': table_type.decode(),
+                'Radius units': 'micron',
+                'Wavelength band': '[{}, {}] micron'.format(self._wavelen1, self._wavelen2),
+                'Wavelength center': '{} micron'.format(self._wavelencen),
+                'Wavlegnth averging': self._avgflag,
+                'Wavelegnth resolution': self._deltawave,
+                'Maximum legendre': self._maxleg
+            },
         )
-
-    def read_table_header(self, file_path):
-        """
-        Read the table header from <file_path>.
-
-        Parameters
-        ----------
-        file_path: str
-            Path to file.
-
-        Notes
-        -----
-        The header contains the following information:
-            wavelen1, wavelen2, deltawave, pardens, partype, rindex, nsize, maxleg
-        """
-        wavelen1, wavelen2, deltawave = np.genfromtxt(file_path, max_rows=1, skip_header=1, usecols=(0, 1, 2), dtype=float)
-        pardens = np.genfromtxt(file_path, max_rows=1, skip_header=2, usecols=(0), dtype=float)
-        partype = np.asscalar(np.genfromtxt(file_path, max_rows=1, skip_header=2, usecols=(1), dtype=str))
-        rindex  = np.complex(np.genfromtxt(file_path, max_rows=1, skip_header=3, usecols=(0), dtype=float),
-                             np.genfromtxt(file_path, max_rows=1, skip_header=3, usecols=(1), dtype=float))
-        nsize = np.genfromtxt(file_path, max_rows=1, skip_header=4, usecols=(0), dtype=int)
-        maxleg = np.genfromtxt(file_path, max_rows=1, skip_header=5, usecols=(0), dtype=int)
-
-        return wavelen1, wavelen2, deltawave, pardens, partype, rindex, nsize, maxleg
-
-    def read_table(self, file_path):
-        """
-        Read a pre-computed table from <file_path>.
-
-        Parameters
-        ----------
-        file_path: str
-            Path to file.
-        """
-
-        print('Reading mie table from file: {}'.format(file_path))
-        self._wavelen1, self._wavelen2, self._deltawave, self._pardens, \
-            self._partype, self._rindex, self._nsize, self._maxleg = self.read_table_header(file_path)
-
-        self._wavelencen = core.get_center_wavelen(
-            wavelen1=self._wavelen1,
-            wavelen2=self._wavelen2
-        )
-
-        self._radii, self._extinct, self._scatter, self._nleg, self._legcoef, table_type = \
-            core.read_mono_table(
-                mietabfile=file_path,
-                nrtab=self._nsize,
-                maxleg=self._maxleg
-            )
-        self._table_type = table_type.decode()
-
-    @property
-    def maxleg(self):
-        return self._maxleg
-
-    @property
-    def pardens(self):
-        return self._pardens
-
-    @property
-    def radii(self):
-        return self._radii
-
-    @property
-    def extinct(self):
-        return self._extinct
-
-    @property
-    def scatter(self):
-        return self._scatter
-
-    @property
-    def nleg(self):
-        return self._nleg
-
-    @property
-    def legcoef(self):
-        return self._legcoef
-
-    @property
-    def table_type(self):
-        return self._table_type
+        return table
 
 
 class SizeDistribution(object):
@@ -542,7 +371,7 @@ class SizeDistribution(object):
         self._nsize = radii.shape[0]
         self._pardens = particle_density
 
-        reff,alpha,gamma = np.meshgrid(self.reff,self.alpha,self.gamma)
+        reff, alpha, gamma = np.meshgrid(self.reff,self.alpha,self.gamma)
 
         nd = core.make_multi_size_dist(
                     distflag=self._distflag,
