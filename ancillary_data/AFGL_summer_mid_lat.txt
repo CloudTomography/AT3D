@@ -2,7 +2,8 @@
 # G.P. Anderson, J.H. Chetwynd, S.A. Clough, e.P. Shettle, F.X. Kneizys, 1986
 # https://apps.dtic.mil/dtic/tr/fulltext/u2/a175173.pdf
 # Model 2: Mid-Latitude Summer (45N July)
-Altitude(km) Pressure(mb) Temperature(k) Density(cm^-3) H2O(ppmv) O3(ppmv) N2O(ppmv) CO(ppmv) CH4(ppmv)
+# Units: km mb k cm^-3 ppmv ppmv ppmv ppmv ppmv
+Altitude Pressure Temperature Density H2O O3 N2O CO CH4
 0.00 1.013e+03 294.2 2.496e+19 1.86e+04 3.02e-02 3.20e-01 1.50e-01 1.70e+00
 1.00 9.020e+02 289.7 2.257e+12 1.38e+04 3.34e-02 3.20e-01 1.45e-01 1.70e+00
 2.00 8.020e+02 295.2 2.038e+19 9.68e+03 3.69e-02 3.20e-01 1.40e-01 1.70e+00

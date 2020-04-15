@@ -365,7 +365,7 @@ class Mie(object):
                 'Particle type': self._partype,
                 'Refractive index': self._rindex,
                 'Table type': table_type.decode(),
-                'Radius units': 'micron',
+                'units': ['Radius [micron]'],
                 'Wavelength band': '[{}, {}] micron'.format(self._wavelen1, self._wavelen2),
                 'Wavelength center': '{} micron'.format(self._wavelencen),
                 'Wavlegnth averging': self._avgflag,
@@ -880,201 +880,88 @@ class Rayleigh(object):
     Rayleigh scattering for temperature profile.
 
     Description taken from cloudprp.f:
-     Computes the molecular Rayleigh extinction profile EXTRAYL [/km]
-     from the temperature profile TEMP [K] at ZLEVELS [km].  Assumes
-     a linear lapse rate between levels to compute the pressure at
-     each level.  The Rayleigh extinction is proportional to air
-     density, with the coefficient RAYLCOEF in [K/(mb km)].
+         Computes the molecular Rayleigh extinction profile EXTRAYL [/km]
+         from the temperature profile TEMP [K] at ZLEVELS [km].  Assumes
+         a linear lapse rate between levels to compute the pressure at
+         each level.  The Rayleigh extinction is proportional to air
+         density, with the coefficient RAYLCOEF in [K/(mb km)].
 
     Parameters
     ----------
-    wavelength: float or list of floats
+    wavelengths: float or list / numpy array.
         The wavelengths in [microns].
-    temperature_profile: TemperatureProfile
-        A TemperatureProfile object containing temperatures and altitudes on a 1D grid.
-    surface_pressure: float
-        Surface pressure in units [mb]
-
-    Notes
-    -----
-    The ssa of air is 1.0 and the phase function legendre coefficients are [1.0, 0.0, 0.5].
     """
-    def __init__(self, wavelength):
-        if isinstance(wavelength, list):
-            self._wavelength = wavelength
-        else:
-            self._wavelength = [wavelength]
-        self._num_wavelengths = len(self._wavelength)
-        self._temperature_profile = None
-        self._surface_pressure = None
-        self._raylcoeff = None
 
-    def get_extinction(self, grid):
+    def __init__(self, wavelengths):
+        self._wavelengths = np.atleast_1d(wavelengths)
+
+    def compute_table(self):
+        """
+        Retrieve the Rayleigh phase function (Legendre table).
+
+        Parameters
+        ----------
+        grid: shdom.Grid
+            The new grid to which the data will be resampled
+
+        Returns
+        -------
+        table: xarray.Dataset
+            A dataset of Legendre coeffiecients for each wavelength specified.
+        """
+        legcoefs, table_types = zip(*[core.rayleigh_phase_function(wavelen=wavelen) for wavelen in self.wavelengths])
+        arrs = [xr.DataArray(
+            name='{:1.3} micron'.format(wavelength),
+            data=legcoef, dims=['stokes_index', 'legendre_index'],
+            attrs={'Table type': table_type.decode(), 'Wavelength': '{} [micron]'.format(wavelength)}
+        ) for legcoef, table_type, wavelength in zip(legcoefs, table_types, self.wavelengths)]
+        table = xr.merge(arrs)
+        return table
+
+    def compute_extinction(self, temperature_profile, surface_pressure=1013.0):
         """
         Retrieve the Rayleigh extinction profile (as a function of altitude).
 
         Parameters
         ----------
-        grid: shdom.Grid
-            The new grid to which the data will be resampled
-
-        Returns
-        -------
-        extinction_profile: list of shdom.GridData
-            A list of GridData objects containing the extinction on a 1D grid.
-            The length of the list is the number of wavelengths.
-        """
-        if self.num_wavelengths == 1:
-            ext_profile = core.rayleigh_extinct(
-                nzt=grid.nz,
-                zlevels=grid.z,
-                temp=self.temperature_profile.data,
-                raysfcpres=self.surface_pressure,
-                raylcoef=self._raylcoef
-            )
-            extinction = shdom.GridData(grid, ext_profile)
-        else:
-            ext_profile = [core.rayleigh_extinct(
-                nzt=grid.nz,
-                zlevels=grid.z,
-                temp=self.temperature_profile.data,
-                raysfcpres=self.surface_pressure,
-                raylcoef=raylcoef
-            ) for raylcoef in self._raylcoef]
-            extinction = [shdom.GridData(grid, ext) for ext in ext_profile]
-        return extinction
-
-    def get_albedo(self, grid):
-        """
-        Retrieve the Rayleigh single scattering albedo.
-
-        Parameters
-        ----------
-        grid: shdom.Grid
-            The new grid to which the data will be resampled
-
-        Returns
-        -------
-        albedo: list of shdom.GridData
-            A list of GridData objects containing the single scattering albedo [0,1] on a grid.
-            The length of the list is the number of wavelengths.
-        """
-        if self.num_wavelengths == 1:
-            albedo = shdom.GridData(grid, data=np.full(shape=grid.shape, fill_value=1.0, dtype=np.float32))
-        else:
-            albedo = [shdom.GridData(grid, data=np.full(shape=grid.shape, fill_value=1.0, dtype=np.float32)) for wavelength in self._wavelength]
-        return albedo
-
-    def get_phase(self, grid):
-        """
-        Retrieve the Rayleigh phase function.
-
-        Parameters
-        ----------
-        grid: shdom.Grid
-            The new grid to which the data will be resampled
-
-        Returns
-        -------
-        phase: list of shdom.GridPhase
-            A list of GridPhase objects containing the phase function on a grid.
-            The length of the list is the number of wavelengths.
-        """
-        phase = []
-        for wavelength in self._wavelength:
-            index = shdom.GridData(grid, data=np.ones(shape=grid.shape, dtype=np.int32))
-            table, table_type = core.rayleigh_phase_function(wavelen=wavelength)
-            table = LegendreTable(table.astype(np.float32), table_type.decode())
-            phase.append(GridPhase(table, index))
-
-        if self.num_wavelengths == 1:
-            phase = phase[0]
-        return phase
-
-    def set_profile(self, temperature_profile, surface_pressure=1013.0):
-        """
-        Set the tempertature profile and surface pressure and initialize optical fields.
-
-        Parameters
-        ----------
-        temperature_profile: shdom.GridData
-            a shdom.GridData object containing the altitude grid points in [km] and temperatures in [Kelvin].
+        temperature_profile: xarray.DataArray
+            a DataArray containing the altitude grid points in [km] and temperatures in [Kelvin].
         surface_pressure: float
             Surface pressure in units [mb] (default value is 1013.0)
+
+        Returns
+        -------
+        rayleigh_profile: xarray.Dataset
+            a DataArray containing the altitude grid points in [km], temperatures in [kelvin] and molecular extinction [km^-1].
         """
-        self._temperature_profile = temperature_profile
-        self._surface_pressure = surface_pressure
-        self._grid = temperature_profile.grid
 
         # Use the parameterization of Bodhaine et al. (1999) eq 30 for tau_R at
         # sea level and convert to Rayleigh density coefficient:
         #   k = 0.03370*(p_sfc/1013.25)*tau_R  for k in K/(mb km)
-        self._raylcoef = [
-            0.03370 * (surface_pressure/1013.25) * 0.0021520 * (1.0455996 - 341.29061/wl**2 - 0.90230850*wl**2) / (1 + 0.0027059889/wl**2 - 85.968563*wl**2) for wl in self._wavelength
-        ]
-        if self.num_wavelengths == 1:
-            self._raylcoef = self._raylcoef[0]
-        self._extinction = self.get_extinction(self.grid)
-        self._albedo = self.get_albedo(self.grid)
-        self._phase = self.get_phase(self.grid)
+        raylcoefs = 0.03370 * (surface_pressure / 1013.25) * 0.0021520 * (
+                    1.0455996 - 341.29061 / self.wavelengths ** 2 - 0.90230850 * self.wavelengths ** 2) / \
+                    (1 + 0.0027059889 / self.wavelengths ** 2 - 85.968563 * self.wavelengths ** 2)
+        ext_profile = [xr.DataArray(
+            dims='Altitude',
+            name='{:1.3} micron'.format(wavelength),
+            coords={'wavelength': wavelength, 'Altitude': temperature_profile.Altitude},
+            data=core.rayleigh_extinct(nzt=temperature_profile.size,
+                                       zlevels=temperature_profile.Altitude,
+                                       temp=temperature_profile.data,
+                                       raysfcpres=surface_pressure,
+                                       raylcoef=raylcoef)
+        ) for raylcoef, wavelength in zip(raylcoefs, self.wavelengths)]
 
-    def get_scatterer(self):
-        """
-        Retrieve a Scatterer from the medium.
-
-        Returns
-        -------
-        scatterer: shdom.Scatterer
-            A Scatterer object containing the Rayleigh optical properties on a 1D grid.
-
-        Notes
-        -----
-        For a single band a shdom.OpticalScatterer is returned and for multiple wavelengths a shdom.MultispectralScatterer object.
-        """
-        if self.num_wavelengths == 1:
-            scatterer = shdom.OpticalScatterer(self.wavelength, self.extinction, self.albedo, self.phase)
-        else:
-            scatterer_list = [
-                shdom.OpticalScatterer(wavelength, extinction, albedo, phase) for \
-                wavelength, extinction, albedo, phase in zip(self._wavelength, self._extinction, self._albedo, self._phase)
-            ]
-            scatterer = shdom.MultispectralScatterer(scatterer_list)
-        return scatterer
+        # Create a Rayleigh profile xarray.Dataset
+        rayleigh_profile = temperature_profile.copy().to_dataset(name='Temperature')
+        rayleigh_profile['Extinction'] = xr.concat(ext_profile, dim='wavelength')
+        rayleigh_profile.attrs['units'] = temperature_profile.attrs['units']
+        rayleigh_profile.attrs['units'].append('Extinction [Km^-1]')
+        return rayleigh_profile
 
     @property
-    def num_wavelengths(self):
-        return self._num_wavelengths
-
-    @property
-    def wavelength(self):
-        if self.num_wavelengths == 1:
-            return self._wavelength[0]
-        else:
-            return self._wavelength
-
-    @property
-    def raylcoef(self):
-        return self._raylcoef
-
-    @property
-    def extinction(self):
-        return self._extinction
-
-    @property
-    def albedo(self):
-        return self._albedo
-
-    @property
-    def phase(self):
-        return self._phase
-
-    @property
-    def temperature_profile(self):
-        return self._temperature_profile
-
-    @property
-    def grid(self):
-        return self._grid
+    def wavelengths(self):
+        return self._wavelengths
 
     @property
     def surface_pressure(self):
