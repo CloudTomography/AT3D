@@ -11,65 +11,7 @@ import shdom
 import xarray as xr
 import pandas as pd
 from shdom import core, find_nearest
-<<<<<<< HEAD
-from scipy.interpolate import interp1d, RegularGridInterpolator
-import xarray as xr
-
-
-class RefractiveIndexTable(object):
-    """
-     Loads and interpolates a refractive index table from ancillary_data.
-     Returns the refractive index at specified monochromatic wavelengths.
-
-    Parameters
-    ----------
-    filename: str
-        Directory path to the database.
-    """
-    def __init__(self, filename):
-        self.filename = filename
-        self._load()
-        self._interpolate()
-
-    def _load(self):
-        """
-        Read Data from csv file
-        """
-        self.wavelengths = np.genfromtxt(self.filename, usecols=0, dtype=np.float32)
-        self.n = np.genfromtxt(self.filename, usecols=1, dtype=np.float32)
-        self.k = np.genfromtxt(self.filename, usecols=2, dtype=np.float32)
-        self.refractive_index = self.n - self.k * np.complex(0, 1)
-
-    def _interpolate(self):
-        """
-        Interpolates the Spectrum so it can be retrieved at any wavelength
-        """
-        self.interpolater = interp1d(self.wavelengths, self.refractive_index)
-
-    def get_monochrome_refractive_index(self, wavelengths):
-        """
-        Returns the complex refractive index interpolated to the provided wavelengths.
-
-        Parameters
-        ----------
-        wavelengths: array_like
-            Wavelengths in units of micrometers.
-
-        Returns
-        -------
-        Interpolated_Refractive_Index: np.array
-            The refractive index interpolated to each of the input wavelengths.
-        """
-        if type(wavelengths) == list:
-            wavelengths = np.array(wavelengths)
-        if np.any(wavelengths <= np.min(self.wavelengths)) or np.any(wavelengths >= np.max(self.wavelengths)):
-            raise AttributeError('Wavelengths must be in Range {} - {} Micrometer'.format(
-                np.round(np.min(self.wavelengths) / 1000.0, 6), np.max(self.wavelengths) / 1000.0))
-        refractive_index = self.interpolater(wavelengths)
-        return refractive_index
-=======
 from scipy.interpolate import RegularGridInterpolator
->>>>>>> 1d6af631194ac14c0cc94dedf13779d543735380
 
 
 class LegendreTable(object):
