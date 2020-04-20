@@ -304,7 +304,6 @@ class Mie(object):
                 self._rindex = np.complex(refractive_index['n'], - refractive_index['k'])
             else:
                 self._rindex = refractive_index
-
         else:
             raise AttributeError('Particle type note implemented')
 
