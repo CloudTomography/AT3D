@@ -11,9 +11,10 @@ import shdom
 import xarray as xr
 import pandas as pd
 from shdom import core, find_nearest
-<<<<<<< HEAD
 from scipy.interpolate import interp1d, RegularGridInterpolator
 import xarray as xr
+
+import os
 
 
 class RefractiveIndexTable(object):
@@ -67,9 +68,7 @@ class RefractiveIndexTable(object):
                 np.round(np.min(self.wavelengths) / 1000.0, 6), np.max(self.wavelengths) / 1000.0))
         refractive_index = self.interpolater(wavelengths)
         return refractive_index
-=======
-from scipy.interpolate import RegularGridInterpolator
->>>>>>> 1d6af631194ac14c0cc94dedf13779d543735380
+
 
 
 class LegendreTable(object):
@@ -267,7 +266,6 @@ class Mie(object):
                  wavelength_averaging=False, wavelength_resolution=0.001, refractive_index=None):
 
         self._partype = particle_type
-
         # Set wavelength integration parameters
         self._wavelen1, self._wavelen2 = wavelength_band
         assert self._wavelen1 <= self._wavelen2, 'Minimum wavelength is smaller than maximum'
@@ -310,19 +308,8 @@ class Mie(object):
         else:
             raise AttributeError('Particle type note implemented')
 
-        # Set radius integration parameters
-        self._nsize = core.get_nsize(
-            sretab=minimum_effective_radius,
-            maxradius=max_integration_radius,
-            wavelen=self._wavelencen
-        )
-
-        self._radii = core.get_sizes(
-            sretab=minimum_effective_radius,
-            maxradius=max_integration_radius,
-            wavelen=self._wavelencen,
-            nsize=self._nsize
-        )
+        self._minimum_effective_radius=minimum_effective_radius
+        self._maximum_integration_radius=max_integration_radius
 
         # Calculate the maximum size parameter and the max number of Legendre terms
         if self._avgflag == 'A':
@@ -331,7 +318,7 @@ class Mie(object):
             xmax = 2 * np.pi * max_integration_radius / self._wavelencen
         self._maxleg = int(np.round(2.0 * (xmax + 4.0 * xmax ** 0.3334 + 2.0)))
 
-    def compute_table(self):
+    def _compute_table(self):
         """
         Compute monodisperse Mie scattering per radius.
 
@@ -339,6 +326,21 @@ class Mie(object):
         -----
         This is a time consuming method.
         """
+
+        # Set radius integration parameters
+        self._nsize = core.get_nsize(
+            sretab=self._minimum_effective_radius,
+            maxradius=self._maximum_integration_radius,
+            wavelen=self._wavelencen
+        )
+
+        self._radii = core.get_sizes(
+            sretab=self._minimum_effective_radius,
+            maxradius=self._maximum_integration_radius,
+            wavelen=self._wavelencen,
+            nsize=self._nsize
+        )
+
         extinct, scatter, nleg, legcoef, table_type = \
             core.compute_mie_all_sizes(
                 nsize=self._nsize,
@@ -363,18 +365,68 @@ class Mie(object):
             coords={'radius': self._radii},
             attrs={
                 'Particle type': self._partype,
-                'Refractive index': self._rindex,
+                'Refractive index': (self._rindex.real,self._rindex.imag),
                 'Table type': table_type.decode(),
-                'units': ['Radius [micron]'],
-                'Wavelength band': '[{}, {}] micron'.format(self._wavelen1, self._wavelen2),
-                'Wavelength center': '{} micron'.format(self._wavelencen),
-                'Wavlegnth averging': self._avgflag,
-                'Wavelegnth resolution': self._deltawave,
-                'Maximum legendre': self._maxleg
+                'units': ['Radius [micron]','Wavelength [micron]'],
+                'Wavelength band': (self._wavelen1, self._wavelen2),
+                'Wavelength center': self._wavelencen,
+                'Wavlength averaging': self._avgflag,
+                'Wavelength resolution': self._deltawave,
+                'Maximum legendre': self._maxleg,
+                'Minimum effective radius':self._minimum_effective_radius,
+                'Maximum radius':self._maximum_integration_radius
             },
         )
         return table
 
+    def get_table(self, relative_path=None):
+        """
+        public method for obtaining a required mie_table either through
+        loading or computation.
+        """
+        table_attempt=None
+        if relative_path is not None:
+            table_attempt = self._load_table(relative_path)
+
+        if table_attempt is not None:
+            table=table_attempt
+        else:
+            table = self._compute_table()
+
+        return table
+
+    def _load_table(self, relative_path):
+        """
+        function that tests whether there is an existing
+        mie_table that has the specified properties. This is
+        more robust than testing names.
+        TODO
+        """
+        file_list = os.listdir(relative_path)
+        table = None
+
+        list_of_input = [self._partype, (self._rindex.real,self._rindex.imag), 'VECTOR', ['Radius [micron]','Wavelength [micron]'],
+                    (self._wavelen1, self._wavelen2),
+                    self._wavelencen, self._avgflag, self._deltawave, self._maxleg,
+                    self._minimum_effective_radius, self._maximum_integration_radius]
+
+        for file in file_list:
+            if file.endswith('.nc') and 'mie_table' in file:
+                with xr.open_dataset(os.path.join(relative_path,file)) as dataset:
+                    #open_dataset reads data lazily.
+                    list_of_dataset = [attr[1] for attr in dataset.attrs.items()]
+                    test=True
+                    for attr1,attr2 in zip(list_of_input,list_of_dataset):
+                        if isinstance(attr1, tuple):
+                            temp = np.all(attr1==attr2)
+                        else:
+                            temp = attr1==attr2
+                        if not temp:
+                            test=False
+                    if test:
+                        table=dataset
+
+        return table
 
 class SizeDistribution(object):
 
