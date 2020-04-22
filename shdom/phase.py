@@ -369,7 +369,7 @@ class Mie(object):
                 'units': ['Radius [micron]','Wavelength [micron]'],
                 'Wavelength band': (self._wavelen1, self._wavelen2),
                 'Wavelength center': self._wavelencen,
-                'Wavlength averaging': self._avgflag,
+                'Wavelength averaging': self._avgflag,
                 'Wavelength resolution': self._deltawave,
                 'Maximum legendre': self._maxleg,
                 'Minimum effective radius':self._minimum_effective_radius,

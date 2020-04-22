@@ -107,7 +107,11 @@ class shdomMicrophysics(object):
                     warnings.warn('Variables \'{}\' and \'{}\' do not have consistent coords. All coords must be consistent.'.format(data_var[0],data_var2[0]))
         assert grid_test,'Grid Check Failed.'
 
-    #THIS IS REALLY A GENERATOR FOR DATA SHOULD COME FROM SOMEWHERE ELSE I GUESS.
+    def _cloud_microphysics_checks(self):
+
+
+
+    #THIS IS REALLY A GENERATOR FOR DATA (SHOULD COME FROM SOMEWHERE ELSE?)
     def _add_homogeneous_like(self, reference_variable_name, variable_name, value):
         """
         TODO
@@ -121,8 +125,7 @@ class shdomMicrophysics(object):
         new_data_array = new_data_array.where(np.bitwise_not(np.isnan(to_copy)),np.nan)
         self._obj[variable_name] = new_data_array
 
-
-    def microphysics_checks(self, replace_defaults=False, default_distribution_type=None, default_veff=None):
+    def _distribution_type_check(self, replace_defaults=False, default_distribution_type=None):
         """
         TODO
         """
@@ -139,6 +142,11 @@ class shdomMicrophysics(object):
             else:
                 raise KeyError('A \'distribution_type\' attribute must be specified. Supported values are \'gamma\' and \'lognormal\'.')
 
+    def _gamma_lognormal_dist_check(self, replace_defaults=False, default_veff=None):
+        """
+        TODO
+        """
+        distribution_type = self._obj.attrs['distribution_type']
         if distribution_type in ('gamma','lognormal'):
             try:
                 lwc = self._obj['lwc']
@@ -171,16 +179,19 @@ class shdomMicrophysics(object):
         else:
             raise NotImplementedError("Supported '\distribution_type'\ are \'gamma\' and \'lognormal\'")
 
+    def prepare_size_distribution(self,size_distribution_mode='TABULATED',
+                                  spacing='logarithmic',max_grid_phase=1000,Nreff=None,Nalpha=None,
+                              default_distribution_type='gamma', default_veff=0.1, replace_defaults=False,
+                                  particle_density=1.0):
 
-
-    def _prepare_size_distribution(self, particle_density=1.0, size_distribution_mode='GRID',max_grid_phase=1000,Ntable=50,
-                              default_distribution_type='gamma', default_veff=0.1, replace_defaults=False):
-
-        self._grid_checks()
-        self.microphysics_checks(replace_defaults=replace_defaults, default_distribution_type=default_distribution_type, default_veff=default_veff)
+        self._distribution_type_check(replace_defaults=replace_defaults, default_distribution_type=default_distribution_type)
 
         #in case more types are implemented I explicitly separate.
         if self._obj.attrs['distribution_type'] in ('gamma','lognormal'):
+
+            #perform checks that relevant values are there and valid.
+            self._gamma_lognormal_dist_check(replace_defaults=replace_defaults, default_veff=default_veff)
+
             reff = self._obj['reff'].values.ravel()
             gamma=np.zeros(reff.shape)
 
@@ -195,31 +206,152 @@ class shdomMicrophysics(object):
                 else:
                     alpha = self._obj['alpha'].values.ravel()
 
-            """
-            TODO BELOW
-            """
             #Get Reff & Alpha coordinates for table depending whether its 'GRID' or 'TABULATED'.
             if size_distribution_mode == 'GRID':
+                #Assuming a 'nan' type mask is used in the scatterer object.
+                reff_valid = reff[np.where(np.bitwise_not(np.isnan(reff)))]
+                alpha_valid = alpha[np.where(np.bitwise_not(np.isnan(veff)))]
+                unique = np.unique(np.stack([reff_valid,alpha_valid],axis=-1),axis=0)
 
-                unique_pairs = list(set([(i,j) for i,j in zip(reff,alpha)])) #smarter way needed.
-
-                if len(unique_pairs) > max_grid_phase:
-                    warnings.warn('Number of phase functions \'{}\' is larger than suggested number {}'.format(len(unique_pairs),max_grid_phase))
-
-                #only take the unique elements.
-                reff_table, alpha_table = zip(*unique_pairs)
-
+                reff_table = unique[:,0]
+                alpha_table = unique[:,1]
 
             elif size_distribution_mode == 'TABULATED':
-                assert Ntable > 0
-                reff_table, alpha_table = np.meshgrid(np.arange(reff.min(),reff.max(),Ntable),
-                                                   np.arange(alpha.min(),alpha.max(),Ntable))
+
+                assert Nreff is not None & Nalpha is not None
+                if spacing == 'logarithmic':
+                    reff_range = np.logspace(np.log(np.nanmin(reff)),np.log(np.nanmax(reff)),Nreff)
+                    alpha_range = np.logspace(np.log(np.nanmin(alpha)),np.log(np.nanmax(alpha)),Nalpha)
+                elif spacing == 'linear':
+                    reff_range = np.linspace(np.nanmin(reff),np.nanmax(reff),Nreff)
+                    alpha_range = np.linspace(np.nanmin(alpha),np.nanmax(alpha),Nalpha)
+
+                reff_table, alpha_table = np.meshgrid(reff_range,alpha_range)
+                reff_table = reff_table.ravel()
+                alpha_table = alpha_table.ravel()
 
         else:
             raise NotImplementedError("Supported '\distribution_type'\ are \'gamma\' and \'lognormal\'")
 
-        self._obj.assign_coords({'table_reff':reff_table,
-                                 'table_alpha': alpha_table})
+
+        size_distribution = xr.DataArray(name='SizeDistributions',
+            data_vars = {
+                'table_reff':reff_table,
+                'table_alpha':alpha_table
+            },
+            attrs={
+                'particle_density': particle_density,
+                'size_distribution_mode': size_distribution_mode,
+                'distribution_type':distribution_type
+            }
+        )
+    return size_distribution
+
+
+    def get_optical_properties(self, size_distribution, poly_table):
+        """
+
+        """
+
+@xr.register_dataset_accessor("shdomMie")
+class shdomMie(object):
+
+    def __init__(self, data_array):
+        self._obj = data_array
+
+    def _mie_checks(self,replace_defaults=False,default_distribution_type=None,
+               default_particle_density=None):
+        self._obj.shdomMicrophysics.distribution_type_check(replace_defaults=replace_defaults, default_distribution_type=default_distribution_type)
+
+        try:
+            particle_density = self._obj.attrs['particle_density']
+        except KeyError:
+            if replace_defaults:
+                self._obj.attrs['particle_density'] = default_particle_density
+                particle_density = self._obj.attrs['particle_density']
+
+
+    def make_poly_mie(self, mie_mono_table, replace_defaults=False,default_distribution_type='gamma',
+                     default_particle_density=1.0):
+
+        self._mie_checks(replace_defaults=replace_defaults,default_distribution_type=default_distribution_type,
+                     default_particle_density=default_particle_density)
+
+        if self._obj.attrs['distribution_type'] == 'gamma':
+            distflag='G'
+        elif self._obj.attrs['distribution_type'] == 'lognormal':
+            distflag='L'
+
+        gamma = np.zeros(self._obj['table_reff'].shape)
+        reff =
+        nd = core.make_multi_size_dist(
+                    distflag=distflag,
+                    pardens=self._obj.attrs['particle_density'],
+                    nsize=mie_mono_table.coords['radius'].size,
+                    radii=mie_mono_table.coords['radius'].values,
+                    reff=self._obj['table_reff'].values,
+                    alpha=self._obj['table_alpha'].values,
+                    gamma=gamma,
+                    ndist=gamma.size)
+        nd = nd.T.reshape((self._nretab, self._nvetab, self._nsize), order='F')
+
+        extinct, ssalb, nleg, legcoef = \
+            core.get_poly_table(
+                nd=nd,
+                ndist=gamma.size,
+                nsize=mie_mono_table.coords['radius'].size,
+                maxleg=mie_mono_table.attrs['maxleg'],
+                nleg1=mie_mono_table.attrs['nleg'],
+                extinct1=mie_mono_table['extinct'],
+                scatter1=mie_mono_table['scatter'],
+                legcoef1=mie_mono_table['extinct'])
+
+        dataset = xr.Dataset(
+                data_vars = {
+                    #'numberdensity': (['reff','veff','radii'], nd),
+                    'extinct': (['microphysics_index'], extinct),
+                    'ssalb': (['microphysics_index'], ssalb),
+                    'legcoef': (['stokes_index','legendre_index'])
+
+                },
+                coords={'reff': self._obj.reff,
+                       'veff': self._obj.veff,
+                       'nleg':
+                       },
+        dataset.assign_
+        dataset.assign_attrs(mie_mono_table.attrs)
+
+
+    def save_mie_mono(self,relative_path,file_name=None):
+
+        attrs = self._obj.attrs
+        if file_name is None:
+            Water_A_626_630_MINR_4_MAXR_65_DW_0.001
+            file_name = '{}_{}_{}_{}_MINR_{}_MAXR_{}_DW_{}_N_{}.nc'.format(attrs['Particle type'],
+                                                                       attrs['Refractive index'],
+                                                                        attrs['Wavelength averaging'],
+                                                                       attrs['Wavelength band'][0],
+                                                                       attrs['Wavelength band'][1],
+                                                                       attrs['Minimum effective radius'],
+                                                                       attrs['Maximum radius'],
+                                                                       attrs['Wavelength resolution'],
+                                                                       attrs['Refractive index'])
+        self._obj.to_netcdf(os.path.join(relative_path,file_name))
+
+
+
+
+
+         #check if table coords already in object for independent use of make_poly_mie,
+        #distinct from Microphysics.
+
+        #if not then check if microphysical and thereby run _prepare_size_distribution
+
+
+        #Run make mie_poly.
+
+
+
 
 #checks can be run independently.
 scatterer.shdomMicrophysics.microphysics_checks(replace_defaults=True,default_distribution_type='gamma',default_veff=0.1)
