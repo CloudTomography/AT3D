@@ -3,6 +3,7 @@ import numpy as np
 from shdom import core
 from collections import OrderedDict
 
+
 def gamma(radii, reff=None,veff=None,alpha=None, particle_density=1.0):
     """
     TODO
@@ -32,7 +33,7 @@ def gamma(radii, reff=None,veff=None,alpha=None, particle_density=1.0):
                 alpha=alpha,
                 gamma=gamma,
                 ndist=reff.size)
-    return nd.T
+    return nd
 
 def lognormal(radii, reff=None ,veff=None,alpha=None, particle_density=1.0):
     """
@@ -61,7 +62,8 @@ def lognormal(radii, reff=None ,veff=None,alpha=None, particle_density=1.0):
                 alpha=alpha,
                 gamma=gamma,
                 ndist=reff.size)
-    return nd.T
+    return nd
+
 
 
 def get_size_distribution_grid(radii, size_distribution_function=gamma,
@@ -93,7 +95,7 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
             coord_min, coord_max,n,spacing,units = parameter
         except:
             coord_min, coord_max,n,spacing = parameter
-            units = 'Not '
+            units = 'Not specified'
         if spacing == 'logarithmic':
             coord = np.logspace(np.log10(coord_min), np.log10(coord_max), n)
         elif spacing =='linear':
@@ -107,7 +109,8 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
     meshgrid = np.meshgrid(*coord_list,indexing='ij')
     parameter_dict = OrderedDict()
     coord_dict = OrderedDict()
-
+    coord_dict['radius'] = radii
+    units_list.append(radius_units)
     for name,grid,coord in zip(name_list,meshgrid,coord_list):
 
         parameter_dict[name] = grid.ravel()
@@ -118,19 +121,26 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
     number_density_raveled = size_distribution_function(radii, **parameter_dict,
                                               particle_density=particle_density)
 
-    number_density = number_density_raveled.reshape(grid_shape + [len(radii)])
-
-    coord_dict['radius'] = radii
-    units_list.append(radius_units)
+    number_density = number_density_raveled.reshape(grid_shape)
 
     size_dist_grid = xr.Dataset(
             data_vars = {
                 'number density': (list(coord_dict.keys()), number_density),
             },
             coords=dict(coord_dict),
-            attrs={'units': units_list}
+            attrs={'units': units_list,
+                  'distribution type': size_distribution_function.__name__
+                  },
     )
     return size_dist_grid
+
+
+#example usage
+# number_density_grid = get_size_distribution_grid(mie_table['radius'],size_distribution_function=gamma,
+#                                 reff=[4.5,20.0,10,'linear','micron'],veff=[0.01,0.1,5,'linear','unitless'],
+#                                 radius_units=mie_table.attrs['units'][0])
+
+
 
 
 #example usage

@@ -207,9 +207,12 @@ def load_table(relative_path,particle_type, wavelength_band,
 
 def get_poly_table(size_distribution, mie_mono_table):
     """
+    TODO
     Calculates mie scattering table for a polydisperse size distribution.
     """
     nd = size_distribution['number density'].values.reshape((len(number_density_grid['radius'])),-1)
+    #TODO
+    #add interpolation onto radius
     assert np.all(size_distribution.coords['radius'] == mie_mono_table.coords['radius']), 'radii should be consistent between size distribution and mie_mono_table'
     extinct, ssalb, nleg, legcoef = \
         core.get_poly_table(
@@ -228,7 +231,7 @@ def get_poly_table(size_distribution, mie_mono_table):
     coords = {name:coord for name,coord in size_distribution.coords.items() if name !='radius'}
     poly_table = xr.Dataset(
             data_vars = {
-                'extinct': (list(number_density_grid.coords.keys())[1:], extinct.reshape(grid_shape)),
+                'extinction': (list(number_density_grid.coords.keys())[1:], extinct.reshape(grid_shape)),
                 'ssalb': (list(number_density_grid.coords.keys())[1:], ssalb.reshape(grid_shape)),
                 'legcoef': (['stokes_index','legendre_index'] + list(number_density_grid.coords.keys())[1:],
                            legcoef.reshape(legcoef.shape[:2] + grid_shape)),
