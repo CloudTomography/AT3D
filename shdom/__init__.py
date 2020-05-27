@@ -25,7 +25,7 @@ distribution functions (BRDF) for the surface are implemented, and more may be a
 SHDOM may be run on a single processor or on multiple processors (e.g. an SMP machine or a
 cluster) using the Message Passing Interface (MPI).
 """
-
+import shdom.rayleigh
 from scipy.interpolate import interp1d, RegularGridInterpolator
 import warnings
 import numpy as np
