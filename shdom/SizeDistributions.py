@@ -1,6 +1,7 @@
 import xarray as xr
 import numpy as np
 from shdom import core
+from collections import OrderedDict
 
 def gamma(radii, reff=None,veff=None,alpha=None, particle_density=1.0):
     """
@@ -82,7 +83,6 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
            The type of spacing. Either 'logarithmic' or 'linear'.
        units: string
            The units of the microphysical dimension.
-
     """
     coord_list = []
     name_list = []

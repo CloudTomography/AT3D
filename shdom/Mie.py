@@ -204,3 +204,39 @@ def load_table(relative_path,particle_type, wavelength_band,
     if table is not None:
         table = xr.load_dataset(os.path.join(relative_path,table))
     return table
+
+def get_poly_table(size_distribution, mie_mono_table):
+    """
+    Calculates mie scattering table for a polydisperse size distribution.
+    """
+    nd = size_distribution['number density'].values.reshape((len(number_density_grid['radius'])),-1)
+    assert np.all(size_distribution.coords['radius'] == mie_mono_table.coords['radius']), 'radii should be consistent between size distribution and mie_mono_table'
+    extinct, ssalb, nleg, legcoef = \
+        core.get_poly_table(
+            nd=nd,
+            ndist=nd.shape[-1],
+            nsize=mie_mono_table.coords['radius'].size,
+            maxleg=mie_mono_table.attrs['maximum legendre'],
+            nleg1=mie_mono_table['nleg'],
+            extinct1=mie_mono_table['extinction'],
+            scatter1=mie_mono_table['scatter'],
+            legcoef1=mie_mono_table['legendre'])
+
+    grid_shape = size_distribution['number density'].shape[1:]
+
+    #all coords except radius
+    coords = {name:coord for name,coord in size_distribution.coords.items() if name !='radius'}
+    poly_table = xr.Dataset(
+            data_vars = {
+                'extinct': (list(number_density_grid.coords.keys())[1:], extinct.reshape(grid_shape)),
+                'ssalb': (list(number_density_grid.coords.keys())[1:], ssalb.reshape(grid_shape)),
+                'legcoef': (['stokes_index','legendre_index'] + list(number_density_grid.coords.keys())[1:],
+                           legcoef.reshape(legcoef.shape[:2] + grid_shape)),
+
+            },
+        coords=coords
+    )
+
+    poly_table = poly_table.assign_attrs(size_distribution.attrs)
+    poly_table = poly_table.assign_attrs(mie_mono_table.attrs)
+    return poly_table
