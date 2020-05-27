@@ -140,8 +140,11 @@ def compute_table(particle_type, wavelength_band,
             'extinction': (['radius'], extinct),
             'scatter': (['radius'], scatter),
             'nleg': (['radius'], nleg),
-            'legendre': (['stokes_index', 'legendre_index', 'radius'], legcoef)
+            'legendre': (['stokes_index', 'legendre_index', 'radius'], legcoef),
+            'stokes components': (['stokes_index'], np.array(['P11','P22','P33','P44','P12','P34']))
+
         },
+        #TODO fix space vs underscore
         coords={'radius': radii},
         attrs={
             'particle type': particle_type,
@@ -210,7 +213,7 @@ def get_poly_table(size_distribution, mie_mono_table):
     TODO
     Calculates mie scattering table for a polydisperse size distribution.
     """
-    nd = size_distribution['number density'].values.reshape((len(number_density_grid['radius'])),-1)
+    nd = size_distribution['number density'].values.reshape((len(size_distribution['radius'])),-1)
     #TODO
     #add interpolation onto radius
     assert np.all(size_distribution.coords['radius'] == mie_mono_table.coords['radius']), 'radii should be consistent between size distribution and mie_mono_table'
@@ -226,14 +229,16 @@ def get_poly_table(size_distribution, mie_mono_table):
             legcoef1=mie_mono_table['legendre'])
 
     grid_shape = size_distribution['number density'].shape[1:]
+    coord_lengths = [np.arange(len(coord)) for name,coord in .coords]
+    legen_index = np.meshgrid(*coord_lengths,indexing='ij')
 
     #all coords except radius
     coords = {name:coord for name,coord in size_distribution.coords.items() if name !='radius'}
     poly_table = xr.Dataset(
             data_vars = {
-                'extinction': (list(number_density_grid.coords.keys())[1:], extinct.reshape(grid_shape)),
-                'ssalb': (list(number_density_grid.coords.keys())[1:], ssalb.reshape(grid_shape)),
-                'legcoef': (['stokes_index','legendre_index'] + list(number_density_grid.coords.keys())[1:],
+                'extinction': (list(size_distribution.coords.keys())[1:], extinct.reshape(grid_shape)),
+                'ssalb': (list(size_distribution.coords.keys())[1:], ssalb.reshape(grid_shape)),
+                'legcoef': (['stokes_index','legendre_index'] + list(size_distribution.coords.keys())[1:],
                            legcoef.reshape(legcoef.shape[:2] + grid_shape)),
 
             },
