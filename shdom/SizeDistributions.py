@@ -83,6 +83,7 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
            The type of spacing. Either 'logarithmic' or 'linear'.
        units: string
            The units of the microphysical dimension.
+
     """
     coord_list = []
     name_list = []
@@ -92,7 +93,7 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
             coord_min, coord_max,n,spacing,units = parameter
         except:
             coord_min, coord_max,n,spacing = parameter
-            units = 'Not specified'
+            units = 'Not '
         if spacing == 'logarithmic':
             coord = np.logspace(np.log10(coord_min), np.log10(coord_max), n)
         elif spacing =='linear':
