@@ -100,7 +100,7 @@ def compute_table(particle_type, wavelength_band,
     else:
         raise AttributeError('Particle type note implemented')
 
-    #set mie integration parameters
+    #set integration parameters
     if avgflag =='A':
         xmax = 2 * np.pi * max_integration_radius / wavelen1
     else:
