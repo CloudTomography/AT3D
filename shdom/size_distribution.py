@@ -120,9 +120,9 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
 
     number_density_raveled = size_distribution_function(radii, **parameter_dict,
                                               particle_density=particle_density)
-
+    #TODO this can fail silently in some cases (produce nans), add checks.
     number_density = number_density_raveled.reshape(grid_shape)
-    
+
     #TODO: should this be a data array
     size_dist_grid = xr.Dataset(
             data_vars = {

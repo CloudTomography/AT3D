@@ -199,7 +199,6 @@ def load_table(relative_path,particle_type, wavelength_band,
                         temp = attr==attr_file
 
                     if not temp:
-                        return name, attr, attr_file
                         test=False
                 if test:
                     table = file
@@ -228,12 +227,12 @@ def get_poly_table(size_distribution, mie_mono_table):
             legcoef1=mie_mono_table['legendre'])
 
     grid_shape = size_distribution['number density'].shape[1:]
-    
+
     #all coords except radius
     coords = {name:coord for name, coord in size_distribution.coords.items() if name !='radius'}
     coord_lengths = [np.arange(coord.size) for name, coord in coords.items()]
     legen_index = np.meshgrid(*coord_lengths, indexing='ij')
-    
+
     #TODO: Does this need + 1 here?
     table_index = np.ravel_multi_index(legen_index, dims=[coord.size for coord in coord_lengths]) + 1
 

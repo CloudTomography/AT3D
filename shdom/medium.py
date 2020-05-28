@@ -18,21 +18,25 @@ def table_to_grid(microphysics, poly_table):
     #If this fails it could be because some coordinates necessary for the interpolation
     #are missing from microphysics.
     interp_coords = {name:microphysics[name] for name in poly_table.coords}
-    
+
     ssalb = poly_table.ssalb.interp(interp_coords)
     extinction_efficiency = poly_table.extinction.interp(interp_coords)
-    
+
     extinction = extinction_efficiency * microphysics.density
     extinction.name = 'extinction'
-    
+
     table_index = poly_table.table_index.interp(coords=interp_coords, method='nearest').round().astype(int)
-    
+
     optical_properties = xr.merge([extinction, ssalb, table_index])
-    
+
+    #TODO
+    #Add checks like those in MicrophysicalScatterer.add_mie() to ensure
+    #that the returned optical properties are valid and/or raise warning when
+    #some microphysics entries are out of range of the given table.
     return optical_properties
-    
-    
-    
+
+
+
 
 class Scatterer(object):
     """
