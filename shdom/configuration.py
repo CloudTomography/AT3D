@@ -2,7 +2,8 @@ import os
 import json
 import xarray as xr
 
-def make_config(config_file_name,horizontal_boundary_conditions=1,
+def make_config(config_file_name,x_boundary_condition='open',
+                y_boundary_condition='open',
                 num_mu_bins=16,num_phi_bins=32,
                 split_accuracy=0.03,deltam=True,
                 spherical_harmonics_accuracy=0.01,
@@ -20,10 +21,11 @@ def make_config(config_file_name,horizontal_boundary_conditions=1,
     assert config_file_name != 'default_config','Config file cannot overwrite default'
 
     shdom_parameters = {
-        'horizontal_boundary_conditions': {'default_value': horizontal_boundary_conditions, 'description':'1. open - exiting radiance is lost. 2. periodic - exiting radiance returns from the opposite side.'},
+        'x_boundary_condition': {'default_value': x_boundary_condition, 'description':'1. open - exiting radiance is lost. 2. periodic - exiting radiance returns from the opposite side.'},
+        'y_boundary_condition': {'default_value': y_boundary_condition, 'description':'1. open - exiting radiance is lost. 2. periodic - exiting radiance returns from the opposite side.'},
         'num_mu_bins': {'default_value': num_mu_bins, 'description': '(NMU) number of discrete ordinates covering -1 < mu < 1.'},
         'num_phi_bins': {'default_value': num_phi_bins, 'description': '(NPHI) number of discrete ordinates covering 0 < phi < 2pi'},
-        'split_accuracy': {'default_value': split_accuracy, 'description': ["(SPLITACC) cell splitting accuracy; grid cells that have the adaptive splitting criterion above this value are split.","This is an absolute measure, but cannot be easily associated with the resulting radiometric accuracy.\n Set to zero or negative for no adaptive cell splitting."]},
+        'split_accuracy': {'default_value': split_accuracy, 'description': ["(SPLITACC) cell splitting accuracy; grid cells that have the adaptive splitting criterion above this value are split.","This is an absolute measure, but cannot be easily associated with the resulting radiometric accuracy. Set to zero or negative for no adaptive cell splitting."]},
         'deltam':{'default_value': deltam, 'description': '(DELTAM) True for delta-M scaling of medium and Nakajima and Tanaka method of computing radiances.'},
         'spherical_harmonics_accuracy':{'default_value': spherical_harmonics_accuracy, 'description': ["(SHACC) adaptive spherical harmonic truncation accuracy; the spherical harmonic source function series is truncated after the terms are below this level.","Truncation can still happens if SHACC=0 (for 0 source terms).This is also an absolute measure, and is approximately the level of accuracy."]},
         'acceleration_flag': {'default_value':acceleration_flag, 'description':'(ACCELFLAG) True to do the sequence acceleration. An acceleration extrapolation of the source function is done every other iteration.' },

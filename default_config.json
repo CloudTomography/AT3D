@@ -1,6 +1,10 @@
 {
-  "horizontal_boundary_conditions": {
-    "default_value": 1,
+  "x_boundary_condition": {
+    "default_value": "open",
+    "description": "1. open - exiting radiance is lost. 2. periodic - exiting radiance returns from the opposite side."
+  },
+  "y_boundary_condition": {
+    "default_value": "open",
     "description": "1. open - exiting radiance is lost. 2. periodic - exiting radiance returns from the opposite side."
   },
   "num_mu_bins": {
