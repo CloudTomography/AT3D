@@ -26,6 +26,10 @@ SHDOM may be run on a single processor or on multiple processors (e.g. an SMP ma
 cluster) using the Message Passing Interface (MPI).
 """
 import shdom.rayleigh
+import shdom.medium
+import shdom.mie
+import shdom.size_distribution
+
 from scipy.interpolate import interp1d, RegularGridInterpolator
 import warnings
 import numpy as np

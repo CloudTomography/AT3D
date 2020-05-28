@@ -122,7 +122,8 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
                                               particle_density=particle_density)
 
     number_density = number_density_raveled.reshape(grid_shape)
-
+    
+    #TODO: should this be a data array
     size_dist_grid = xr.Dataset(
             data_vars = {
                 'number density': (list(coord_dict.keys()), number_density),

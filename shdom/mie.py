@@ -1,4 +1,3 @@
-
 from shdom import core
 import os
 import xarray as xr
@@ -229,22 +228,24 @@ def get_poly_table(size_distribution, mie_mono_table):
             legcoef1=mie_mono_table['legendre'])
 
     grid_shape = size_distribution['number density'].shape[1:]
-    coord_lengths = [np.arange(len(coord)) for name,coord in .coords]
-    legen_index = np.meshgrid(*coord_lengths,indexing='ij')
-
+    
     #all coords except radius
-    coords = {name:coord for name,coord in size_distribution.coords.items() if name !='radius'}
+    coords = {name:coord for name, coord in size_distribution.coords.items() if name !='radius'}
+    coord_lengths = [np.arange(coord.size) for name, coord in coords.items()]
+    legen_index = np.meshgrid(*coord_lengths, indexing='ij')
+    
+    #TODO: Does this need + 1 here?
+    table_index = np.ravel_multi_index(legen_index, dims=[coord.size for coord in coord_lengths]) + 1
+
     poly_table = xr.Dataset(
             data_vars = {
                 'extinction': (list(size_distribution.coords.keys())[1:], extinct.reshape(grid_shape)),
                 'ssalb': (list(size_distribution.coords.keys())[1:], ssalb.reshape(grid_shape)),
                 'legcoef': (['stokes_index','legendre_index'] + list(size_distribution.coords.keys())[1:],
-                           legcoef.reshape(legcoef.shape[:2] + grid_shape)),
-
-            },
+                            legcoef.reshape(legcoef.shape[:2] + grid_shape)),
+                'table_index': (list(size_distribution.coords.keys())[1:], table_index)},
         coords=coords
     )
-
     poly_table = poly_table.assign_attrs(size_distribution.attrs)
     poly_table = poly_table.assign_attrs(mie_mono_table.attrs)
     return poly_table

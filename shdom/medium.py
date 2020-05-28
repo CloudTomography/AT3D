@@ -4,13 +4,35 @@ A Medium objects is defined by its optical properties: extinction, albedo and ph
 Two Medium objects can be added to create a combined Medium.
 This will result in a unified grid with a summation of the optical extinction and a weighted average of the albedo and phase function.
 """
-
 import numpy as np
 import dill as pickle
 from collections import OrderedDict
 import shdom
-from shdom import float_round
+import xarray as xr
 
+def table_to_grid(microphysics, poly_table):
+    """
+    TODO
+    Interpolates the poly table onto the microphysics grid.
+    """
+    #If this fails it could be because some coordinates necessary for the interpolation
+    #are missing from microphysics.
+    interp_coords = {name:microphysics[name] for name in poly_table.coords}
+    
+    ssalb = poly_table.ssalb.interp(interp_coords)
+    extinction_efficiency = poly_table.extinction.interp(interp_coords)
+    
+    extinction = extinction_efficiency * microphysics.density
+    extinction.name = 'extinction'
+    
+    table_index = poly_table.table_index.interp(coords=interp_coords, method='nearest').round().astype(int)
+    
+    optical_properties = xr.merge([extinction, ssalb, table_index])
+    
+    return optical_properties
+    
+    
+    
 
 class Scatterer(object):
     """
