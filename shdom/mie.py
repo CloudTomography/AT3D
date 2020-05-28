@@ -235,14 +235,14 @@ def get_poly_table(size_distribution, mie_mono_table):
 
     #TODO: Does this need + 1 here?
     table_index = np.ravel_multi_index(legen_index, dims=[coord.size for coord in coord_lengths]) + 1
+    coords['table_index'] = (list(size_distribution.coords.keys())[1:], table_index)
 
     poly_table = xr.Dataset(
             data_vars = {
                 'extinction': (list(size_distribution.coords.keys())[1:], extinct.reshape(grid_shape)),
                 'ssalb': (list(size_distribution.coords.keys())[1:], ssalb.reshape(grid_shape)),
                 'legcoef': (['stokes_index','legendre_index'] + list(size_distribution.coords.keys())[1:],
-                            legcoef.reshape(legcoef.shape[:2] + grid_shape)),
-                'table_index': (list(size_distribution.coords.keys())[1:], table_index)},
+                            legcoef.reshape(legcoef.shape[:2] + grid_shape)),},
         coords=coords
     )
     poly_table = poly_table.assign_attrs(size_distribution.attrs)
