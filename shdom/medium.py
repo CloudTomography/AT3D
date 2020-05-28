@@ -17,7 +17,7 @@ def table_to_grid(microphysics, poly_table):
     """
     #If this fails it could be because some coordinates necessary for the interpolation
     #are missing from microphysics.
-    interp_coords = {name:microphysics[name] for name in poly_table.coords if name != 'table_index'}
+    interp_coords = {name:microphysics[name] for name in poly_table.coords if name not in ('table_index', 'stokes_index')}
 
     ssalb = poly_table.ssalb.interp(interp_coords)
     extinction_efficiency = poly_table.extinction.interp(interp_coords)
@@ -36,7 +36,8 @@ def table_to_grid(microphysics, poly_table):
     subset_legcoef = legendre_table_stack.isel({'table_index':unique_table_indices})
     subset_legcoef = xr.DataArray(name='legcoef',
                                     data = subset_legcoef.data,
-                                    dims=['stokes_index', 'legendre_index', 'table_index']
+                                    dims=['stokes_index', 'legendre_index', 'table_index'],
+                                    coords = {'stokes_index':subset_legcoef.coords['stokes_index']}
                                     )
 
     optical_properties = xr.merge([extinction, ssalb, subset_legcoef])

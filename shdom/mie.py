@@ -139,12 +139,12 @@ def compute_table(particle_type, wavelength_band,
             'extinction': (['radius'], extinct),
             'scatter': (['radius'], scatter),
             'nleg': (['radius'], nleg),
-            'legendre': (['stokes_index', 'legendre_index', 'radius'], legcoef),
-            'stokes components': (['stokes_index'], np.array(['P11','P22','P33','P44','P12','P34']))
+            'legendre': (['stokes_index', 'legendre_index', 'radius'], legcoef)
 
         },
         #TODO fix space vs underscore
-        coords={'radius': radii},
+        coords={'radius': radii,
+        'stokes_index': (['stokes_index'], ['P11','P22','P33','P44','P12','P34'])},
         attrs={
             'particle type': particle_type,
             'refractive index': (rindex.real,rindex.imag),
@@ -229,13 +229,14 @@ def get_poly_table(size_distribution, mie_mono_table):
     grid_shape = size_distribution['number density'].shape[1:]
 
     #all coords except radius
-    coords = {name:coord for name, coord in size_distribution.coords.items() if name !='radius'}
+    coords = {name:coord for name, coord in size_distribution.coords.items() if name not in ('radius', 'stokes_index') }
     coord_lengths = [np.arange(coord.size) for name, coord in coords.items()]
     legen_index = np.meshgrid(*coord_lengths, indexing='ij')
 
     #TODO: Does this need + 1 here?
     table_index = np.ravel_multi_index(legen_index, dims=[coord.size for coord in coord_lengths]) + 1
     coords['table_index'] = (list(size_distribution.coords.keys())[1:], table_index)
+    coords['stokes_index'] = mie_mono_table.coords['stokes_index']
 
     poly_table = xr.Dataset(
             data_vars = {
