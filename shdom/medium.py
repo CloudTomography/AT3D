@@ -24,7 +24,6 @@ def table_to_grid(microphysics, poly_table):
 
     extinction = extinction_efficiency * microphysics.density
     extinction.name = 'extinction'
-
     table_index = poly_table.coords['table_index'].interp(coords=interp_coords, method='nearest').round().astype(int)
     unique_table_indices, inverse = np.unique(table_index.data, return_inverse=True)
     subset_table_index = xr.DataArray(name=table_index.name,
@@ -35,9 +34,10 @@ def table_to_grid(microphysics, poly_table):
 
     legendre_table_stack = poly_table['legcoef'].stack(table_index=interp_coords)
     subset_legcoef = legendre_table_stack.isel({'table_index':unique_table_indices})
-
-    extinction=extinction.drop_vars(interp_coords.keys())
-    ssalb=ssalb.drop_vars(interp_coords.keys())
+    subset_legcoef = xr.DataArray(name='legcoef',
+                                    data = subset_legcoef.data,
+                                    dims=['stokes_index', 'legendre_index', 'table_index']
+                                    )
 
     optical_properties = xr.merge([extinction, ssalb, subset_legcoef])
 
@@ -45,8 +45,15 @@ def table_to_grid(microphysics, poly_table):
     #TODO
     #We could add the microphysics corresponding to each table_index as a diagnostic.
 
+    #TODO inherit the wavelength etc from the table.
+
     optical_properties =optical_properties.assign_coords(table_coords)
 
+    #inherit attributes.
+    optical_properties = optical_properties.assign_attrs(poly_table.attrs)
+    optical_properties = optical_properties.assign_attrs(microphysics.attrs)
+    #TODO Check for whether these variables are 'in-place' modifications that
+            #affect the earlier legendre_table/poly_table etc.
     #TODO
     #Add checks like those in MicrophysicalScatterer.add_mie() to ensure
     #that the returned optical properties are valid and/or raise warning when
