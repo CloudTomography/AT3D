@@ -32,6 +32,7 @@ import shdom.size_distribution
 import shdom.surface
 import shdom.source
 import shdom.configuration
+import shdom.solver
 
 from scipy.interpolate import interp1d, RegularGridInterpolator
 import warnings

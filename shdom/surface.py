@@ -10,7 +10,7 @@ def fixed_lambertian_surface(albedo, ground_temperature=198.15):
             'sfctype':'FL',
             'gndalbedo':albedo,
             'gndtemp':ground_temperature,
-            'maxfcpars':4,
+            'maxsfcpars':4,
             'nxsfc': 0,
             'nysfc': 0,
             'delxsfc': 0,
