@@ -31,7 +31,7 @@ def table_to_grid(microphysics, poly_table):
                                         dims=table_index.dims,
                                         coords=table_index.coords,
                                         )
-
+    
     legendre_table_stack = poly_table['legcoef'].stack(table_index=interp_coords)
     subset_legcoef = legendre_table_stack.isel({'table_index':unique_table_indices})
     subset_legcoef = xr.DataArray(name='legcoef',

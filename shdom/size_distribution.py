@@ -3,6 +3,7 @@ import numpy as np
 from shdom import core
 from collections import OrderedDict
 
+#TODO Add normalization options for size distributions.
 
 def gamma(radii, reff=None,veff=None,alpha=None, particle_density=1.0):
     """

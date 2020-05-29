@@ -326,6 +326,10 @@ class RTE(object):
             self._pa.albedop[:, i] = scatterer.ssalb.data.ravel()
             self._pa.iphasep[:, i] = scatterer.table_index.data.ravel() + self._pa.iphasep.max()
 
+        #TODO 0 indices may appear in the clear sky for the first optical scatterer.
+        #set them to 1. This should be revisited after all checks are developed for the
+        #workflow that creates table_index.
+        self._pa.iphasep[np.where(self._pa.iphasep == 0)] = 1
         # Concatenate all scatterer tables into one table
         legendre_table = xr.concat([scatterer.legcoef for scatterer in self.medium], dim='table_index')
 
@@ -719,6 +723,132 @@ class RTE(object):
                 ylmsun=self._ylmsun,
                 runname=self._name
             )
+
+    def integrate_to_sensor(self, sensor, n_jobs=1):
+        """
+        TODO
+        Integrates the source function along rays with geometry specified in sensor.
+        """
+
+        camx = sensor['cam_x'].data
+        camy = sensor['cam_y'].data
+        camz = sensor['cam_z'].data
+        cammu = sensor['cam_mu'].data
+        camphi = sensor['cam_phi'].data
+        #TODO
+        #Some checks on the dimensions: this kind of thing.
+        assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
+        total_pix = sensor.sizes['total_pixels']
+
+        phase_check = hasattr(self, '_phasetab')
+        if not phase_check:
+            self._precompute_phase()
+
+        #TODO figure out parallelization.
+
+        output = core.render(
+            nstphase=self._nstphase,
+            ylmsun=self._ylmsun,
+            phasetab=self._phasetab,
+            nscatangle=self._nscatangle,
+            ncs=self._ncs,
+            nstokes=self._nstokes,
+            nstleg=self._nstleg,
+            camx=camx,
+            camy=camy,
+            camz=camz,
+            cammu=cammu,
+            camphi=camphi,
+            npix=total_pix,
+            nx=self._nx,
+            ny=self._ny,
+            nz=self._nz,
+            bcflag=self._bcflag,
+            ipflag=self._ipflag,
+            npts=self._npts,
+            ncells=self._ncells,
+            ml=self._ml,
+            mm=self._mm,
+            nlm=self._nlm,
+            numphase=self._pa.numphase,
+            nmu=self._nmu,
+            nphi0max=self._nphi0max,
+            nphi0=self._nphi0,
+            maxnbc=self._maxnbc,
+            ntoppts=self._ntoppts,
+            nbotpts=self._nbotpts,
+            nsfcpar=self._nsfcpar,
+            gridptr=self._gridptr,
+            neighptr=self._neighptr,
+            treeptr=self._treeptr,
+            shptr=self._shptr,
+            bcptr=self._bcptr,
+            cellflags=self._cellflags,
+            iphase=self._iphase[:self._npts],
+            deltam=self._deltam,
+            solarmu=self._solarmu,
+            solaraz=self._solaraz,
+            gndtemp=self._gndtemp,
+            gndalbedo=self._gndalbedo,
+            skyrad=self._skyrad,
+            waveno=self._waveno,
+            wavelen=self._wavelen,
+            mu=self._mu,
+            phi=self._phi.reshape(self._nmu, -1),
+            wtdo=self._wtdo.reshape(self._nmu, -1),
+            xgrid=self._xgrid,
+            ygrid=self._ygrid,
+            zgrid=self._zgrid,
+            gridpos=self._gridpos,
+            sfcgridparms=self._sfcgridparms,
+            bcrad=self._bcrad,
+            extinct=self._extinct[:self._npts],
+            albedo=self._albedo[:self._npts],
+            legen=self._legen,
+            dirflux=self._dirflux,
+            fluxes=self._fluxes,
+            source=self._source,
+            srctype=self._srctype,
+            sfctype=self._sfctype,
+            units=self._units,
+            total_ext=self._total_ext[:self._npts],
+            npart=self._npart)
+
+        #merge output across parallelization pixel split before doing this.
+        sensor['I']= xr.DataArray(
+            data=output[0],
+            dims='total_pixels',
+            attrs={
+                'long_name': 'Radiance'
+            }
+        )
+        if self._nstokes > 1:
+            sensor['Q']= xr.DataArray(
+                data=output[1],
+                dims='total_pixels',
+                attrs={
+                    'long_name': 'Stokes Parameter for Linear Polarization (Q)'
+                }
+            )
+            sensor['U']= xr.DataArray(
+                data=output[2],
+                dims='total_pixels',
+                attrs={
+                    'long_name': 'Stokes Parameter for Linear Polarization (U)'
+                }
+            )
+        if self._nstokes == 4:
+            sensor['V']= xr.DataArray(
+                data=output[3],
+                dims='total_pixels',
+                attrs={
+                    'long_name': 'Stokes Paramaeter for Circular Polarization (V)'
+                }
+            )
+
+        return output, sensor
+
+
 
     @property
     def num_iterations(self):
