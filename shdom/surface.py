@@ -1,6 +1,6 @@
 import xarray as xr
 
-def fixed_lambertian_surface(albedo, ground_temperature=198.15):
+def fixed_lambertian_surface(albedo, ground_temperature=298.15):
     """
     TODO
     """

@@ -2,6 +2,7 @@ import sys
 import xarray as xr
 import numpy as np
 from shdom import core
+from shdom import util
 
 class RTE(object):
     """
@@ -48,7 +49,7 @@ class RTE(object):
         self.wavelength = wavelengths[0]
 
         # For legacy purposes
-        self._wavelen = self.wavelength
+        self._wavelen = util.float_round(self.wavelength)
 
         # Setup a name for the solver
         self._name = '{} {:1.3f} micron'.format(self._type, self.wavelength) if name is None else name
@@ -331,14 +332,17 @@ class RTE(object):
         self._pa.numphase = legendre_table.sizes['table_index']
 
         # Determine the number of legendre coefficient for a given angular resolution
-        self._nleg = self._mm + 1 if self._deltam else self._mm
+        #Note this is corrected to self._ml rather than self._mm based on original SHDOM and
+        #what PREPARE_PROP assumes.
+        self._nleg = self._ml + 1 if self._deltam else self._ml
 
-        self._nleg = max(legendre_table.sizes['legendre_index'], self._nleg)
+        self._nleg = max(legendre_table.sizes['legendre_index'] - 1, self._nleg)
         self._nscatangle = max(36, min(721, 2 * self._nleg))
 
         # Check if legendre table needs padding
+
         if self._nleg > legendre_table.sizes['legendre_index']:
-            legendre_table.pad({'legendre_index': (0, self._nleg - legendre_table.sizes['legendre_index'])},
+            legendre_table = legendre_table.pad({'legendre_index': (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])},
                                constant_values=0.0)
 
         # Check if scalar or vector RTE
