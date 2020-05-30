@@ -4,8 +4,8 @@ import xarray as xr
 import numpy as np
 
 def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0, max_integration_radius=65.0,
-             wavelength_averaging=False, wavelength_resolution=0.001, refractive_index=None,
-             relative_path=None):
+                   wavelength_averaging=False, wavelength_resolution=0.001, refractive_index=None,
+                   relative_path=None):
     """
     Mie monodisperse scattering for spherical particles.
     This function will search a given directory to load the requested mie table or will compute it.
@@ -52,9 +52,9 @@ def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
     return table
 
 def compute_table(particle_type, wavelength_band,
-            minimum_effective_radius, max_integration_radius,
-             wavelength_averaging, wavelength_resolution,
-             refractive_index):
+                  minimum_effective_radius, max_integration_radius,
+                  wavelength_averaging, wavelength_resolution,
+                  refractive_index):
     """
     This function does the hard work of computing a monomodal mie table.
     See 'get_mono_table' for more details.
@@ -86,6 +86,7 @@ def compute_table(particle_type, wavelength_band,
         partype = 'W'
 
     elif (particle_type == 'Aerosol'):
+        # TODO : debug aerosol particle tpye
         partype = 'A'
         assert refractive_index is not None, "Refractive index is not specified. \
         This could be a complex number or string path to csv (a function of wavelength)"

@@ -1,8 +1,7 @@
 import sys
 import xarray as xr
 import numpy as np
-from shdom import core
-from shdom import util
+from shdom import core, util
 
 class RTE(object):
     """
@@ -817,7 +816,7 @@ class RTE(object):
             npart=self._npart)
 
         #merge output across parallelization pixel split before doing this.
-        sensor['I']= xr.DataArray(
+        sensor['I'] = xr.DataArray(
             data=output[0],
             dims='total_pixels',
             attrs={
@@ -849,8 +848,6 @@ class RTE(object):
             )
 
         return output, sensor
-
-
 
     @property
     def num_iterations(self):
