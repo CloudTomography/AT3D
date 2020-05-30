@@ -1,6 +1,5 @@
 import xarray as xr
 import numpy as np
-import shdom
 
 def make_sensor_dataset(x,y,z,mu,phi):
     """
@@ -22,16 +21,18 @@ def make_sensor_dataset(x,y,z,mu,phi):
         coords = {'observables': np.array(['I', 'Q', 'U', 'V']),
                  }
     )
+    #TODO remove the 'nimage' dimension.
 
     #Various other information could be added
     #about the grouping and relation of pixels to one another,
     #but this is the bare minimum for rendering.
     return dataset
 
-
 def merge_sensor_list(list_of_sensor_datasets):
     """
-    TODO
+#merging sensors
+#concatenates, camx/y/z/mu/phi/superpix_i/superpix_wt along total_pixels dimension.
+#concatenates npixels/observable_list along nimage dimension.
     """
     var_list = ['cam_x','cam_y','cam_z','cam_mu','cam_phi','super_pixel_index','super_pixel_weight']
 
@@ -48,3 +49,34 @@ def merge_sensor_list(list_of_sensor_datasets):
     merge_list += [concat_observable,concat_image_shape]
     merged = xr.merge(merge_list)
     return merged
+
+def split_sensors(combined_render_output):
+    """
+    TODO
+    This function both splits the sensors, does the averaging of rays over pixels
+    and subsets which observables are specified by the original sensor.
+    These latter functions could be done at the sensor level in a 'make measurements' step.
+    """
+
+    #averaging over rays in each super_pixel
+    averaged_over_super_pixels = (combined_render_output['super_pixel_weight']*combined_render_output).groupby('super_pixel_index').mean()
+    #drop the super_pixel_dimension when irrelevant broadcasting occurs.
+    #TODO tidy this up. only apply to necessary variables.
+    averaged_over_super_pixels['image_shape'] = averaged_over_super_pixels.image_shape[0].astype(np.int64)
+    averaged_over_super_pixels['observable_list'] = averaged_over_super_pixels.observable_list[0].astype(np.int64)
+
+    list_of_unmerged = []
+    count = 0
+    for i in range(averaged_over_super_pixels.sizes['nimage']):
+        split_index = averaged_over_super_pixels.image_shape[i].prod()
+        split = averaged_over_super_pixels.sel({'super_pixel_index': slice(count,count+split_index),
+                                               'nimage':i})
+
+        #only_take the I,Q,U,V designated as observables
+        for i,observable in enumerate(split.coords['observables'].data):
+            if (split.observable_list[i]==0) and (observable in split):
+                split = split.drop_vars(observable)
+
+        list_of_unmerged.append(split)
+        count+=split_index
+    return list_of_unmerged

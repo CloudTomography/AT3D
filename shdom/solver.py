@@ -744,6 +744,8 @@ class RTE(object):
         if not phase_check:
             self._precompute_phase()
 
+        #TODO Raise warning if observables are not included.
+
         #TODO figure out parallelization.
 
         output = core.render(
