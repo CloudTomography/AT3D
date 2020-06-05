@@ -2,6 +2,7 @@ from shdom import core
 import os
 import xarray as xr
 import numpy as np
+import pandas as pd
 
 def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0, max_integration_radius=65.0,
                    wavelength_averaging=False, wavelength_resolution=0.001, refractive_index=None,
@@ -62,7 +63,7 @@ def compute_table(particle_type, wavelength_band,
 
     #wavelength band
     wavelen1, wavelen2 = wavelength_band
-    assert wavelen1 <= wavelen2 , 'Minimum wavelength is smaller than maximum'
+    assert wavelen1 <= wavelen2 , 'Minimum wavelength must be smaller than maximum'
 
     avgflag = 'C'
     if wavelen1 == wavelen2:
@@ -98,7 +99,7 @@ def compute_table(particle_type, wavelength_band,
         else:
             rindex = refractive_index
     else:
-        raise AttributeError('Particle type note implemented')
+        raise AttributeError('Particle type not implemented')
 
     #set integration parameters
     if avgflag =='A':
