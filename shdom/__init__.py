@@ -34,3 +34,4 @@ import shdom.source
 import shdom.configuration
 import shdom.solver
 import shdom.sensor
+import shdom.grid
