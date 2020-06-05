@@ -49,7 +49,7 @@ def find_horizontal_union(scatterer_list):
     y_mins = []
     y_maxs = []
     for scatterer in scatterer_list:
-        try:
+        try: #TODO INCORRECT need to test for existence of different coords.
             x_mins.append(scatterer.coords['x'].data.min())
             y_mins.append(scatterer.coords['y'].data.min())
             x_maxs.append(scatterer.coords['x'].data.max())
@@ -69,7 +69,7 @@ def find_max_horizontal_resolution(scatterer_list):
     dx_mins = []
     dy_mins = []
     for scatterer in scatterer_list:
-        try:
+        try: #TODO INCORRECT need to test for existence of different coords.
             dx_mins.append(scatterer.coords['x'].diff(dim='x').data.min())
             dy_mins.append(scatterer.coords['y'].diff(dim='y').data.min())
         except:
