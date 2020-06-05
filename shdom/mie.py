@@ -94,7 +94,7 @@ def compute_table(particle_type, wavelength_band,
         if isinstance(refractive_index, str):
             rindex_df = pd.read_csv('../ancillary_data/dust_volz_1972.ri', comment='#', sep=' ',
                                     names=['wavelength', 'n', 'k'], index_col='wavelength')
-            refractive_index = xr.Dataset.from_dataframe(rindex_df).interp({'wavelength': self._wavelencen})
+            refractive_index = xr.Dataset.from_dataframe(rindex_df).interp({'wavelength': wavelencen})
             rindex = np.complex(refractive_index['n'], - refractive_index['k'])
         else:
             rindex = refractive_index
