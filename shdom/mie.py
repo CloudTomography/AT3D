@@ -142,26 +142,26 @@ def compute_table(particle_type, wavelength_band,
             'scatter': (['radius'], scatter),
             'nleg': (['radius'], nleg),
             'legendre': (['stokes_index', 'legendre_index', 'radius'], legcoef)
-
-        },
-        #TODO fix space vs underscore
-        coords={'radius': radii,
-        'stokes_index': (['stokes_index'], ['P11','P22','P33','P44','P12','P34'])},
+            },
+        coords={
+            'radius': radii,
+            'stokes_index': (['stokes_index'], ['P11','P22','P33','P44','P12','P34'])
+            },
         attrs={
-            'particle type': particle_type,
-            'refractive index': (rindex.real,rindex.imag),
-            'refractive index source': str(refractive_index),
-            'table type': table_type.decode(),
-            'units': ['Radius [micron]','Wavelength [micron]'],
-            'wavelength band': wavelength_band,
-            'wavelength center': wavelencen,
-            'wavelength averaging': str(wavelength_averaging),
-            'wavelength resolution': wavelength_resolution,
-            'maximum legendre': maxleg,
-            'minimum effective radius':minimum_effective_radius,
-            'maximum integration radius':max_integration_radius
-        },
-    )
+            'particle_type': particle_type,
+            'refractive_index': (rindex.real, rindex.imag),
+            'refractive_index source': str(refractive_index),
+            'table_type': table_type.decode(),
+            'units': ['Radius [micron]', 'Wavelength [micron]'],
+            'wavelength_band': wavelength_band,
+            'wavelength_center': wavelencen,
+            'wavelength_averaging': str(wavelength_averaging),
+            'wavelength_resolution': wavelength_resolution,
+            'maximum_legendre': maxleg,
+            'minimum_effective_radius':minimum_effective_radius,
+            'maximum_integration_radius':max_integration_radius
+            },
+        )
     return table
 
 
@@ -222,7 +222,7 @@ def get_poly_table(size_distribution, mie_mono_table):
             nd=nd,
             ndist=nd.shape[-1],
             nsize=mie_mono_table.coords['radius'].size,
-            maxleg=mie_mono_table.attrs['maximum legendre'],
+            maxleg=mie_mono_table.attrs['maximum_legendre'],
             nleg1=mie_mono_table['nleg'],
             extinct1=mie_mono_table['extinction'],
             scatter1=mie_mono_table['scatter'],

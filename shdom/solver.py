@@ -41,8 +41,8 @@ class RTE(object):
         self.medium = [medium] if not isinstance(medium, list) else medium
 
         # Check that all optical scatterers have the same wavelength
-        wavelengths = [scatterer.attrs['wavelength center'] for scatterer in self.medium if \
-                       scatterer.attrs['wavelength center'] is not None]
+        wavelengths = [scatterer.attrs['wavelength_center'] for scatterer in self.medium if \
+                       scatterer.attrs['wavelength_center'] is not None]
         assert len(wavelengths) > 0, 'At least one scatterer has to have a wavelength defined'
         assert np.allclose(wavelengths[0], wavelengths), 'scatterers have different wavelengths {}'.format(wavelengths)
         self.wavelength = wavelengths[0]
