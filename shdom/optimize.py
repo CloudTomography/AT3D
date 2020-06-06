@@ -2003,7 +2003,7 @@ class SpaceCarver(object):
     def carve(self, grid, thresholds, agreement=0.75):
         """
         Carves out the cloud geometry on the grid.
-        A threshold on radiances is used to produce a pixel mask and preform space carving.
+        A threshold on radiances is used to produce a pixel mask and perform space carving.
 
         Parameters
         ----------

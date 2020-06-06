@@ -494,7 +494,7 @@ class RTE(object):
     def _precompute_phase(self):
         """
         Precompute angular scattering for the entire legendre table.
-        Preform a negativity check. (negcheck=True).
+        Perform a negativity check. (negcheck=True).
         """
         self._phasetab = core.precompute_phase_check(
             negcheck=True,
@@ -562,7 +562,7 @@ class RTE(object):
             Maximum number of iterations for the iterative solution.
         init_solution: boolean, default=True
             If False the solution is initialized according to the existing radiance and source function saved within the RteSolver object (previously computed)
-            If True or no prior solution (I,J fields) exists then an initialization is preformed (part 1.).
+            If True or no prior solution (I,J fields) exists then an initialization is performed (part 1.).
         verbose: boolean
             True will output solution iteration information into stdout.
         """
