@@ -13,7 +13,7 @@ def load_from_csv(path, density=None,origin=(0.0,0.0)):
     """
     TODO
     """
-    df = pd.read_csv(path, comment='#', skiprows=4, index_col=['i', 'j', 'k'])
+    df = pd.read_csv(path, comment='#', skiprows=4, index_col=['x', 'y', 'z'])
     nx, ny, nz = np.genfromtxt(path, max_rows=1, dtype=int, delimiter=',')
     dx, dy = np.genfromtxt(path, max_rows=1, dtype=float, skip_header=2, delimiter=',')
     z = xr.DataArray(np.genfromtxt(path, max_rows=1, dtype=float, skip_header=3, delimiter=','), coords=[range(nz)], dims=['z'])
@@ -48,7 +48,7 @@ def load_from_netcdf(path, density=None):
         dset.attrs['density_name'] = density
 
     dset.attrs['file_name'] = path
-    
+
     return dset
 
 
