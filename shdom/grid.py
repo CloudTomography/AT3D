@@ -9,11 +9,43 @@ and scatterers forced to resample onto the specified grid.
 
 """
 
+def load_from_csv(path, density=None):
+    """
+    TODO
+    """
+    df = pd.read_csv(path, comment='#', skiprows=4, index_col=['i', 'j', 'k'])
+    nx, ny, nz = np.genfromtxt(path, max_rows=1, dtype=int, delimiter=',')
+    dx, dy = np.genfromtxt(path, max_rows=1, dtype=float, skip_header=2, delimiter=',')
+    z = xr.DataArray(np.genfromtxt(path, max_rows=1, dtype=float, skip_header=3, delimiter=','), coords=[range(nz)], dims=['z'])
+
+    out_data = make_grid(0.0,(nx-1)*dx,nx,0.0,(ny-1)*dy,ny,z)
+
+    i,j,k = zip(*df[df.columns[0]].index)
+
+    for name in df.columns:
+        #initialize with np.nans so that empty data is np.nan
+        variable_data = np.zeros((grid.sizes['x'],grid.sizes['y'],grid.sizes['z']))*np.nan
+        variable_data[i,j,k] = df[name]
+        out_data[name] = (['x', 'y', 'z'], variable_data)
+
+    if density is not None:
+        assert density in out_data.data_vars, "density variable: '{}' must be in the file".format(density)
+        out_data = out_data.rename_vars({density: 'density'})
+        out_data.attrs['density_name'] = density
+
+    return out_data
+
 
 def resample_onto_grid(grid, data):
     """
     TODO
     """
+    #if coordinates are passed, then make a dataset.
+    if isinstance(grid, (xr.core.coordinates.DatasetCoordinates,
+                                xr.core.coordinates.DataArrayCoordinates)):
+        grid = xr.Dataset(
+                    coords=grid
+        )
     #linearly interpolate onto the grid.
     #data is broadcasted to 3D.
     resampled_data = data.interp_like(grid).broadcast_like(grid)
