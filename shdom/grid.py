@@ -18,23 +18,38 @@ def load_from_csv(path, density=None,origin=(0.0,0.0)):
     dx, dy = np.genfromtxt(path, max_rows=1, dtype=float, skip_header=2, delimiter=',')
     z = xr.DataArray(np.genfromtxt(path, max_rows=1, dtype=float, skip_header=3, delimiter=','), coords=[range(nz)], dims=['z'])
 
-    out_data = make_grid(origin[0],(nx-1)*dx,nx,origin[1],(ny-1)*dy,ny,z)
+    dset = make_grid(origin[0],(nx-1)*dx,nx,origin[1],(ny-1)*dy,ny,z)
     i,j,k = zip(*df.index)
 
     for name in df.columns:
         #initialize with np.nans so that empty data is np.nan
-        variable_data = np.zeros((grid.sizes['x'],grid.sizes['y'],grid.sizes['z']))*np.nan
+        variable_data = np.zeros((dset.sizes['x'],dset.sizes['y'],dset.sizes['z']))*np.nan
         variable_data[i,j,k] = df[name]
-        out_data[name] = (['x', 'y', 'z'], variable_data)
+        dset[name] = (['x', 'y', 'z'], variable_data)
 
     if density is not None:
-        assert density in out_data.data_vars, "density variable: '{}' must be in the file".format(density)
-        out_data = out_data.rename_vars({density: 'density'})
-        out_data.attrs['density_name'] = density
+        assert density in dset.data_vars, "density variable: '{}' must be in the file".format(density)
+        dset = dset.rename_vars({density: 'density'})
+        dset.attrs['density_name'] = density
 
-    out_data.attrs['file_name'] = path
+    dset.attrs['file_name'] = path
 
-    return out_data
+    return dset
+
+def load_from_netcdf(path, density=None):
+    """
+    A shallow wrapper around open_dataset that sets the density_name.
+    """
+    dset = xr.open_dataset(path)
+
+    if density is not None:
+        assert density in dset.data_vars, "density variable: '{}' must be in the file".format(density)
+        dset = dset.rename_vars({density: 'density'})
+        dset.attrs['density_name'] = density
+
+    dset.attrs['file_name'] = path
+    
+    return dset
 
 
 def resample_onto_grid(grid, data):
