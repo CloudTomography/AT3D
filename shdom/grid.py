@@ -9,7 +9,7 @@ and scatterers forced to resample onto the specified grid.
 
 """
 
-def load_from_csv(path, density=None):
+def load_from_csv(path, density=None,origin=(0.0,0.0)):
     """
     TODO
     """
@@ -18,9 +18,8 @@ def load_from_csv(path, density=None):
     dx, dy = np.genfromtxt(path, max_rows=1, dtype=float, skip_header=2, delimiter=',')
     z = xr.DataArray(np.genfromtxt(path, max_rows=1, dtype=float, skip_header=3, delimiter=','), coords=[range(nz)], dims=['z'])
 
-    out_data = make_grid(0.0,(nx-1)*dx,nx,0.0,(ny-1)*dy,ny,z)
-
-    i,j,k = zip(*df[df.columns[0]].index)
+    out_data = make_grid(origin[0],(nx-1)*dx,nx,origin[1],(ny-1)*dy,ny,z)
+    i,j,k = zip(*df.index)
 
     for name in df.columns:
         #initialize with np.nans so that empty data is np.nan
