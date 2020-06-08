@@ -32,6 +32,8 @@ def load_from_csv(path, density=None,origin=(0.0,0.0)):
         out_data = out_data.rename_vars({density: 'density'})
         out_data.attrs['density_name'] = density
 
+    out_data.attrs['file_name'] = path
+
     return out_data
 
 
