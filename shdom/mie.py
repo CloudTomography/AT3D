@@ -2,6 +2,7 @@ from shdom import core
 import os
 import xarray as xr
 import numpy as np
+import pandas as pd
 
 def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0, max_integration_radius=65.0,
                    wavelength_averaging=False, wavelength_resolution=0.001, refractive_index=None,
@@ -62,7 +63,7 @@ def compute_table(particle_type, wavelength_band,
 
     #wavelength band
     wavelen1, wavelen2 = wavelength_band
-    assert wavelen1 <= wavelen2 , 'Minimum wavelength is smaller than maximum'
+    assert wavelen1 <= wavelen2 , 'Minimum wavelength must be smaller than maximum'
 
     avgflag = 'C'
     if wavelen1 == wavelen2:
@@ -93,12 +94,12 @@ def compute_table(particle_type, wavelength_band,
         if isinstance(refractive_index, str):
             rindex_df = pd.read_csv('../ancillary_data/dust_volz_1972.ri', comment='#', sep=' ',
                                     names=['wavelength', 'n', 'k'], index_col='wavelength')
-            refractive_index = xr.Dataset.from_dataframe(rindex_df).interp({'wavelength': self._wavelencen})
+            refractive_index = xr.Dataset.from_dataframe(rindex_df).interp({'wavelength': wavelencen})
             rindex = np.complex(refractive_index['n'], - refractive_index['k'])
         else:
             rindex = refractive_index
     else:
-        raise AttributeError('Particle type note implemented')
+        raise AttributeError('Particle type not implemented')
 
     #set integration parameters
     if avgflag =='A':
@@ -141,26 +142,26 @@ def compute_table(particle_type, wavelength_band,
             'scatter': (['radius'], scatter),
             'nleg': (['radius'], nleg),
             'legendre': (['stokes_index', 'legendre_index', 'radius'], legcoef)
-
-        },
-        #TODO fix space vs underscore
-        coords={'radius': radii,
-        'stokes_index': (['stokes_index'], ['P11','P22','P33','P44','P12','P34'])},
+            },
+        coords={
+            'radius': radii,
+            'stokes_index': (['stokes_index'], ['P11','P22','P33','P44','P12','P34'])
+            },
         attrs={
-            'particle type': particle_type,
-            'refractive index': (rindex.real,rindex.imag),
-            'refractive index source': str(refractive_index),
-            'table type': table_type.decode(),
-            'units': ['Radius [micron]','Wavelength [micron]'],
-            'wavelength band': wavelength_band,
-            'wavelength center': wavelencen,
-            'wavelength averaging': str(wavelength_averaging),
-            'wavelength resolution': wavelength_resolution,
-            'maximum legendre': maxleg,
-            'minimum effective radius':minimum_effective_radius,
-            'maximum integration radius':max_integration_radius
-        },
-    )
+            'particle_type': particle_type,
+            'refractive_index': (rindex.real, rindex.imag),
+            'refractive_index source': str(refractive_index),
+            'table_type': table_type.decode(),
+            'units': ['Radius [micron]', 'Wavelength [micron]'],
+            'wavelength_band': wavelength_band,
+            'wavelength_center': wavelencen,
+            'wavelength_averaging': str(wavelength_averaging),
+            'wavelength_resolution': wavelength_resolution,
+            'maximum_legendre': maxleg,
+            'minimum_effective_radius':minimum_effective_radius,
+            'maximum_integration_radius':max_integration_radius
+            },
+        )
     return table
 
 
@@ -221,7 +222,7 @@ def get_poly_table(size_distribution, mie_mono_table):
             nd=nd,
             ndist=nd.shape[-1],
             nsize=mie_mono_table.coords['radius'].size,
-            maxleg=mie_mono_table.attrs['maximum legendre'],
+            maxleg=mie_mono_table.attrs['maximum_legendre'],
             nleg1=mie_mono_table['nleg'],
             extinct1=mie_mono_table['extinction'],
             scatter1=mie_mono_table['scatter'],

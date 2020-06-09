@@ -41,8 +41,8 @@ class RTE(object):
         self.medium = [medium] if not isinstance(medium, list) else medium
 
         # Check that all optical scatterers have the same wavelength
-        wavelengths = [scatterer.attrs['wavelength center'] for scatterer in self.medium if \
-                       scatterer.attrs['wavelength center'] is not None]
+        wavelengths = [scatterer.attrs['wavelength_center'] for scatterer in self.medium if \
+                       scatterer.attrs['wavelength_center'] is not None]
         assert len(wavelengths) > 0, 'At least one scatterer has to have a wavelength defined'
         assert np.allclose(wavelengths[0], wavelengths), 'scatterers have different wavelengths {}'.format(wavelengths)
         self.wavelength = wavelengths[0]
@@ -494,7 +494,7 @@ class RTE(object):
     def _precompute_phase(self):
         """
         Precompute angular scattering for the entire legendre table.
-        Preform a negativity check. (negcheck=True).
+        Perform a negativity check. (negcheck=True).
         """
         self._phasetab = core.precompute_phase_check(
             negcheck=True,
@@ -562,7 +562,7 @@ class RTE(object):
             Maximum number of iterations for the iterative solution.
         init_solution: boolean, default=True
             If False the solution is initialized according to the existing radiance and source function saved within the RteSolver object (previously computed)
-            If True or no prior solution (I,J fields) exists then an initialization is preformed (part 1.).
+            If True or no prior solution (I,J fields) exists then an initialization is performed (part 1.).
         verbose: boolean
             True will output solution iteration information into stdout.
         """

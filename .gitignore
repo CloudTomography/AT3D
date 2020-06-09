@@ -1,0 +1,11 @@
+.DS_Store
+notebooks/.ipynb_checkpoints/
+build/
+dist/
+mie_tables/
+shdom.egg-info/
+shdom/__pycache__/
+shdom/*.so
+venv/
+src/core.pyf
+src/coremodule.c
