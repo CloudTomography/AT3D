@@ -154,7 +154,7 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
         'altitude': altitude,
         'x_resolution': x_resolution,
         'y_resolution': y_resolution,
-        'projection azimuth': azimuth,
-        'projection zenith': zenith
+        'projection_azimuth': azimuth,
+        'projection_zenith': zenith
     }
     return sensor

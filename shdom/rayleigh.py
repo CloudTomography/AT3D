@@ -43,7 +43,7 @@ def compute_table(wavelengths):
         for legcoef, table_type, wavelength in zip(legcoefs, table_types, wavelengths)
     ]
     table = xr.concat(data_arrays, dim='wavelength')
-    table.attrs = {'table type': 'vector',
+    table.attrs = {'table_type': 'vector',
                    'units': 'wavelength [micron]'}
 
     return table

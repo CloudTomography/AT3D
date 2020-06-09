@@ -180,9 +180,9 @@ def load_table(relative_path,particle_type, wavelength_band,
                     minimum_effective_radius, max_integration_radius,
                     str(wavelength_averaging), wavelength_resolution,
                     ]
-    names = ['particle type', 'refractive index source', 'wavelength band',
-            'minimum effective radius', 'maximum integration radius',
-            'wavelength averaging', 'wavelength resolution',
+    names = ['particle_type', 'refractive_index_source', 'wavelength_band',
+            'minimum_effective_radius', 'maximum_integration_radius',
+            'wavelength_averaging', 'wavelength_resolution',
             ]
 
     for file in file_list:

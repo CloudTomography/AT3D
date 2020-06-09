@@ -127,11 +127,11 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
     #TODO: should this be a data array
     size_dist_grid = xr.Dataset(
             data_vars = {
-                'number density': (list(coord_dict.keys()), number_density),
+                'number_density': (list(coord_dict.keys()), number_density),
             },
             coords=dict(coord_dict),
             attrs={'units': units_list,
-                  'distribution type': size_distribution_function.__name__
+                  'distribution_type': size_distribution_function.__name__
                   },
     )
     return size_dist_grid
