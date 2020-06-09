@@ -153,7 +153,6 @@ def merge_scatterer_grids(scatterer_list):
 
     return merged_scatterers
 
-
 def combine_z_coordinates(scatterer_list):
     """
     A wrapper around merge_two_z_coordinates.
@@ -162,7 +161,7 @@ def combine_z_coordinates(scatterer_list):
 
     z_coordinate_list = [scatterer.coords['z'].data for scatterer in scatterer_list]
 
-    combined = merge_two_z_coordinate(z_coordinate_list[0],z_coordinate_list[1])
+    combined = merge_two_z_coordinates(z_coordinate_list[0],z_coordinate_list[1])
     for scatterer in scatterer_list[2:]:
         combined = merge_two_z_coordinates(scatterer,combined)
 
