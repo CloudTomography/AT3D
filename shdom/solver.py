@@ -329,8 +329,12 @@ class RTE(object):
         #set them to 1. This should be revisited after all checks are developed for the
         #workflow that creates table_index.
         self._pa.iphasep[np.where(self._pa.iphasep == 0)] = 1
+
         # Concatenate all scatterer tables into one table
-        legendre_table = xr.concat([scatterer.legcoef for scatterer in self.medium], dim='table_index')
+        max_legendre = max([scatterer.sizes['legendre_index'] for scatterer in self.medium])
+        padded_legcoefs = [scatterer.legcoef.pad({'legendre_index': (0, max_legendre - scatterer.legcoef.sizes['legendre_index'])}) for scatterer in self.medium]
+        legendre_table = xr.concat(padded_legcoefs, dim='table_index')
+        #legendre_table = xr.concat([scatterer.legcoef for scatterer in self.medium], dim='table_index')
 
         self._pa.numphase = legendre_table.sizes['table_index']
 

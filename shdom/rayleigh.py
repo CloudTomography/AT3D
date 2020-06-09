@@ -37,8 +37,7 @@ def compute_table(wavelengths):
         xr.DataArray(name='rayleigh_table',
                      data=legcoef[..., None],
                      dims=['stokes_index', 'legendre_index', 'wavelength'],
-                     coords={'stokes_index': range(legcoef.shape[0]),
-                             'legendre_index': range(legcoef.shape[1]),
+                     coords={'stokes_index': (['stokes_index'], ['P11','P22','P33','P44','P12','P34']),
                              'wavelength': np.array([wavelength])})
         for legcoef, table_type, wavelength in zip(legcoefs, table_types, wavelengths)
     ]
@@ -77,16 +76,16 @@ def compute_extinction(wavelengths, temperature_profile, surface_pressure=1013.0
     ext_profile = [xr.DataArray(
         dims='z',
         name='rayleigh_extinction_profile',
-        coords={'z': temperature_profile.Altitude.values, 'wavelength': wavelength},
+        coords={'z': temperature_profile.z.values, 'wavelength': wavelength},
         data=core.rayleigh_extinct(nzt=temperature_profile.size,
-                                   zlevels=temperature_profile.Altitude,
+                                   zlevels=temperature_profile.z,
                                    temp=temperature_profile.data,
                                    raysfcpres=surface_pressure,
                                    raylcoef=raylcoef)
     ) for raylcoef, wavelength in zip(raylcoefs, wavelengths)]
 
     # Create a Rayleigh profile xarray.Dataset
-    rayleigh_profile = temperature_profile.copy().to_dataset(name='temperature').swap_dims({'Altitude': 'z'}).drop('Altitude')
+    rayleigh_profile = temperature_profile.copy().to_dataset(name='temperature')#.swap_dims({'Altitude': 'z'}).drop('Altitude')
     rayleigh_profile['extinction'] = xr.concat(ext_profile, dim='wavelength')
     rayleigh_profile.attrs['units'] = ['wavelength [micron]', 'temperature [k]', 'extinction [km^-1]']
     return rayleigh_profile

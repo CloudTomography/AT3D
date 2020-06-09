@@ -213,7 +213,7 @@ def get_poly_table(size_distribution, mie_mono_table):
     TODO
     Calculates mie scattering table for a polydisperse size distribution.
     """
-    nd = size_distribution['number density'].values.reshape((len(size_distribution['radius'])),-1)
+    nd = size_distribution['number_density'].values.reshape((len(size_distribution['radius'])),-1)
     #TODO
     #add interpolation onto radius
     assert np.all(size_distribution.coords['radius'] == mie_mono_table.coords['radius']), 'radii should be consistent between size distribution and mie_mono_table'
@@ -228,7 +228,7 @@ def get_poly_table(size_distribution, mie_mono_table):
             scatter1=mie_mono_table['scatter'],
             legcoef1=mie_mono_table['legendre'])
 
-    grid_shape = size_distribution['number density'].shape[1:]
+    grid_shape = size_distribution['number_density'].shape[1:]
 
     #all coords except radius
     coords = {name:coord for name, coord in size_distribution.coords.items() if name not in ('radius', 'stokes_index') }
