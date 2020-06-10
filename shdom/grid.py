@@ -12,6 +12,92 @@ import pandas as pd
 import numpy as np
 import xarray as xr
 
+def load_2parameter_lwc_file(file_name, density='lwc', origin=(0.0,0.0)):
+    """
+    Function that loads a scatterer from the '2 parameter lwc file' format used by
+    SHDOM and i3rc monte carlo model.
+    """
+    header = pd.read_csv(file_name, nrows=4)
+    nx,ny,nz = np.fromstring(header['2 parameter LWC file'][0],sep=' ').astype(np.int)
+    dx,dy = np.fromstring(header['2 parameter LWC file'][1],sep=' ').astype(np.float)
+    z = np.fromstring(header['2 parameter LWC file'][2],sep=' ').astype(np.float)
+    temperature = np.fromstring(header['2 parameter LWC file'][3],sep=' ').astype(np.float)
+
+    dset = make_grid(origin[0],(nx-1)*dx,nx,origin[1],(ny-1)*dy,ny,z)
+
+    data = np.genfromtxt('test.txt',skip_header=5)
+
+    lwc = np.zeros((nx,ny,nz))
+    reff = np.zeros((nx,ny,nz))*np.nan
+
+    lwc[data[:,0].astype(np.int)-1,data[:,1].astype(np.int)-1,data[:,2].astype(np.int)-1] = data[:,3]
+    reff[data[:,0].astype(np.int)-1,data[:,1].astype(np.int)-1,data[:,2].astype(np.int)-1] = data[:,4]
+
+    dset['density'] = xr.DataArray(
+                        data=lwc,
+                        dims=['x','y','z']
+    )
+
+    dset['reff'] = xr.DataArray(
+                        data=reff,
+                        dims=['x','y','z']
+    )
+
+    dset['Temperature'] = xr.DataArray(
+                        data=temperature,
+                        dims=['z']
+    )
+
+    dset.attrs['density_name'] = 'lwc'
+    dset.attrs['file_name'] = file_name
+
+    return dset
+
+def to_2parameter_lwc_file(file_name, cloud_scatterer,atmosphere=None,fill_temperature=280.0):
+    """
+    Write lwc & reff to the '2 parameter lwc' file format used by i3rc MonteCarlo model and SHDOM.
+    atmosphere should contain the temperature. It is interpolated to the specified z grid.
+    If no atmosphere is included then a fill_temperature is used (Temperature is required
+    in the file).
+    """
+
+    nx,ny,nz = cloud_scatterer.density.shape
+    dx,dy = (cloud_scatterer.x[1]-cloud_scatterer.x[0]).data, (cloud_scatterer.y[1] - cloud_scatterer.y[0]).data
+    z = cloud_scatterer.z.data
+
+    if atmosphere is not None:
+        temperature = atmosphere.interp({'z': cloud_scatterer.z}).Temperature.data
+    else:
+        temperature = np.ones(z.shape)*fill_temperature
+
+    i,j,k = np.meshgrid(np.arange(1,nx+1),np.arange(1,ny+1),np.arange(1,nz+1), indexing='ij')
+
+    lwc = cloud_scatterer.density.data.ravel()
+    reff = cloud_scatterer.reff.data.ravel()
+
+    z_string = ''
+    for a in z:
+        if a == z[-1]:
+            z_string += '{}'.format(a)
+        else:
+            z_string += '{} '.format(a)
+
+    t_string = ''
+    for a in temperature:
+        if a == temperature[-1]:
+            t_string += '{:5.2f}'.format(a)
+        else:
+            t_string +='{:5.2f} '.format(a)
+
+    with open(file_name, "w") as f:
+        f.write('2 parameter LWC file\n')
+        f.write(' {} {} {}\n'.format(nx,ny,nz))
+        f.write('{} {}\n'.format(dx,dy))
+        f.write('{}\n'.format(z_string))
+        f.write('{}\n'.format(t_string))
+        for x,y,z,l,r in zip(i.ravel(),j.ravel(),k.ravel(),lwc.ravel(),reff.ravel()):
+            f.write('{} {} {} {:5.4f} {:3.2f}\n'.format(x, y, z,l,r))
+
 def load_from_csv(path, density=None,origin=(0.0,0.0)):
     """
     TODO
