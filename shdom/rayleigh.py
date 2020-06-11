@@ -16,6 +16,47 @@ wavelengths: float or list / numpy array.
 from shdom import core
 import numpy as np
 import xarray as xr
+from collections import OrderedDict
+
+def to_grid(wavelengths, atmosphere, rte_grid):
+    """
+    TODO
+    """
+    atmosphere_on_rte_grid = atmosphere.interp({'z':rte_grid.z})
+    rayleigh_poly_tables = compute_table(wavelengths).rename('legcoef')
+    rayleigh_extinction = compute_extinction(wavelengths,atmosphere_on_rte_grid.Temperature,
+                                                           surface_pressure=atmosphere_on_rte_grid.Pressure.data[0])
+
+    rayleigh_ssalb = xr.DataArray(
+                        name='ssalb',
+                        data = np.ones(rayleigh_extinction.extinction.shape,dtype=np.float32),
+                        dims=['wavelength','z']
+    )
+
+    rayleigh_table_index = xr.DataArray(
+                        name='table_index',
+                        data = np.ones(rayleigh_extinction.extinction.shape, dtype=np.int),
+                        dims=['wavelength','z']
+    )
+
+    rayleigh = xr.merge([rayleigh_extinction,rayleigh_ssalb, rayleigh_table_index]).broadcast_like(rte_grid)
+
+    rayleigh = rayleigh.set_coords('table_index')
+    rayleigh_final = xr.merge([rayleigh, rayleigh_poly_tables.expand_dims(dim='table_index', axis=-2)])
+
+    #TODO need to decide whether this should return a large Dataset with a wavelength dimension
+    #or a list/dict. For consistency with the way that microphysical scatterers are determined at the script level,
+    #the output is currently an OrderedDict. compute_table/rayleigh.compute_extinction COULD be reformaulted to be
+    #mononcrhomatic for consistency with microphysics but that is not really necessary.
+
+    output = OrderedDict()
+    for wavelength in wavelengths:
+        temp = rayleigh_final.sel({'wavelength': wavelength})
+        #add a 'wavelength_center' attribute as this is what solver.RTE needs.
+        temp.attrs['wavelength_center'] = wavelength
+        output[wavelength] = temp
+
+    return output
 
 def compute_table(wavelengths):
     """

@@ -851,7 +851,7 @@ class RTE(object):
                 }
             )
 
-        return output, sensor
+        return sensor
 
     @property
     def num_iterations(self):

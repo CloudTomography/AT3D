@@ -38,7 +38,7 @@ def merge_sensor_list(list_of_sensor_datasets):
         if i>=1:
             sensor['super_pixel_index'] += list_of_sensor_datasets[i-1]['super_pixel_index'].max() + 1
 
-    concat_observable = xr.concat([data.observable_list for data in list_of_sensor_datasets],dim='nimage')
+    concat_observable = xr.concat([data.stokes for data in list_of_sensor_datasets],dim='nimage')
     concat_image_shape = xr.concat([data.image_shape for data in list_of_sensor_datasets],dim='nimage')
 
     concatenated_pixels = xr.concat(list_of_sensor_datasets,data_vars=var_list,dim='total_pixels')
@@ -78,6 +78,17 @@ def split_sensors(combined_render_output):
         count+=split_index
     return list_of_unmerged
 
+def add_subpixel_rays(sensor,IFOV, n_rays=1, weights='gaussian', sampling='deterministic'):
+    """
+    TODO
+    """
+    if IFOV == 0.0:
+        sensor['super_pixel_index'] = ('total_pixels', range(sensor.sizes['total_pixels']))
+        sensor['super_pixel_weight'] = ('total_pixels', np.ones(sensor.sizes['total_pixels']))
+        return sensor
+    else:
+        raise NotImplementedError
+
 
 def _homography_projection(projection_matrix, point_array):
     """
@@ -103,9 +114,9 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
     ----------
     wavelength: float,
         Wavelength in [micron]
-    bounding_box: xarray
-        An xarray which contains: xmin, ymin, zmin, xmax, ymax, zmax.
-        The bounding box is used to compute a projection that will make the entire bounding box visible.
+    bounding_box: xarray.Dataset/DataArray
+        An xarray which contains the x,y,z coordinates which will be used
+        to compute the bounding_box for the domain.
     x_resolution: float
         Pixel resolution [km] in x axis (North)
     y_resolution: float
@@ -122,7 +133,8 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
     """
     mu = np.cos(np.deg2rad(zenith))
     phi = np.deg2rad(azimuth)
-    xmin, ymin, zmin, xmax, ymax, zmax = bounding_box.data
+    xmin, ymin, zmin = bounding_box.x.data.min(),bounding_box.y.data.min(),bounding_box.z.data.min()
+    xmax, ymax, zmax = bounding_box.x.data.max(),bounding_box.y.data.max(),bounding_box.z.data.max()
 
     altitude = zmax if altitude == 'TOA' else altitude
 
@@ -147,7 +159,8 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
 
     x, y, z, mu, phi = np.meshgrid(x, y, z, mu, phi)
     sensor = make_sensor_dataset(x.ravel(), y.ravel(), z.ravel(), mu.ravel(), phi.ravel(), stokes, wavelength)
-    sensor['bounding_box'] = bounding_box
+    sensor['bounding_box'] = xr.DataArray(np.array([xmin,ymin,zmin,xmax,ymax,zmax]),
+    coords={'bbox': ['xmin','ymin','zmin','xmax','ymax','zmax']},dims='bbox')
     sensor['image_shape'] = xr.DataArray(image_shape, coords={'image_dims': ['nx', 'ny']}, dims='image_dims')
     sensor.attrs = {
         'projection': 'Orthographic',
