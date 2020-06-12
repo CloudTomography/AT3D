@@ -733,15 +733,15 @@ class RTE(object):
         Integrates the source function along rays with geometry specified in sensor.
         """
 
-        camx = sensor['cam_x'].data
-        camy = sensor['cam_y'].data
-        camz = sensor['cam_z'].data
-        cammu = sensor['cam_mu'].data
-        camphi = sensor['cam_phi'].data
+        camx = sensor['ray_x'].data
+        camy = sensor['ray_y'].data
+        camz = sensor['ray_z'].data
+        cammu = sensor['ray_mu'].data
+        camphi = sensor['ray_phi'].data
         #TODO
         #Some checks on the dimensions: this kind of thing.
         assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
-        total_pix = sensor.sizes['total_pixels']
+        total_pix = sensor.sizes['nrays']
 
         phase_check = hasattr(self, '_phasetab')
         if not phase_check:
@@ -822,7 +822,7 @@ class RTE(object):
         #merge output across parallelization pixel split before doing this.
         sensor['I'] = xr.DataArray(
             data=output[0],
-            dims='total_pixels',
+            dims='nrays',
             attrs={
                 'long_name': 'Radiance'
             }
@@ -830,14 +830,14 @@ class RTE(object):
         if self._nstokes > 1:
             sensor['Q']= xr.DataArray(
                 data=output[1],
-                dims='total_pixels',
+                dims='nrays',
                 attrs={
                     'long_name': 'Stokes Parameter for Linear Polarization (Q)'
                 }
             )
             sensor['U']= xr.DataArray(
                 data=output[2],
-                dims='total_pixels',
+                dims='nrays',
                 attrs={
                     'long_name': 'Stokes Parameter for Linear Polarization (U)'
                 }
@@ -845,7 +845,7 @@ class RTE(object):
         if self._nstokes == 4:
             sensor['V']= xr.DataArray(
                 data=output[3],
-                dims='total_pixels',
+                dims='nrays',
                 attrs={
                     'long_name': 'Stokes Paramaeter for Circular Polarization (V)'
                 }

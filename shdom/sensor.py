@@ -11,11 +11,11 @@ def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength):
             data_vars={
                 'wavelength': wavelength,
                 'stokes': ('stokes_index', np.array(stokes_bool)),
-                'cam_x': (['total_pixels'], x.ravel().astype(np.float64)),
-                'cam_y': (['total_pixels'], y.ravel().astype(np.float64)),
-                'cam_z': (['total_pixels'], z.ravel().astype(np.float64)),
-                'cam_mu'  : (['total_pixels'], mu.ravel()),
-                'cam_phi' : (['total_pixels'], phi.ravel()),
+                'cam_x': (['npixels'], x.ravel().astype(np.float64)),
+                'cam_y': (['npixels'], y.ravel().astype(np.float64)),
+                'cam_z': (['npixels'], z.ravel().astype(np.float64)),
+                'cam_mu'  : (['npixels'], mu.ravel()),
+                'cam_phi' : (['npixels'], phi.ravel()),
                 },
         coords = {'stokes_index': np.array(['I', 'Q', 'U', 'V'])}
     )
@@ -25,70 +25,61 @@ def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength):
     #but this is the bare minimum for rendering.
     return dataset
 
-def merge_sensor_list(list_of_sensor_datasets):
-    """
-#merging sensors
-#concatenates, camx/y/z/mu/phi/superpix_i/superpix_wt along total_pixels dimension.
-#concatenates npixels/observable_list along nimage dimension.
-    """
-    var_list = ['cam_x','cam_y','cam_z','cam_mu','cam_phi','super_pixel_index','super_pixel_weight']
-
-    #make sure super_pixel_indices are unique.
-    for i,sensor in enumerate(list_of_sensor_datasets):
-        if i>=1:
-            sensor['super_pixel_index'] += list_of_sensor_datasets[i-1]['super_pixel_index'].max() + 1
-
-    concat_observable = xr.concat([data.stokes for data in list_of_sensor_datasets],dim='nimage')
-    concat_image_shape = xr.concat([data.image_shape for data in list_of_sensor_datasets],dim='nimage')
-
-    concatenated_pixels = xr.concat(list_of_sensor_datasets,data_vars=var_list,dim='total_pixels')
-    merge_list = [concatenated_pixels.data_vars[name] for name in var_list]
-    merge_list += [concat_observable,concat_image_shape]
-    merged = xr.merge(merge_list)
-    return merged
-
-def split_sensors(combined_render_output):
+def merge_sensor_rays(sensors):
     """
     TODO
-    This function both splits the sensors, does the averaging of rays over pixels
-    and subsets which observables are specified by the original sensor.
-    These latter functions could be done at the sensor level in a 'make measurements' step.
     """
+    var_list = ['ray_x','ray_y','ray_z','ray_mu','ray_phi']
 
-    #averaging over rays in each super_pixel
-    averaged_over_super_pixels = (combined_render_output['super_pixel_weight']*combined_render_output).groupby('super_pixel_index').mean()
-    #drop the super_pixel_dimension when irrelevant broadcasting occurs.
-    #TODO tidy this up. only apply to necessary variables.
-    averaged_over_super_pixels['image_shape'] = averaged_over_super_pixels.image_shape[0].astype(np.int64)
-    averaged_over_super_pixels['observable_list'] = averaged_over_super_pixels.observable_list[0].astype(np.int64)
+    output = {}
+    for var in var_list:
+        concatenated = xr.concat([sensor[var] for sensor in sensors], dim='nrays')
+        output[var] = ('nrays', concatenated)
+    output['stokes'] = xr.concat([sensor.stokes for sensor in sensors],dim='nimage')
+    output['rays_per_image'] = ('nimage', np.array([sensor.sizes['nrays'] for sensor in sensors]))
+    merged_dataset = xr.Dataset(data_vars=output)
 
+    return merged_dataset
+
+def split_sensor_rays(merged):
+    """
+    TODO
+    The inverse of 'merge_sensor_rays'
+    """
     list_of_unmerged = []
     count = 0
-    for i in range(averaged_over_super_pixels.sizes['nimage']):
-        split_index = averaged_over_super_pixels.image_shape[i].prod()
-        split = averaged_over_super_pixels.sel({'super_pixel_index': slice(count,count+split_index),
-                                               'nimage':i})
 
-        #only_take the I,Q,U,V designated as observables
-        for i,observable in enumerate(split.coords['observables'].data):
-            if (split.observable_list[i]==0) and (observable in split):
-                split = split.drop_vars(observable)
+    for i in range(merged.sizes['nimage']):
+        split_index = merged.rays_per_image[i].data
+        split = merged.sel({'nrays': slice(count, count+split_index), 'nimage':i})
 
         list_of_unmerged.append(split)
-        count+=split_index
+        count += split_index
     return list_of_unmerged
 
-def add_subpixel_rays(sensor,IFOV, n_rays=1, weights='gaussian', sampling='deterministic'):
+def get_observables(sensor, rendered_rays):
     """
     TODO
+    Currently averages over the sub_pixel rays and only takes
+    the observables that are needed.
     """
-    if IFOV == 0.0:
-        sensor['super_pixel_index'] = ('total_pixels', range(sensor.sizes['total_pixels']))
-        sensor['super_pixel_weight'] = ('total_pixels', np.ones(sensor.sizes['total_pixels']))
-        return sensor
-    else:
-        raise NotImplementedError
 
+    merge_list = [sensor.pixel_index]
+    for stokes in sensor.stokes_index:
+        if rendered_rays['stokes'].sel({'stokes_index':stokes}):
+            weighted_stokes = (sensor.ray_weight*rendered_rays[str(stokes.data)])
+            weighted_stokes.name = '{}'.format(str(stokes.data))
+            merge_list.append(weighted_stokes)
+
+    temp = xr.merge(merge_list)
+    #only do the group_by once, not for every stokes.
+    observed = temp.groupby('pixel_index').sum()
+
+    for stokes in observed.data_vars:
+        sensor[stokes] = ('npixels', observed[stokes].data)
+
+    return sensor
+        
 
 def _homography_projection(projection_matrix, point_array):
     """
@@ -171,3 +162,159 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
         'projection_zenith': zenith
     }
     return sensor
+
+
+def gaussian_cone(npixels,degree, FOV):
+    """
+    TODO
+    Number of sampling points scales as some quadratic function
+    of degree so caution should be taken when using this.
+
+    degree & FOV are scalars.
+    THIS ASSUMES FOV OF A PIXEL IS A CONE
+    """
+    out_mu,out_mu_weights = np.polynomial.legendre.leggauss(2*degree)
+    mus = out_mu[len(out_mu)//2:]
+    mu_weights = out_mu_weights[len(out_mu)//2:]
+
+    nphis = [int(0.9+(2*degree)*np.sqrt(1.0-mu**2)) for mu in mus]
+    phis = np.concatenate([np.cumsum([2*np.pi/nphi]*nphi)  for nphi in nphis],axis=-1)
+    big_mus = np.concatenate([[mu]*nphi for mu,nphi in zip(mus,nphis)],axis=-1)
+    weights = np.concatenate([[mu_weight/(nphi)]*nphi for mu_weight,nphi in zip(mu_weights,nphis)],axis=-1)
+
+    #scale to the correct angle interval
+    thetas = np.arccos(1.0- (1.0 - big_mus)*(1.0 - np.cos(np.deg2rad(FOV))))
+
+    #cosine weighting.
+    weights *= np.cos(thetas)
+    weights /= np.sum(weights)
+
+    thetas = np.repeat(np.expand_dims(thetas,-1),npixels,axis=-1)
+    phis = np.repeat(np.expand_dims(phis,-1),npixels,axis=-1)
+    weights = np.repeat(np.expand_dims(weights,-1),npixels,axis=-1)
+
+    return thetas,phis,weights
+
+def stochastic_cone(npixels,nrays, FOV, seed):
+    """
+    TODO
+    Generate rays that have 'equal energy' contribution (and therefore weight)
+    so that each ray is as equally worthwhile to simulate.
+    THIS ASSUMES FOV OF A PIXEL IS A CONE
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    mu_rand = np.random.triangular(left=0.0,mode=1.0,right=1.0,size=(nrays,npixels))
+    rand_phi = np.random.uniform(low=-np.pi,high=np.pi,size=(nrays,npixels))
+    rand_theta = np.arccos(1.0- (1.0 - mu_rand)*(1.0 - np.cos(np.deg2rad(FOV))))
+    weights = np.ones((nrays,npixels))/nrays
+    return rand_theta, rand_phi, weights
+
+def make_new_rays(theta_ref,phi_ref,theta_prime,phi_prime):
+    """
+    TODO
+    """
+    T_inv = np.array([[np.cos(theta_ref)*np.cos(phi_ref), -np.sin(phi_ref), np.sin(theta_ref)*np.cos(phi_ref)],
+                            [np.cos(theta_ref)*np.sin(phi_ref), np.cos(phi_ref), np.sin(theta_ref)*np.sin(phi_ref)],
+                             [-np.sin(theta_ref), np.zeros(theta_ref.shape), np.cos(theta_ref)]])
+
+    prime = np.array([np.sin(theta_prime)*np.cos(phi_prime),np.sin(theta_prime)*np.sin(phi_prime), np.cos(theta_prime)])
+
+    #hacks to ensure that broadcasting works properly.
+    if prime.ndim == 2:
+        prime = np.expand_dims(prime,-1)
+    prime = prime.transpose(-1,0,1)
+    T_inv = T_inv.transpose(-1,0,1)
+
+    new_ray = np.matmul(T_inv,prime)
+    new_mu = new_ray[:,-1,:]
+    new_phi = np.arctan2(new_ray[:,1,:],new_ray[:,0,:])
+    return new_mu,new_phi
+
+def add_sub_pixel_rays(sensor,FOV,inplace=True,sampling='gaussian_cone',seed=None,degree=None,
+                      nrays=None):
+    """
+    TODO
+
+    This is the main interface that makes the sub-pixel 'ray' variables that are actually integrated
+    by RTE solver. Therefore it needs to ALWAYS be called.
+    If FOV=0 then this just copies the 'cam' variables regardless of sampling method.
+
+    The new 'ray' variables can be added to the sensor object
+    which modifies it inplace or returned as a separate object.
+
+    TODO
+    New methods for subsampling may have a tuple of FOV to allow rectangular FOVs.
+    These new methods may be applied to arbitrary sensors.
+    Or the sub_pixel_ray generation methods may be integrated into the sensor definition
+    if they are unique to that sensor.
+    """
+
+    cam_mu = sensor.cam_mu.data
+    cam_phi = sensor.cam_phi.data
+    cam_x = sensor.cam_x.data
+    cam_y = sensor.cam_y.data
+    cam_z = sensor.cam_z.data
+    output = {}
+
+    FOV = np.atleast_1d(FOV)
+    if all(FOV==0.0):
+
+        output['ray_mu'] = ('nrays',cam_mu)
+        output['ray_phi'] = ('nrays',cam_phi)
+        output['ray_x'] = ('nrays',cam_x)
+        output['ray_y'] = ('nrays',cam_y)
+        output['ray_z'] = ('nrays',cam_z)
+        output['pixel_index'] = ('nrays', range(len(cam_mu)))
+        output['ray_weight'] = ('nrays', np.ones(len(cam_mu)))
+        output['pixel_fov'] = FOV
+
+    else:
+        if sampling == 'gaussian_cone':
+            assert degree is not None, 'degree must be defined for gaussian_cone sampling.'
+            assert len(FOV) == 1, 'FOV is a single scalar for conical sub pixel.'
+            theta_prime,phi_prime,weights = gaussian_cone(npixels=len(cam_mu),FOV=FOV,degree=degree)
+
+        elif sampling =='stochastic_cone':
+            assert nrays is not None,'seed and nrays must be defined for stochastic_cone sampling.'
+            assert len(FOV) == 1, 'FOV is a single scalar for conical sub pixel.'
+            theta_prime,phi_prime,weights = stochastic_cone(npixels=len(cam_mu),FOV=FOV,nrays=nrays,seed=seed)
+        new_mu,new_phi = make_new_rays(np.arccos(cam_mu),cam_phi,theta_prime,phi_prime)
+
+        weights_all = weights.ravel()
+        mu_all = new_mu.ravel()
+        phi_all = new_phi.ravel()
+        xs_all = np.repeat(np.expand_dims(cam_x,0),new_mu.shape[-1]).ravel()
+        ys_all = np.repeat(np.expand_dims(cam_y,0),new_mu.shape[-1]).ravel()
+        zs_all = np.repeat(np.expand_dims(cam_z,0),new_mu.shape[-1]).ravel()
+        indices = np.repeat(np.expand_dims(np.arange(len(cam_x)),1),new_mu.shape[-1]).ravel()
+
+        output['pixel_fov'] = FOV
+        output['ray_mu'] = ('nrays',mu_all)
+        output['ray_phi'] = ('nrays',phi_all)
+        output['ray_x'] = ('nrays',xs_all)
+        output['ray_y'] = ('nrays',ys_all)
+        output['ray_z'] = ('nrays',zs_all)
+        output['pixel_index'] = ('nrays', indices)
+        output['ray_weight'] = ('nrays', weights_all)
+
+    #make outputs
+    dset = xr.Dataset(data_vars=output)
+    dset.attrs['units'] = ['pixel_fov [degrees]']
+    dset.attrs['sub_pixel_sampling'] = sampling
+
+    if sampling == 'gaussian_cone':
+        dset.attrs['gaussian_sub_pixel_degree'] = degree
+    elif sampling == 'stochastic_cone':
+        dset.attrs['seed'] = seed
+        dset.attrs['n_rays'] = nrays
+
+    if inplace:
+        final = xr.merge([sensor,dset])
+        final=final.assign_attrs(dset.attrs)
+        final=final.assign_attrs(sensor.attrs)
+    else:
+        final = dset
+
+    return final
