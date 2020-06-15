@@ -51,7 +51,6 @@ def dataset_checks(**argchecks):
     TODO
     A complicated decorator that allows
     tests to be applied to datasets or lists of datasets.
-    See below for example usage.
     """
 
     def decorator(func):
@@ -60,10 +59,11 @@ def dataset_checks(**argchecks):
 
         def tests(*pargs,**kargs):
             positionals = list(allargs)
+
             for argname in kargs:
                 # for all passed by name, remove from expected
                 positionals.remove(argname)
-
+            test_fail = False
             #loop through all dataset variable names assigned to test.
             for argname,test_list in argchecks.items():
                 #tidy up test_list
@@ -97,6 +97,7 @@ def dataset_checks(**argchecks):
                             try:
                                 test(*test_args)
                             except ValueError as err:
+                                test_fail = True
                                 #print an error message for all failed tests
                                 if list_flag:
                                     print("The '{}' argument of '{}' failed with {} from '{}'".format(i,argname,err.args,test.__name__))
@@ -127,13 +128,14 @@ def dataset_checks(**argchecks):
                             try:
                                 test(*test_args)
                             except ValueError as err:
+                                test_fail=True
                                 #print an error message for all failed tests
                                 if list_flag:
                                     print("The '{}' argument of '{}' failed with {} from '{}'".format(i,argname,err.args,test.__name__))
                                 else:
                                     print("'{}' failed with {} from '{}'".format(argname,err.args,test.__name__))
-            #TODO fix raised error
-            #raise ValueError("tests specified by dataset_checks failed as input to '{}'".format(func.__name__))
+            if test_fail:
+                raise ValueError("tests specified by dataset_checks failed as input to '{}'".format(func.__name__))
             return func(*pargs, **kargs)
         return tests
     return decorator
