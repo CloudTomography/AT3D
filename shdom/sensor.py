@@ -79,7 +79,7 @@ def get_observables(sensor, rendered_rays):
         sensor[stokes] = ('npixels', observed[stokes].data)
 
     return sensor
-        
+
 
 def _homography_projection(projection_matrix, point_array):
     """
@@ -205,10 +205,10 @@ def stochastic_cone(npixels,nrays, FOV, seed):
     if seed is not None:
         np.random.seed(seed)
 
-    mu_rand = np.random.triangular(left=0.0,mode=1.0,right=1.0,size=(nrays,npixels))
+    mu_rand = np.random.uniform(low=0.0,high=1.0,size=(nrays,npixels))
     rand_phi = np.random.uniform(low=-np.pi,high=np.pi,size=(nrays,npixels))
     rand_theta = np.arccos(1.0- (1.0 - mu_rand)*(1.0 - np.cos(np.deg2rad(FOV))))
-    weights = np.ones((nrays,npixels))/nrays
+    weights = np.cos(rand_theta)/np.sum(np.cos(rand_theta),axis=0)
     return rand_theta, rand_phi, weights
 
 def make_new_rays(theta_ref,phi_ref,theta_prime,phi_prime):
