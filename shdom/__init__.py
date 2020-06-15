@@ -35,3 +35,4 @@ import shdom.configuration
 import shdom.solver
 import shdom.sensor
 import shdom.grid
+import shdom.checks
