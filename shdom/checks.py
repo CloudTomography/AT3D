@@ -146,7 +146,6 @@ def dataset_checks(**argchecks):
 #A LIST of checks is supplied for each dataset/list_of_dataset name,
 #For each check a TUPLE of the function, and a LIST of variable names is supplied.
 
-#checks to apply ('check_positivity') to which datasets/lists_of_datasets ('microphysics')
 @dataset_checks(microphysics=(check_positivity,'density'),
                poly_table=[(check_positivity, 'big_banananas')],
                legendre=check_legendre)
