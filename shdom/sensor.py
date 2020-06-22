@@ -72,11 +72,18 @@ def get_observables(sensor, rendered_rays):
             merge_list.append(weighted_stokes)
 
     temp = xr.merge(merge_list)
-    #only do the group_by once, not for every stokes.
-    observed = temp.groupby('pixel_index').sum()
 
-    for stokes in observed.data_vars:
-        sensor[stokes] = ('npixels', observed[stokes].data)
+    if sensor.pixel_fov == 0.0:
+        #avoid expensive groupby if no subpixel rays are used.
+        for stokes in temp.data_vars:
+            sensor[stokes] = ('npixels', temp[stokes].data)
+
+    else:
+        #only do the group_by once, not for every stokes.
+        observed = temp.groupby('pixel_index').sum()
+
+        for stokes in observed.data_vars:
+            sensor[stokes] = ('npixels', observed[stokes].data)
 
     return sensor
 
@@ -143,8 +150,15 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
     # Use projected bounding box to define image sampling
     x_s, y_s = projected_bounding_box[:2, :].min(axis=1)
     x_e, y_e = projected_bounding_box[:2, :].max(axis=1)
-    x = np.arange(x_s, x_e + 1e-6, x_resolution)
-    y = np.arange(y_s, y_e + 1e-6, y_resolution)
+    
+    if np.isclose(x_s,xmin) or np.isclose(x_s,xmax):
+        x = np.arange(x_s, x_e + 1e-6, x_resolution)
+    elif np.isclose(x_e,xmin) or np.isclose(x_e,xmax):
+        x = -1*np.arange(-1*x_e,-1*x_s+1e-6, x_resolution)[::-1]
+    if np.isclose(y_s,ymin) or np.isclose(y_s,ymax):
+        y = np.arange(y_s, y_e + 1e-6, y_resolution)
+    elif np.isclose(y_e,ymin) or np.isclose(y_e,ymax):
+        y = -1*np.arange(-1*y_e,-1*y_s+1e-6, y_resolution)[::-1]
     z = altitude
     image_shape = [x.size, y.size]
 
