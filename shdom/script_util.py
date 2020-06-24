@@ -3,12 +3,12 @@ from joblib import Parallel, delayed
 import shdom
 
 
-def get_unique_wavelengths(sensordict):
+def get_unique_wavelengths(sensor_dict):
     """
     TODO
     """
     wavelength_list = []
-    for key,instrument in sensordict.items():
+    for key,instrument in sensor_dict.items():
         for sensor in instrument['sensor_list']:
             wavelength_list.append(sensor.wavelength)
 
@@ -17,7 +17,6 @@ def get_unique_wavelengths(sensordict):
 def parallel_solve(solvers, n_jobs=1, mpi_comm=None, maxiter=100, verbose=True):
     """
     TODO
-    See 'get_measurements' for more TODOs
     """
     if mpi_comm is not None:
         raise NotImplementedError
@@ -65,7 +64,7 @@ def sort_sensors(solvers, sensors):
 
 def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False, maxiter=100,verbose=True):
     """
-    TODO
+    In-place modification of sensors and solvers.
     """
     rte_sensors, sensor_mapping = sort_sensors(solvers, sensors)
 

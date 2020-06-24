@@ -44,11 +44,6 @@ def to_grid(wavelengths, atmosphere, rte_grid):
     rayleigh = rayleigh.set_coords('table_index')
     rayleigh_final = xr.merge([rayleigh, rayleigh_poly_tables.expand_dims(dim='table_index', axis=-2)])
 
-    #TODO need to decide whether this should return a large Dataset with a wavelength dimension
-    #or a list/dict. For consistency with the way that microphysical scatterers are determined at the script level,
-    #the output is currently an OrderedDict. compute_table/rayleigh.compute_extinction COULD be reformaulted to be
-    #mononcrhomatic for consistency with microphysics but that is not really necessary.
-
     output = OrderedDict()
     for wavelength in wavelengths:
         temp = rayleigh_final.sel({'wavelength': wavelength})
@@ -126,7 +121,7 @@ def compute_extinction(wavelengths, temperature_profile, surface_pressure=1013.0
     ) for raylcoef, wavelength in zip(raylcoefs, wavelengths)]
 
     # Create a Rayleigh profile xarray.Dataset
-    rayleigh_profile = temperature_profile.copy().to_dataset(name='temperature')#.swap_dims({'Altitude': 'z'}).drop('Altitude')
+    rayleigh_profile = temperature_profile.copy().to_dataset(name='temperature')
     rayleigh_profile['extinction'] = xr.concat(ext_profile, dim='wavelength')
     rayleigh_profile.attrs['units'] = ['wavelength [micron]', 'temperature [k]', 'extinction [km^-1]']
     return rayleigh_profile

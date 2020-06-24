@@ -26,7 +26,7 @@ def table_to_grid(microphysics, poly_table):
                                         dims=table_index.dims,
                                         coords=table_index.coords,
                                         )
-    
+
     legendre_table_stack = poly_table['legcoef'].stack(table_index=interp_coords)
     subset_legcoef = legendre_table_stack.isel({'table_index':unique_table_indices})
     subset_legcoef = xr.DataArray(name='legcoef',
@@ -38,10 +38,6 @@ def table_to_grid(microphysics, poly_table):
     optical_properties = xr.merge([extinction, ssalb, subset_legcoef])
 
     table_coords = {'table_index': (['x','y','z'],subset_table_index.data)}
-    #TODO
-    #We could add the microphysics corresponding to each table_index as a diagnostic.
-
-    #TODO inherit the wavelength etc from the table.
 
     optical_properties =optical_properties.assign_coords(table_coords)
 
@@ -50,10 +46,6 @@ def table_to_grid(microphysics, poly_table):
     optical_properties = optical_properties.assign_attrs(microphysics.attrs)
     #TODO Check for whether these variables are 'in-place' modifications that
             #affect the earlier legendre_table/poly_table etc.
-    #TODO
-    #Add checks like those in MicrophysicalScatterer.add_mie() to ensure
-    #that the returned optical properties are valid and/or raise warning when
-    #some microphysics entries are out of range of the given table.
     return optical_properties
 
 

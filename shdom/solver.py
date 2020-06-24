@@ -727,7 +727,7 @@ class RTE(object):
                 runname=self._name
             )
 
-    def integrate_to_sensor(self, sensor, n_jobs=1):
+    def integrate_to_sensor(self, sensor):
         """
         TODO
         Integrates the source function along rays with geometry specified in sensor.
@@ -748,8 +748,6 @@ class RTE(object):
             self._precompute_phase()
 
         #TODO Raise warning if observables are not included.
-
-        #TODO figure out parallelization.
 
         output = core.render(
             nstphase=self._nstphase,

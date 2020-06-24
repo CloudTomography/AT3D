@@ -20,9 +20,6 @@ def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength):
         coords = {'stokes_index': np.array(['I', 'Q', 'U', 'V'])}
     )
 
-    #Various other information could be added
-    #about the grouping and relation of pixels to one another,
-    #but this is the bare minimum for rendering.
     return dataset
 
 def merge_sensor_rays(sensors):
@@ -150,7 +147,7 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
     # Use projected bounding box to define image sampling
     x_s, y_s = projected_bounding_box[:2, :].min(axis=1)
     x_e, y_e = projected_bounding_box[:2, :].max(axis=1)
-    
+
     if np.isclose(x_s,xmin) or np.isclose(x_s,xmax):
         x = np.arange(x_s, x_e + 1e-6, x_resolution)
     elif np.isclose(x_e,xmin) or np.isclose(x_e,xmax):
