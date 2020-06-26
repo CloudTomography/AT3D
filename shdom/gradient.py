@@ -106,3 +106,59 @@ def create_derivative_tables(solvers,unknown_scatterers):
         unknown_scatterer_indices[key] = partial_derivative_list
 
     return partial_derivative_tables
+
+
+def get_derivatives(solvers, derivative_tables):
+    """
+    TODO
+    Calculates partial derivatives on the rte_grid.
+    The solvers are modified in place to now contain the partial_derivatives
+    """
+    for key, rte_solver in solvers.items():
+
+        solver._precompute_phase()
+        derivative_table = derivative_tables[key]
+        num_derivatives = len(derivative_table)
+
+        dext = np.zeros(shape=[rte_solver._nbpts, num_derivatives], dtype=np.float32)
+        dalb = np.zeros(shape=[rte_solver._nbpts, num_derivatives], dtype=np.float32)
+        diphase = np.zeros(shape=[rte_solver._nbpts, num_derivatives], dtype=np.int32)
+
+        for count, (i,table) in enumerate(derivative_table):
+            scatterer = rte_solver.medium[i]
+            derivative_on_grid = shdom.medium.table_to_grid(scatterer,table)
+
+            dext[:, count] = derivative_on_grid.extinction.data.ravel()
+            dalb[:, count] = derivative_on_grid.albedo.data.ravel()
+            diphase[:, count] = derivative_on_grid.table_index.data.ravel() + diphase.max()
+
+        # Concatenate all scatterer tables into one table
+        max_legendre = max([table.sizes['legendre_index'] for i,table in derivative_table])
+        padded_legcoefs = [table.legcoef.pad({'legendre_index': (0, max_legendre - table.legcoef.sizes['legendre_index'])}) for i,table in derivative_table]
+        legendre_table = xr.concat(padded_legcoefs, dim='table_index')
+
+        dnumphase = legendre_table.sizes['table_index']
+        dleg = legendre_table.legcoef.data
+
+        # zero the first term of the first component of the phase function
+        # gradient. Pre-scale the legendre moments by 1/(2*l+1) which
+        # is done in the forward problem in TRILIN_INTERP_PROP
+        scaling_factor =np.array([2.0*i+1.0 for i in range(0,rte_solver._nleg+1)])
+        dleg[0,0,:] = 0.0
+        dleg = dleg[:rte_solver._nstleg] / scaling_factor
+
+        dphasetab = core.precompute_phase_check_grad(
+                                                     negcheck=False,
+                                                     nstphase=rte_solver._nstphase,
+                                                     nstleg=rte_solver._nstleg,
+                                                     nscatangle=rte_solver._nscatangle,
+                                                     nstokes=rte_solver._nstokes,
+                                                     dnumphase=dnumphase,
+                                                     ml=rte_solver._ml,
+                                                     nlm=rte_solver._nlm,
+                                                     nleg=rte_solver._nleg,
+                                                     dleg=dleg,
+                                                     deltam=rte_solver._deltam
+                                                     )
+        rte_solver._dphasetab, rte_solver._dext, rte_solver._dalb, rte_solver._diphase, rte_solver._dleg = \
+        dphasetab, dext, dalb, diphase, dleg
