@@ -1,8 +1,8 @@
-def calculate_solar_paths(solvers):
+def calculate_direct_beam_derivative(solvers):
     """
     Calculate the geometry of the direct beam at each point and solver.
     """
-    solar_paths = OrderedDict()
+    direct_beam_derivative = OrderedDict()
 
     #All solvers are unsolved so they should have the same base grid.
     #npts = number of base grid points (nbpts) as no solutions have been performed.
@@ -13,6 +13,8 @@ def calculate_solar_paths(solvers):
     #calculate the solar direct beam on the base grid
     #which ensures the solver has the required information to
     #calculate the derivative.
+
+    #TODO check that only one solver needs to have the direct_beam calcualted.
     rte_solver._make_direct()
 
     direct_derivative_path, direct_derivative_ptr = \
@@ -47,7 +49,7 @@ def calculate_solar_paths(solvers):
             delyd=rte_solver._delyd
         )
 
-    solar_paths['direct_derivative_path'] = direct_derivative_path
-    solar_paths['direct_derivative_ptr'] = direct_derivative_ptr
+    direct_beam_derivative['direct_derivative_path'] = direct_derivative_path
+    direct_beam_derivative['direct_derivative_ptr'] = direct_derivative_ptr
 
     return solar_paths
