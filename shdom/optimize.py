@@ -23,7 +23,7 @@ class ObjectiveFunction(object):
         NB The passed set_state_fn must be defined using the solvers/unknown_scatterers defined at the script level.
         """
         additional_args = dict()
-        additional_args['tables'] = shdom.gradient.calculate_partial_derivatives(solvers, unknown_scatterers)
+        additional_args['tables'] = shdom.gradient.create_derivative_tables(solvers, unknown_scatterers)
         additional_args['direct_beam_derivative'] = shdom.gradient.calculate_direct_beam_derivative(solvers)
 
         def loss_function(state, measurements, **kwargs):

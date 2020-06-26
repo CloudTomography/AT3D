@@ -60,21 +60,14 @@ def get_bounding_box(medium):
     # TODO add units from the grid to the bounding box if exists
     return bounding_box
 
-class Scatterer(object):
+def combine_to_medium(scatterers):
     """
-    A Scatterer class to be inherited by specific scatterer types (e.g. OpticalScatter, MicrophysicalScatterer etc...)
+    TODO
     """
-    def __init__(self):
-        self.grid = None
-
-    @property
-    def grid(self):
-        return self._grid
-
-    @grid.setter
-    def grid(self, val):
-        self._grid = val
-
-    @property
-    def bounding_box(self):
-        return self.grid.bounding_box
+    mediums = OrderedDict()
+    for key in np.atleast_1d(scatterers)[0].keys():
+        scatterer_list = []
+        for scatterer in scatterers:
+            scatterer_list.append(scatterer[key])
+        mediums[key] = scatterer_list
+    return mediums

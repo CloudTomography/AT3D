@@ -1,6 +1,7 @@
 def calculate_direct_beam_derivative(solvers):
     """
     Calculate the geometry of the direct beam at each point and solver.
+    TODO
     """
     direct_beam_derivative = OrderedDict()
 
@@ -52,4 +53,29 @@ def calculate_direct_beam_derivative(solvers):
     direct_beam_derivative['direct_derivative_path'] = direct_derivative_path
     direct_beam_derivative['direct_derivative_ptr'] = direct_derivative_ptr
 
-    return solar_paths
+    return direct_beam_derivative
+
+def create_derivative_tables(solvers, unknown_scatterers):
+    """
+    TODO
+    """
+    partial_derivative_tables = OrderedDict()
+
+    for key in solvers.keys():
+        medium = solvers[key].medium
+        partial_derivative_list = []
+        for unknown_scatterer, table, variable_names in unknown_scatterers[key]:
+
+            #For each unknown_scatterer compute the tables of derivatives
+            derivatives_tables = OrderedDict()
+            for variable_name in variable_names:
+                differentiated = table.differentiate(coord=variable_name)
+                derivatives_tables[variable_name] = differentiated
+
+            #find the index which each unknown scatterer corresponds to in the scatterer list.
+            for i,scatterer in enumerate(medium):
+                if unknown_scatterer is scatterer:
+                    partial_derivative_list.append((i, derivatives_tables))
+        unknown_scatterer_indices[key] = partial_derivative_list
+
+    return partial_derivative_tables
