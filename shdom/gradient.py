@@ -67,10 +67,17 @@ def create_derivative_tables(solvers, unknown_scatterers):
         for unknown_scatterer, table, variable_names in unknown_scatterers[key]:
 
             #For each unknown_scatterer compute the tables of derivatives
+            valid_microphysics_coords = {name:table[name] for name in table.coords if name not in ('table_index', 'stokes_index')}
             derivatives_tables = OrderedDict()
             for variable_name in variable_names:
-                differentiated = table.differentiate(coord=variable_name)
-                derivatives_tables[variable_name] = differentiated
+
+                if variable_name is in valid_microphysics_coords.keys():
+                    differentiated = table.differentiate(coord=variable_name)
+                    derivatives_tables[variable_name] = differentiated
+                elif variable_name == 'extinction':
+                    raise NotImplementedError
+                elif variable_name == 'ssalb':
+                    raise NotImplementedError
 
             #find the index which each unknown scatterer corresponds to in the scatterer list.
             for i,scatterer in enumerate(medium):
