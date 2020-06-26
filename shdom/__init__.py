@@ -37,3 +37,4 @@ import shdom.sensor
 import shdom.grid
 import shdom.checks
 import shdom.script_util
+import shdom.gradient
