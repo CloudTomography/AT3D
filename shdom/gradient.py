@@ -55,7 +55,7 @@ def calculate_direct_beam_derivative(solvers):
 
     return direct_beam_derivative
 
-def create_derivative_tables(solvers, unknown_scatterers):
+def create_derivative_tables(solvers,unknown_scatterers):
     """
     TODO
     """
@@ -65,7 +65,7 @@ def create_derivative_tables(solvers, unknown_scatterers):
         medium = solvers[key].medium
         partial_derivative_list = []
         for unknown_scatterer, table, variable_names in unknown_scatterers[key]:
-
+            variable_names = np.atleast_1d(variable_names)
             #For each unknown_scatterer compute the tables of derivatives
             valid_microphysics_coords = {name:table[name] for name in table.coords if name not in ('table_index', 'stokes_index')}
             derivatives_tables = OrderedDict()
@@ -73,11 +73,31 @@ def create_derivative_tables(solvers, unknown_scatterers):
 
                 if variable_name is in valid_microphysics_coords.keys():
                     differentiated = table.differentiate(coord=variable_name)
-                    derivatives_tables[variable_name] = differentiated
+
                 elif variable_name == 'extinction':
-                    raise NotImplementedError
+                    differentiated = table.copy(data={
+                        'extinction': np.ones(table.extinction.shape),
+                        'legcoef': np.zeros(table.legcoef.shape),
+                        'ssalb': np.zeros(table.ssalb.shape)
+                    })
                 elif variable_name == 'ssalb':
-                    raise NotImplementedError
+                    differentiated = table.copy(data={
+                        'extinction': np.zeros(table.extinction.shape),
+                        'legcoef': np.zeros(table.legcoef.shape),
+                        'ssalb': np.ones(table.ssalb.shape)
+                    })
+                elif 'legendre_' in variable_name:
+                    leg_index = int(variable_name[len('legendre_X_'):])
+                    stokes_index = int(variable_name[len('legendre_')])
+                    legcoef = np.zeros(table.legcoef.shape)
+                    legcoef[stokes_index,leg_index,...] = 1.0
+                    differentiated = table.copy(data={
+                        'extinction': np.zeros(table.extinction.shape),
+                        'legcoef': legcoef,
+                        'ssalb': np.zeros(table.ssalb.shape)
+                    })
+
+                derivatives_tables[variable_name] = differentiated
 
             #find the index which each unknown scatterer corresponds to in the scatterer list.
             for i,scatterer in enumerate(medium):
