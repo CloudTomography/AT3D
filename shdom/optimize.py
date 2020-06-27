@@ -5,34 +5,28 @@ class ObjectiveFunction(object):
 
     def __init__(self, measurements, loss_fn, additional_args = dict(), min_bounds=None, max_bounds=None):
 
-        self.additional_args = additional_args
-        #container to store things that are computed once
-        #and are reused like tables of partial mie derivatives.
-
         self.measurements = measurements
         self.loss_fn = loss_fn
 
     def __call__(self, state):
-        loss, gradient = self.loss_fn(state, self.measurements, **self.additional_args)
+        loss, gradient = self.loss_fn(state, self.measurements)
         self.loss = loss
         return loss, gradient
 
     @classmethod
-    def LevisApproxUncorrelatedL2(cls, measurements, solvers, forward_sensors, unknown_scatterers, set_state_fn):
+    def LevisApproxUncorrelatedL2(cls, measurements, solvers, forward_sensors, unknown_scatterers, set_state_fn,
+                                        n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose):
         """
         NB The passed set_state_fn must be defined using the solvers/unknown_scatterers defined at the script level.
         """
-        additional_args = dict()
-        additional_args['tables'] = shdom.gradient.create_derivative_tables(solvers, unknown_scatterers)
-        additional_args['direct_beam_derivative'] = shdom.gradient.calculate_direct_beam_derivative(solvers)
+        table_derivatives = shdom.gradient.create_derivative_tables(solvers, unknown_scatterers)
+        direct_beam_derivative = shdom.gradient.calculate_direct_beam_derivative(solvers)
 
-        def loss_function(state, measurements, **kwargs):
+        def loss_function(state, measurements):
 
             set_state_fn(state)
-            table_derivatives = kwargs['tables']
-            solar_paths = kwargs['solar_paths']
             loss, gradient = shdom.gradient.levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
-                                                       table_derivatives, solar_paths)
+                                                       table_derivatives, direct_beam_derivative,n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose)
             return loss, gradient
 
         return cls(measurements, loss_function, additional_args)

@@ -162,3 +162,172 @@ def get_derivatives(solvers, derivative_tables):
                                                      )
         rte_solver._dphasetab, rte_solver._dext, rte_solver._dalb, rte_solver._diphase, rte_solver._dleg = \
         dphasetab, dext, dalb, diphase, dleg
+
+def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
+                                                       table_derivatives, direct_beam_derivative):
+    #TODO
+    get_derivatives(solvers, table_derivatives)
+
+    direct_derivative_path, direct_derivative_ptr = direct_beam_derivative.values()
+    for key,solver in solvers.items():
+        solver._direct_derivative_path = direct_derivative_path
+        solver._direct_derivative_ptr = direct_derivative_ptr
+
+    shdom.script_util.parallel_solve(solvers)
+
+    merged_sensors = prepare_sensor_inverse(forward_sensors)
+
+
+def grad_l2(self, rte_solver, sensor, uncertainties,
+            jacobian_flag=False):
+    """
+    TODO INPROGRESS
+    The core l2 gradient method.
+
+    Parameters
+    ----------
+    rte_solver: shdom.RteSolver
+        A solver with all the associated parameters and the solution to the RTE
+    projection: shdom.Projection
+        A projection model which specified the position and direction of each and every pixel
+    pixels: np.array(shape=(projection.npix), dtype=np.float32)
+        The acquired pixels driving the error and optimization.
+    uncertainties: np.array(shape=(projection.npix), dtype=np.float32)
+        The pixel uncertainties.
+
+    Returns
+    -------
+    gradient: np.array(shape=(rte_solver._nbpts, self.num_derivatives), dtype=np.float64)
+        The gradient with respect to all parameters at every grid base point
+    loss: float64
+        The total loss accumulated over all pixels
+    images: np.array(shape=(rte_solver._nstokes, projection.npix), dtype=np.float32)
+        The rendered (synthetic) images.
+    """
+    camx = sensor['ray_x'].data
+    camy = sensor['ray_y'].data
+    camz = sensor['ray_z'].data
+    cammu = sensor['ray_mu'].data
+    camphi = sensor['ray_phi'].data
+    #TODO
+    #Some checks on the dimensions: this kind of thing.
+    assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
+    total_pix = sensor.sizes['nrays']
+
+    #TODO construct
+
+    if jacobian_flag:
+        #maximum size is hard coded - should be roughly an order of magnitude
+        #larger than the maximum necssary size but is possible source of seg faults.
+        largest_dim = int(100*np.sqrt(rte_solver._nx**2+rte_solver._ny**2+rte_solver._nz**2))
+        jacobian = np.empty((rte_solver._nstokes,self.num_derivatives,total_pix*largest_dim),order='F',dtype=np.float32)
+        jacobian_ptr = np.empty((2,total_pix*largest_dim),order='F',dtype=np.int32)
+    else:
+        jacobian = np.empty((rte_solver._nstokes,self.num_derivatives,1),order='F',dtype=np.float32)
+        jacobian_ptr = np.empty((2,1),order='F',dtype=np.int32)
+
+    gradient, loss, images, jacobian, jacobian_ptr, counter = core.gradient_l2(
+        uncertainties=uncertainties,
+        weights=self._stokes_weights[:rte_solver._nstokes],
+        exact_single_scatter=self._exact_single_scatter,
+        nstphase=rte_solver._nstphase,
+        dpath=self._direct_derivative_path,
+        dptr=self._direct_derivative_ptr,
+        npx=rte_solver._pa.npx,
+        npy=rte_solver._pa.npy,
+        npz=rte_solver._pa.npz,
+        delx=rte_solver._pa.delx,
+        dely=rte_solver._pa.dely,
+        xstart=rte_solver._pa.xstart,
+        ystart=rte_solver._pa.ystart,
+        zlevels=rte_solver._pa.zlevels,
+        extdirp=rte_solver._pa.extdirp,
+        uniformzlev=rte_solver._uniformzlev,
+        partder=self.unknown_scatterers_indices,
+        numder=self.num_derivatives,
+        dext=rte_solver._dext,
+        dalb=rte_solver._dalb,
+        diphase=rte_solver._diphase,
+        dleg=rte_solver._dleg,
+        dphasetab=rte_solver._dphasetab,
+        dnumphase=rte_solver._dnumphase,
+        nscatangle=rte_solver._nscatangle,
+        phasetab=rte_solver._phasetab,
+        ylmsun=rte_solver._ylmsun,
+        nstokes=rte_solver._nstokes,
+        nstleg=rte_solver._nstleg,
+        nx=rte_solver._nx,
+        ny=rte_solver._ny,
+        nz=rte_solver._nz,
+        bcflag=rte_solver._bcflag,
+        ipflag=rte_solver._ipflag,
+        npts=rte_solver._npts,
+        nbpts=rte_solver._nbpts,
+        ncells=rte_solver._ncells,
+        nbcells=rte_solver._nbcells,
+        ml=rte_solver._ml,
+        mm=rte_solver._mm,
+        ncs=rte_solver._ncs,
+        nlm=rte_solver._nlm,
+        numphase=rte_solver._pa.numphase,
+        nmu=rte_solver._nmu,
+        nphi0max=rte_solver._nphi0max,
+        nphi0=rte_solver._nphi0,
+        maxnbc=rte_solver._maxnbc,
+        ntoppts=rte_solver._ntoppts,
+        nbotpts=rte_solver._nbotpts,
+        nsfcpar=rte_solver._nsfcpar,
+        gridptr=rte_solver._gridptr,
+        neighptr=rte_solver._neighptr,
+        treeptr=rte_solver._treeptr,
+        shptr=rte_solver._shptr,
+        bcptr=rte_solver._bcptr,
+        cellflags=rte_solver._cellflags,
+        iphase=rte_solver._iphase[:rte_solver._npts],
+        deltam=rte_solver._deltam,
+        solarflux=rte_solver._solarflux,
+        solarmu=rte_solver._solarmu,
+        solaraz=rte_solver._solaraz,
+        gndtemp=rte_solver._gndtemp,
+        gndalbedo=rte_solver._gndalbedo,
+        skyrad=rte_solver._skyrad,
+        waveno=rte_solver._waveno,
+        wavelen=rte_solver._wavelen,
+        mu=rte_solver._mu,
+        phi=rte_solver._phi,
+        wtdo=rte_solver._wtdo,
+        xgrid=rte_solver._xgrid,
+        ygrid=rte_solver._ygrid,
+        zgrid=rte_solver._zgrid,
+        gridpos=rte_solver._gridpos,
+        sfcgridparms=rte_solver._sfcgridparms,
+        bcrad=rte_solver._bcrad,
+        extinct=rte_solver._extinct[:rte_solver._npts],
+        albedo=rte_solver._albedo[:rte_solver._npts],
+        legen=rte_solver._legen,
+        dirflux=rte_solver._dirflux[:rte_solver._npts],
+        fluxes=rte_solver._fluxes,
+        source=rte_solver._source,
+        camx=camx,
+        camy=camy,
+        camz=camz,
+        cammu=cammu,
+        camphi=camphi,
+        npix=total_pix,
+        srctype=rte_solver._srctype,
+        sfctype=rte_solver._sfctype,
+        units=rte_solver._units,
+        measurements=pixels,
+        rshptr=rte_solver._rshptr,
+        radiance=rte_solver._radiance,
+        total_ext=rte_solver._total_ext[:rte_solver._npts],
+        jacobian=jacobian,
+        jacobianptr=jacobian_ptr,
+        makejacobian=jacobian_flag
+    )
+    jacobian = jacobian[:,:,:counter-1]
+    jacobian_ptr = jacobian_ptr[:,:counter-1]
+    if jacobian_flag:
+        return gradient, loss, images, jacobian, jacobian_ptr, np.array([counter-1])
+    else:
+        return gradient, loss, images

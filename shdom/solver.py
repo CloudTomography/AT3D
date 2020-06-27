@@ -817,7 +817,6 @@ class RTE(object):
             total_ext=self._total_ext[:self._npts],
             npart=self._npart)
 
-        #merge output across parallelization pixel split before doing this.
         sensor['I'] = xr.DataArray(
             data=output[0],
             dims='nrays',
