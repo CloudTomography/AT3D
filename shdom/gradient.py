@@ -1,12 +1,12 @@
 def calculate_direct_beam_derivative(solvers):
     """
     Calculate the geometry of the direct beam at each point and solver.
+    Solver is modified in-place.
     TODO
     """
-    direct_beam_derivative = OrderedDict()
-
-    #All solvers are unsolved so they should have the same base grid.
-    #npts = number of base grid points (nbpts) as no solutions have been performed.
+    #Intheory due to setting ._npts to ._nbpts this function can now be called
+    #after solver solution. TODO
+    #If it can't then ._init_solution needs to be called separately.
 
     #Only use the first solver.
     rte_solver = solvers.values()[0]
@@ -14,13 +14,12 @@ def calculate_direct_beam_derivative(solvers):
     #calculate the solar direct beam on the base grid
     #which ensures the solver has the required information to
     #calculate the derivative.
-
     #TODO check that only one solver needs to have the direct_beam calcualted.
     rte_solver._make_direct()
 
     direct_derivative_path, direct_derivative_ptr = \
         core.make_direct_derivative(
-            npts=rte_solver._npts,
+            npts=rte_solver._nbpts, #changed from ._npts to ._nbpts as this should only be calculated for base grid.
             bcflag=rte_solver._bcflag,
             gridpos=rte_solver._gridpos,
             npx=rte_solver._pa.npx,
@@ -50,10 +49,11 @@ def calculate_direct_beam_derivative(solvers):
             delyd=rte_solver._delyd
         )
 
-    direct_beam_derivative['direct_derivative_path'] = direct_derivative_path
-    direct_beam_derivative['direct_derivative_ptr'] = direct_derivative_ptr
 
-    return direct_beam_derivative
+    for solver in solvers.values():
+        solver._direct_derivative_path = direct_derivative_path
+        solver._direct_derivative_ptr = direct_derivative_ptr
+
 
 def create_derivative_tables(solvers,unknown_scatterers):
     """
@@ -164,24 +164,39 @@ def get_derivatives(solvers, derivative_tables):
         dphasetab, dext, dalb, diphase, dleg
 
 def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
-                                                       table_derivatives, direct_beam_derivative):
+                                                       table_derivatives, n_jobs=1,
+                                 mpi_comm=None,verbose=False):
+    """TODO"""
+    #note this division of solving and 'raytracing' is not optimal for distributed memory parallelization
+    #where tasks take varying amounts of time.
+    shdom.script_util.parallel_solve(solvers, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose)
+
+    #These are called after the solution because they require at least _init_solution to be run.
+    if not hasattr(solver.values()[0], '_direct_derivative_path'):
+        #only needs to be called once.
+        #If this doesn't work after 'solve' and requires only '_init_solution' then it will need to be
+        #called inside parallel_solve. . .
+        calculate_direct_beam_derivative(solvers)
+
+    get_derivatives(solvers, table_derivatives)  #adds the _dext/_dleg/_dalb etc to the solvers.
+
+    #prepare the sensors for the fortran subroutine for calculating gradient.
+    merged_sensors = prepare_sensor_inverse(forward_sensors, solvers)
+
+    #parallelized calculation of the gradient
     #TODO
-    get_derivatives(solvers, table_derivatives)
 
-    direct_derivative_path, direct_derivative_ptr = direct_beam_derivative.values()
-    for key,solver in solvers.items():
-        solver._direct_derivative_path = direct_derivative_path
-        solver._direct_derivative_ptr = direct_derivative_ptr
+    #merge gradients
+    if mpi_comm is not None:
+        #mpi_sum the gradients.
 
-    shdom.script_util.parallel_solve(solvers)
-
-    merged_sensors = prepare_sensor_inverse(forward_sensors)
+    return loss, gradient
 
 
 def grad_l2(self, rte_solver, sensor, uncertainties,
             jacobian_flag=False):
     """
-    TODO INPROGRESS
+    TODO INPROGRESS/NONFUNCTIONAL
     The core l2 gradient method.
 
     Parameters
