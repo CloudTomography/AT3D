@@ -4,7 +4,6 @@ import shdom
 class ObjectiveFunction(object):
 
     def __init__(self, measurements, loss_fn, additional_args = dict(), min_bounds=None, max_bounds=None):
-
         self.measurements = measurements
         self.loss_fn = loss_fn
 
@@ -14,7 +13,7 @@ class ObjectiveFunction(object):
         return loss, gradient
 
     @classmethod
-    def LevisApproxUncorrelatedL2(cls, measurements, solvers, forward_sensors, unknown_scatterers, set_state_fn,
+    def LevisApproxUncorrelatedL2(cls, measurements, solvers, forward_sensors, unknown_scatterers, set_state_fn,project_gradient_to_state
                                         n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose):
         """
         NB The passed set_state_fn must be defined using the solvers/unknown_scatterers defined at the script level.
@@ -26,7 +25,9 @@ class ObjectiveFunction(object):
             set_state_fn(state)
             loss, gradient = shdom.gradient.levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
                                                        table_derivatives, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose)
-            return loss, gradient
+            
+            # TODO state_gradient = project_gradient_to_state(gradient)
+            return loss, state_gradient
 
         return cls(measurements, loss_function, additional_args)
 

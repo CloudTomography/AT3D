@@ -1,6 +1,8 @@
 
 from joblib import Parallel, delayed
 import shdom
+import numpy as np
+from collections import OrderedDict
 
 
 def get_unique_wavelengths(sensor_dict):
@@ -34,18 +36,21 @@ def render_one_solver(solver,merged_sensor, sensor_mapping, sensors, maxiter=100
     TODO
     """
     solver.solve(maxiter=maxiter,verbose=verbose)
-    integrated_rays = solver.integrate_to_sensor(merged_sensor, n_jobs=n_jobs)
+
+    split = np.array_split(np.arange(sensor.sizes['nrays']),n_jobs)
+    start_end = [(a.min(),a.max()) for a in split]
+    out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(solver.integrate_to_sensor)(sensor.sel(nrays=slice(start,end+1))) for start,end in start_end)
+    integrated_rays = xr.concat(out, dim='nrays')
+
+    #integrated_rays = solver.integrate_to_sensor(merged_sensor)#, n_jobs=n_jobs)
     rendered_rays = shdom.sensor.split_sensor_rays(integrated_rays)
     for i,rendered_ray in enumerate(rendered_rays):
         mapping = sensor_mapping[i]
         sensor = sensors[mapping[0]]['sensor_list'][mapping[1]]
         unused = shdom.sensor.get_observables(sensor, rendered_ray)
 
-def sort_sensors(solvers, sensors):
-    """
-    TODO
-    """
-    #sort sensors
+def sort_sensors(sensors, solvers, merge):
+    sensors = Sensordict
     rte_sensors = OrderedDict()
     sensor_mapping = OrderedDict()
 
@@ -57,16 +62,32 @@ def sort_sensors(solvers, sensors):
                 if key == sensor.wavelength:
                     sensor_list.append(sensor)
                     mapping_list.append((instrument,i))
-        merged_sensor = shdom.sensor.merge_sensor_rays(sensor_list)
-        rte_sensors[key] = merged_sensor
+        if merge == 'forward':
+            merged = shdom.sensor.merge_sensors_forward(sensor_list, solver)
+        elif merge == 'inverse':
+            merged = shdom.sensor.merge_sensors_inverse(sensor_list, solver)
+        rte_sensors[key] = merged
         sensor_mapping[key] = mapping_list
     return rte_sensors, sensor_mapping
+
+def combine_to_medium(scatterers):
+    """
+    TODO
+    """
+    mediums = OrderedDict()
+    for key in np.atleast_1d(scatterers)[0].keys():
+        scatterer_list = []
+        for scatterer in scatterers:
+            scatterer_list.append(scatterer[key])
+        mediums[key] = scatterer_list
+    return mediums
+
 
 def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False, maxiter=100,verbose=True):
     """
     In-place modification of sensors and solvers.
     """
-    rte_sensors, sensor_mapping = sort_sensors(solvers, sensors)
+    rte_sensors, sensor_mapping = sort_sensors(sensors, solvers, 'forward')
 
     if mpi_comm is not None:
         raise NotImplementedError

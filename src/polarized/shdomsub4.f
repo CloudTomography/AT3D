@@ -385,7 +385,8 @@ C         to calculate the Stokes radiance vector for this pixel
      .           NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS, EXTDIRP,
      .           UNIFORMZLEV, DPATH, DPTR, EXACT_SINGLE_SCATTER,
      .           WEIGHTS, UNCERTAINTIES, JACOBIAN,MAKEJACOBIAN,
-     .           JACOBIANPTR, COUNTER)
+     .           JACOBIANPTR, COUNTER, RAYS_PER_PIXEL, RAY_WEIGHTS,
+     .           STOKES_WEIGHTS)
 Cf2py threadsafe
       IMPLICIT NONE
       LOGICAL EXACT_SINGLE_SCATTER
@@ -467,9 +468,15 @@ Cf2py intent(in) :: MAKEJACOBIAN
 Cf2py intent(in,out) JACOBIANPTR
       INTEGER COUNTER
 Cf2py intent(out) COUNTER
+      INTEGER RAYS_PER_PIXEL(*)
+Cf2py intent(in) RAYS_PER_PIXEL
+      REAL  RAY_WEIGHTS(*), STOKES_WEIGHTS(NSTOKES, *)
+Cf2py intent(in) RAY_WEIGHTS, STOKES_WEIGHTS
 
-      REAL PIXEL_ERROR
+      DOUBLE PRECISION SYNTHETIC_MEASUREMENT(NSTOKES)
+      DOUBLE PRECISION PIXEL_ERROR
       DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER), VISRAD(NSTOKES)
+      DOUBLE PRECISION RAYGRAD_PIXEL(NSTOKES,NBPTS,NUMDER)
       INTEGER I, J, L, SIDE, IVIS
       LOGICAL VALIDRAD
       DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
@@ -477,6 +484,7 @@ Cf2py intent(out) COUNTER
       DOUBLE PRECISION X0, Y0, Z0
       DOUBLE PRECISION XE,YE,ZE, TRANSMIT
       INTEGER M, ME, MS, NS, NS1
+      INTEGER RAY_COUNTER, I2
 
       INTEGER, ALLOCATABLE :: LOFJ(:)
       ALLOCATE (LOFJ(NLM))
@@ -512,34 +520,38 @@ C          Compute the upwelling bottom radiances using the downwelling fluxes.
       PI = ACOS(-1.0D0)
 C         Loop over pixels in image
       COST = 0.0D0
-      DO IVIS = 1, NPIX
-        X0 = CAMX(IVIS)
-        Y0 = CAMY(IVIS)
-        Z0 = CAMZ(IVIS)
-        MU2 = CAMMU(IVIS)
-        PHI2 = CAMPHI(IVIS)
-        MURAY = -MU2
-        PHIRAY = PHI2 - PI
+      DO I = 1, NPIX
+        SYNTHETIC_MEASUREMENT = 0.0D0
+        RAYGRAD_PIXEL = 0.0D0
+        DO I2=1,RAYS_PER_PIXEL(I)
+          IVIS = RAY_COUNTER + I2
+          X0 = CAMX(IVIS)
+          Y0 = CAMY(IVIS)
+          Z0 = CAMZ(IVIS)
+          MU2 = CAMMU(IVIS)
+          PHI2 = CAMPHI(IVIS)
+          MURAY = -MU2
+          PHIRAY = PHI2 - PI
 
 C             Extrapolate ray to domain top if above
-        IF (Z0 .GT. ZGRID(NZ)) THEN
-          IF (MURAY .GE. 0.0) THEN
-            VISRAD(:) = 0.0
-            GOTO 900
+          IF (Z0 .GT. ZGRID(NZ)) THEN
+            IF (MURAY .GE. 0.0) THEN
+              VISRAD(:) = 0.0
+              GOTO 900
+            ENDIF
+            R = (ZGRID(NZ) - Z0)/MURAY
+            X0 = X0 + R*SQRT(1-MURAY**2)*COS(PHIRAY)
+            Y0 = Y0 + R*SQRT(1-MURAY**2)*SIN(PHIRAY)
+            Z0 = ZGRID(NZ)
+          ELSE IF (Z0 .LT. ZGRID(1)) THEN
+            WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
+            STOP
           ENDIF
-          R = (ZGRID(NZ) - Z0)/MURAY
-          X0 = X0 + R*SQRT(1-MURAY**2)*COS(PHIRAY)
-          Y0 = Y0 + R*SQRT(1-MURAY**2)*SIN(PHIRAY)
-          Z0 = ZGRID(NZ)
-        ELSE IF (Z0 .LT. ZGRID(1)) THEN
-          WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
-          STOP
-        ENDIF
 
 C         Integrate the extinction and source function along this ray
 C         to calculate the Stokes radiance vector for this pixel
-        TRANSMIT = 1.0D0 ; VISRAD = 0.0D0; RAYGRAD = 0.0D0
-        CALL GRAD_INTEGRATE_1RAY (BCFLAG, IPFLAG, NSTOKES, NSTLEG,
+          TRANSMIT = 1.0D0 ; VISRAD = 0.0D0; RAYGRAD = 0.0D0
+          CALL GRAD_INTEGRATE_1RAY (BCFLAG, IPFLAG, NSTOKES, NSTLEG,
      .             NSTPHASE, NSCATANGLE, PHASETAB,
      .             NX, NY, NZ, NPTS, NCELLS,
      .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
@@ -558,38 +570,36 @@ C         to calculate the Stokes radiance vector for this pixel
      .             NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER)
-900     CONTINUE
+  900     CONTINUE
 
-        DO NS = 1, NSTOKES
-          STOKESOUT(NS,IVIS) = VISRAD(NS)
-          PIXEL_ERROR = STOKESOUT(NS,IVIS) - MEASUREMENTS(NS,IVIS)
-C          IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
-C              DO JI = 1, NBPTS
-C                IF (ANY(ABS(RAYGRAD(1,JI,:))>0.0)) THEN
-C                  JACOBIANPTR(1,COUNTER) = IVIS
-C                  JACOBIANPTR(2,COUNTER) = JI
-C                  JACOBIAN(:,COUNTER) = JACOBIAN(:,COUNTER) +
-C     .            WEIGHTS(NS)*RAYGRAD(NS,JI,:)
-C                  IF (NS .EQ. 1) THEN
-C                    COUNTER = COUNTER + 1
-C                  ENDIF
-C                ENDIF
-C              ENDDO
-C          ENDIF
-          DO NS1 = 1, NSTOKES
-            WEIGHT = UNCERTAINTIES(NS,NS1,IVIS)*WEIGHTS(NS)
-            GRADOUT = GRADOUT + WEIGHT*PIXEL_ERROR*RAYGRAD(NS,:,:)
-            COST = COST + 0.5 * WEIGHT*PIXEL_ERROR**2
+          DO NS=1,NSTOKES
+            STOKESOUT(NS,IVIS) = VISRAD(NS)
+            SYNTHETIC_MEASUREMENT(NS) = SYNTHETIC_MEASUREMENT(NS) +
+     .          STOKES_OUT(NS, IVIS)*RAY_WEIGHTS(IVIS)*
+     .          STOKES_WEIGHTS(NS,IVIS)
+            RAYGRAD_PIXEL = RAYGRAD_PIXEL +
+     .          RAYGRAD(NS,:,:)*RAY_WEIGHTS(IVIS)*STOKES_WEIGHTS(NS,IVIS)
           ENDDO
         ENDDO
 
+        DO NS = 1, NSTOKES
+          PIXEL_ERROR = SYNTHETIC_MEASUREMENT(NS) - MEASUREMENTS(NS, IVIS)
+
+          DO NS1 = 1, NSTOKES
+            WEIGHT = UNCERTAINTIES(NS,NS1,IVIS)
+            GRADOUT = GRADOUT + WEIGHT*PIXEL_ERROR*RAYGRAD_PIXEL(NS,:,:)
+            COST = COST + 0.5 * WEIGHT*PIXEL_ERROR**2
+          ENDDO
+        ENDDO
+        RAY_COUNTER = RAY_COUNTER + RAYS_PER_PIXEL(I)
+
         IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
           DO JI = 1, NBPTS
-            IF (ANY(ABS(RAYGRAD(1,JI,:))>0.0)) THEN
+            IF (ANY(ABS(RAYGRAD_PIXEL(1,JI,:))>0.0)) THEN
               JACOBIANPTR(1,COUNTER) = IVIS
               JACOBIANPTR(2,COUNTER) = JI
               JACOBIAN(:,:,COUNTER) = JACOBIAN(:,:,COUNTER) +
-     .        RAYGRAD(:,JI,:)
+     .        RAYGRAD_PIXEL(:,JI,:)
               COUNTER = COUNTER + 1
             ENDIF
           ENDDO

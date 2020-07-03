@@ -22,7 +22,7 @@ def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength):
 
     return dataset
 
-def merge_sensor_rays(sensors):
+def merge_sensors_forward(sensors):
     """
     TODO
     """
@@ -41,7 +41,6 @@ def merge_sensor_rays(sensors):
 def split_sensor_rays(merged):
     """
     TODO
-    The inverse of 'merge_sensor_rays'
     """
     list_of_unmerged = []
     count = 0
@@ -84,6 +83,45 @@ def get_observables(sensor, rendered_rays):
 
     return sensor
 
+def merge_sensors_inverse(sensors, solver):
+    """
+    TODO
+    """
+    var_list = ['ray_x','ray_y','ray_z','ray_mu','ray_phi','ray_weight','pixel_index']
+
+    output = {}
+    for var in var_list:
+        concatenated = xr.concat([sensor[var] for sensor in sensors], dim='nrays')
+        output[var] = ('nrays', concatenated)
+
+
+    output['stokes'] = xr.concat([sensor.stokes for sensor in sensors],dim='nimage')
+    output['rays_per_image'] = ('nimage', np.array([sensor.sizes['nrays'] for sensor in sensors]))
+    output['rays_per_pixel'] = ('npixels', np.concatenate([np.unique(sensor.pixel_index,return_counts=True)[1]\
+                                                          for sensor in sensors]))
+    stokes_weights = []
+    stokes_datas = []
+    for sensor in sensors:
+        stokes_weight = np.zeros((solver._nstokes, sensor.sizes['npixels']))
+        stokes_data = np.zeros((solver._nstokes, sensor.sizes['npixels']))
+        for i,stokes in enumerate(sensor.stokes_index):
+            if stokes in list(sensor.data_vars):
+                stokes_weight[i,:] = 1.0
+                stokes_data[i,:] = sensor[str(stokes.data)]
+
+        stokes_weights.append(stokes_weight)
+        stokes_datas.append(stokes_data)
+
+    output['stokes_weights'] = (['nstokes','npixels'], np.concatenate(stokes_weights,axis=-1))
+    output['measurement_data'] = (['nstokes','npixels'], np.concatenate(stokes_datas,axis=-1))
+
+    merged_sensors = xr.Dataset(data_vars=output)
+
+    #TODO HARDCODED UNCERTAINTIES
+    merged_sensors['uncertainties'] = xr.DataArray(data= np.ones((merged_sensors.sizes['nstokes'],
+                                merged_sensors.sizes['nstokes'], merged_sensors.sizes['npixels'])),
+                                dims=['nstokes', 'npixels'])
+    return merged_sensors
 
 def _homography_projection(projection_matrix, point_array):
     """
