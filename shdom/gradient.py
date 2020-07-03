@@ -263,7 +263,6 @@ def gradient_one_solver(sensor, rte_solver, n_jobs, sensor_mapping, forward_sens
 def grad_l2(self, rte_solver, sensor, uncertainties,
             jacobian_flag=False):
     """
-    TODO
     The core l2 gradient method.
 
     Parameters
@@ -293,19 +292,20 @@ def grad_l2(self, rte_solver, sensor, uncertainties,
     camphi = sensor['ray_phi'].data
     #TODO
     #Some checks on the dimensions: this kind of thing.
-    assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
-    nrays = sensor.sizes['nrays']
-    npix = sensor.sizes['npixels']
+    #assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
+    #nrays = sensor.sizes['nrays']
+    total_pix = sensor.sizes['npixels']
 
     measurement_data = sensor['measurement_data'].data
     stokes_weights = sensor['stokes_weights'].data
     ray_weights = sensor['ray_weight'].data
     rays_per_pixel = sensor['rays_per_pixel'].data
+    uncertainties = sensor['uncertainties'].data
 
     if jacobian_flag:
-        #maximum size is hard coded - should be roughly an order of magnitude
-        #larger than the maximum necssary size but is possible source of seg faults.
-        largest_dim = int(100*np.sqrt(rte_solver._nx**2+rte_solver._ny**2+rte_solver._nz**2))
+        #maximum size is hard coded - possible source of seg faults.
+        #(8*MAX_DOMAIN_LENGTH)**2 based on the beam from sensor to voxel and from voxel to sun.
+        largest_dim = int(64*(rte_solver._pa.npx**2+rte_solver._pa.npy**2+rte_solver._pa.npz**2))
         jacobian = np.empty((rte_solver._nstokes,self.num_derivatives,total_pix*largest_dim),order='F',dtype=np.float32)
         jacobian_ptr = np.empty((2,total_pix*largest_dim),order='F',dtype=np.int32)
     else:
@@ -314,7 +314,10 @@ def grad_l2(self, rte_solver, sensor, uncertainties,
 
     gradient, loss, images, jacobian, jacobian_ptr, counter = core.gradient_l2(
         uncertainties=uncertainties,
-        weights=self._stokes_weights[:rte_solver._nstokes],
+        rays_per_pixel=rays_per_pixel,
+        ray_weights=ray_weights,
+        stokes_weights=stokes_weights,
+        #weights=self._stokes_weights[:rte_solver._nstokes],
         exact_single_scatter=self._exact_single_scatter,
         nstphase=rte_solver._nstphase,
         dpath=self._direct_derivative_path,
@@ -399,11 +402,11 @@ def grad_l2(self, rte_solver, sensor, uncertainties,
         camz=camz,
         cammu=cammu,
         camphi=camphi,
-        npix=total_pix,
+        npix=npix,
         srctype=rte_solver._srctype,
         sfctype=rte_solver._sfctype,
         units=rte_solver._units,
-        measurements=pixels,
+        measurements=measurement_data,
         rshptr=rte_solver._rshptr,
         radiance=rte_solver._radiance,
         total_ext=rte_solver._total_ext[:rte_solver._npts],
