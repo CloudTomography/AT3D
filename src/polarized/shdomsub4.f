@@ -575,15 +575,17 @@ C         to calculate the Stokes radiance vector for this pixel
           DO NS=1,NSTOKES
             STOKESOUT(NS,IVIS) = VISRAD(NS)
             SYNTHETIC_MEASUREMENT(NS) = SYNTHETIC_MEASUREMENT(NS) +
-     .          STOKES_OUT(NS, IVIS)*RAY_WEIGHTS(IVIS)*
+     .          VISRAD(NS)*RAY_WEIGHTS(IVIS)*
      .          STOKES_WEIGHTS(NS,IVIS)
-            RAYGRAD_PIXEL = RAYGRAD_PIXEL +
-     .          RAYGRAD(NS,:,:)*RAY_WEIGHTS(IVIS)*STOKES_WEIGHTS(NS,IVIS)
+            RAYGRAD_PIXEL(NS,:,:) = RAYGRAD_PIXEL(NS,:,:) +
+     .          RAYGRAD(NS,:,:)*RAY_WEIGHTS(IVIS)*
+     .          STOKES_WEIGHTS(NS,IVIS)
           ENDDO
         ENDDO
 
         DO NS = 1, NSTOKES
-          PIXEL_ERROR = SYNTHETIC_MEASUREMENT(NS) - MEASUREMENTS(NS, IVIS)
+          PIXEL_ERROR = SYNTHETIC_MEASUREMENT(NS) -
+     .                    MEASUREMENTS(NS, I)
 
           DO NS1 = 1, NSTOKES
             WEIGHT = UNCERTAINTIES(NS,NS1,IVIS)
