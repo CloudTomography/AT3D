@@ -1,3 +1,8 @@
+import numpy as np
+import xarray as xr
+from collections import OrderedDict
+import shdom
+
 def calculate_direct_beam_derivative(solvers):
     """
     Calculate the geometry of the direct beam at each point and solver.
@@ -163,65 +168,6 @@ def get_derivatives(solvers, derivative_tables):
         rte_solver._dphasetab, rte_solver._dext, rte_solver._dalb, rte_solver._diphase, rte_solver._dleg = \
         dphasetab, dext, dalb, diphase, dleg
 
-def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
-                                                       table_derivatives, n_jobs=1,
-                                 mpi_comm=None,verbose=False):
-    """TODO"""
-    #note this division of solving and 'raytracing' is not optimal for distributed memory parallelization
-    #where tasks take varying amounts of time.
-    shdom.script_util.parallel_solve(solvers, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose)
-
-    #These are called after the solution because they require at least _init_solution to be run.
-    if not hasattr(solver.values()[0], '_direct_derivative_path'):
-        #only needs to be called once.
-        #If this doesn't work after 'solve' and requires only '_init_solution' then it will need to be
-        #called inside parallel_solve. . .
-        calculate_direct_beam_derivative(solvers)
-
-    get_derivatives(solvers, table_derivatives)  #adds the _dext/_dleg/_dalb etc to the solvers.
-
-    #prepare the sensors for the fortran subroutine for calculating gradient.
-    rte_sensors, sensor_mapping = shdom.script_util.sort_sensors(measurements, solvers, 'inverse')
-
-    loss, gradient = parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=shdom.gradient.grad_l2,
-                     mpi_comm=mpi_comm, n_jobs=n_jobs)
-
-    #Turn gradient into an xarray Dataset #TODO
-
-    return loss, gradient
-
-def parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=shdom.gradient.grad_l2,
-                     mpi_comm=None, n_jobs=1):
-    """
-    TODO
-    """
-    if mpi_comm is not None:
-        raise NotImplementedError
-
-    else:
-        #decide on the division of n_jobs among solvers based on total number of pixels.
-        render_jobs = OrderedDict()
-        pixel_count = 0
-        for key, merged_sensor in rte_sensors.items():
-            pixel_count += merged_sensor.sizes['nrays']
-            render_jobs[key] = pixel_count
-
-        for key,render_job in render_jobs.items():
-            render_jobs[key] = np.round(render_job/pixel_count * n_jobs).astype(np.int)
-
-        out = Parallel(n_jobs=len(list(solvers.keys())), backend="threading")(
-            delayed(shdom.gradient.gradient_one_solver, check_pickle=False)(solvers[key],rte_sensors[key],render_jobs[key],
-                                                                            sensor_mapping[key], forward_sensors,
-                                                                            gradient_fun) for key in solvers.keys())
-
-        #post_process data.
-        #MODIFY HERE IF EACH WAVELENGTH IS NOT INDEPENDENT.
-        #ie k-distribution weighting etc. This information should be passed through from rte_sensors if added.
-        #DOESN"T WORK IF CORRELATED ERRORS (by wavelength)
-        gradient = np.sum(np.stack([i[0] for i in out],axis=-1),axis=-1)
-        loss = np.sum(np.concatenate([i[1] for i in out],axis=-1))
-
-    return loss, gradient
 
 def gradient_one_solver(sensor, rte_solver, n_jobs, sensor_mapping, forward_sensors, gradient_fun):
     """
@@ -432,3 +378,63 @@ def grad_l2(self, rte_solver, sensor, uncertainties,
         integrated_rays = sensor.copy(data)
 
         return gradient, loss, integrated_rays
+
+def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
+                                                       table_derivatives, n_jobs=1,
+                                 mpi_comm=None,verbose=False):
+    """TODO"""
+    #note this division of solving and 'raytracing' is not optimal for distributed memory parallelization
+    #where tasks take varying amounts of time.
+    shdom.script_util.parallel_solve(solvers, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose)
+
+    #These are called after the solution because they require at least _init_solution to be run.
+    if not hasattr(solver.values()[0], '_direct_derivative_path'):
+        #only needs to be called once.
+        #If this doesn't work after 'solve' and requires only '_init_solution' then it will need to be
+        #called inside parallel_solve. . .
+        calculate_direct_beam_derivative(solvers)
+
+    get_derivatives(solvers, table_derivatives)  #adds the _dext/_dleg/_dalb etc to the solvers.
+
+    #prepare the sensors for the fortran subroutine for calculating gradient.
+    rte_sensors, sensor_mapping = shdom.script_util.sort_sensors(measurements, solvers, 'inverse')
+
+    loss, gradient = parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=grad_l2,
+                     mpi_comm=mpi_comm, n_jobs=n_jobs)
+
+    #Turn gradient into an xarray Dataset #TODO
+
+    return loss, gradient
+
+def parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=grad_l2,
+                     mpi_comm=None, n_jobs=1):
+    """
+    TODO
+    """
+    if mpi_comm is not None:
+        raise NotImplementedError
+
+    else:
+        #decide on the division of n_jobs among solvers based on total number of pixels.
+        render_jobs = OrderedDict()
+        pixel_count = 0
+        for key, merged_sensor in rte_sensors.items():
+            pixel_count += merged_sensor.sizes['nrays']
+            render_jobs[key] = pixel_count
+
+        for key,render_job in render_jobs.items():
+            render_jobs[key] = np.round(render_job/pixel_count * n_jobs).astype(np.int)
+
+        out = Parallel(n_jobs=len(list(solvers.keys())), backend="threading")(
+            delayed(shdom.gradient.gradient_one_solver, check_pickle=False)(solvers[key],rte_sensors[key],render_jobs[key],
+                                                                            sensor_mapping[key], forward_sensors,
+                                                                            gradient_fun) for key in solvers.keys())
+
+        #post_process data.
+        #MODIFY HERE IF EACH WAVELENGTH IS NOT INDEPENDENT.
+        #ie k-distribution weighting etc. This information should be passed through from rte_sensors if added.
+        #DOESN"T WORK IF CORRELATED ERRORS (by wavelength)
+        gradient = np.sum(np.stack([i[0] for i in out],axis=-1),axis=-1)
+        loss = np.sum(np.concatenate([i[1] for i in out],axis=-1))
+
+    return loss, gradient
