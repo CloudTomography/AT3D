@@ -519,13 +519,17 @@ C          Compute the upwelling bottom radiances using the downwelling fluxes.
 
       PI = ACOS(-1.0D0)
 C         Loop over pixels in image
+      PRINT *, 'early fail'
       COST = 0.0D0
       DO I = 1, NPIX
         SYNTHETIC_MEASUREMENT = 0.0D0
         RAYGRAD_PIXEL = 0.0D0
+        PRINT *, 'fail 1'
         DO I2=1,RAYS_PER_PIXEL(I)
           IVIS = RAY_COUNTER + I2
+          PRINT *, 'fail 2'
           X0 = CAMX(IVIS)
+          PRINT *, 'fail 3'
           Y0 = CAMY(IVIS)
           Z0 = CAMZ(IVIS)
           MU2 = CAMMU(IVIS)
@@ -547,7 +551,7 @@ C             Extrapolate ray to domain top if above
             WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
             STOP
           ENDIF
-
+          PRINT *, 'fail 4'
 C         Integrate the extinction and source function along this ray
 C         to calculate the Stokes radiance vector for this pixel
           TRANSMIT = 1.0D0 ; VISRAD = 0.0D0; RAYGRAD = 0.0D0

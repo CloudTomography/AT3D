@@ -120,7 +120,7 @@ def merge_sensors_inverse(sensors, solver):
     #TODO HARDCODED UNCERTAINTIES
     merged_sensors['uncertainties'] = xr.DataArray(data= np.ones((merged_sensors.sizes['nstokes'],
                                 merged_sensors.sizes['nstokes'], merged_sensors.sizes['npixels'])),
-                                dims=['nstokes', 'npixels'])
+                                dims=['nstokes', 'nstokes', 'npixels'])
     return merged_sensors
 
 def _homography_projection(projection_matrix, point_array):

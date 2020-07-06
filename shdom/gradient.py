@@ -2,6 +2,7 @@ import numpy as np
 import xarray as xr
 from collections import OrderedDict
 import shdom
+from joblib import Parallel, delayed
 
 def calculate_direct_beam_derivative(solvers):
     """
@@ -14,7 +15,7 @@ def calculate_direct_beam_derivative(solvers):
     #If it can't then ._init_solution needs to be called separately.
 
     #Only use the first solver.
-    rte_solver = solvers.values()[0]
+    rte_solver = list(solvers.values())[0]
 
     #calculate the solar direct beam on the base grid
     #which ensures the solver has the required information to
@@ -23,7 +24,7 @@ def calculate_direct_beam_derivative(solvers):
     rte_solver._make_direct()
 
     direct_derivative_path, direct_derivative_ptr = \
-        core.make_direct_derivative(
+        shdom.core.make_direct_derivative(
             npts=rte_solver._nbpts, #changed from ._npts to ._nbpts as this should only be calculated for base grid.
             bcflag=rte_solver._bcflag,
             gridpos=rte_solver._gridpos,
@@ -108,12 +109,12 @@ def create_derivative_tables(solvers,unknown_scatterers):
             for i,scatterer in enumerate(medium):
                 if unknown_scatterer is scatterer:
                     partial_derivative_list.append((i, derivatives_tables))
-        unknown_scatterer_indices[key] = partial_derivative_list
+        partial_derivative_tables[key] = partial_derivative_list
 
     return partial_derivative_tables
 
 
-def get_derivatives(solvers, derivative_tables):
+def get_derivatives(solvers, all_derivative_tables):
     """
     TODO
     Calculates partial derivatives on the rte_grid.
@@ -121,38 +122,62 @@ def get_derivatives(solvers, derivative_tables):
     """
     for key, rte_solver in solvers.items():
 
-        solver._precompute_phase()
-        derivative_table = derivative_tables[key]
-        num_derivatives = len(derivative_table)
+        rte_solver._precompute_phase()
+        solver_derivative_table = all_derivative_tables[key]
+        num_derivatives = sum([len(scatterer_derivative_table.values()) for i,scatterer_derivative_table in \
+                              solver_derivative_table
+                              ])
+        rte_solver._num_derivatives = np.array(num_derivatives, dtype=np.int32)
+        unknown_scatterer_indices = []
 
         dext = np.zeros(shape=[rte_solver._nbpts, num_derivatives], dtype=np.float32)
         dalb = np.zeros(shape=[rte_solver._nbpts, num_derivatives], dtype=np.float32)
         diphase = np.zeros(shape=[rte_solver._nbpts, num_derivatives], dtype=np.int32)
 
-        for count, (i,table) in enumerate(derivative_table):
+        #one loop through to find max legendre.
+        max_legendre = []
+        for i,scatterer_derivative_table in solver_derivative_table:
             scatterer = rte_solver.medium[i]
-            derivative_on_grid = shdom.medium.table_to_grid(scatterer,table)
+            for variable_derivative_table in scatterer_derivative_table.values():
+                derivative_on_grid = shdom.medium.table_to_grid(scatterer,variable_derivative_table)
+                max_legendre.append(derivative_on_grid.sizes['legendre_index'])
+                unknown_scatterer_indices.append(i)
+        max_legendre = max(max_legendre)
+        rte_solver._unknown_scatterer_indices = np.array(unknown_scatterer_indices).astype(np.int32)
 
-            dext[:, count] = derivative_on_grid.extinction.data.ravel()
-            dalb[:, count] = derivative_on_grid.albedo.data.ravel()
-            diphase[:, count] = derivative_on_grid.table_index.data.ravel() + diphase.max()
+        #second loop to assign everything else.
+        padded_legcoefs = []
+        count = 0
+        for i,scatterer_derivative_table in solver_derivative_table:
+            scatterer = rte_solver.medium[i]
+            for variable_derivative_table in scatterer_derivative_table.values():
+                derivative_on_grid = shdom.medium.table_to_grid(scatterer,variable_derivative_table)
 
-        # Concatenate all scatterer tables into one table
-        max_legendre = max([table.sizes['legendre_index'] for i,table in derivative_table])
-        padded_legcoefs = [table.legcoef.pad({'legendre_index': (0, max_legendre - table.legcoef.sizes['legendre_index'])}) for i,table in derivative_table]
+                dext[:, count] = derivative_on_grid.extinction.data.ravel()
+                dalb[:, count] = derivative_on_grid.ssalb.data.ravel()
+                diphase[:, count] = derivative_on_grid.table_index.data.ravel() + diphase.max()
+
+                padded_legcoefs.append(derivative_on_grid.legcoef.pad(
+                    {'legendre_index': (0, max_legendre - derivative_on_grid.legcoef.sizes['legendre_index'])}
+                ))
+
+                count += 1
+
+        # Concatenate all legendre tables into one table
         legendre_table = xr.concat(padded_legcoefs, dim='table_index')
-
         dnumphase = legendre_table.sizes['table_index']
-        dleg = legendre_table.legcoef.data
+        dleg = legendre_table.data
+        #TODO make sure the shaping of dleg and consistent with legenp/._legen. (._nleg and numphase)
+        #For a single scatterer/variable dnumphase == numphase, but this is not always the case.
 
         # zero the first term of the first component of the phase function
         # gradient. Pre-scale the legendre moments by 1/(2*l+1) which
         # is done in the forward problem in TRILIN_INTERP_PROP
-        scaling_factor =np.array([2.0*i+1.0 for i in range(0,rte_solver._nleg+1)])
+        scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0,rte_solver._nleg+1)]))
         dleg[0,0,:] = 0.0
         dleg = dleg[:rte_solver._nstleg] / scaling_factor
 
-        dphasetab = core.precompute_phase_check_grad(
+        dphasetab = shdom.core.precompute_phase_check_grad(
                                                      negcheck=False,
                                                      nstphase=rte_solver._nstphase,
                                                      nstleg=rte_solver._nstleg,
@@ -165,11 +190,13 @@ def get_derivatives(solvers, derivative_tables):
                                                      dleg=dleg,
                                                      deltam=rte_solver._deltam
                                                      )
-        rte_solver._dphasetab, rte_solver._dext, rte_solver._dalb, rte_solver._diphase, rte_solver._dleg = \
-        dphasetab, dext, dalb, diphase, dleg
+        rte_solver._dphasetab, rte_solver._dext, rte_solver._dalb, rte_solver._diphase, rte_solver._dleg, rte_solver._dnumphase = \
+        dphasetab, dext, dalb, diphase, dleg, dnumphase
+
+    return solvers
 
 
-def gradient_one_solver(sensor, rte_solver, n_jobs, sensor_mapping, forward_sensors, gradient_fun):
+def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sensors, gradient_fun):
     """
     TODO
     """
@@ -192,7 +219,15 @@ def gradient_one_solver(sensor, rte_solver, n_jobs, sensor_mapping, forward_sens
 
     out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(gradient_fun)(rte_solver, sensor.sel(nrays=slice(start,end))) for start,end in updated_start_end)
 
-    integrated_rays = xr.concat([i[2] for i in out], dim='nrays')
+    var_list_nray = [str(name) for name in out[0][2].data_vars if str(name) not in ('rays_per_image', 'stokes')]
+    merged = {}
+    for var in var_list_nray:
+        concatenated= xr.concat([data[2][var] for data in out], dim='nrays')
+        merged[var] = concatenated
+    merged['stokes'] = out[0][2].stokes
+    merged['rays_per_image'] = out[0][2].rays_per_image
+    integrated_rays = xr.Dataset(merged)
+
     #DOESN"T WORK IF CORRELATED ERRORS.
     loss = np.sum(np.concatenate([i[1] for i in out],axis=-1))
     gradient = np.sum(np.stack([i[0] for i in out],axis=-1),axis=-1)
@@ -206,8 +241,8 @@ def gradient_one_solver(sensor, rte_solver, n_jobs, sensor_mapping, forward_sens
 
     return gradient, loss
 
-def grad_l2(self, rte_solver, sensor, uncertainties,
-            jacobian_flag=False):
+def grad_l2(rte_solver, sensor, exact_single_scatter=True,
+    jacobian_flag=False):
     """
     The core l2 gradient method.
 
@@ -248,6 +283,7 @@ def grad_l2(self, rte_solver, sensor, uncertainties,
     rays_per_pixel = sensor['rays_per_pixel'].data
     uncertainties = sensor['uncertainties'].data
 
+    #TODO fix jacobian.
     if jacobian_flag:
         #maximum size is hard coded - possible source of seg faults.
         #(8*MAX_DOMAIN_LENGTH)**2 based on the beam from sensor to voxel and from voxel to sun.
@@ -255,19 +291,22 @@ def grad_l2(self, rte_solver, sensor, uncertainties,
         jacobian = np.empty((rte_solver._nstokes,self.num_derivatives,total_pix*largest_dim),order='F',dtype=np.float32)
         jacobian_ptr = np.empty((2,total_pix*largest_dim),order='F',dtype=np.int32)
     else:
-        jacobian = np.empty((rte_solver._nstokes,self.num_derivatives,1),order='F',dtype=np.float32)
+        jacobian = np.empty((rte_solver._nstokes,rte_solver._num_derivatives,1),order='F',dtype=np.float32)
         jacobian_ptr = np.empty((2,1),order='F',dtype=np.int32)
 
-    gradient, loss, images, jacobian, jacobian_ptr, counter = core.gradient_l2(
+    #TODO unknown scatterers indices
+    #num_derivatives
+    #exact_single_scatter
+
+    gradient, loss, images, jacobian, jacobian_ptr, counter = shdom.core.gradient_l2(
         uncertainties=uncertainties,
         rays_per_pixel=rays_per_pixel,
         ray_weights=ray_weights,
         stokes_weights=stokes_weights,
-        #weights=self._stokes_weights[:rte_solver._nstokes],
-        exact_single_scatter=self._exact_single_scatter,
+        exact_single_scatter=exact_single_scatter,
         nstphase=rte_solver._nstphase,
-        dpath=self._direct_derivative_path,
-        dptr=self._direct_derivative_ptr,
+        dpath=rte_solver._direct_derivative_path,
+        dptr=rte_solver._direct_derivative_ptr,
         npx=rte_solver._pa.npx,
         npy=rte_solver._pa.npy,
         npz=rte_solver._pa.npz,
@@ -278,8 +317,8 @@ def grad_l2(self, rte_solver, sensor, uncertainties,
         zlevels=rte_solver._pa.zlevels,
         extdirp=rte_solver._pa.extdirp,
         uniformzlev=rte_solver._uniformzlev,
-        partder=self.unknown_scatterers_indices,
-        numder=self.num_derivatives,
+        partder=rte_solver._unknown_scatterer_indices,
+        numder=rte_solver._num_derivatives,
         dext=rte_solver._dext,
         dalb=rte_solver._dalb,
         diphase=rte_solver._diphase,
@@ -348,7 +387,7 @@ def grad_l2(self, rte_solver, sensor, uncertainties,
         camz=camz,
         cammu=cammu,
         camphi=camphi,
-        npix=npix,
+        npix=total_pix,
         srctype=rte_solver._srctype,
         sfctype=rte_solver._sfctype,
         units=rte_solver._units,
@@ -385,16 +424,17 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
     """TODO"""
     #note this division of solving and 'raytracing' is not optimal for distributed memory parallelization
     #where tasks take varying amounts of time.
-    shdom.script_util.parallel_solve(solvers, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose)
+
+    #shdom.script_util.parallel_solve(solvers, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose) TODO
 
     #These are called after the solution because they require at least _init_solution to be run.
-    if not hasattr(solver.values()[0], '_direct_derivative_path'):
+    if not hasattr(list(solvers.values())[0], '_direct_derivative_path'):
         #only needs to be called once.
         #If this doesn't work after 'solve' and requires only '_init_solution' then it will need to be
         #called inside parallel_solve. . .
         calculate_direct_beam_derivative(solvers)
 
-    get_derivatives(solvers, table_derivatives)  #adds the _dext/_dleg/_dalb etc to the solvers.
+    solvers  = get_derivatives(solvers, table_derivatives)  #adds the _dext/_dleg/_dalb etc to the solvers.
 
     #prepare the sensors for the fortran subroutine for calculating gradient.
     rte_sensors, sensor_mapping = shdom.script_util.sort_sensors(measurements, solvers, 'inverse')

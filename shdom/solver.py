@@ -352,6 +352,8 @@ class RTE(object):
             legendre_table = legendre_table.pad({'legendre_index': (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])},
                                constant_values=0.0)
 
+        #TODO CHECK THAT THIS RAVELLING CAUSES CORRECT LEGENP for unpacking into ._legen
+        #during transfer_pa_to_grid.
         # Check if scalar or vector RTE
         if self._nstokes == 1:
             self._pa.legenp = legendre_table.isel(stokes_index=0).data.ravel(order='F').astype(np.float32)

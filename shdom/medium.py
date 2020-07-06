@@ -36,7 +36,7 @@ def table_to_grid(microphysics, poly_table):
                                     )
 
     optical_properties = xr.merge([extinction, ssalb, subset_legcoef])
-
+    optical_properties['density'] = microphysics.density
     table_coords = {'table_index': (['x','y','z'],subset_table_index.data)}
 
     optical_properties =optical_properties.assign_coords(table_coords)
