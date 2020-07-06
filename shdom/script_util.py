@@ -3,7 +3,7 @@ from joblib import Parallel, delayed
 import shdom
 import numpy as np
 from collections import OrderedDict
-
+import xarray as xr
 
 def get_unique_wavelengths(sensor_dict):
     """
@@ -37,12 +37,19 @@ def render_one_solver(solver,merged_sensor, sensor_mapping, sensors, maxiter=100
     """
     solver.solve(maxiter=maxiter,verbose=verbose)
 
-    split = np.array_split(np.arange(sensor.sizes['nrays']),n_jobs)
+    split = np.array_split(np.arange(merged_sensor.sizes['nrays']),n_jobs)
     start_end = [(a.min(),a.max()) for a in split]
-    out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(solver.integrate_to_sensor)(sensor.sel(nrays=slice(start,end+1))) for start,end in start_end)
-    integrated_rays = xr.concat(out, dim='nrays')
+    out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(solver.integrate_to_sensor)(merged_sensor.sel(nrays=slice(start,end+1))) for start,end in start_end)
 
-    #integrated_rays = solver.integrate_to_sensor(merged_sensor)#, n_jobs=n_jobs)
+    var_list_nray = [str(name) for name in out[0].data_vars if str(name) not in ('rays_per_image', 'stokes')]
+    merged = {}
+    for var in var_list_nray:
+        concatenated= xr.concat([data[var] for data in out], dim='nrays')
+        merged[var] = concatenated
+    merged['stokes'] = out[0].stokes
+    merged['rays_per_image'] = out[0].rays_per_image
+    integrated_rays = xr.Dataset(merged)
+
     rendered_rays = shdom.sensor.split_sensor_rays(integrated_rays)
     for i,rendered_ray in enumerate(rendered_rays):
         mapping = sensor_mapping[i]
@@ -50,7 +57,7 @@ def render_one_solver(solver,merged_sensor, sensor_mapping, sensors, maxiter=100
         unused = shdom.sensor.get_observables(sensor, rendered_ray)
 
 def sort_sensors(sensors, solvers, merge):
-    sensors = Sensordict
+
     rte_sensors = OrderedDict()
     sensor_mapping = OrderedDict()
 
@@ -63,7 +70,7 @@ def sort_sensors(sensors, solvers, merge):
                     sensor_list.append(sensor)
                     mapping_list.append((instrument,i))
         if merge == 'forward':
-            merged = shdom.sensor.merge_sensors_forward(sensor_list, solver)
+            merged = shdom.sensor.merge_sensors_forward(sensor_list)
         elif merge == 'inverse':
             merged = shdom.sensor.merge_sensors_inverse(sensor_list, solver)
         rte_sensors[key] = merged
