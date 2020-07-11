@@ -18,3 +18,9 @@ def find_nearest(array, value):
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return idx
+
+def set_pyshdom_path():
+    """set path to pyshdom parent directory"""
+    import os, shdom
+    from pathlib import Path
+    os.chdir(str(Path(shdom.__path__[0]).parent))

@@ -477,14 +477,14 @@ Cf2py intent(in) RAY_WEIGHTS, STOKES_WEIGHTS
       DOUBLE PRECISION PIXEL_ERROR
       DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER), VISRAD(NSTOKES)
       DOUBLE PRECISION RAYGRAD_PIXEL(NSTOKES,NBPTS,NUMDER)
-      INTEGER I, J, L, SIDE, IVIS
+      INTEGER IPIX, J, L, SIDE, IRAY
       LOGICAL VALIDRAD
       DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION U, R, PI
       DOUBLE PRECISION X0, Y0, Z0
       DOUBLE PRECISION XE,YE,ZE, TRANSMIT
       INTEGER M, ME, MS, NS, NS1
-      INTEGER RAY_COUNTER, I2
+      INTEGER I2
 
       INTEGER, ALLOCATABLE :: LOFJ(:)
       ALLOCATE (LOFJ(NLM))
@@ -519,21 +519,18 @@ C          Compute the upwelling bottom radiances using the downwelling fluxes.
 
       PI = ACOS(-1.0D0)
 C         Loop over pixels in image
-      PRINT *, 'early fail'
       COST = 0.0D0
-      DO I = 1, NPIX
+      IRAY = 0
+      DO IPIX = 1, NPIX
         SYNTHETIC_MEASUREMENT = 0.0D0
         RAYGRAD_PIXEL = 0.0D0
-        PRINT *, 'fail 1'
-        DO I2=1,RAYS_PER_PIXEL(I)
-          IVIS = RAY_COUNTER + I2
-          PRINT *, 'fail 2'
-          X0 = CAMX(IVIS)
-          PRINT *, 'fail 3'
-          Y0 = CAMY(IVIS)
-          Z0 = CAMZ(IVIS)
-          MU2 = CAMMU(IVIS)
-          PHI2 = CAMPHI(IVIS)
+        DO I2=1 ,RAYS_PER_PIXEL(IPIX)
+          IRAY = IRAY + 1
+          X0 = CAMX(IRAY)
+          Y0 = CAMY(IRAY)
+          Z0 = CAMZ(IRAY)
+          MU2 = CAMMU(IRAY)
+          PHI2 = CAMPHI(IRAY)
           MURAY = -MU2
           PHIRAY = PHI2 - PI
 
@@ -551,7 +548,7 @@ C             Extrapolate ray to domain top if above
             WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
             STOP
           ENDIF
-          PRINT *, 'fail 4'
+
 C         Integrate the extinction and source function along this ray
 C         to calculate the Stokes radiance vector for this pixel
           TRANSMIT = 1.0D0 ; VISRAD = 0.0D0; RAYGRAD = 0.0D0
@@ -577,32 +574,31 @@ C         to calculate the Stokes radiance vector for this pixel
   900     CONTINUE
 
           DO NS=1,NSTOKES
-            STOKESOUT(NS,IVIS) = VISRAD(NS)
+            STOKESOUT(NS,IPIX) = VISRAD(NS)
             SYNTHETIC_MEASUREMENT(NS) = SYNTHETIC_MEASUREMENT(NS) +
-     .          VISRAD(NS)*RAY_WEIGHTS(IVIS)*
-     .          STOKES_WEIGHTS(NS,IVIS)
+     .          VISRAD(NS)*RAY_WEIGHTS(IRAY)*
+     .          STOKES_WEIGHTS(NS,IPIX)
             RAYGRAD_PIXEL(NS,:,:) = RAYGRAD_PIXEL(NS,:,:) +
-     .          RAYGRAD(NS,:,:)*RAY_WEIGHTS(IVIS)*
-     .          STOKES_WEIGHTS(NS,IVIS)
+     .          RAYGRAD(NS,:,:)*RAY_WEIGHTS(IRAY)*
+     .          STOKES_WEIGHTS(NS,IPIX)
           ENDDO
         ENDDO
 
         DO NS = 1, NSTOKES
           PIXEL_ERROR = SYNTHETIC_MEASUREMENT(NS) -
-     .                    MEASUREMENTS(NS, I)
+     .                    MEASUREMENTS(NS, IPIX)
 
           DO NS1 = 1, NSTOKES
-            WEIGHT = UNCERTAINTIES(NS,NS1,IVIS)
+            WEIGHT = UNCERTAINTIES(NS,NS1,IPIX)
             GRADOUT = GRADOUT + WEIGHT*PIXEL_ERROR*RAYGRAD_PIXEL(NS,:,:)
             COST = COST + 0.5 * WEIGHT*PIXEL_ERROR**2
           ENDDO
         ENDDO
-        RAY_COUNTER = RAY_COUNTER + RAYS_PER_PIXEL(I)
 
         IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
           DO JI = 1, NBPTS
             IF (ANY(ABS(RAYGRAD_PIXEL(1,JI,:))>0.0)) THEN
-              JACOBIANPTR(1,COUNTER) = IVIS
+              JACOBIANPTR(1,COUNTER) = IPIX
               JACOBIANPTR(2,COUNTER) = JI
               JACOBIAN(:,:,COUNTER) = JACOBIAN(:,:,COUNTER) +
      .        RAYGRAD_PIXEL(:,JI,:)
@@ -610,7 +606,6 @@ C         to calculate the Stokes radiance vector for this pixel
             ENDIF
           ENDDO
         ENDIF
-
       ENDDO
       RETURN
       END

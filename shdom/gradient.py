@@ -141,7 +141,7 @@ def get_derivatives(solvers, all_derivative_tables):
             for variable_derivative_table in scatterer_derivative_table.values():
                 derivative_on_grid = shdom.medium.table_to_grid(scatterer,variable_derivative_table)
                 max_legendre.append(derivative_on_grid.sizes['legendre_index'])
-                unknown_scatterer_indices.append(i)
+                unknown_scatterer_indices.append(i+1)
         max_legendre = max(max_legendre)
         rte_solver._unknown_scatterer_indices = np.array(unknown_scatterer_indices).astype(np.int32)
 
@@ -217,8 +217,12 @@ def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sens
             new_end = start_end[i][1] + 1
         updated_start_end.append((new_start, new_end))
 
-    out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(gradient_fun)(rte_solver, sensor.sel(nrays=slice(start,end))) for start,end in updated_start_end)
+    if n_jobs == 1:
+        out = gradient_fun(rte_solver, sensor)
+    else:
+        out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(gradient_fun)(rte_solver, sensor.sel(nrays=slice(start,end))) for start,end in updated_start_end)
 
+    # TODO: fix this. the output of gradient_fun is a list of tuples with numpy arrays (see return of grad_l2: gradient, loss, integrated_rays)
     var_list_nray = [str(name) for name in out[0][2].data_vars if str(name) not in ('rays_per_image', 'stokes')]
     merged = {}
     for var in var_list_nray:
@@ -465,10 +469,14 @@ def parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gra
         for key,render_job in render_jobs.items():
             render_jobs[key] = np.round(render_job/pixel_count * n_jobs).astype(np.int)
 
-        out = Parallel(n_jobs=len(list(solvers.keys())), backend="threading")(
-            delayed(shdom.gradient.gradient_one_solver, check_pickle=False)(solvers[key],rte_sensors[key],render_jobs[key],
-                                                                            sensor_mapping[key], forward_sensors,
-                                                                            gradient_fun) for key in solvers.keys())
+        if n_jobs == 1:
+            out = [shdom.gradient.gradient_one_solver(solvers[key],rte_sensors[key],render_jobs[key], sensor_mapping[key],
+                                                     forward_sensors, gradient_fun) for key in solvers.keys()]
+        else:
+            out = Parallel(n_jobs=len(list(solvers.keys())), backend="threading")(
+                delayed(shdom.gradient.gradient_one_solver, check_pickle=False)(solvers[key],rte_sensors[key],render_jobs[key],
+                                                                                sensor_mapping[key], forward_sensors,
+                                                                                gradient_fun) for key in solvers.keys())
 
         #post_process data.
         #MODIFY HERE IF EACH WAVELENGTH IS NOT INDEPENDENT.
