@@ -53,14 +53,34 @@ def split_sensor_rays(merged):
         count += split_index
     return list_of_unmerged
 
+def split_sensor_pixels(merged):
+    """
+    TODO
+    """
+    pixel_inds = np.cumsum(np.concatenate([np.array([0]), merged.rays_per_pixel.data])).astype(np.int)
+    pixels_per_image = []
+    for ray_image in merged.rays_per_image.data:
+        pixels_per_image.append(np.where(pixel_inds == ray_image)[0][0])
+
+    list_of_unmerged = []
+    count = 0
+    for i in range(merged.sizes['nimage']):
+        split_index = pixels_per_image[i]#merged.rays_per_image[i].data
+        split = merged.sel({'npixels': slice(count, count+split_index), 'nimage':i})
+        list_of_unmerged.append(split)
+        count += split_index
+    return list_of_unmerged
+
 def get_observables(sensor, rendered_rays):
     """
     TODO
     Currently averages over the sub_pixel rays and only takes
     the observables that are needed.
     """
-
-    merge_list = [sensor.pixel_index]
+    if sensor.pixel_fov == 0.0:
+        merge_list = []
+    else:
+        merge_list = [sensor.pixel_index]
     for stokes in sensor.stokes_index:
         if rendered_rays['stokes'].sel({'stokes_index':stokes}):
             weighted_stokes = (sensor.ray_weight*rendered_rays[str(stokes.data)])
@@ -120,7 +140,7 @@ def merge_sensors_inverse(sensors, solver):
     #TODO HARDCODED UNCERTAINTIES
     merged_sensors['uncertainties'] = xr.DataArray(data= np.ones((merged_sensors.sizes['nstokes'],
                                 merged_sensors.sizes['nstokes'], merged_sensors.sizes['npixels'])),
-                                dims=['nstokes', 'nstokes', 'npixels'])
+                                dims=['nstokes', 'nstokes2', 'npixels']) #NB Be aware that repeated dims cause errors. so the second dim is set to 'nstokes2' Issue 1378 on xarray.
     return merged_sensors
 
 def _homography_projection(projection_matrix, point_array):
