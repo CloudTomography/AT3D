@@ -442,7 +442,7 @@ Cf2py intent(in) :: NPIX
       REAL   DEXT(NBPTS,NUMDER), DALB(NBPTS,NUMDER)
       INTEGER DIPHASE(NBPTS,NUMDER)
 Cf2py intent(in) :: MEASUREMENTS, DEXT ,DALB, DIPHASE, DLEG
-      REAL   STOKESOUT(NSTOKES,NPIX)
+      REAL  STOKESOUT(NSTOKES,NPIX)
 Cf2py intent(out) :: STOKESOUT
       DOUBLE PRECISION  GRADOUT(NBPTS,NUMDER), COST
 Cf2py intent(out) :: GRADOUT, COST, STOKESOUT
@@ -470,7 +470,7 @@ Cf2py intent(in,out) JACOBIANPTR
 Cf2py intent(out) COUNTER
       INTEGER RAYS_PER_PIXEL(*)
 Cf2py intent(in) RAYS_PER_PIXEL
-      REAL  RAY_WEIGHTS(*), STOKES_WEIGHTS(NSTOKES, *)
+      DOUBLE PRECISION   RAY_WEIGHTS(*), STOKES_WEIGHTS(NSTOKES, *)
 Cf2py intent(in) RAY_WEIGHTS, STOKES_WEIGHTS
 
       DOUBLE PRECISION SYNTHETIC_MEASUREMENT(NSTOKES)
@@ -574,10 +574,10 @@ C         to calculate the Stokes radiance vector for this pixel
   900     CONTINUE
 
           DO NS=1,NSTOKES
-            STOKESOUT(NS,IPIX) = VISRAD(NS)
             SYNTHETIC_MEASUREMENT(NS) = SYNTHETIC_MEASUREMENT(NS) +
      .          VISRAD(NS)*RAY_WEIGHTS(IRAY)*
      .          STOKES_WEIGHTS(NS,IPIX)
+            STOKESOUT(NS,IPIX) = SYNTHETIC_MEASUREMENT(NS)
             RAYGRAD_PIXEL(NS,:,:) = RAYGRAD_PIXEL(NS,:,:) +
      .          RAYGRAD(NS,:,:)*RAY_WEIGHTS(IRAY)*
      .          STOKES_WEIGHTS(NS,IPIX)
@@ -837,18 +837,18 @@ C           Decide which of the eight grid points we need the source function
 C         Compute the source function times extinction in direction (MU2,PHI2)
 
 
-        IF (NSTOKES .EQ. 1) THEN
-          CALL COMPUTE_SOURCE_GRAD_1CELL_UNPOL (ICELL, GRIDPTR,
-     .            ML, MM, NLM, NLEG, NUMPHASE,
-     .            NPTS, DELTAM, SRCTYPE, SOLARMU,
-     .            EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
-     .            SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
-     .            DONETHIS, OLDIPTS, OEXTINCT8, OSRCEXT8,
-     .            EXTINCT8, SRCEXT8, TOTAL_EXT, NPART, RSHPTR, RADIANCE,
-     .            OGRAD8, GRAD8, LOFJ, CELLFLAGS, PARTDER, NUMDER,
-     .            DNUMPHASE, DEXT, DALB, DIPHASE, DLEG, NBPTS, BCELL,
-     .            DSINGSCAT, SINGSCAT8, OSINGSCAT8)
-        ELSE
+        IF (NSTOKES .GE. 1) THEN
+C          CALL COMPUTE_SOURCE_GRAD_1CELL_UNPOL (ICELL, GRIDPTR,
+C     .            ML, MM, NLM, NLEG, NUMPHASE,
+C     .            NPTS, DELTAM, SRCTYPE, SOLARMU,
+C     .            EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
+C     .            SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
+C     .            DONETHIS, OLDIPTS, OEXTINCT8, OSRCEXT8,
+C     .            EXTINCT8, SRCEXT8, TOTAL_EXT, NPART, RSHPTR, RADIANCE,
+C     .            OGRAD8, GRAD8, LOFJ, CELLFLAGS, PARTDER, NUMDER,
+C     .            DNUMPHASE, DEXT, DALB, DIPHASE, DLEG, NBPTS, BCELL,
+C     .            DSINGSCAT, SINGSCAT8, OSINGSCAT8)
+C        ELSE
           CALL COMPUTE_SOURCE_GRAD_1CELL (ICELL, GRIDPTR,
      .            NSTOKES, NSTLEG, ML, MM, NLM, NLEG, NUMPHASE,
      .            NPTS, DELTAM, SRCTYPE, SOLARMU,

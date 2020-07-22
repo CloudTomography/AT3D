@@ -408,6 +408,8 @@ class RTE(object):
         # Restart solution criteria
         self._oldnpts = 0
         self._solcrit = 1.0
+        self._iters = 0
+
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, \
         self._sfcgridparms, self._ntoppts, self._nbotpts, self._bcptr, self._rshptr, self._shptr, self._oshptr, \
         self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun, self._uniformzlev, \
@@ -574,6 +576,7 @@ class RTE(object):
         """
         # Part 1: Initialize solution (from a layered model)
         if init_solution:
+            self._setup_grid(self._grid)
             self._init_solution()
 
         # Part 2: Solution itertaions
@@ -745,9 +748,7 @@ class RTE(object):
         assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
         total_pix = sensor.sizes['nrays']
 
-        phase_check = hasattr(self, '_phasetab')
-        if not phase_check:
-            self._precompute_phase()
+        self._precompute_phase()
 
         #TODO Raise warning if observables are not included.
 

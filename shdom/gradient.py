@@ -196,73 +196,6 @@ def get_derivatives(solvers, all_derivative_tables):
     return solvers
 
 
-def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sensors, gradient_fun):
-    """
-    TODO
-    """
-    #split by rays
-    split = np.array_split(np.arange(sensor.sizes['nrays']),n_jobs)
-    start_end = [(i.min(),i.max()) for i in split]
-
-    #adjust start and end indices so that rays are grouped by pixel.
-    index_diffs = sensor.pixel_index.diff(dim='nrays')
-    transitions = np.where(index_diffs.data==1)[0] + 1
-    updated_start_end = []
-    updated_start_end.append((0, transitions[np.abs(transitions - start_end[0][1]).argmin()]))
-    for i in range(1,len(start_end)):
-        new_start = updated_start_end[i-1][1]
-        if i < len(start_end) - 1:
-            new_end = transitions[np.abs(transitions - start_end[i][1]).argmin()]
-        else:
-            new_end = start_end[i][1] + 1
-        updated_start_end.append((new_start, new_end))
-
-    if n_jobs == 1:
-        out = [gradient_fun(rte_solver, sensor)]
-    else:
-        out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(gradient_fun)(rte_solver, sensor.sel(nrays=slice(start,end))) for start,end in updated_start_end)
-
-    var_list_nray = [str(name) for name in out[0][2].data_vars if str(name) not in ('rays_per_image', 'stokes',
-                                                                                   'rays_per_pixel', 'uncertainties',
-                                                                                   'measurement_data','stokes_weights',
-                                                                                   'I','Q','U','V')]
-    var_list_npixel = [str(name) for name in out[0][2].data_vars if str(name) in ('rays_per_pixel', 'uncertainties',
-                                                                                   'measurement_data','stokes_weights',
-                                                                                   'I','Q','U','V')]
-    #stokes_list = [str(name) for name in out[0][2].data_vars if str(name) in ('I','Q','U','V')]
-    merged = {}
-    for var in var_list_nray:
-        concatenated= xr.concat([data[2][var] for data in out], dim='nrays')
-        merged[var] = concatenated
-    merged2 = {}
-    for var in var_list_npixel:
-        concatenated= xr.concat([data[2][var] for data in out], dim='npixels')
-        merged2[var] = concatenated
-    merged.update(merged2)
-    merged['stokes'] = out[0][2].stokes
-    merged['rays_per_image'] = out[0][2].rays_per_image
-    integrated_rays = xr.Dataset(merged)
-
-    #DOESN"T WORK IF CORRELATED ERRORS.
-    loss = np.sum(np.array([i[1] for i in out]))
-    gradient = np.sum(np.stack([i[0] for i in out],axis=-1),axis=-1)
-
-    #Modify the forward_sensors in-place to include the latest observations.
-
-    #this is not what we want to do.
-    rendered_rays = shdom.sensor.split_sensor_pixels(integrated_rays)
-    print(rte_solver.wavelength, sensor_mapping)
-    for i,rendered_ray in enumerate(rendered_rays):
-        mapping = sensor_mapping[i]
-        forward_sensor = forward_sensors[mapping[0]]['sensor_list'][mapping[1]]
-        print(i,forward_sensor.sizes['npixels'], rendered_ray.sizes['npixels'])
-
-        for stokes in forward_sensor.stokes_index:
-            if rendered_ray['stokes'].sel({'stokes_index':stokes}):
-                forward_sensor[str(stokes.data)] = rendered_ray[str(stokes.data)]
-
-    return gradient, loss
-
 def grad_l2(rte_solver, sensor, exact_single_scatter=True,
     jacobian_flag=False):
     """
@@ -304,7 +237,6 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True,
     ray_weights = sensor['ray_weight'].data
     rays_per_pixel = sensor['rays_per_pixel'].data
     uncertainties = sensor['uncertainties'].data
-
     #TODO fix jacobian.
     if jacobian_flag:
         #maximum size is hard coded - possible source of seg faults.
@@ -315,10 +247,6 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True,
     else:
         jacobian = np.empty((rte_solver._nstokes,rte_solver._num_derivatives,1),order='F',dtype=np.float32)
         jacobian_ptr = np.empty((2,1),order='F',dtype=np.int32)
-
-    #TODO unknown scatterers indices
-    #num_derivatives
-    #exact_single_scatter
 
     gradient, loss, images, jacobian, jacobian_ptr, counter = shdom.core.gradient_l2(
         uncertainties=uncertainties,
@@ -438,19 +366,128 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True,
             data['V'] = (['npixels'],images[3])
         for key, val in data.items():
             integrated_rays[key] = val
-        #integrated_rays = sensor.copy(data)
-        #gradient = rte_solver.
 
         return gradient, loss, integrated_rays
 
+def parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=grad_l2,
+                     mpi_comm=None, n_jobs=1):
+    """
+    TODO
+    """
+    if mpi_comm is not None:
+        raise NotImplementedError
+
+    else:
+        #decide on the division of n_jobs among solvers based on total number of pixels.
+        render_jobs = OrderedDict()
+        pixel_count = 0
+        for key, merged_sensor in rte_sensors.items():
+            pixel_count += merged_sensor.sizes['nrays']
+            render_jobs[key] = pixel_count
+
+        for key,render_job in render_jobs.items():
+            render_jobs[key] = max(np.round(render_job/pixel_count * n_jobs).astype(np.int), 1)
+
+        if n_jobs == 1:
+            out = [shdom.gradient.gradient_one_solver(solvers[key],rte_sensors[key],1, sensor_mapping[key],
+                                                     forward_sensors, gradient_fun) for key in solvers.keys()]
+        else:
+            out = Parallel(n_jobs=len(list(solvers.keys())), backend="threading")(
+                delayed(shdom.gradient.gradient_one_solver, check_pickle=False)(solvers[key],rte_sensors[key],render_jobs[key],
+                                                                                sensor_mapping[key], forward_sensors,
+                                                                                gradient_fun) for key in solvers.keys())
+
+        #post_process data.
+        #MODIFY HERE IF EACH WAVELENGTH IS NOT INDEPENDENT.
+        #ie k-distribution weighting etc. This information should be passed through from rte_sensors if added.
+        #DOESN"T WORK IF CORRELATED ERRORS (by wavelength)
+        gradient = np.sum(np.stack([i[0] for i in out],axis=-1),axis=-1)
+        loss = np.sum(np.array([i[1] for i in out]))
+
+    return loss, gradient
+
+def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sensors, gradient_fun):
+    """
+    TODO
+    """
+    #split by rays
+    split = np.array_split(np.arange(sensor.sizes['nrays']),n_jobs)
+    start_end = [(i.min(),i.max()) for i in split]
+
+    #TODO this fails for very small number of pixels at least.
+    #adjust start and end indices so that rays are grouped by pixel.
+    index_diffs = sensor.pixel_index.diff(dim='nrays')
+    transitions = np.where(index_diffs.data==1)[0] + 1
+    updated_start_end = []
+    updated_start_end.append((0, transitions[np.abs(transitions - start_end[0][1]).argmin()]))
+    for i in range(1,len(start_end)):
+        new_start = updated_start_end[i-1][1]
+        if i < len(start_end) - 1:
+            new_end = transitions[np.abs(transitions - start_end[i][1]).argmin()]
+        else:
+            new_end = start_end[i][1] + 1
+        updated_start_end.append((new_start, new_end))
+
+    pixel_start_end = []
+    pixel_inds = np.cumsum(np.concatenate([np.array([0]), sensor.rays_per_pixel.data])).astype(np.int)
+    for start,end in updated_start_end:
+        a = np.where(pixel_inds == start)[0][0]
+        b=np.where(pixel_inds == end)[0][0]
+        pixel_start_end.append((a,b))
+
+    #out = gradient_fun(rte_solver, sensor.sel(nrays=slice(start,end))
+    if n_jobs == 1:
+        out = [gradient_fun(rte_solver, sensor)]
+    else:
+        out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(gradient_fun)(rte_solver,sensor.sel(nrays=slice(start,end),
+        npixels=slice(pix_start, pix_end)))
+         for (start,end),(pix_start,pix_end) in zip(updated_start_end,pixel_start_end))
+
+    #DOESN"T WORK IF CORRELATED ERRORS.
+    loss = np.sum(np.array([i[1] for i in out]))
+    gradient = np.sum(np.stack([i[0] for i in out],axis=-1),axis=-1)
+
+    #Modify the forward_sensors in-place to include the latest observations.
+    var_list_nray = [str(name) for name in out[0][2].data_vars if str(name) not in ('rays_per_image', 'stokes',
+                                                                                   'rays_per_pixel', 'uncertainties',
+                                                                                   'measurement_data','stokes_weights',
+                                                                                   'I','Q','U','V')]
+    var_list_npixel = [str(name) for name in out[0][2].data_vars if str(name) in ('rays_per_pixel', 'uncertainties',
+                                                                                   'measurement_data','stokes_weights',
+                                                                                   'I','Q','U','V')]
+    merged = {}
+    for var in var_list_nray:
+        concatenated= xr.concat([data[2][var] for data in out], dim='nrays')
+        merged[var] = concatenated
+    merged2 = {}
+    for var in var_list_npixel:
+        concatenated= xr.concat([data[2][var] for data in out], dim='npixels')
+        merged2[var] = concatenated
+    merged.update(merged2)
+    merged['stokes'] = out[0][2].stokes
+    merged['rays_per_image'] = out[0][2].rays_per_image
+    integrated_rays = xr.Dataset(merged)
+
+    rendered_rays = shdom.sensor.split_sensor_pixels(integrated_rays)
+    for i,rendered_ray in enumerate(rendered_rays):
+        mapping = sensor_mapping[i]
+        forward_sensor = forward_sensors[mapping[0]]['sensor_list'][mapping[1]]
+        for stokes in forward_sensor.stokes_index:
+            if rendered_ray['stokes'].sel({'stokes_index':stokes}):
+                #modification in-place.
+                forward_sensor[str(stokes.data)] = rendered_ray[str(stokes.data)]
+
+    return gradient, loss
+
 def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
                                                        table_derivatives, n_jobs=1,
-                                 mpi_comm=None,verbose=False):
+                                 mpi_comm=None,verbose=False, maxiter=100, init_solution=True):
     """TODO"""
     #note this division of solving and 'raytracing' is not optimal for distributed memory parallelization
     #where tasks take varying amounts of time.
 
-    #shdom.script_util.parallel_solve(solvers, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose) TODO
+    shdom.script_util.parallel_solve(solvers, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,maxiter=maxiter,
+    init_solution=init_solution)
 
     #These are called after the solution because they require at least _init_solution to be run.
     if not hasattr(list(solvers.values())[0], '_direct_derivative_path'):
@@ -470,40 +507,3 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
     #Turn gradient into an xarray Dataset #TODO
 
     return loss, gradient
-
-def parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=grad_l2,
-                     mpi_comm=None, n_jobs=1):
-    """
-    TODO
-    """
-    if mpi_comm is not None:
-        raise NotImplementedError
-
-    else:
-        #decide on the division of n_jobs among solvers based on total number of pixels.
-        render_jobs = OrderedDict()
-        pixel_count = 0
-        for key, merged_sensor in rte_sensors.items():
-            pixel_count += merged_sensor.sizes['nrays']
-            render_jobs[key] = pixel_count
-
-        for key,render_job in render_jobs.items():
-            render_jobs[key] = np.round(render_job/pixel_count * n_jobs).astype(np.int)
-
-        if n_jobs == 1:
-            out = [shdom.gradient.gradient_one_solver(solvers[key],rte_sensors[key],render_jobs[key], sensor_mapping[key],
-                                                     forward_sensors, gradient_fun) for key in solvers.keys()]
-        else:
-            out = Parallel(n_jobs=len(list(solvers.keys())), backend="threading")(
-                delayed(shdom.gradient.gradient_one_solver, check_pickle=False)(solvers[key],rte_sensors[key],render_jobs[key],
-                                                                                sensor_mapping[key], forward_sensors,
-                                                                                gradient_fun) for key in solvers.keys())
-
-        #post_process data.
-        #MODIFY HERE IF EACH WAVELENGTH IS NOT INDEPENDENT.
-        #ie k-distribution weighting etc. This information should be passed through from rte_sensors if added.
-        #DOESN"T WORK IF CORRELATED ERRORS (by wavelength)
-        #gradient = np.sum(np.stack([i[0] for i in out],axis=-1),axis=-1)
-        #loss = np.sum(np.concatenate([i[1] for i in out],axis=-1))
-
-    return out#loss, gradient

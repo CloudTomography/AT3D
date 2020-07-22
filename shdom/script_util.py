@@ -16,7 +16,7 @@ def get_unique_wavelengths(sensor_dict):
 
     return np.unique(wavelength_list)
 
-def parallel_solve(solvers, n_jobs=1, mpi_comm=None, maxiter=100, verbose=True):
+def parallel_solve(solvers, n_jobs=1, mpi_comm=None, maxiter=100, verbose=True, init_solution=True):
     """
     TODO
     """
@@ -26,16 +26,16 @@ def parallel_solve(solvers, n_jobs=1, mpi_comm=None, maxiter=100, verbose=True):
     else:
         if n_jobs==1:
             for solver in solvers.values():
-                solver.solve(maxiter=maxiter, verbose=verbose)
+                solver.solve(maxiter=maxiter, init_solution=init_solution, verbose=verbose)
         else:
             Parallel(n_jobs=n_jobs, backend="threading")(
-                delayed(solver.solve, check_pickle=False)(maxiter, verbose) for solver in solvers.values())
+                delayed(solver.solve, check_pickle=False)(maxiter, init_solution, verbose) for solver in solvers.values())
 
-def render_one_solver(solver,merged_sensor, sensor_mapping, sensors, maxiter=100, verbose=True, n_jobs=1):
+def render_one_solver(solver,merged_sensor, sensor_mapping, sensors, maxiter=100, verbose=True, n_jobs=1, init_solution=True):
     """
     TODO
     """
-    solver.solve(maxiter=maxiter,verbose=verbose)
+    solver.solve(maxiter=maxiter,init_solution=True,verbose=verbose)
 
     split = np.array_split(np.arange(merged_sensor.sizes['nrays']),n_jobs)
     start_end = [(a.min(),a.max()) for a in split]
@@ -90,7 +90,7 @@ def combine_to_medium(scatterers):
     return mediums
 
 
-def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False, maxiter=100,verbose=True):
+def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False, maxiter=100,verbose=True, init_solution=True):
     """
     In-place modification of sensors and solvers.
     """

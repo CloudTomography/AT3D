@@ -351,7 +351,7 @@ def add_sub_pixel_rays(sensor,FOV,inplace=True,sampling='gaussian_cone',seed=Non
             theta_prime,phi_prime,weights = stochastic_cone(npixels=len(cam_mu),FOV=FOV,nrays=nrays,seed=seed)
         new_mu,new_phi = make_new_rays(np.arccos(cam_mu),cam_phi,theta_prime,phi_prime)
 
-        weights_all = weights.ravel()
+        weights_all = weights.ravel(order='F')
         mu_all = new_mu.ravel()
         phi_all = new_phi.ravel()
         xs_all = np.repeat(np.expand_dims(cam_x,0),new_mu.shape[-1]).ravel()
