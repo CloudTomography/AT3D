@@ -578,6 +578,8 @@ C         to calculate the Stokes radiance vector for this pixel
      .          VISRAD(NS)*RAY_WEIGHTS(IRAY)*
      .          STOKES_WEIGHTS(NS,IPIX)
             STOKESOUT(NS,IPIX) = SYNTHETIC_MEASUREMENT(NS)
+            PRINT *, IPIX, IRAY, NS, MINVAL(RAYGRAD(NS,:,:)),
+     .        MAXVAL(RAYGRAD(NS,:,:))
             RAYGRAD_PIXEL(NS,:,:) = RAYGRAD_PIXEL(NS,:,:) +
      .          RAYGRAD(NS,:,:)*RAY_WEIGHTS(IRAY)*
      .          STOKES_WEIGHTS(NS,IPIX)

@@ -36,10 +36,9 @@ def render_one_solver(solver,merged_sensor, sensor_mapping, sensors, maxiter=100
     TODO
     """
     solver.solve(maxiter=maxiter,init_solution=True,verbose=verbose)
-
     split = np.array_split(np.arange(merged_sensor.sizes['nrays']),n_jobs)
     start_end = [(a.min(),a.max()) for a in split]
-    out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(solver.integrate_to_sensor)(merged_sensor.sel(nrays=slice(start,end+1))) for start,end in start_end)
+    out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(solver.integrate_to_sensor, check_pickle=False)(merged_sensor.sel(nrays=slice(start,end+1))) for start,end in start_end)
 
     var_list_nray = [str(name) for name in out[0].data_vars if str(name) not in ('rays_per_image', 'stokes')]
     merged = {}
@@ -116,7 +115,7 @@ def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False
                 render_jobs[key] = pixel_count
 
             for key,render_job in render_jobs.items():
-                render_jobs[key] = np.round(render_job/pixel_count * n_jobs).astype(np.int)
+                render_jobs[key] = max(np.round(render_job/pixel_count * n_jobs).astype(np.int),1)
 
             Parallel(n_jobs=len(list(solvers.keys())), backend="threading")(
                 delayed(render_one_solver, check_pickle=False)(solvers[key],rte_sensors[key], sensor_mapping[key],

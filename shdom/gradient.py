@@ -410,36 +410,36 @@ def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sens
     """
     TODO
     """
-    #split by rays
-    split = np.array_split(np.arange(sensor.sizes['nrays']),n_jobs)
-    start_end = [(i.min(),i.max()) for i in split]
-
-    #TODO this fails for very small number of pixels at least.
-    #adjust start and end indices so that rays are grouped by pixel.
-    index_diffs = sensor.pixel_index.diff(dim='nrays')
-    transitions = np.where(index_diffs.data==1)[0] + 1
-    updated_start_end = []
-    updated_start_end.append((0, transitions[np.abs(transitions - start_end[0][1]).argmin()]))
-    for i in range(1,len(start_end)):
-        new_start = updated_start_end[i-1][1]
-        if i < len(start_end) - 1:
-            new_end = transitions[np.abs(transitions - start_end[i][1]).argmin()]
-        else:
-            new_end = start_end[i][1] + 1
-        updated_start_end.append((new_start, new_end))
-
-    pixel_start_end = []
-    pixel_inds = np.cumsum(np.concatenate([np.array([0]), sensor.rays_per_pixel.data])).astype(np.int)
-    for start,end in updated_start_end:
-        a = np.where(pixel_inds == start)[0][0]
-        b=np.where(pixel_inds == end)[0][0]
-        pixel_start_end.append((a,b))
 
     #out = gradient_fun(rte_solver, sensor.sel(nrays=slice(start,end))
     if n_jobs == 1:
         out = [gradient_fun(rte_solver, sensor)]
     else:
-        out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(gradient_fun)(rte_solver,sensor.sel(nrays=slice(start,end),
+        #split by rays
+        split = np.array_split(np.arange(sensor.sizes['nrays']),n_jobs)
+        start_end = [(i.min(),i.max()) for i in split]
+
+        #TODO this fails for very small number of pixels at least.
+        #adjust start and end indices so that rays are grouped by pixel.
+        index_diffs = sensor.pixel_index.diff(dim='nrays')
+        transitions = np.where(index_diffs.data==1)[0] + 1
+        updated_start_end = []
+        updated_start_end.append((0, transitions[np.abs(transitions - start_end[0][1]).argmin()]))
+        for i in range(1,len(start_end)):
+            new_start = updated_start_end[i-1][1]
+            if i < len(start_end) - 1:
+                new_end = transitions[np.abs(transitions - start_end[i][1]).argmin()]
+            else:
+                new_end = start_end[i][1] + 1
+            updated_start_end.append((new_start, new_end))
+
+        pixel_start_end = []
+        pixel_inds = np.cumsum(np.concatenate([np.array([0]), sensor.rays_per_pixel.data])).astype(np.int)
+        for start,end in updated_start_end:
+            a = np.where(pixel_inds == start)[0][0]
+            b=np.where(pixel_inds == end)[0][0]
+            pixel_start_end.append((a,b))
+        out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(gradient_fun, check_pickle=False)(rte_solver,sensor.sel(nrays=slice(start,end),
         npixels=slice(pix_start, pix_end)))
          for (start,end),(pix_start,pix_end) in zip(updated_start_end,pixel_start_end))
 

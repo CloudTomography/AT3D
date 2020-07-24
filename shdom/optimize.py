@@ -111,7 +111,7 @@ class Optimizer(object):
             'fun': self._objective,
             'x0': initial_state,
             'method': self._method,
-            'jac': True,
+            'jac': False,
             'options': self._options,
             'callback': self._callback
         }
