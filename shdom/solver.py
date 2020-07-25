@@ -410,6 +410,22 @@ class RTE(object):
         self._solcrit = 1.0
         self._iters = 0
 
+
+
+        #Release big arrays if they exist before a call to core.init_solution
+        #to prevent doubling the memory image when it is not necessary.
+        if hasattr(self, '_radiance'):
+            self._source = None
+            self._radiance=None
+            self._delsource = None
+            self._work = None
+            self._work1 = None
+            self._work2 = None
+            self._sfc_brdf_do = None
+            self._fluxes = None
+            self._dirflux = None
+            self._bcrad = None
+
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, \
         self._sfcgridparms, self._ntoppts, self._nbotpts, self._bcptr, self._rshptr, self._shptr, self._oshptr, \
         self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun, self._uniformzlev, \
