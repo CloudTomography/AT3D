@@ -25,7 +25,7 @@ def load_2parameter_lwc_file(file_name, density='lwc', origin=(0.0,0.0)):
 
     dset = make_grid(origin[0],(nx-1)*dx,nx,origin[1],(ny-1)*dy,ny,z)
 
-    data = np.genfromtxt('test.txt',skip_header=5)
+    data = np.genfromtxt(file_name,skip_header=5)
 
     lwc = np.zeros((nx,ny,nz))
     reff = np.zeros((nx,ny,nz))*np.nan

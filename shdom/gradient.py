@@ -158,7 +158,8 @@ def get_derivatives(solvers, all_derivative_tables):
                 diphase[:, count] = derivative_on_grid.table_index.data.ravel() + diphase.max()
 
                 padded_legcoefs.append(derivative_on_grid.legcoef.pad(
-                    {'legendre_index': (0, max_legendre - derivative_on_grid.legcoef.sizes['legendre_index'])}
+                    {'legendre_index': (0, max_legendre - derivative_on_grid.legcoef.sizes['legendre_index'])},
+                    constant_values=0.0
                 ))
 
                 count += 1
@@ -190,6 +191,9 @@ def get_derivatives(solvers, all_derivative_tables):
                                                      dleg=dleg,
                                                      deltam=rte_solver._deltam
                                                      )
+        #remove nans
+        #dleg[np.where(np.isnan(dleg))] = 0.0
+        #dphasetab[np.where(np.isnan(dphasetab))] = 0.0
         rte_solver._dphasetab, rte_solver._dext, rte_solver._dalb, rte_solver._diphase, rte_solver._dleg, rte_solver._dnumphase = \
         dphasetab, dext, dalb, diphase, dleg, dnumphase
 
@@ -231,7 +235,6 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True,
     #assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
     #nrays = sensor.sizes['nrays']
     total_pix = sensor.sizes['npixels']
-
     measurement_data = sensor['measurement_data'].data
     stokes_weights = sensor['stokes_weights'].data
     ray_weights = sensor['ray_weight'].data

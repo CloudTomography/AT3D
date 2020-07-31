@@ -332,9 +332,10 @@ class RTE(object):
 
         # Concatenate all scatterer tables into one table
         max_legendre = max([scatterer.sizes['legendre_index'] for scatterer in self.medium])
-        padded_legcoefs = [scatterer.legcoef.pad({'legendre_index': (0, max_legendre - scatterer.legcoef.sizes['legendre_index'])}) for scatterer in self.medium]
+        padded_legcoefs = [scatterer.legcoef.pad({'legendre_index': (0, max_legendre - scatterer.legcoef.sizes['legendre_index'])},
+                                                    constant_values=0.0) for scatterer in self.medium]
         legendre_table = xr.concat(padded_legcoefs, dim='table_index')
-        #legendre_table = xr.concat([scatterer.legcoef for scatterer in self.medium], dim='table_index')
+
 
         self._pa.numphase = legendre_table.sizes['table_index']
 
