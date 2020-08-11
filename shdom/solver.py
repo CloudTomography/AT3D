@@ -148,14 +148,13 @@ class RTE(object):
 
         # Setup horizontal boundary conditions
         # TODO: check that BC is strictly open or periodic
-        self._bcflag = 0
-        if numerical_params.x_boundary_condition == 'open':
-            self._bcflag += 1
-        if numerical_params.y_boundary_condition == 'open':
-            self._bcflag += 2
-
-        # Independent pixel not supported yet
         self._ipflag = numerical_params.ip_flag.data
+
+        self._bcflag = 0
+        if (numerical_params.x_boundary_condition == 'open') & (self._ipflag in (0,2,4,6)):
+            self._bcflag += 1
+        if (numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0,1,4,5)):
+            self._bcflag += 2
 
     def _setup_grid(self, grid):
         """
