@@ -159,8 +159,8 @@ def resample_onto_grid(grid, data):
     filled = resampled_data.bfill(dim='x').ffill(dim='x').bfill(dim='y').ffill(dim='y').bfill(dim='z').ffill(dim='z')
 
     #overwrite density values so missing data is filled with 0.0
-    filled['density'] = resampled_data.density.fillna(0.0)
-
+    if 'density' in filled:
+        filled['density'] = resampled_data.density.fillna(0.0)
     return filled
 
 def make_grid(xmin,xmax,nx,ymin,ymax,ny,z):

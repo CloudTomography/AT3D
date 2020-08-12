@@ -1,46 +1,103 @@
 import shdom
+import numpy as np
 
 def check_positivity(dataset,*names):
     """
     TODO
     """
+    check_exists(dataset, *names)
     fail_list = []
     for name in names:
         variable = dataset[name]
         if not np.all(variable.data >= 0.0):
             fail_list.append(name)
     if len(fail_list) > 0:
-        raise ValueError("variables are not positive semi-definite ('>= 0.0')", *fail_list)
+        raise ValueError("variables must be >= 0.0", *fail_list)
+
+def check_hasdim(dataset, *argchecks):
+    name_list = [a for a,b in argchecks]
+    check_exists(dataset, *name_list)
+    fail_list = []
+    for (name,dim_names) in argchecks:
+        for dim_name in dim_names:
+            if dim_name not in dataset[name].dims:
+                fail_list.append((name, dim_name))
+    if len(fail_list) > 0:
+        raise KeyError('Variables do not have the expected dimensions', *fail_list)
+
+def check_exists(dataset, *names):
+    fail_list = []
+    for name in names:
+        try:
+            variable = dataset[name]
+        except KeyError:
+            fail_list.append(name)
+    if len(fail_list) > 0:
+        raise ValueError("variables were expected in dataset", *fail_list)
 
 def check_grid(dataset):
     """
     TODO
     """
+    check_exists(dataset, 'x', 'y', 'z')
+
+    #check grid is 3D
+    fail_list = []
+    if len(dataset.x) == 1:
+        fail_list.append('x')
+    if len(dataset.y) == 1:
+        fail_list.append('y')
+    if len(fail_list) > 0:
+        raise ValueError("Grid coordinates with size of 1 are not currently supported.", *fail_list)
+
     #check equispacing of horizontal grid 'x','y'
     x = dataset.x.diff('x')
     y = dataset.y.diff('y')
 
     fail_list = []
-    if not np.all(x==x[0]):
+    if not np.allclose(x,x[0]):
         fail_list.append('x')
-    if not np.all(y==y[0]):
+    if not np.allclose(y,y[0]):
         fail_list.append('y')
     if len(fail_list) > 0:
         raise ValueError("Grid coordinates must be equispaced for the RTE solver.", *fail_list)
     check_positivity(dataset,'z')
 
-def check_legendre(dataset):
+def check_legendre_poly_table(dataset):
     """TODO"""
-    legendre_table = dataset['legcoefs']
-    if not np.all(legendre_table[0] == 1.0):
+    check_exists(dataset, ['legcoef', 'table_index', 'extinction', 'ssalb'])
+    check_hasdim(dataset, ('legcoef', ['stokes_index', 'legendre_index']))
+
+    if not np.all(dataset.table_index.data.ravel()== np.arange(1,dataset.extinction.size+1).astype(np.int)):
+        raise ValueError("'table_index' must act as a multi_index for microphysical dims")
+
+    if dataset['legcoef'].sizes['stokes_index'] != 6:
+        raise ValueError("'stokes_index' dimension of 'legcoef' must have 6 components.")
+
+    legendre_table = dataset['legcoef']
+    if not np.allclose(legendre_table[0,0], 1.0):
+        raise ValueError("0th Legendre Coefficients must be normalized to 1.0")
+
+def check_legendre_rte(dataset):
+    """TODO"""
+    check_exists(dataset, ['legcoef', 'table_index', 'extinction', 'ssalb'])
+    check_hasdim(dataset, ('legcoef', ['stokes_index', 'legendre_index']))
+
+    if dataset['legcoef'].sizes['stokes_index'] != 6:
+        raise ValueError("'stokes_index' dimension of 'legcoef' must have 6 components.")
+
+    legendre_table = dataset['legcoef']
+    if not np.allclose(legendre_table[0,0], 1.0):
         raise ValueError("0th Legendre Coefficients must be normalized to 1.0")
 
 def check_range(dataset, *argchecks):
     """TODO"""
+    name_list = [a for a,b,c in argchecks]
+    check_exists(dataset, *name_list)
     fail_list = []
     for (name,low,high) in argchecks:
         data = dataset[name]
-        if not np.all(low <=data<= high):
+        if not np.all((low <=data) & (data<= high)):
             fail_list.append((name, low, high))
 
     if len(fail_list) > 0:
@@ -146,11 +203,11 @@ def dataset_checks(**argchecks):
 #A LIST of checks is supplied for each dataset/list_of_dataset name,
 #For each check a TUPLE of the function, and a LIST of variable names is supplied.
 
-@dataset_checks(microphysics=(check_positivity,'density'),
-               poly_table=[(check_positivity, 'big_banananas')],
-               legendre=check_legendre)
-def fake_function_that_does_nothing(microphysics, legendre, poly_table):
-    return
+# @dataset_checks(microphysics=(check_positivity,'density'),
+#                poly_table=[(check_positivity, 'big_banananas')],
+#                legendre=check_legendre)
+# def fake_function_that_does_nothing(microphysics, legendre, poly_table):
+#     return
 
 # import xarray as xr
 # import numpy as np

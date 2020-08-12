@@ -4,14 +4,22 @@ TODO: description
 
 import numpy as np
 import xarray as xr
+from shdom import checks
 
+@checks.dataset_checks(microphysics=(checks.check_positivity, 'density'),
+                poly_table=checks.check_legendre_poly_table)
 def table_to_grid(microphysics, poly_table):
     """
     TODO
     Interpolates the poly table onto the microphysics grid.
     """
-    #If this fails it could be because some coordinates necessary for the interpolation
-    #are missing from microphysics.
+    #check for missing microphysical coordinates.
+    interp_names = set([name for name in poly_table.coords if name not in ('table_index', 'stokes_index')])
+    microphysics_names = set([name for name in microphysics.data_vars if name not in 'density'])
+    missing = interp_names - microphysics_names
+    if interp_names != microphysics_names:
+        raise KeyError("microphysics dataset is missing variables for interpolation of table onto grid.", *list(missing))
+
     interp_coords = {name:microphysics[name] for name in poly_table.coords if name not in ('table_index', 'stokes_index')}
 
     ssalb = poly_table.ssalb.interp(interp_coords)

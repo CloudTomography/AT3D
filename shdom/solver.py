@@ -1,7 +1,8 @@
 import sys
 import xarray as xr
 import numpy as np
-from shdom import core, util
+from shdom import core, util, checks
+import warnings
 
 class RTE(object):
     """
@@ -29,11 +30,16 @@ class RTE(object):
     -----
     k-distribution not supported.
     """
-
-    def __init__(self, numerical_params, medium, source, surface, num_stokes=1, name=None):
+    @checks.dataset_checks(medium=[(checks.check_range,[('ssalb',0.0,1.0)]),(checks.check_positivity,'extinction'),
+                    (checks.check_hasdim, [('extinction', ['x', 'y', 'z']), ('ssalb', ['x', 'y', 'z']),
+                    ('table_index', ['x', 'y', 'z'])]),
+                    checks.check_legendre_rte, checks.check_grid])
+    def __init__(self, numerical_params, medium, source, surface, num_stokes=1, name=None,
+                atmosphere=None):
 
         # Check number of stokes and setup type of solver
-        assert num_stokes in [1, 3, 4], 'num_stokes should be {1, 3, 4}'
+        if num_stokes not in (1,3,4):
+            raise ValueError("num_stokes should be {1, 3, 4} not '{}'".format(num_stokes))
         self._type = 'Radiance' if num_stokes == 1 else 'Polarization'
         self._nstokes = num_stokes
         self._nstleg = 1 if num_stokes == 1 else 6
@@ -79,6 +85,15 @@ class RTE(object):
         self._iters = 0
 
         # TODO: check that all scatterers are on the same grid
+        failed_list = []
+        for i,gridded in enumerate(self.medium):
+            if np.all(gridded.coords['x'] != self.medium[0].coords['x']) | \
+                np.all(gridded.coords['y'] != self.medium[0].coords['y']) | \
+                np.all(gridded.coords['z'] != self.medium[0].coords['z']):
+                failed_list.append(i)
+        if len(failed_list) > 0:
+            raise ValueError("mediums do not have consistent grids with the first medium", *failed_list)
+
         self._grid = xr.Dataset({'x': self.medium[0].coords['x'],
                                  'y': self.medium[0].coords['y'],
                                  'z': self.medium[0].coords['z']})
@@ -89,7 +104,84 @@ class RTE(object):
         self.surface = surface
 
         # Temperature is used for thermal radiation. Not supported yet.
-        self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32) + 300.0
+        self._setup_atmosphere(atmosphere)
+
+    def _setup_atmosphere(self, atmosphere):
+        """TODO
+        As atmosphere is currently a keyword argument with a default value,
+        it cannot be treated via the @datset_checks.
+        So this function does all of the checking.
+        """
+        if atmosphere is None:
+            self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32)
+            if self._srctype in ('T', 'B'):
+                warnings.warn('temperature was not specifed despite using thermal source.',category=RuntimeWarning)
+        elif isinstance(atmosphere, xr.Dataset):
+            try:
+                checks.check_grid(atmosphere)
+            except ValueError as err:
+                raise ValueError("atmosphere grid error.", *err.args)
+
+            if np.all(atmosphere.x == self._grid.x) & np.all(atmosphere.y == self._grid.y) & \
+                np.all(atmosphere.z==self._grid.z):
+
+                if 'temperature' in atmosphere.data_vars:
+                    try:
+                        checks.check_positivity(atmosphere, 'temperature')
+                        self._pa.tempp = atmosphere.temperature.data.ravel().astype(np.float32)
+                    except ValueError:
+                        raise ValueError("'temperature' in atmosphere dataset is negative")
+
+                else:
+                    warnings.warn("'temperature' not found in atmosphere dataset.",category=RuntimeWarning)
+                    self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32)
+                    if self._srctype in ('T', 'B'):
+                        warnings.warn('temperature was not specifed in atmosphere file despite using thermal source.', category=RuntimeWarning)
+
+                if 'gas_absorption' in atmosphere.data_vars:
+                    try:
+                        checks.check_positivity(atmosphere, 'gas_absorption')
+                    except ValueError:
+                        raise ValueError("'gas_absorption' in atmosphere dataset is negative.")
+                    try:
+                        checks.check_hasdim(atmosphere, ('gas_absorption',['z']))
+                    except KeyError:
+                        raise KeyError(("'gas_absorption' in atmosphere dataset is missing expected dimension 'z'."))
+                    #check if gases collapse to 1D.
+                    test = True
+                    if ('x' in atmosphere.gas_absorption.dims) & ('y' in atmosphere.gas_absorption.dims):
+                        for x in atmosphere.x:
+                            for y in atmosphere.y:
+                                test_temp = np.allclose(atmosphere.gas_absorption.isel(x=0,y=0).data, atmosphere.gas_absorption.sel(x=x,y=y))
+                                if not test_temp:
+                                    test = False
+                        gas_1d = atmosphere.gas_absorption.isel(x=0,y=0).data
+                    elif ('x' in atmosphere.gas_absorption.dims):
+                        for x in atmosphere.x:
+                            test_temp = np.allclose(atmosphere.gas_absorption.isel(x=0).data, atmosphere.gas_absorption.sel(x=x))
+                            if not test_temp:
+                                test = False
+                        gas_1d = atmosphere.gas_absorption.isel(x=0).data
+                    elif ('y' in atmosphere.gas_absorption.dims):
+                        for y in atmosphere.y:
+                            test_temp = np.allclose(atmosphere.gas_absorption.isel(y=0).data, atmosphere.gas_absorption.sel(y=y))
+                            if not test_temp:
+                                test = False
+                        gas_1d = atmosphere.gas_absorption.isel(y=0).data
+                    elif atmosphere.gas_absorption.dims == tuple('z'):
+                        gas_1d = atmosphere.gas_absorption.data
+                    if test:
+                        self._pa.nzckd = atmosphere.sizes['z']
+                        self._pa.zckd = atmosphere.z.data
+                        self._pa.gasabs = gas_1d
+                    else:
+                        raise ValueError("'2D/3D gas absorption in atmosphere file is not currently supported'")
+                warnings.warn("No gas absorption found in atmosphere file. Variable name should be 'gas_absorption'.",
+                                category=RuntimeWarning)
+            else:
+                raise ValueError('atmosphere does not have a consistent grid with medium')
+        else:
+            raise ValueError("Atmosphere should be an xr.Dataset")
 
     def _setup_source(self, source):
         """
