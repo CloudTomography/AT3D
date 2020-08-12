@@ -24,3 +24,16 @@ def set_pyshdom_path():
     import os, shdom
     from pathlib import Path
     os.chdir(str(Path(shdom.__path__[0]).parent))
+
+def planck_function(temperature, wavelength, c=2.99792458e8,h=6.62606876e-34,k=1.3806503e-23):
+    """
+    temperature
+        units, Kelvin
+    wavelength
+        units, micrometers
+    radiance
+        units, Watts/m^2/micrometer/steradian (SHDOM units)
+    """
+    wavelength = wavelength*1e-6
+    radiance = 2*h*c**2/ wavelength**5 * 1.0 / (np.exp((h*c) / (wavelength*k*temperature)) - 1.0) * 1e-6
+    return radiance

@@ -67,10 +67,6 @@ class RTE(object):
         self._setup_source(source)
         self.source = source
 
-        # Setup surface
-        self._setup_surface(surface)
-        self.surface = surface
-
         # k-distribution not supported yet
         self._kdist = False
         self._ng = 1
@@ -88,8 +84,12 @@ class RTE(object):
                                  'z': self.medium[0].coords['z']})
         self._setup_grid(self._grid)
 
+        # Setup surface
+        self._setup_surface(surface)
+        self.surface = surface
+
         # Temperature is used for thermal radiation. Not supported yet.
-        self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32)
+        self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32) + 300.0
 
     def _setup_source(self, source):
         """
@@ -121,7 +121,16 @@ class RTE(object):
         self._delysfc = surface.delysfc.data
         self._nsfcpar = surface.nsfcpar.data
         self._sfcparms = surface.sfcparms.data
-        self._sfcgridparms = surface.sfcgridparms.data
+        self._sfcgridparms = np.zeros((self._nsfcpar,self._maxnbc), dtype=np.float32,order='F')#surface.sfcgridparms.data
+
+        if (self._sfctype[-1] in ('R', 'O')) and (self._nstokes > 1):
+            raise ValueError("surface brdf '{}' is only supported for unpolarized radiative transfer (num_stokes=1)".format(surface.name.data))
+
+        if self._sfctype.endswith('L'):
+            self._maxbcrad = 2 * self._maxnbc
+        else:
+            self._maxbcrad = int((2 + self._nmu * self._nphi0max / 2) * self._maxnbc)
+
 
     def _setup_numerical_params(self, numerical_params):
         """
@@ -302,11 +311,7 @@ class RTE(object):
         assert 4.0 * 8.0 * self._maxic <= sys.maxsize, 'size of gridptr array (8*maxic) probably exceeds max integer number of bytes: %d' % 8 * self._maxic
 
         self._maxnbc = int(self._maxig * 3 / self._nz)
-        self._maxsfcpars = 4
-        if self._sfctype.endswith('L'):
-            self._maxbcrad = 2 * self._maxnbc
-        else:
-            self._maxbcrad = int((2 + self._nmu * self._nphi0max / 2) * self._maxnbc)
+
 
     def _init_solution(self):
         """

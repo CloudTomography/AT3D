@@ -488,6 +488,9 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
     """TODO"""
     #note this division of solving and 'raytracing' is not optimal for distributed memory parallelization
     #where tasks take varying amounts of time.
+    for solver in solvers.values():
+        if solver._srctype != 'S':
+            raise NotImplementedError('Only Solar Source is supported for gradient calculations.')
 
     shdom.script_util.parallel_solve(solvers, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,maxiter=maxiter,
     init_solution=init_solution)

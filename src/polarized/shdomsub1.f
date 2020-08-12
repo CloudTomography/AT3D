@@ -288,6 +288,15 @@ C            bottom grid points.
      .         SQRT(1.0*HUGE(NMU)/KIND(NMU))) THEN
             IERR = 1
           ELSE
+            IERR=0
+C           In SHDOM IERR was an error code returned by an allocate command for
+C           SFC_BRDF_DO, it returned 0 if it succeeded.
+C           allocatable arrays are removed as not compatible with f2py.
+C           This led to an error where IERR was unassigned, despite
+C           the fact array was small enough it should allocate.
+C           (it is assigned size above)
+C           Here it is changed so that it is set to 0 as long as the above
+C           inequality holds.
           ENDIF
           IF (IERR .EQ. 0) THEN
             CALL MAKE_SFC_BRDF_DO_MATRIX (SFCTYPE, WAVELEN,
@@ -597,16 +606,16 @@ C           If it is a not scattering medium then do only one iteration
         IF (ALBMAX .LT. SOLACC)  SOLCRIT = SOLACC
 
         IF (VERBOSE) THEN
-C           Print out the log solution criterion, number of points, 
+C           Print out the log solution criterion, number of points,
 C             and average SH truncation.
           WRITE (6,'(2X,I4,F8.3,1X,E10.3,1X,I8,1X,F8.2,1X,F6.3,A,A,A)')
-     .          ITER, LOG10(MAX(SOLCRIT,1.0E-20)), 
-     .          SPLITCRIT, NPTS, FLOAT(SHPTR(NPTS+1))/NPTS, 
+     .          ITER, LOG10(MAX(SOLCRIT,1.0E-20)),
+     .          SPLITCRIT, NPTS, FLOAT(SHPTR(NPTS+1))/NPTS,
      .          FLOAT(SHPTR(NPTS+1))/(NPTS*NLM), '   [', RUNNAME,']'
         ENDIF
-        
+
       ENDDO
-      
+
       IF (VERBOSE) THEN
         WRITE (6,'(1X,A,I6,A,F9.6,A,A,A)') '! Iterations: ',
      .    ITER, '     Final Criterion: ', SOLCRIT, '   [', RUNNAME,']'
@@ -4870,5 +4879,3 @@ C                 deciding to split it (no point in dividing clear sky).
 
       RETURN
       END
-
-
