@@ -66,7 +66,7 @@ def to_2parameter_lwc_file(file_name, cloud_scatterer,atmosphere=None,fill_tempe
     z = cloud_scatterer.z.data
 
     if atmosphere is not None:
-        temperature = atmosphere.interp({'z': cloud_scatterer.z}).Temperature.data
+        temperature = atmosphere.interp({'z': cloud_scatterer.z}).temperature.data
     else:
         temperature = np.ones(z.shape)*fill_temperature
 

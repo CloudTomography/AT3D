@@ -372,8 +372,181 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True,
 
         return gradient, loss, integrated_rays
 
+
+def grad_l2_old(rte_solver, sensor, exact_single_scatter=True,
+    jacobian_flag=False):
+    """
+    The core l2 gradient method.
+
+    Parameters
+    ----------
+    rte_solver: shdom.RteSolver
+        A solver with all the associated parameters and the solution to the RTE
+    projection: shdom.Projection
+        A projection model which specified the position and direction of each and every pixel
+    pixels: np.array(shape=(projection.npix), dtype=np.float32)
+        The acquired pixels driving the error and optimization.
+    uncertainties: np.array(shape=(projection.npix), dtype=np.float32)
+        The pixel uncertainties.
+
+    Returns
+    -------
+    gradient: np.array(shape=(rte_solver._nbpts, self.num_derivatives), dtype=np.float64)
+        The gradient with respect to all parameters at every grid base point
+    loss: float64
+        The total loss accumulated over all pixels
+    images: np.array(shape=(rte_solver._nstokes, projection.npix), dtype=np.float32)
+        The rendered (synthetic) images.
+    """
+    camx = sensor['ray_x'].data
+    camy = sensor['ray_y'].data
+    camz = sensor['ray_z'].data
+    cammu = sensor['ray_mu'].data
+    camphi = sensor['ray_phi'].data
+    #TODO
+    #Some checks on the dimensions: this kind of thing.
+    #assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
+    #nrays = sensor.sizes['nrays']
+    total_pix = sensor.sizes['npixels']
+    measurement_data = sensor['measurement_data'].data
+    stokes_weights = sensor['stokes_weights'].data
+    ray_weights = sensor['ray_weight'].data
+    rays_per_pixel = sensor['rays_per_pixel'].data
+    uncertainties = sensor['uncertainties'].data
+    #TODO fix jacobian.
+    if jacobian_flag:
+        #maximum size is hard coded - possible source of seg faults.
+        #(8*MAX_DOMAIN_LENGTH)**2 based on the beam from sensor to voxel and from voxel to sun.
+        largest_dim = int(64*(rte_solver._pa.npx**2+rte_solver._pa.npy**2+rte_solver._pa.npz**2))
+        jacobian = np.empty((rte_solver._nstokes,self.num_derivatives,total_pix*largest_dim),order='F',dtype=np.float32)
+        jacobian_ptr = np.empty((2,total_pix*largest_dim),order='F',dtype=np.int32)
+    else:
+        jacobian = np.empty((rte_solver._nstokes,rte_solver._num_derivatives,1),order='F',dtype=np.float32)
+        jacobian_ptr = np.empty((2,1),order='F',dtype=np.int32)
+
+    gradient, loss, images, jacobian, jacobian_ptr, counter = shdom.core.gradient_l2_old(
+        uncertainties=uncertainties,
+        #rays_per_pixel=rays_per_pixel,
+        #ray_weights=ray_weights,
+        weights=np.array([1.0,1.0,1.0,0.0])[:rte_solver._nstokes],
+        exact_single_scatter=exact_single_scatter,
+        nstphase=rte_solver._nstphase,
+        dpath=rte_solver._direct_derivative_path,
+        dptr=rte_solver._direct_derivative_ptr,
+        npx=rte_solver._pa.npx,
+        npy=rte_solver._pa.npy,
+        npz=rte_solver._pa.npz,
+        delx=rte_solver._pa.delx,
+        dely=rte_solver._pa.dely,
+        xstart=rte_solver._pa.xstart,
+        ystart=rte_solver._pa.ystart,
+        zlevels=rte_solver._pa.zlevels,
+        extdirp=rte_solver._pa.extdirp,
+        uniformzlev=rte_solver._uniformzlev,
+        partder=rte_solver._unknown_scatterer_indices,
+        numder=rte_solver._num_derivatives,
+        dext=rte_solver._dext,
+        dalb=rte_solver._dalb,
+        diphase=rte_solver._diphase,
+        dleg=rte_solver._dleg,
+        dphasetab=rte_solver._dphasetab,
+        dnumphase=rte_solver._dnumphase,
+        nscatangle=rte_solver._nscatangle,
+        phasetab=rte_solver._phasetab,
+        ylmsun=rte_solver._ylmsun,
+        nstokes=rte_solver._nstokes,
+        nstleg=rte_solver._nstleg,
+        nx=rte_solver._nx,
+        ny=rte_solver._ny,
+        nz=rte_solver._nz,
+        bcflag=rte_solver._bcflag,
+        ipflag=rte_solver._ipflag,
+        npts=rte_solver._npts,
+        nbpts=rte_solver._nbpts,
+        ncells=rte_solver._ncells,
+        nbcells=rte_solver._nbcells,
+        ml=rte_solver._ml,
+        mm=rte_solver._mm,
+        ncs=rte_solver._ncs,
+        nlm=rte_solver._nlm,
+        numphase=rte_solver._pa.numphase,
+        nmu=rte_solver._nmu,
+        nphi0max=rte_solver._nphi0max,
+        nphi0=rte_solver._nphi0,
+        maxnbc=rte_solver._maxnbc,
+        ntoppts=rte_solver._ntoppts,
+        nbotpts=rte_solver._nbotpts,
+        nsfcpar=rte_solver._nsfcpar,
+        gridptr=rte_solver._gridptr,
+        neighptr=rte_solver._neighptr,
+        treeptr=rte_solver._treeptr,
+        shptr=rte_solver._shptr,
+        bcptr=rte_solver._bcptr,
+        cellflags=rte_solver._cellflags,
+        iphase=rte_solver._iphase[:rte_solver._npts],
+        deltam=rte_solver._deltam,
+        solarflux=rte_solver._solarflux,
+        solarmu=rte_solver._solarmu,
+        solaraz=rte_solver._solaraz,
+        gndtemp=rte_solver._gndtemp,
+        gndalbedo=rte_solver._gndalbedo,
+        skyrad=rte_solver._skyrad,
+        waveno=rte_solver._waveno,
+        wavelen=rte_solver._wavelen,
+        mu=rte_solver._mu,
+        phi=rte_solver._phi,
+        wtdo=rte_solver._wtdo,
+        xgrid=rte_solver._xgrid,
+        ygrid=rte_solver._ygrid,
+        zgrid=rte_solver._zgrid,
+        gridpos=rte_solver._gridpos,
+        sfcgridparms=rte_solver._sfcgridparms,
+        bcrad=rte_solver._bcrad,
+        extinct=rte_solver._extinct[:rte_solver._npts],
+        albedo=rte_solver._albedo[:rte_solver._npts],
+        legen=rte_solver._legen,
+        dirflux=rte_solver._dirflux[:rte_solver._npts],
+        fluxes=rte_solver._fluxes,
+        source=rte_solver._source,
+        camx=camx,
+        camy=camy,
+        camz=camz,
+        cammu=cammu,
+        camphi=camphi,
+        npix=len(camx),
+        srctype=rte_solver._srctype,
+        sfctype=rte_solver._sfctype,
+        units=rte_solver._units,
+        measurements=measurement_data,
+        rshptr=rte_solver._rshptr,
+        radiance=rte_solver._radiance,
+        total_ext=rte_solver._total_ext[:rte_solver._npts],
+        jacobian=jacobian,
+        jacobianptr=jacobian_ptr,
+        makejacobian=jacobian_flag
+    )
+    jacobian = jacobian[:,:,:counter-1]
+    jacobian_ptr = jacobian_ptr[:,:counter-1]
+    if jacobian_flag:
+        return gradient, loss, images, jacobian, jacobian_ptr, np.array([counter-1])
+    else:
+        integrated_rays = sensor.copy(deep=True)
+        data = {}
+        if rte_solver._nstokes == 1:
+            data['I'] = (['npixels'],images[0])
+        elif rte_solver._nstokes > 1:
+            data['I'] = (['npixels'],images[0])
+            data['Q'] = (['npixels'],images[1])
+            data['U'] = (['npixels'],images[2])
+        if rte_solver._nstokes == 4:
+            data['V'] = (['npixels'],images[3])
+        for key, val in data.items():
+            integrated_rays[key] = val
+
+        return gradient, loss, integrated_rays
+
 def parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=grad_l2,
-                     mpi_comm=None, n_jobs=1):
+                     mpi_comm=None, n_jobs=1, exact_single_scatter=True):
     """
     TODO
     """
@@ -393,12 +566,12 @@ def parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gra
 
         if n_jobs == 1:
             out = [shdom.gradient.gradient_one_solver(solvers[key],rte_sensors[key],1, sensor_mapping[key],
-                                                     forward_sensors, gradient_fun) for key in solvers.keys()]
+                                                     forward_sensors, gradient_fun, exact_single_scatter) for key in solvers.keys()]
         else:
             out = Parallel(n_jobs=len(list(solvers.keys())), backend="threading")(
                 delayed(shdom.gradient.gradient_one_solver, check_pickle=False)(solvers[key],rte_sensors[key],render_jobs[key],
                                                                                 sensor_mapping[key], forward_sensors,
-                                                                                gradient_fun) for key in solvers.keys())
+                                                                                gradient_fun,exact_single_scatter) for key in solvers.keys())
 
         #post_process data.
         #MODIFY HERE IF EACH WAVELENGTH IS NOT INDEPENDENT.
@@ -409,7 +582,7 @@ def parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gra
 
     return loss, gradient
 
-def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sensors, gradient_fun):
+def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sensors, gradient_fun, exact_single_scatter=True):
     """
     TODO
     """
@@ -443,7 +616,7 @@ def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sens
             b=np.where(pixel_inds == end)[0][0]
             pixel_start_end.append((a,b))
         out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(gradient_fun, check_pickle=False)(rte_solver,sensor.sel(nrays=slice(start,end),
-        npixels=slice(pix_start, pix_end)))
+        npixels=slice(pix_start, pix_end)),exact_single_scatter, False)
          for (start,end),(pix_start,pix_end) in zip(updated_start_end,pixel_start_end))
 
     #DOESN"T WORK IF CORRELATED ERRORS.
@@ -484,7 +657,8 @@ def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sens
 
 def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
                                                        table_derivatives, n_jobs=1,
-                                 mpi_comm=None,verbose=False, maxiter=100, init_solution=True):
+                                 mpi_comm=None,verbose=False, maxiter=100, init_solution=True,
+                                 exact_single_scatter=True):
     """TODO"""
     #note this division of solving and 'raytracing' is not optimal for distributed memory parallelization
     #where tasks take varying amounts of time.
@@ -508,7 +682,7 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
     rte_sensors, sensor_mapping = shdom.script_util.sort_sensors(measurements, solvers, 'inverse')
 
     loss, gradient = parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=grad_l2,
-                     mpi_comm=mpi_comm, n_jobs=n_jobs)
+                     mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=False)
 
     #Turn gradient into an xarray Dataset #TODO
 

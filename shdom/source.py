@@ -11,7 +11,7 @@ def solar(solar_zenith, solar_azimuth,solarflux=1.0,skyrad=0.0):
             'solarflux': solarflux,
             'solar_zenith': solar_zenith,
             'solar_azimuth': solar_azimuth,
-            'solarmu': np.cos(np.deg2rad(solar_zenith)),
+            'solarmu': np.cos(np.deg2rad(180.0 - solar_zenith)),
             'solaraz': np.deg2rad(solar_azimuth),
             'srctype': 'S',
             'units': 'R',

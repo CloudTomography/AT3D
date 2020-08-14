@@ -405,7 +405,7 @@ class RTE(object):
         self._maxnbc = int(self._maxig * 3 / self._nz)
 
 
-    def _init_solution(self):
+    def _init_solution(self, make_big_arrays=True):
         """
         TODO: improve this
         Initilize the solution (I, J fields) from the direct transmission and a simple layered model.
@@ -468,6 +468,11 @@ class RTE(object):
         self._npart = len(self.medium)
         self._nstphase = min(self._nstleg, 2)
 
+        if make_big_arrays:
+            self._make_big_arrays()
+
+    def _make_big_arrays(self):
+
         # Transfer property arrays into internal grid structures
         self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
         self._total_ext, self._extmin, self._scatmin, self._albmax = core.transfer_pa_to_grid(
@@ -506,8 +511,6 @@ class RTE(object):
         self._oldnpts = 0
         self._solcrit = 1.0
         self._iters = 0
-
-
 
         #Release big arrays if they exist before a call to core.init_solution
         #to prevent doubling the memory image when it is not necessary.
