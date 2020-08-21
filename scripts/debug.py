@@ -268,7 +268,7 @@ solvers_reconstruct  = shdom.gradient.get_derivatives(solvers_reconstruct, table
     #prepare the sensors for the fortran subroutine for calculating gradient.
 rte_sensors, sensor_mapping = shdom.script_util.sort_sensors(Sensordict, solvers_reconstruct, 'inverse')
 
-gradient_function = shdom.gradient.grad_l2
+gradient_function = shdom.gradient.grad_l2_old
 out = shdom.gradient.parallel_gradient(solvers_reconstruct, rte_sensors, sensor_mapping, forward_sensors,
                                    gradient_fun=gradient_function,
                     mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=False)
