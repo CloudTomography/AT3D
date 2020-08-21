@@ -69,7 +69,8 @@ C             Extrapolate ray to domain top if above
       RETURN
       END
 
-      SUBROUTINE MIN_OPTICAL_DEPTH_1RAY(NX, NY, NZ, NPTS, NCELLS, TOTAL_EXT,
+      SUBROUTINE MIN_OPTICAL_DEPTH_1RAY(NX, NY, NZ, NPTS,
+     .                      NCELLS, TOTAL_EXT,
      .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                       BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,
      .                       GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
@@ -313,7 +314,7 @@ Cf2py intent(in) :: CELLFLAGS
 Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
       INTEGER  NPIX
 Cf2py intent(in) :: NPIX
-      REAL  PATH(*)
+      REAL  PATH(NPIX)
 Cf2py intent(out):: PATH
       REAL    TOTAL_EXT(*)
 Cf2py intent(in) :: TOTAL_EXT
@@ -324,7 +325,7 @@ Cf2py intent(in) :: TOTAL_EXT
       DOUBLE PRECISION X0, Y0, Z0, R, PI
 
       PI = ACOS(-1.0D0)
-      PATH(:) = 0.0
+      PATH = 0.0
 C         Loop over pixels in image
       DO N = 1, NPIX
         X0 = CAMX(N)
