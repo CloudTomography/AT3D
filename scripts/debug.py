@@ -272,3 +272,5 @@ gradient_function = shdom.gradient.grad_l2_old
 out = shdom.gradient.parallel_gradient(solvers_reconstruct, rte_sensors, sensor_mapping, forward_sensors,
                                    gradient_fun=gradient_function,
                     mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=False)
+
+print(out[-1].min(), out[-1].max())

@@ -982,7 +982,7 @@ class RTE(object):
         total_pix = sensor.sizes['nrays']
 
         optical_depth = np.full(self._npts, 999)
-          tau = core.optical_depth(
+        tau = core.optical_depth(
                 nx=self._rte_solver._nx,
                 ny=self._rte_solver._ny,
                 nz=self._rte_solver._nz,
