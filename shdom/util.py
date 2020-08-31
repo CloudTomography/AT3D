@@ -5,6 +5,7 @@ import numpy as np
 from collections import OrderedDict
 import shdom
 import netCDF4 as nc
+import xarray as xr
 
 def float_round(x):
     """Round a float or np.float32 to a 3 digits float"""
@@ -59,7 +60,7 @@ def load_forward_model(file_name):
         for i, image in sensor.groups.items():
             sensor_list.append(xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
                 'sensors/'+str(key)+'/'+str(i)])))
-        sensor_dict[key] = sensor_list
+        sensor_dict[key] = {'sensor_list':sensor_list}
 
     for key, solver in solvers.items():
         numerical_params = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
@@ -79,7 +80,7 @@ def load_forward_model(file_name):
         else:
             atmosphere=None
 
-        solver_dict[key] = shdom.solver.RTE(numerical_params=numerical_params,
+        solver_dict[float(key)] = shdom.solver.RTE(numerical_params=numerical_params,
                                             medium=medium_list,
                                            source=source,
                                            surface=surface,
@@ -107,7 +108,7 @@ def save_forward_model(file_name,sensors, solvers):
         solver.numerical_params.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'numerical_parameters', format='NETCDF4',engine='netcdf4')
         solver.surface.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'surface', format='NETCDF4',engine='netcdf4')
         solver.source.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'source', format='NETCDF4',engine='netcdf4')
-        if hasattr(solver, 'atmosphere'):
+        if solver.atmosphere is not None:
             solver.atmosphere.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'atmosphere', format='NETCDF4',engine='netcdf4')
         for j, med in enumerate(solver.medium):
             med.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'medium/'+str(j), format='NETCDF4',engine='netcdf4')
