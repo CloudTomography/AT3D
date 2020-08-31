@@ -76,8 +76,8 @@ for wavelength in wavelengths:
     cloud_size_distribution = shdom.size_distribution.get_size_distribution_grid(
                                                             mie_mono_table.radius.data,
                         size_distribution_function=size_distribution_function,particle_density=1.0,
-                        reff=[4.0,25.0,25,'logarithmic','micron'], #this info is not passed.
-                        veff=[0.09,0.11,2,'linear','unitless'],    #this info is not passed.
+                        reff=[4.0,25.0,25,'logarithmic','micron'],
+                        veff=[0.09,0.11,2,'linear','unitless'],
                         )
     poly_table = shdom.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
     cloud_optical_scatterers[wavelength] = shdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
