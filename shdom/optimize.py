@@ -1,5 +1,6 @@
 import scipy.optimize
 import shdom
+import numpy as np
 
 class ObjectiveFunction(object):
 
@@ -15,7 +16,8 @@ class ObjectiveFunction(object):
     @classmethod
     def LevisApproxUncorrelatedL2(cls, measurements, solvers, forward_sensors, unknown_scatterers, set_state_fn,
                                         project_gradient_to_state,
-                                        n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose):
+                                        n_jobs=1, mpi_comm=None,verbose=True,maxiter=100,init_solution=True,
+                                        exact_single_scatter=True):
         """
         NB The passed set_state_fn must be defined using the solvers/unknown_scatterers defined at the script level.
         """
@@ -25,12 +27,14 @@ class ObjectiveFunction(object):
 
             set_state_fn(state)
             loss, gradient = shdom.gradient.levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
-                                                       table_derivatives, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose)
+                                                       table_derivatives, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,
+                                                       maxiter=maxiter,init_solution=init_solution,
+                                                       exact_single_scatter=exact_single_scatter)
 
-            # TODO state_gradient = project_gradient_to_state(gradient)
+            state_gradient = project_gradient_to_state(gradient)
             return loss, state_gradient
 
-        return cls(measurements, loss_function, additional_args)
+        return cls(measurements, loss_function)
 
 class PriorFunction(object):
     def __init__(self, prior_fn, scale=1.0):
@@ -73,7 +77,7 @@ class Optimizer(object):
                  prior_fn=None,
                  callback_fn=None,
                  method='L-BFGS-B',
-                 options={'maxiter': 100, 'maxls': 100, 'disp': True, 'gtol': 1e-16, 'ftol': 1e-16}
+                 options={'maxiter': 100, 'maxls': 10, 'disp': True, 'gtol': 1e-16, 'ftol': 1e-8}
                  ):
 
         self._method = method
@@ -108,16 +112,16 @@ class Optimizer(object):
         """
         self._iteration = iteration_step
         args = {
-            'fun': self._objective,
+            'fun': self._objective_fn,
             'x0': initial_state,
             'method': self._method,
-            'jac': False,
+            'jac': True,
             'options': self._options,
             'callback': self._callback
         }
 
-        if self.method not in ['CG', 'Newton-CG']:
-            args['bounds'] = self._objective_fn.bounds
+        #if self.method not in ['CG', 'Newton-CG']:
+        #    args['bounds'] = self._objective_fn.bounds
         result = scipy.optimize.minimize(**args)
         return result
 

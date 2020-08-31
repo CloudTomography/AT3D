@@ -30,7 +30,7 @@ def table_to_grid(microphysics, poly_table):
     table_index = poly_table.coords['table_index'].interp(coords=interp_coords, method='nearest').round().astype(int)
     unique_table_indices, inverse = np.unique(table_index.data, return_inverse=True)
     subset_table_index = xr.DataArray(name=table_index.name,
-                                        data = inverse.reshape(table_index.shape),
+                                        data = inverse.reshape(table_index.shape) + 1,
                                         dims=table_index.dims,
                                         coords=table_index.coords,
                                         )

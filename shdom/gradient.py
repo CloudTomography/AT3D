@@ -25,7 +25,7 @@ def calculate_direct_beam_derivative(solvers):
 
     direct_derivative_path, direct_derivative_ptr = \
         shdom.core.make_direct_derivative(
-            npts=rte_solver._nbpts, #changed from ._npts to ._nbpts as this should only be calculated for base grid.
+            npts=rte_solver._npts, #changed from ._npts to ._nbpts as this should only be calculated for base grid.
             bcflag=rte_solver._bcflag,
             gridpos=rte_solver._gridpos,
             npx=rte_solver._pa.npx,
@@ -102,6 +102,14 @@ def create_derivative_tables(solvers,unknown_scatterers):
                         'legcoef': legcoef,
                         'ssalb': np.zeros(table.ssalb.shape)
                     })
+                elif variable_name == 'density':
+                    differentiated = table.copy(data={
+                        'extinction': table.extinction,
+                        'legcoef': np.zeros(table.legcoef.shape),
+                        'ssalb': np.zeros(table.ssalb.shape)
+                    })
+                else:
+                    raise ValueError('Invalid unknown scatterer name', variable_name)
 
                 derivatives_tables[variable_name] = differentiated
 
@@ -164,6 +172,14 @@ def get_derivatives(solvers, all_derivative_tables):
 
                 count += 1
 
+        #COPIED FROM LINE 427 OF solver.py
+        #In regions which are not covered by any optical scatterer they have an iphasep of 0.
+        #In original SHDOM these would be pointed to the rayleigh phase function (which is always included
+        #in the legendre table even if there is no rayleigh extinction.)
+        #Here, instead we set them to whatever the first phase function is.
+        #An arbitrary valid choice can be made as the contribution from these grid points is zero.
+        diphase[np.where(diphase == 0)] = 1
+
         # Concatenate all legendre tables into one table
         legendre_table = xr.concat(padded_legcoefs, dim='table_index')
         dnumphase = legendre_table.sizes['table_index']
@@ -191,9 +207,7 @@ def get_derivatives(solvers, all_derivative_tables):
                                                      dleg=dleg,
                                                      deltam=rte_solver._deltam
                                                      )
-        #remove nans
-        #dleg[np.where(np.isnan(dleg))] = 0.0
-        #dphasetab[np.where(np.isnan(dphasetab))] = 0.0
+
         rte_solver._dphasetab, rte_solver._dext, rte_solver._dalb, rte_solver._diphase, rte_solver._dleg, rte_solver._dnumphase = \
         dphasetab, dext, dalb, diphase, dleg, dnumphase
 
@@ -245,7 +259,7 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True,
         #maximum size is hard coded - possible source of seg faults.
         #(8*MAX_DOMAIN_LENGTH)**2 based on the beam from sensor to voxel and from voxel to sun.
         largest_dim = int(64*(rte_solver._pa.npx**2+rte_solver._pa.npy**2+rte_solver._pa.npz**2))
-        jacobian = np.empty((rte_solver._nstokes,self.num_derivatives,total_pix*largest_dim),order='F',dtype=np.float32)
+        jacobian = np.empty((rte_solver._nstokes,rte_solver._num_derivatives,total_pix*largest_dim),order='F',dtype=np.float32)
         jacobian_ptr = np.empty((2,total_pix*largest_dim),order='F',dtype=np.int32)
     else:
         jacobian = np.empty((rte_solver._nstokes,rte_solver._num_derivatives,1),order='F',dtype=np.float32)
@@ -374,7 +388,7 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True,
 
 
 def grad_l2_old(rte_solver, sensor, exact_single_scatter=True,
-    jacobian_flag=False):
+    jacobian_flag=False, stokes_weights=[1.0,1.0,1.0,0.0]):
     """
     The core l2 gradient method.
 
@@ -428,7 +442,7 @@ def grad_l2_old(rte_solver, sensor, exact_single_scatter=True,
         uncertainties=uncertainties,
         #rays_per_pixel=rays_per_pixel,
         #ray_weights=ray_weights,
-        weights=np.array([1.0,1.0,1.0,0.0])[:rte_solver._nstokes],
+        weights=np.array(stokes_weights)[:rte_solver._nstokes],
         exact_single_scatter=exact_single_scatter,
         nstphase=rte_solver._nstphase,
         dpath=rte_solver._direct_derivative_path,
@@ -571,7 +585,8 @@ def parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gra
             out = Parallel(n_jobs=len(list(solvers.keys())), backend="threading")(
                 delayed(shdom.gradient.gradient_one_solver, check_pickle=False)(solvers[key],rte_sensors[key],render_jobs[key],
                                                                                 sensor_mapping[key], forward_sensors,
-                                                                                gradient_fun,exact_single_scatter) for key in solvers.keys())
+                                                                                gradient_fun,exact_single_scatter=exact_single_scatter)
+                                                                                for key in solvers.keys())
 
         #post_process data.
         #MODIFY HERE IF EACH WAVELENGTH IS NOT INDEPENDENT.
@@ -587,15 +602,12 @@ def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sens
     TODO
     """
 
-    #out = gradient_fun(rte_solver, sensor.sel(nrays=slice(start,end))
     if n_jobs == 1:
         out = [gradient_fun(rte_solver, sensor)]
     else:
         #split by rays
         split = np.array_split(np.arange(sensor.sizes['nrays']),n_jobs)
         start_end = [(i.min(),i.max()) for i in split]
-
-        #TODO this fails for very small number of pixels at least.
         #adjust start and end indices so that rays are grouped by pixel.
         index_diffs = sensor.pixel_index.diff(dim='nrays')
         transitions = np.where(index_diffs.data==1)[0] + 1
@@ -616,10 +628,10 @@ def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sens
             b=np.where(pixel_inds == end)[0][0]
             pixel_start_end.append((a,b))
         out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(gradient_fun, check_pickle=False)(rte_solver,sensor.sel(nrays=slice(start,end),
-        npixels=slice(pix_start, pix_end)),exact_single_scatter, False)
+        npixels=slice(pix_start, pix_end)),exact_single_scatter=exact_single_scatter, jacobian_flag=False)
          for (start,end),(pix_start,pix_end) in zip(updated_start_end,pixel_start_end))
 
-    #DOESN"T WORK IF CORRELATED ERRORS.
+    #DOESN"T suppport CORRELATED ERRORS.
     loss = np.sum(np.array([i[1] for i in out]))
     gradient = np.sum(np.stack([i[0] for i in out],axis=-1),axis=-1)
 
@@ -672,18 +684,35 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
     #These are called after the solution because they require at least _init_solution to be run.
     if not hasattr(list(solvers.values())[0], '_direct_derivative_path'):
         #only needs to be called once.
-        #If this doesn't work after 'solve' and requires only '_init_solution' then it will need to be
-        #called inside parallel_solve. . .
         calculate_direct_beam_derivative(solvers)
 
-    solvers  = get_derivatives(solvers, table_derivatives)  #adds the _dext/_dleg/_dalb etc to the solvers.
+    solvers  = get_derivatives(solvers, table_derivatives)  #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
 
     #prepare the sensors for the fortran subroutine for calculating gradient.
     rte_sensors, sensor_mapping = shdom.script_util.sort_sensors(measurements, solvers, 'inverse')
 
     loss, gradient = parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=grad_l2,
-                     mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=False)
+                     mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter)
+    #turn gradient into a gridded dataset for use in project_gradient_to_state
+    derivative_names = []
+    for unknown_scatterer, table, variable_names in list(unknown_scatterers.values())[0]:
+        variable_names = np.atleast_1d(variable_names)
+        for variable_name in variable_names:
+            derivative_names.append(variable_name)
+    unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices
+    grid = list(solvers.values())[0]._grid
+    gradient_dataset = xr.Dataset(
+                        data_vars = {
+                            'gradient': (['x','y','z','derivative_index'],
+                                         gradient.reshape((grid.sizes['x'], grid.sizes['y'], grid.sizes['z'],-1)))
+                        },
+        coords = {
+            'x': grid.x,
+            'y': grid.y,
+            'z': grid.z,
+            'derivative_name': ('derivative_index', np.array(derivative_names)),
+            'derivative_scatterer_index': ('derivative_index', unknown_scatterer_indices)
+        }
+    )
 
-    #Turn gradient into an xarray Dataset #TODO
-
-    return loss, gradient
+    return np.array(loss), gradient_dataset

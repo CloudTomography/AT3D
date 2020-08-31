@@ -82,7 +82,7 @@ for wavelength in wavelength_list:
     modis_list.append(
        shdom.sensor.add_sub_pixel_rays(shdom.sensor.orthographic_projection(wavelength,cloud_scatterer,0.049,0.049,0.0,0.0,
                                             altitude='TOA',
-                                            stokes='I'
+                                            stokes=['I'],
                                             ),0.0,degree=2)#.sel(nrays=slice(6894,6901),npixels=1149)
     )
 
@@ -123,7 +123,7 @@ config = shdom.configuration.get_config('./default_config.json')
 config['spherical_harmonics_accuracy'] = 0.01
 
 for wavelength in wavelengths:
-    num_stokes[wavelength] = 3
+    num_stokes[wavelength] = 1
     names[wavelength] = None
     surfaces[wavelength] = shdom.surface.lambertian(albedo=0.01) #surface is wavelength independent.
     sources[wavelength] = shdom.source.solar(145.0,0.0,solarflux=1.0)
@@ -181,7 +181,7 @@ for key,name in names.items():
                                     num_stokes=num_stokes[key],
                                     name=name
                                    )
-shdom.script_util.get_measurements(solvers, Sensordict, maxiter=2, n_jobs=10)
+shdom.script_util.get_measurements(solvers, Sensordict, maxiter=100, n_jobs=8)
 
 #resample the cloud onto the rte_grid
 cloud_scatterer_on_rte_grid = shdom.grid.resample_onto_grid(rte_grid, cloud_scatterer)
@@ -235,17 +235,17 @@ for key,name in names.items():
 cloud_unknowns = OrderedDict()
 for key, scatterer in cloud_optical_scatterers.items():
 
-    cloud_unknowns[key] = (scatterer, cloud_poly_tables[key], 'reff')
+    cloud_unknowns[key] = (scatterer, cloud_poly_tables[key], 'extinction')
 
 unordered_unknown_scatterers = [cloud_unknowns]
 unknown_scatterers = shdom.script_util.combine_to_medium(unordered_unknown_scatterers)
 
 table_derivatives = shdom.gradient.create_derivative_tables(solvers_reconstruct, unknown_scatterers)
 
-n_jobs=10
+n_jobs=8
 verbose=True
 init_solution=True
-maxiter=2
+maxiter=100
 exact_single_scatter=True
 mpi_comm=None
 
@@ -268,9 +268,10 @@ solvers_reconstruct  = shdom.gradient.get_derivatives(solvers_reconstruct, table
     #prepare the sensors for the fortran subroutine for calculating gradient.
 rte_sensors, sensor_mapping = shdom.script_util.sort_sensors(Sensordict, solvers_reconstruct, 'inverse')
 
-gradient_function = shdom.gradient.grad_l2_old
+gradient_function = shdom.gradient.grad_l2
 out = shdom.gradient.parallel_gradient(solvers_reconstruct, rte_sensors, sensor_mapping, forward_sensors,
                                    gradient_fun=gradient_function,
-                    mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=False)
+                    mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter)
 
 print(out[-1].min(), out[-1].max())
+print(out[-1][np.where(out[-1] !=0.0)][::50])

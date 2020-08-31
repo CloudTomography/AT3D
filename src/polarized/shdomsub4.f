@@ -704,7 +704,6 @@ Cf2py intent(in) RAYS_PER_PIXEL
       DOUBLE PRECISION   RAY_WEIGHTS(*), STOKES_WEIGHTS(NSTOKES, *)
 Cf2py intent(in) RAY_WEIGHTS, STOKES_WEIGHTS
 
-      DOUBLE PRECISION SYNTHETIC_MEASUREMENT(NSTOKES)
       DOUBLE PRECISION PIXEL_ERROR
       DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER), VISRAD(NSTOKES)
       DOUBLE PRECISION RAYGRAD_PIXEL(NSTOKES,NBPTS,NUMDER)
@@ -721,6 +720,7 @@ Cf2py intent(in) RAY_WEIGHTS, STOKES_WEIGHTS
       ALLOCATE (LOFJ(NLM))
 
       GRADOUT = 0.0D0
+      STOKESOUT = 0.0D0
       COUNTER = 1
 
       J = 0
@@ -753,7 +753,6 @@ C         Loop over pixels in image
       COST = 0.0D0
       IRAY = 0
       DO IPIX = 1, NPIX
-        SYNTHETIC_MEASUREMENT = 0.0D0
         RAYGRAD_PIXEL = 0.0D0
         DO I2=1 ,RAYS_PER_PIXEL(IPIX)
           IRAY = IRAY + 1
@@ -804,29 +803,32 @@ C         to calculate the Stokes radiance vector for this pixel
      .             EXACT_SINGLE_SCATTER)
   900     CONTINUE
 
+
+
           DO NS=1,NSTOKES
-            SYNTHETIC_MEASUREMENT(NS) = SYNTHETIC_MEASUREMENT(NS) +
-     .          VISRAD(NS)*RAY_WEIGHTS(IRAY)*
-     .          STOKES_WEIGHTS(NS,IPIX)
-            STOKESOUT(NS,IPIX) = SYNTHETIC_MEASUREMENT(NS)
+            STOKESOUT(NS,IPIX) = STOKESOUT(NS,IPIX) + VISRAD(NS)*
+     .            RAY_WEIGHTS(IRAY)*STOKES_WEIGHTS(NS,IPIX)
+            RAYGRAD_PIXEL(NS,:,:) = RAYGRAD_PIXEL(NS,:,:) +
+     .            RAYGRAD(NS,:,:)*RAY_WEIGHTS(IRAY)*
+     .            STOKES_WEIGHTS(NS,IPIX)
+!checks just in case.
             IF (ANY(ISNAN(RAYGRAD(NS,:,:)))) THEN
-             PRINT *, IPIX, IRAY, NS, MINVAL(RAYGRAD(NS,:,:)),
+             PRINT *, 'NaN in gradient.', IPIX, IRAY, NS,
+     .       MINVAL(RAYGRAD(NS,:,:)),
      .        MAXVAL(RAYGRAD(NS,:,:)), ANY(ISNAN(RAYGRAD(NS,:,:))),
      .        X0, Y0, Z0
             ENDIF
-            IF (ANY(RAYGRAD(NS,:,:) < -1e10)) THEN
-              PRINT *,IPIX, IRAY, NS, MINVAL(RAYGRAD(NS,:,:)),
+            IF (ANY(ABS(RAYGRAD(NS,:,:)) > 1e2)) THEN
+              PRINT *, 'Large Value in gradient',IPIX, IRAY, NS,
+     .          MINVAL(RAYGRAD(NS,:,:)),
      .        MAXVAL(RAYGRAD(NS,:,:)), ANY(ISNAN(RAYGRAD(NS,:,:))),
-     .        X0, Y0, Z0, '2'
+     .        X0, Y0, Z0
             ENDIF
-            RAYGRAD_PIXEL(NS,:,:) = RAYGRAD_PIXEL(NS,:,:) +
-     .          RAYGRAD(NS,:,:)*RAY_WEIGHTS(IRAY)*
-     .          STOKES_WEIGHTS(NS,IPIX)
           ENDDO
-        ENDDO
-
+        ENDDO !end of ray loop.
+        !calculations per pixel.
         DO NS = 1, NSTOKES
-          PIXEL_ERROR = SYNTHETIC_MEASUREMENT(NS) -
+          PIXEL_ERROR = STOKESOUT(NS, IPIX) -
      .                    MEASUREMENTS(NS, IPIX)
 
           DO NS1 = 1, NSTOKES
@@ -1209,12 +1211,7 @@ C            Interpolate extinction and source function along path
           ELSE
             GRAD0 = 0.0
           ENDIF
-          IF (ANY(ISNAN(GRAD0(:,:,:)))) THEN
-            PRINT *, 'grad0'
-          ENDIF
-          IF (ANY(ISNAN(GRAD1(:,:,:)))) THEN
-            PRINT *, 'grad1'
-          ENDIF
+
 C            Compute the subgrid radiance: integration of the source function
           EXT = 0.5*(EXT0+EXT1)
           IF (EXT .NE. 0.0) THEN
