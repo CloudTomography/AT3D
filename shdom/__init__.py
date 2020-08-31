@@ -39,3 +39,4 @@ import shdom.checks
 import shdom.script_util
 import shdom.gradient
 import shdom.optimize
+import shdom.space_carve

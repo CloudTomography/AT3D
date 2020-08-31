@@ -87,7 +87,9 @@ def load_forward_model(file_name):
                                             num_stokes=num_stokes,
                                             name=None
                                            )
-    return sensor_dict, solver_dict
+        rte_grid = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/grid']))
+
+    return sensor_dict, solver_dict, rte_grid
 
 def save_forward_model(file_name,sensors, solvers):
     """
@@ -108,6 +110,7 @@ def save_forward_model(file_name,sensors, solvers):
         solver.numerical_params.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'numerical_parameters', format='NETCDF4',engine='netcdf4')
         solver.surface.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'surface', format='NETCDF4',engine='netcdf4')
         solver.source.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'source', format='NETCDF4',engine='netcdf4')
+        solver._grid.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'grid', format='NETCDF4',engine='netcdf4')
         if solver.atmosphere is not None:
             solver.atmosphere.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'atmosphere', format='NETCDF4',engine='netcdf4')
         for j, med in enumerate(solver.medium):

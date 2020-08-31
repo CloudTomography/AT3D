@@ -49,6 +49,7 @@ def to_grid(wavelengths, atmosphere, rte_grid):
         temp = rayleigh_final.sel({'wavelength': wavelength})
         #add a 'wavelength_center' attribute as this is what solver.RTE needs.
         temp.attrs['wavelength_center'] = wavelength
+        temp = temp.assign_attrs(atmosphere.attrs)
         output[wavelength] = temp
 
     return output
