@@ -71,8 +71,8 @@ cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.reff.dims,
 cloud_poly_tables = OrderedDict()
 cloud_optical_scatterers = OrderedDict()
 for wavelength in wavelengths:
-    print('making mie_table. . . may take a while.')
-    mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength))
+    #mie_table path is hardcoded for now. . . 
+    mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength), relative_path='./mie_tables')
     cloud_size_distribution = shdom.size_distribution.get_size_distribution_grid(
                                                             mie_mono_table.radius.data,
                         size_distribution_function=size_distribution_function,particle_density=1.0,
@@ -82,6 +82,12 @@ for wavelength in wavelengths:
     poly_table = shdom.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
     cloud_optical_scatterers[wavelength] = shdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
     cloud_poly_tables[wavelength] = poly_table
+
+#save mie_table for later. at the moment saving/overwriting is done regardless of whether
+#it is loaded or calculated so it can be overwritten. (but only if identical.)
+if not os.path.exists('./mie_tables'):
+    os.makedir('./mie_tables')
+mie_mono_table.to_netcdf('./mie_tables/mie_table_0.86.nc')
 
 #calculate rayleigh properties.
 rayleigh_scatterer_list = shdom.rayleigh.to_grid(wavelengths,atmosphere,rte_grid)

@@ -12,7 +12,6 @@ import sys
 
 file_name = sys.argv[1]
 save_name = sys.argv[2]
-print(sys.argv)
 
 #use ground truth solvers and rte_grid because lazy.
 #these are loaded but could be independently defined if desired.
@@ -29,8 +28,8 @@ size_distribution_function = shdom.size_distribution.gamma
 
 cloud_poly_tables = OrderedDict()
 for wavelength in wavelengths:
-    print('making mie_table. . . may take a while.')
-    mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength))
+    #mie_table path is hardcoded for now. . .
+    mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength), relative_path='./mie_tables')
     cloud_size_distribution = shdom.size_distribution.get_size_distribution_grid(
                                                             mie_mono_table.radius.data,
                         size_distribution_function=size_distribution_function,particle_density=1.0,
@@ -125,7 +124,7 @@ obj_fun = shdom.optimize.ObjectiveFunction.LevisApproxUncorrelatedL2(sensor_dict
 
 optimizer = shdom.optimize.Optimizer(obj_fun)
 optimizer._options['maxls'] = 30
-optimizer._options['maxiter'] = 1
+optimizer._options['maxiter'] = 1 #maxiter to 1 to debug the saving of result.
 
 #optimize for the specified initial condition.
 result = optimizer.minimize(initial.density.data[mask])

@@ -31,18 +31,7 @@ class ObjectiveFunction(object):
                                                        table_derivatives, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,
                                                        maxiter=maxiter,init_solution=init_solution,
                                                        exact_single_scatter=exact_single_scatter)
-
             state_gradient = project_gradient_to_state(gradient)
-
-            import pylab as py
-            py.figure()
-            py.imshow(forward_sensors['MISR']['sensor_list'][0].I.data.reshape(forward_sensors['MISR']['sensor_list'][0].image_shape.data,order='F'))
-            py.colorbar()
-            py.figure()
-            py.imshow(forward_sensors['MISR']['sensor_list'][-1].I.data.reshape(forward_sensors['MISR']['sensor_list'][-1].image_shape.data,order='F'))
-            py.colorbar()
-            py.show()
-
             return loss, state_gradient
 
         return cls(measurements, loss_function, min_bounds=min_bounds, max_bounds=max_bounds)
