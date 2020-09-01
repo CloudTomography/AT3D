@@ -699,7 +699,7 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
         variable_names = np.atleast_1d(variable_names)
         for variable_name in variable_names:
             derivative_names.append(variable_name)
-    unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices
+    unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices - 1
     grid = list(solvers.values())[0]._grid
     gradient_dataset = xr.Dataset(
                         data_vars = {
