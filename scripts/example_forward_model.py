@@ -33,7 +33,7 @@ sensor_azimuth_list = [90]*4 + [-90]*4 +[0.0]
 for zenith,azimuth in zip(sensor_zenith_list,sensor_azimuth_list):
     misr_list.append(
         shdom.sensor.add_sub_pixel_rays(shdom.sensor.orthographic_projection(0.86, cloud_scatterer,
-                                                                             0.018,0.018, azimuth, zenith,
+                                                                             0.01,0.01, azimuth, zenith,
                                              altitude='TOA', stokes='I'
                                             ),FOV=0.0,degree=2)
     )
@@ -54,7 +54,7 @@ for wavelength in wavelengths:
     num_stokes[wavelength] = 1
     names[wavelength] = None
     surfaces[wavelength] = shdom.surface.lambertian(albedo=0.0) #surface is wavelength independent.
-    sources[wavelength] = shdom.source.solar(30.0,0.0,solarflux=1.0)
+    sources[wavelength] = shdom.source.solar(70.0,0.0,solarflux=1.0)
     numerical_parameters[wavelength] = config
 
 #resample the cloud onto the rte_grid
@@ -100,7 +100,16 @@ for key,name in names.items():
                                     name=name
                                    )
 #solve RTE and calculate measurements.
-shdom.script_util.get_measurements(solvers, Sensordict, maxiter=100, n_jobs=8, verbose=True)
+shdom.script_util.get_measurements(solvers, Sensordict, maxiter=2, n_jobs=8, verbose=True)
+
+import pylab as py
+py.figure()
+py.imshow(Sensordict['MISR']['sensor_list'][0].I.data.reshape(Sensordict['MISR']['sensor_list'][0].image_shape.data,order='F'))
+py.colorbar()
+py.figure()
+py.imshow(Sensordict['MISR']['sensor_list'][-1].I.data.reshape(Sensordict['MISR']['sensor_list'][-1].image_shape.data,order='F'))
+py.colorbar()
+py.show()
 
 #save all inputs (should be fully traceable).
 shdom.util.save_forward_model(file_name, Sensordict, solvers)
