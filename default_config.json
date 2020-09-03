@@ -42,7 +42,7 @@
     "description": "(SOLACC) solution accuracy - tolerance for solution criterion."
   },
   "max_total_mb": {
-    "default_value": 10000.0,
+    "default_value": 4000.0,
     "description": "approximate maximum memory to use (MB for 4 byte reals)"
   },
   "adapt_grid_factor": {

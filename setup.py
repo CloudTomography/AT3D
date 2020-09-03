@@ -108,7 +108,9 @@ F2PY_CORE_API = [
     'precompute_phase_check',
     'precompute_phase_check_grad',
     'optical_depth',
-    'prep_surface'
+    'prep_surface',
+    'read_properties',
+    'gradient_l2_old'
 ]
 
 def _run_command(cmd):

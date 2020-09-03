@@ -6,18 +6,18 @@ import numpy as np
 import xarray as xr
 from shdom import checks
 
-@checks.dataset_checks(microphysics=(checks.check_positivity, 'density'),
-                poly_table=checks.check_legendre_poly_table)
+@checks.dataset_checks(microphysics=(checks.check_positivity, 'density'))
 def table_to_grid(microphysics, poly_table):
     """
     TODO
     Interpolates the poly table onto the microphysics grid.
     """
+    #CHECK FOR CORRECTLY NORMALIZED POLY_TABLE
     #check for missing microphysical coordinates.
     interp_names = set([name for name in poly_table.coords if name not in ('table_index', 'stokes_index')])
-    microphysics_names = set([name for name in microphysics.data_vars if name not in 'density'])
+    microphysics_names = set([name for name in microphysics.variables.keys() if name not in 'density'])
     missing = interp_names - microphysics_names
-    if interp_names != microphysics_names:
+    if len(list(missing)) > 0:
         raise KeyError("microphysics dataset is missing variables for interpolation of table onto grid.", *list(missing))
 
     interp_coords = {name:microphysics[name] for name in poly_table.coords if name not in ('table_index', 'stokes_index')}
@@ -30,7 +30,7 @@ def table_to_grid(microphysics, poly_table):
     table_index = poly_table.coords['table_index'].interp(coords=interp_coords, method='nearest').round().astype(int)
     unique_table_indices, inverse = np.unique(table_index.data, return_inverse=True)
     subset_table_index = xr.DataArray(name=table_index.name,
-                                        data = inverse.reshape(table_index.shape),
+                                        data = inverse.reshape(table_index.shape) + 1,
                                         dims=table_index.dims,
                                         coords=table_index.coords,
                                         )

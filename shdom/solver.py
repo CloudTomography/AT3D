@@ -103,8 +103,9 @@ class RTE(object):
         self._setup_surface(surface)
         self.surface = surface
 
-        # Temperature is used for thermal radiation. Not supported yet.
+        # Temperature is used for thermal radiation
         self._setup_atmosphere(atmosphere)
+        self.atmosphere = atmosphere
 
     def _setup_atmosphere(self, atmosphere):
         """TODO
@@ -405,7 +406,7 @@ class RTE(object):
         self._maxnbc = int(self._maxig * 3 / self._nz)
 
 
-    def _init_solution(self):
+    def _init_solution(self, make_big_arrays=True):
         """
         TODO: improve this
         Initilize the solution (I, J fields) from the direct transmission and a simple layered model.
@@ -421,9 +422,11 @@ class RTE(object):
             self._pa.albedop[:, i] = scatterer.ssalb.data.ravel()
             self._pa.iphasep[:, i] = scatterer.table_index.data.ravel() + self._pa.iphasep.max()
 
-        #TODO 0 indices may appear in the clear sky for the first optical scatterer.
-        #set them to 1. This should be revisited after all checks are developed for the
-        #workflow that creates table_index.
+        #In regions which are not covered by any optical scatterer they have an iphasep of 0.
+        #In original SHDOM these would be pointed to the rayleigh phase function (which is always included
+        #in the legendre table even if there is no rayleigh extinction.)
+        #Here, instead we set them to whatever the first phase function is.
+        #An arbitrary valid choice can be made as the contribution from these grid points is zero.
         self._pa.iphasep[np.where(self._pa.iphasep == 0)] = 1
 
         # Concatenate all scatterer tables into one table
@@ -431,7 +434,6 @@ class RTE(object):
         padded_legcoefs = [scatterer.legcoef.pad({'legendre_index': (0, max_legendre - scatterer.legcoef.sizes['legendre_index'])},
                                                     constant_values=0.0) for scatterer in self.medium]
         legendre_table = xr.concat(padded_legcoefs, dim='table_index')
-
 
         self._pa.numphase = legendre_table.sizes['table_index']
 
@@ -449,8 +451,6 @@ class RTE(object):
             legendre_table = legendre_table.pad({'legendre_index': (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])},
                                constant_values=0.0)
 
-        #TODO CHECK THAT THIS RAVELLING CAUSES CORRECT LEGENP for unpacking into ._legen
-        #during transfer_pa_to_grid.
         # Check if scalar or vector RTE
         if self._nstokes == 1:
             self._pa.legenp = legendre_table.isel(stokes_index=0).data.ravel(order='F').astype(np.float32)
@@ -467,6 +467,11 @@ class RTE(object):
 
         self._npart = len(self.medium)
         self._nstphase = min(self._nstleg, 2)
+
+        if make_big_arrays:
+            self._make_big_arrays()
+
+    def _make_big_arrays(self):
 
         # Transfer property arrays into internal grid structures
         self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
@@ -506,8 +511,6 @@ class RTE(object):
         self._oldnpts = 0
         self._solcrit = 1.0
         self._iters = 0
-
-
 
         #Release big arrays if they exist before a call to core.init_solution
         #to prevent doubling the memory image when it is not necessary.
@@ -671,7 +674,7 @@ class RTE(object):
                 gasabs=self._pa.gasabs
             )
 
-    def solve(self, maxiter, init_solution=True, verbose=True):
+    def solve(self, maxiter, init_solution=True, setup_grid=True,verbose=True):
         """
         Main solver routine. This routine is comprised of two parts:
           1. Initialization, optional
@@ -681,6 +684,8 @@ class RTE(object):
         ----------
         maxiter: integer
             Maximum number of iterations for the iterative solution.
+        setup_grid: boolean
+            If True then a new grid is initialized. If False then the grid (including adaptive grid points)
         init_solution: boolean, default=True
             If False the solution is initialized according to the existing radiance and source function saved within the RteSolver object (previously computed)
             If True or no prior solution (I,J fields) exists then an initialization is performed (part 1.).
@@ -688,8 +693,9 @@ class RTE(object):
             True will output solution iteration information into stdout.
         """
         # Part 1: Initialize solution (from a layered model)
-        if init_solution:
+        if setup_grid:
             self._setup_grid(self._grid)
+        if init_solution:
             self._init_solution()
 
         # Part 2: Solution itertaions
@@ -966,6 +972,45 @@ class RTE(object):
 
         return sensor
 
+    def optical_path(self, sensor):
+
+        camx = sensor['ray_x'].data
+        camy = sensor['ray_y'].data
+        camz = sensor['ray_z'].data
+        cammu = sensor['ray_mu'].data
+        camphi = sensor['ray_phi'].data
+        #TODO
+        #Some checks on the dimensions: this kind of thing.
+        assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
+        total_pix = sensor.sizes['nrays']
+
+        #optical_depth = np.full(self._npts, 999)
+        tau = core.optical_depth(
+                nx=self._rte_solver._nx,
+                ny=self._rte_solver._ny,
+                nz=self._rte_solver._nz,
+                npts=self._rte_solver._npts,
+                ncells=self._rte_solver._ncells,
+                gridptr=self._rte_solver._gridptr,
+                neighptr=self._rte_solver._neighptr,
+                treeptr=self._rte_solver._treeptr,
+                cellflags=self._rte_solver._cellflags,
+                bcflag=self._rte_solver._bcflag,
+                ipflag=self._rte_solver._ipflag,
+                xgrid=self._rte_solver._xgrid,
+                ygrid=self._rte_solver._ygrid,
+                zgrid=self._rte_solver._zgrid,
+                gridpos=self._rte_solver._gridpos,
+                camx=camx,
+                camy=camy,
+                camz=camz,
+                cammu=cammu,
+                camphi=camphi,
+                npix=total_pix,
+                total_ext=self._rte_solver._total_ext[:self._rte_solver._npts]
+            )
+        sensor['optical_path'] = (['nrays'], tau)
+        return sensor
     @property
     def num_iterations(self):
         return self._iters
