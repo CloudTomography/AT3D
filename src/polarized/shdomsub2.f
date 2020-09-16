@@ -1497,28 +1497,40 @@ C     If IFLAG=0 then the output array is set to the input times the weight.
 
       SUBROUTINE COMPUTE_NETFLUXDIV (NSTOKES, NPTS, RSHPTR, SRCTYPE,
      .             SOLARMU, EXTINCT, ALBEDO, PLANCK, DIRFLUX,
-     .             RADIANCE,  NETFLUXDIV)
+     .             RADIANCE,  NETFLUXDIV, NPART)
 C       Computes the net flux divergence at every grid point.
       IMPLICIT NONE
-      INTEGER NSTOKES, NPTS, RSHPTR(NPTS+1)
-      REAL    PLANCK(NPTS), DIRFLUX(NPTS), SOLARMU
-      REAL    EXTINCT(NPTS), ALBEDO(NPTS)
-      REAL    RADIANCE(NSTOKES,*), NETFLUXDIV(NPTS)
+      INTEGER NSTOKES, NPTS, RSHPTR(NPTS+1), NPART
+Cf2py intent(in) :: NSTOKES, NPTS, RHSPTR, NPART
+      REAL    PLANCK(NPTS, NPART), DIRFLUX(NPTS), SOLARMU
+Cf2py intent(in) :: PLANCK, DIRFLUX, SOLARMU
+      REAL    EXTINCT(NPTS, NPART), ALBEDO(NPTS,NPART)
+Cf2py intent(in) :: EXTINCT, ALBEDO
+      REAL    RADIANCE(NSTOKES,*)
+Cf2py intent(in) :: RADIANCE
+      REAL NETFLUXDIV(NPTS)
+Cf2py intent(out) :: NETFLUXDIV
       CHARACTER SRCTYPE*1
+Cf2py intent(in) :: SRCTYPE
       INTEGER I, IR
       REAL    PI, C, SECMU, HR
+      REAL  ABSORB(NPTS), EMIT(NPTS)
 
       PI = ACOS(-1.0)
       C = SQRT(4.0*PI)
       SECMU = 1.0/ABS(SOLARMU)
+
+      ABSORB = sum(EXTINCT(:,:)*(1-ALBEDO(:,:)),dim=2)
+      EMIT = sum(EXTINCT(:,:)*PLANCK(:,:),dim=2)
+
       DO I = 1, NPTS
         IR = RSHPTR(I)
-        HR = C*EXTINCT(I)*(1-ALBEDO(I))*RADIANCE(1,IR+1)
+        HR = C*ABSORB(I)*RADIANCE(1,IR+1)
         IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
-          HR = HR + EXTINCT(I)*(1.0-ALBEDO(I))*DIRFLUX(I)*SECMU
+          HR = HR + ABSORB(I)*DIRFLUX(I)*SECMU
         ENDIF
         IF (SRCTYPE .EQ. 'T' .OR. SRCTYPE .EQ. 'B') THEN
-          HR = HR - 4*PI*EXTINCT(I)*PLANCK(I)
+          HR = HR - 4*PI*EMIT(I)
         ENDIF
         NETFLUXDIV(I) = -HR
       ENDDO

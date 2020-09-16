@@ -110,6 +110,7 @@ F2PY_CORE_API = [
     'optical_depth',
     'prep_surface',
     'read_properties',
+    'compute_netfluxdiv',
     'gradient_l2_old'
 ]
 

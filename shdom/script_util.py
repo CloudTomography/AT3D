@@ -26,7 +26,8 @@ def get_unique_wavelengths(sensor_dict):
 
     return np.unique(wavelength_list)
 
-def parallel_solve(solvers, n_jobs=1, mpi_comm=None, maxiter=100, verbose=True, init_solution=True):
+def parallel_solve(solvers, n_jobs=1, mpi_comm=None, maxiter=100, verbose=True, init_solution=True,
+                    setup_grid=True):
     """
     TODO
     """
@@ -36,16 +37,17 @@ def parallel_solve(solvers, n_jobs=1, mpi_comm=None, maxiter=100, verbose=True, 
     else:
         if n_jobs==1:
             for solver in solvers.values():
-                solver.solve(maxiter=maxiter, init_solution=init_solution, verbose=verbose)
+                solver.solve(maxiter=maxiter, init_solution=init_solution, verbose=verbose,setup_grid=setup_grid)
         else:
             Parallel(n_jobs=n_jobs, backend="threading")(
-                delayed(solver.solve, check_pickle=False)(maxiter, init_solution, verbose) for solver in solvers.values())
+                delayed(solver.solve, check_pickle=False)(maxiter, init_solution, verbose,setup_grid=setup_grid) for solver in solvers.values())
 
-def render_one_solver(solver,merged_sensor, sensor_mapping, sensors, maxiter=100, verbose=True, n_jobs=1, init_solution=True):
+def render_one_solver(solver,merged_sensor, sensor_mapping, sensors, maxiter=100, verbose=True, n_jobs=1, init_solution=True,
+                        setup_grid=True):
     """
     TODO
     """
-    solver.solve(maxiter=maxiter,init_solution=True,verbose=verbose)
+    solver.solve(maxiter=maxiter,init_solution=True,verbose=verbose,setup_grid=setup_grid)
     split = np.array_split(np.arange(merged_sensor.sizes['nrays']),n_jobs)
     start_end = [(a.min(),a.max()) for a in split]
     out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(solver.integrate_to_sensor, check_pickle=False)(merged_sensor.sel(nrays=slice(start,end+1))) for start,end in start_end)
@@ -99,7 +101,8 @@ def combine_to_medium(scatterers):
     return mediums
 
 
-def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False, maxiter=100,verbose=True, init_solution=True):
+def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False, maxiter=100,verbose=True, init_solution=True,
+                    setup_grid=True):
     """
     In-place modification of sensors and solvers.
     """
@@ -129,4 +132,4 @@ def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False
 
             Parallel(n_jobs=len(list(solvers.keys())), backend="threading")(
                 delayed(render_one_solver, check_pickle=False)(solvers[key],rte_sensors[key], sensor_mapping[key],
-                sensors,maxiter, verbose, render_jobs[key]) for key in solvers.keys())
+                sensors,maxiter, verbose=verbose, n_jobs=render_jobs[key], setup_grid=setup_grid, init_solution=init_solution) for key in solvers.keys())

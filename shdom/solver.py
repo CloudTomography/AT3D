@@ -468,11 +468,6 @@ class RTE(object):
         self._npart = len(self.medium)
         self._nstphase = min(self._nstleg, 2)
 
-        if make_big_arrays:
-            self._make_big_arrays()
-
-    def _make_big_arrays(self):
-
         # Transfer property arrays into internal grid structures
         self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
         self._total_ext, self._extmin, self._scatmin, self._albmax = core.transfer_pa_to_grid(
@@ -506,6 +501,12 @@ class RTE(object):
             npz=self._pa.npz,
             srctype=self._srctype,
             npts=self._npts)
+
+
+        if make_big_arrays:
+            self._make_big_arrays()
+
+    def _make_big_arrays(self):
 
         # Restart solution criteria
         self._oldnpts = 0
@@ -850,13 +851,12 @@ class RTE(object):
                 ylmsun=self._ylmsun,
                 runname=self._name
             )
-
     def integrate_to_sensor(self, sensor):
         """
         TODO
         Integrates the source function along rays with geometry specified in sensor.
         """
-
+        shdom.checks.check_solved(self)
         camx = sensor['ray_x'].data
         camy = sensor['ray_y'].data
         camz = sensor['ray_z'].data
@@ -866,7 +866,7 @@ class RTE(object):
         #Some checks on the dimensions: this kind of thing.
         assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
         total_pix = sensor.sizes['nrays']
-
+        self.check_solved()
         self._precompute_phase()
 
         #TODO Raise warning if observables are not included.
@@ -972,7 +972,7 @@ class RTE(object):
 
         return sensor
 
-    def optical_path(self, sensor):
+    def optical_path(self, sensor, deltam_scaled_path=False):
 
         camx = sensor['ray_x'].data
         camy = sensor['ray_y'].data
@@ -984,33 +984,124 @@ class RTE(object):
         assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
         total_pix = sensor.sizes['nrays']
 
+        if not hasattr(self, '_extinct'):
+            self._init_solution(make_big_arrays=False)
+
         #optical_depth = np.full(self._npts, 999)
-        tau = core.optical_depth(
-                nx=self._rte_solver._nx,
-                ny=self._rte_solver._ny,
-                nz=self._rte_solver._nz,
-                npts=self._rte_solver._npts,
-                ncells=self._rte_solver._ncells,
-                gridptr=self._rte_solver._gridptr,
-                neighptr=self._rte_solver._neighptr,
-                treeptr=self._rte_solver._treeptr,
-                cellflags=self._rte_solver._cellflags,
-                bcflag=self._rte_solver._bcflag,
-                ipflag=self._rte_solver._ipflag,
-                xgrid=self._rte_solver._xgrid,
-                ygrid=self._rte_solver._ygrid,
-                zgrid=self._rte_solver._zgrid,
-                gridpos=self._rte_solver._gridpos,
+        optical_path = core.optical_depth(
+                nx=self._nx,
+                ny=self._ny,
+                nz=self._nz,
+                npts=self._npts,
+                ncells=self._ncells,
+                gridptr=self._gridptr,
+                neighptr=self._neighptr,
+                treeptr=self._treeptr,
+                cellflags=self._cellflags,
+                bcflag=self._bcflag,
+                ipflag=self._ipflag,
+                xgrid=self._xgrid,
+                ygrid=self._ygrid,
+                zgrid=self._zgrid,
+                gridpos=self._gridpos,
                 camx=camx,
                 camy=camy,
                 camz=camz,
                 cammu=cammu,
                 camphi=camphi,
                 npix=total_pix,
-                total_ext=self._rte_solver._total_ext[:self._rte_solver._npts]
+                extinct=self._extinct[:self._npts],
+                albedo=self._albedo[:self._npts],
+                iphase=self._iphase[:self._npts],
+                legen=self._legen,
+                npart=self._npart,
+                nstleg=self._nstleg,
+                deltam=self._deltam,
+                deltampath=deltam_scaled_path,
+                nleg=self._nleg
             )
-        sensor['optical_path'] = (['nrays'], tau)
+        if deltam_scaled_path:
+            sensor['optical_path_deltam'] = (['nrays'], optical_path)
+        else:
+            sensor['optical_path'] = (['nrays'], optical_path)
         return sensor
+
+    def check_solved(self):
+        """
+        TODO
+        """
+        if not hasattr(self, '_solcrit') & hasattr(self, 'solacc'):
+            raise ValueError('Please run RTE.solve() first.')
+        else:
+            if self._solcrit >= self._solacc:
+                raise ValueError('Please run RTE.solve() first.')
+            else:
+                pass
+
+    @property
+    def fluxes(self):
+        """
+        TODO
+        """
+        self.check_solved()
+        fluxes = xr.Dataset(
+                        data_vars = {
+                            'flux_down': (['x','y','z'], self._fluxes[0,:self._nbpts].reshape(
+                                                        self._nx, self._ny, self._nz)),
+                            'flux_up': (['x','y','z'], self._fluxes[1,:self._nbpts].reshape(
+                                                        self._nx, self._ny, rself._nz)),
+                            'flux_direct': (['x','y','z'], self._dirflux[:self._nbpts].reshape(
+                                                    self._nx, self._ny, self._nz)),
+                            },
+                coords = {'x': self._grid.x,
+                          'y': self._grid.y,
+                          'z': self._grid.z,
+                         },
+                attrs={
+                    'long_names': {'flux_down': 'Downwelling Hemispherical Flux',
+                                   'flux_up': 'Upwelling Hemispherical Flux',
+                                  'flux_direct': 'Downwelling Direct Solar Beam Flux (On Horizontal Surface)'},
+                    'units': 'Same units as input flux.'
+                }
+            )
+        return fluxes
+
+    @property
+    def net_flux_div(self):
+        """
+        TODO
+        """
+        self.check_solved()
+        if not hasattr(self, '_netfluxdiv'):
+            netfluxdiv = shdom.core.compute_netfluxdiv(nstokes=self._nstokes,
+                                           npts=self._npts,
+                                           rshptr=self._rshptr[:self._npts+1],
+                                          srctype=self._srctype,
+                                           solarmu=self._solarmu,
+                                           extinct=self._extinct[:self._npts],
+                                          albedo=self._albedo[:self._npts],
+                                           planck=self._planck[:self._npts],
+                                           dirflux=self._dirflux[:self._npts],
+                                          radiance=self._radiance,
+                                          npart=self._npart)
+            self._netfluxdiv = netfluxdiv
+
+        netfluxdiv_datset = xr.Dataset(
+                        data_vars = {
+                            'net_flux_div':(['x','y','z'],self._netfluxdiv[:self._nbpts].reshape(
+                                        self._nx, self._ny, self._nz))
+                            },
+                coords = {'x': self._grid.x,
+                          'y': self._grid.y,
+                          'z': self._grid.z,
+                         },
+                attrs={
+                    'long_names': {'net_flux_div': 'Net Flux Divergence'},
+                    'units': ''
+                }
+            )
+        return netfluxdiv_dataset
+
     @property
     def num_iterations(self):
         return self._iters

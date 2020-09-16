@@ -86,8 +86,8 @@ class SpaceCarver(object):
 
         self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
         self._treeptr, self._cellflags = shdom.core.init_cell_structure(
-            maxig=self._nbpts*1.5,
-            maxic=1.5*1.5*self._nbpts,
+            maxig=self._nbpts,
+            maxic=1.1*self._nbpts,
             bcflag=self._bcflag,
             ipflag=self._ipflag,
             nx=self._nx,
@@ -150,13 +150,16 @@ class SpaceCarver(object):
                 npix=total_pix,
             )
             volume += carved_volume.reshape(self._nx, self._ny, self._nz)
-            
+
         volume = volume * 1.0 / len(sensor_masks)
 
         space_carved = xr.Dataset(
                         data_vars = {
                             'volume': (['x','y','z'], volume)
-                        }
+                        },
+                        coords={'x':self._grid.x,
+                                'y':self._grid.y,
+                                'z':self._grid.z}
                         )
         space_carved = space_carved.assign_coords(self._grid)
 
