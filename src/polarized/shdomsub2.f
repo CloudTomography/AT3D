@@ -1550,9 +1550,15 @@ C     components.  If NSHOUT=5 then the HIGHORDERRAD flag is set and the
 C     rms of the higher order terms in the radiance series is computed.
       IMPLICIT NONE
       INTEGER NSTOKES, NPTS, RSHPTR(NPTS+1), ML, MM, NSHOUT
+Cf2py intent(in) :: NSTOKES, NPTS, RHSPTR, ML,MM, NSHOUT
       REAL    SOLARMU, SOLARAZ, DIRFLUX(NPTS)
-      REAL    RADIANCE(NSTOKES,*), SHTERMS(NSHOUT,NPTS)
+Cf2py intent(in) :: SOLARMU, SOLARAZ, DIRFLUX
+      REAL    RADIANCE(NSTOKES,*)
+Cf2py intent(in) :: RADIANCE
+      REAL    SHTERMS(NSHOUT,NPTS)
+Cf2py intent(out) SHTERMS
       CHARACTER SRCTYPE*1
+Cf2py intent(in) :: SRCTYPE
       INTEGER I, IR, J, NLM
       REAL    PI, A, C, C0, IMEAN, FX, FY, FZ, HORMS
       REAL    SECSOL, SINSOL, SOLX, SOLY, SOLM, F0

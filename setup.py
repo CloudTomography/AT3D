@@ -111,6 +111,7 @@ F2PY_CORE_API = [
     'prep_surface',
     'read_properties',
     'compute_netfluxdiv',
+    'compute_sh',
     'gradient_l2_old'
 ]
 

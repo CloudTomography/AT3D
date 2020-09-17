@@ -1039,9 +1039,64 @@ class RTE(object):
                 pass
 
     @property
+    def sh_out(self):
+        """
+        TODO
+        SH_OUT from SHDOM in a dataset but only on the tidy base grid.
+        """
+
+        self.check_solved()
+        if not hasattr(self, '_shterms'):
+
+            if self._highorderrad:
+                nshout = 5
+            else:
+                nshout = 4
+
+            shterms = shdom.core.compute_sh(nshout=5,nstokes=self._nstokes,
+                               npts=self._npts,
+                               srctype=self._srctype,
+                               solarmu = self._solarmu,
+                               solaraz=self._solaraz,
+                               dirflux=self._dirflux[:self._npts],
+                               rshptr=self._rshptr[:self._npts+1],
+                               ml=self._ml,
+                               mm=self._mm,
+                               radiance=self._radiance,
+                                )
+            self._shterms = shterms
+
+        sh_out_dataset = xr.Dataset(
+                            data_vars = {
+                            'mean_intensity': (['x','y','z'], self._shterms[0,:self._nbpts].reshape(
+                                            self._nx, self._ny, self._nz)),
+                            'Fx': (['x','y','z'], self._shterms[1,:self._nbpts].reshape(
+                                            self._nx, self._ny, self._nz)),
+                            'Fy': (['x','y','z'], self._shterms[2,:self._nbpts].reshape(
+                                            self._nx, self._ny, self._nz)),
+                            'Fz': (['x','y','z'], self._shterms[3,:self._nbpts].reshape(
+                                            self._nx, self._ny, self._nz)),
+                            }
+                coords = {'x': self._grid.x,
+                          'y': self._grid.y,
+                          'z': self._grid.z,
+                         },
+                attrs = {
+                'long_names':{'Fx': 'Net Flux in x direction',
+                              'Fy': 'Net Flux in y direction',
+                              'Fz': 'Net Flux in z direction'},
+                }
+        )
+        if self._highorderrad & (self._shterms.shape[0] == 5):
+            sh_out_dataset['rms_higher_rad'] = (['x','y','z'],
+                self._shterms[-1,:self._nbpts].reshape(self._nx, self._ny, self._nz)/(np.sqrt(np.pi*4.0*self._nlm)))
+        return sh_out_dataset
+
+    @property
     def fluxes(self):
         """
         TODO
+        hemispherical fluxes from SHDOM in a dataset but only on the tidy base grid.
         """
         self.check_solved()
         fluxes = xr.Dataset(
@@ -1070,6 +1125,7 @@ class RTE(object):
     def net_flux_div(self):
         """
         TODO
+        net flux divergence from SHDOM in a dataset but only on the tidy base grid.
         """
         self.check_solved()
         if not hasattr(self, '_netfluxdiv'):
