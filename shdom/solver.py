@@ -1018,7 +1018,8 @@ class RTE(object):
                 nstleg=self._nstleg,
                 deltam=self._deltam,
                 deltampath=deltam_scaled_path,
-                nleg=self._nleg
+                nleg=self._nleg,
+                ml=self._ml
             )
         if deltam_scaled_path:
             sensor['optical_path_deltam'] = (['nrays'], optical_path)
@@ -1026,17 +1027,91 @@ class RTE(object):
             sensor['optical_path'] = (['nrays'], optical_path)
         return sensor
 
+    def min_optical_path(self, sensor, deltam_scaled_path=False):
+
+        camx = sensor['ray_x'].data
+        camy = sensor['ray_y'].data
+        camz = sensor['ray_z'].data
+        cammu = sensor['ray_mu'].data
+        camphi = sensor['ray_phi'].data
+        #TODO
+        #Some checks on the dimensions: this kind of thing.
+        assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
+        total_pix = sensor.sizes['nrays']
+
+        if not hasattr(self, '_extinct'):
+            self._init_solution(make_big_arrays=False)
+
+        if hasattr(self, '_solcrit'):
+            raise ValueError('This function currently requires to be run before RTE.solve()')
+
+        optical_path = core.min_optical_depth(
+                nx=self._nx,
+                ny=self._ny,
+                nz=self._nz,
+                npts=self._npts,
+                ncells=self._ncells,
+                gridptr=self._gridptr,
+                neighptr=self._neighptr,
+                treeptr=self._treeptr,
+                cellflags=self._cellflags,
+                bcflag=self._bcflag,
+                ipflag=self._ipflag,
+                xgrid=self._xgrid,
+                ygrid=self._ygrid,
+                zgrid=self._zgrid,
+                gridpos=self._gridpos,
+                camx=camx,
+                camy=camy,
+                camz=camz,
+                cammu=cammu,
+                camphi=camphi,
+                npix=total_pix,
+                extinct=self._extinct[:self._npts],
+                albedo=self._albedo[:self._npts],
+                iphase=self._iphase[:self._npts],
+                legen=self._legen,
+                npart=self._npart,
+                nstleg=self._nstleg,
+                deltam=self._deltam,
+                deltampath=deltam_scaled_path,
+                nleg=self._nleg,
+                ml=self._ml
+            )
+        name = 'min_optical_path'
+        if deltam_scaled_path:
+            name = name = '_deltam'
+        optical_path_dataset = xr.Dataset(
+                    data_vars = {
+                    name:(['x','y','z'],
+                        optical_path[:self._nbpts].reshape(
+                        self._nx,self._ny,self._nz)
+                        ),
+                    },
+                    coords = {'x': self._grid.x,
+                            'y': self._grid.y,
+                            'z': self._grid.z,
+                            },
+        )
+
+
+        return sensor
+
+
+
     def check_solved(self):
         """
         TODO
         """
         if not hasattr(self, '_solcrit') & hasattr(self, 'solacc'):
             raise ValueError('Please run RTE.solve() first.')
+            return False
         else:
             if self._solcrit >= self._solacc:
                 raise ValueError('Please run RTE.solve() first.')
+                return False
             else:
-                pass
+                return True
 
     @property
     def sh_out(self):
@@ -1053,7 +1128,7 @@ class RTE(object):
             else:
                 nshout = 4
 
-            shterms = shdom.core.compute_sh(nshout=5,nstokes=self._nstokes,
+            shterms = shdom.core.compute_sh(nshout=nshout,nstokes=self._nstokes,
                                npts=self._npts,
                                srctype=self._srctype,
                                solarmu = self._solarmu,
@@ -1076,7 +1151,7 @@ class RTE(object):
                                             self._nx, self._ny, self._nz)),
                             'Fz': (['x','y','z'], self._shterms[3,:self._nbpts].reshape(
                                             self._nx, self._ny, self._nz)),
-                            }
+                            },
                 coords = {'x': self._grid.x,
                           'y': self._grid.y,
                           'z': self._grid.z,

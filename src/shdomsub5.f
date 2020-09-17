@@ -1,10 +1,12 @@
 C Joint routines for both Polarized and Unpolarized sources
 
       SUBROUTINE MIN_OPTICAL_DEPTH(NX, NY, NZ, NPTS, NCELLS,
-     .             XGRID, YGRID, ZGRID, GRIDPOS, TOTAL_EXT,
+     .             XGRID, YGRID, ZGRID, GRIDPOS, EXTINCT,
      .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .             BCFLAG, IPFLAG, CAMX, CAMY, CAMZ,
-     .             CAMMU, CAMPHI, NPIX, PATH)
+     .             CAMMU, CAMPHI, NPIX, PATH, IPHASE,
+     .             ALBEDO, LEGEN, DELTAMPATH, DELTAM,
+     .             NPART, NSTLEG, NLEG,ML)
 
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NPTS, NCELLS
@@ -19,13 +21,18 @@ Cf2py intent(in) :: BCFLAG, IPFLAG
 Cf2py intent(in) :: CELLFLAGS
       REAL    CAMX(*), CAMY(*), CAMZ(*), CAMMU(*), CAMPHI(*)
 Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
-      INTEGER  NPIX
-Cf2py intent(in) :: NPIX
+      INTEGER  NPIX, NLEG, NPART, NSTLEG
+Cf2py intent(in) :: NPIX,NLEG,NPART,NSTLEG
       REAL  PATH(NPTS)
 Cf2py intent(out):: PATH
-      REAL    TOTAL_EXT(*)
-Cf2py intent(in) :: TOTAL_EXT
-
+      REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
+Cf2py intent(in) :: EXTINCT, ALBEDO
+      REAL  LEGEN(NSTLEG,0:NLEG,*)
+Cf2py intent(in) :: LEGEN
+      INTEGER IPHASE(NPTS,NPART), ML
+Cf2py intent(in) :: IPHASE, ML
+      LOGICAL DELTAMPATH, DELTAM
+Cf2py intent(in) :: DELTAMPATH, DELTAM
       INTEGER N, K
       REAL    MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION X0, Y0, Z0, R, PI
@@ -57,11 +64,13 @@ C             Extrapolate ray to domain top if above
           STOP
         ENDIF
 
-        CALL MIN_OPTICAL_DEPTH_1RAY(NX, NY, NZ, NPTS, NCELLS, TOTAL_EXT,
+        CALL MIN_OPTICAL_DEPTH_1RAY(NX, NY, NZ, NPTS, NCELLS, EXTINCT,
      .                          GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                          BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,
      .                          GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
-     .			                X0, Y0, Z0, PATH)
+     .			                X0, Y0, Z0, PATH, IPHASE,
+     .                      ALBEDO, LEGEN, DELTAMPATH, DELTAM,
+     .                      NPART, NSTLEG, NLEG,ML)
 900     CONTINUE
 
       ENDDO
@@ -70,11 +79,13 @@ C             Extrapolate ray to domain top if above
       END
 
       SUBROUTINE MIN_OPTICAL_DEPTH_1RAY(NX, NY, NZ, NPTS,
-     .                      NCELLS, TOTAL_EXT,
+     .                      NCELLS, EXTINCT,
      .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                       BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,
      .                       GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
-     .			             X0, Y0, Z0, PATH)
+     .			             X0, Y0, Z0, PATH, IPHASE,
+     .                      ALBEDO, LEGEN, DELTAMPATH, DELTAM,
+     .                      NPART, NSTLEG, NLEG,ML)
 
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward in the direction (MURAY,PHIRAY) to find the
@@ -94,10 +105,20 @@ C     outgoing radiance (RAD) at the point X0,Y0,Z0.
       INTEGER JFACE, KFACE, IC, MAXCELLSCROSS, NGRID
       INTEGER OPPFACE(6), OLDIPTS(8), BCFLAG, IPFLAG
       INTEGER DONEFACE(8,7), ONEX(8), ONEY(8)
-      REAL    XM, YM, TOTAL_EXT(*)
+      REAL    XM, YM
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
       DOUBLE PRECISION XE, YE, ZE, XN, YN, ZN, XI, YI, ZI
       DOUBLE PRECISION SO, SOX, SOY, SOZ, EPS, F(8)
+
+      INTEGER NLEG,NPART, NSTLEG
+      REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
+      REAL  LEGEN(NSTLEG,0:NLEG,*)
+      INTEGER IPHASE(NPTS,NPART), ML
+      LOGICAL DELTAMPATH, DELTAM
+
+      REAL FM, UNSCALED_ALBEDO
+      INTEGER J, IPART
+
       DATA OPPFACE/2,1,4,3,6,5/
       DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
 
@@ -172,14 +193,33 @@ C           Make sure current cell is valid
 
 C         Interpolate the source and extinction to the current point
         CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XE, YE, ZE, F)
-        EXT1 = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
-     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
-     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
-     .         F(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
-     .         F(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
-     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
-     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
-     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
+        EXT1 = 0.0
+        DO IPART=1,NPART
+          DO J=1,8
+            IF (DELTAM .AND. .NOT. DELTAMPATH) THEN
+              FM = LEGEN(1,ML+1,IPHASE(GRIDPTR(J,ICELL),IPART))
+              UNSCALED_ALBEDO = ALBEDO(GRIDPTR(J,ICELL),IPART)/
+     .                  (FM*ALBEDO(GRIDPTR(J,ICELL),IPART)+ 1.0)
+              EXT1 = EXT1 + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)/
+     .                   (1.0 - UNSCALED_ALBEDO*FM)
+            ELSE IF (DELTAMPATH .AND. .NOT. DELTAM) THEN
+              FM = LEGEN(1,ML+1,IPHASE(GRIDPTR(J,ICELL),IPART))
+              EXT1 = EXT1 + F(J)*(1.0-ALBEDO(GRIDPTR(J,ICELL),IPART)
+     .                  *FM)*EXTINCT(GRIDPTR(J,ICELL),IPART)
+            ELSE
+              EXT1 = EXT1 + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)
+            ENDIF
+          ENDDO
+       ENDDO
+
+C        EXT1 = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
+C     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
+C     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
+C     .         F(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
+C     .         F(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
+C     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
+C     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
+C     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
 
 C           This cell is independent pixel if IP mode or open boundary
 C             conditions and ray is leaving domain (i.e. not entering)
@@ -219,14 +259,34 @@ C             (always need to deal with the cell that is wrapped)
 C           Find the optical path across the grid cell and figure how
 C             many subgrid intervals to use
         CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XN, YN, ZN, F)
-        EXTN = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
-     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
-     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
-     .         F(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
-     .         F(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
-     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
-     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
-     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
+
+        EXTN = 0.0
+        DO IPART=1,NPART
+          DO J=1,8
+            IF (DELTAM .AND. .NOT. DELTAMPATH)THEN
+              FM = LEGEN(1,ML+1,IPHASE(GRIDPTR(J,ICELL),IPART))
+              UNSCALED_ALBEDO = ALBEDO(GRIDPTR(J,ICELL),IPART)/
+     .                  (FM*ALBEDO(GRIDPTR(J,ICELL),IPART)+ 1.0)
+              EXTN = EXTN + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)/
+     .                   (1.0 - UNSCALED_ALBEDO*FM)
+            ELSE IF (DELTAMPATH .AND. .NOT. DELTAM) THEN
+              FM = LEGEN(1,ML+1,IPHASE(GRIDPTR(J,ICELL),IPART))
+              EXTN = EXTN + F(J)*(1.0-ALBEDO(GRIDPTR(J,ICELL),IPART)
+     .                  *FM)*EXTINCT(GRIDPTR(J,ICELL),IPART)
+            ELSE
+              EXTN = EXTN + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)
+            ENDIF
+          ENDDO
+       ENDDO
+
+C        EXTN = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
+C     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
+C     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
+C     .         F(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
+C     .         F(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
+C     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
+C     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
+C     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
         TAU = TAU + SO*0.5*(EXT1+EXTN)
         OUTOFDOMAIN = (BTEST(INT(CELLFLAGS(ICELL)),0).OR.
      .                 BTEST(INT(CELLFLAGS(ICELL)),1))
@@ -299,7 +359,7 @@ C             boundary then prepare for next cell
      .             BCFLAG, IPFLAG, CAMX, CAMY, CAMZ,
      .             CAMMU, CAMPHI, NPIX, PATH, IPHASE,
      .             ALBEDO, LEGEN, DELTAMPATH, DELTAM,
-     .             NPART, NSTLEG, NLEG)
+     .             NPART, NSTLEG, NLEG, ML)
 
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NPTS, NCELLS
@@ -318,8 +378,8 @@ Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
 Cf2py intent(in) :: NPIX, NLEG, NSTLEG, NPART
       REAL  PATH(NPIX)
 Cf2py intent(out):: PATH
-      INTEGER IPHASE(NPTS,NPART)
-Cf2py intent(in) :: IPHASE
+      INTEGER IPHASE(NPTS,NPART), ML
+Cf2py intent(in) :: IPHASE, ML
       REAL EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
 Cf2py intent(in) :: EXTINCT, ALBEDO
       REAL LEGEN(NSTLEG,0:NLEG,*)
@@ -364,7 +424,8 @@ C             Extrapolate ray to domain top if above
      .                          BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,
      .                          GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
      .			                X0, Y0, Z0, TAU, ALBEDO,LEGEN,IPHASE,
-     .                      NSTLEG, NLEG,NPART, DELTAMPATH,DELTAM)
+     .                      NSTLEG, NLEG,NPART, DELTAMPATH,DELTAM,
+     .                      ML)
         PATH(N) = TAU
 900     CONTINUE
 
@@ -378,7 +439,8 @@ C             Extrapolate ray to domain top if above
      .                       BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,
      .                       GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
      .			             X0, Y0, Z0, TAU, ALBEDO, LEGEN, IPHASE,
-     .                   NSTLEG, NLEG, NPART, DELTAMPATH, DELTAM)
+     .                   NSTLEG, NLEG, NPART, DELTAMPATH, DELTAM,
+     .                   ML)
 
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward in the direction (MURAY,PHIRAY) to find the
@@ -408,8 +470,8 @@ C      REAL    PATH(*)
       DOUBLE PRECISION XE, YE, ZE, XN, YN, ZN, XI, YI, ZI
       DOUBLE PRECISION SO, SOX, SOY, SOZ, EPS, F(8)
 
-      REAL FM, UNSCALED_ALBEDO, ML
-      INTEGER J, IPART
+      REAL FM, UNSCALED_ALBEDO
+      INTEGER J, IPART, ML
 
       DATA OPPFACE/2,1,4,3,6,5/
       DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
@@ -487,7 +549,7 @@ C           Make sure current cell is valid
 C         Interpolate the source and extinction to the current point
         CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XE, YE, ZE, F)
         EXT1 = 0.0
-C        PRINT *, 'COND', (DELTAM .AND. .NOT. DELTAMPATH)
+
         DO IPART=1,NPART
           DO J=1,8
             IF (DELTAM .AND. .NOT. DELTAMPATH) THEN
@@ -505,7 +567,7 @@ C        PRINT *, 'COND', (DELTAM .AND. .NOT. DELTAMPATH)
             ENDIF
           ENDDO
        ENDDO
-C       PRINT *, EXT1, EXTINCT(GRIDPTR(J,ICELL),1)
+
 C        EXT1 = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
 C     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
 C     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
