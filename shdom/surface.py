@@ -204,7 +204,7 @@ def _make_surface_dataset(surface_type, ground_temperature, delx, dely, **kwargs
     delxsfc, delysfc = delx, dely
     grid_coords_temp = np.meshgrid(np.arange(1,nxsfc+1), np.arange(1,nysfc+1), indexing='ij')
     grid_coords = np.stack([grid_coords_temp[0].ravel(), grid_coords_temp[1].ravel()], axis=0)
-    list_of_params = [ground_temperature] + [val for val in kwargs.values()]
+    list_of_params = [ground_temperature.ravel()] + [val.ravel() for val in kwargs.values()]
 
     parms_in = np.stack(list_of_params, axis=0)
     nsfcpar, sfcparms, gndtemp, gndalbedo = core.prep_surface(maxsfcpts=maxsfcpts,

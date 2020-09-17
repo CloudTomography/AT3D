@@ -856,7 +856,6 @@ class RTE(object):
         TODO
         Integrates the source function along rays with geometry specified in sensor.
         """
-        shdom.checks.check_solved(self)
         camx = sensor['ray_x'].data
         camy = sensor['ray_y'].data
         camz = sensor['ray_z'].data
@@ -1103,7 +1102,7 @@ class RTE(object):
         """
         TODO
         """
-        if not hasattr(self, '_solcrit') & hasattr(self, 'solacc'):
+        if (not hasattr(self, '_solcrit')):
             raise ValueError('Please run RTE.solve() first.')
             return False
         else:
