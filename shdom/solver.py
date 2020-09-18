@@ -1079,7 +1079,7 @@ class RTE(object):
             )
         name = 'min_optical_path'
         if deltam_scaled_path:
-            name = name = '_deltam'
+            name = name + '_deltam'
         optical_path_dataset = xr.Dataset(
                     data_vars = {
                     name:(['x','y','z'],
@@ -1094,7 +1094,7 @@ class RTE(object):
         )
 
 
-        return sensor
+        return optical_path_dataset
 
 
 
