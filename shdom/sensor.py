@@ -71,6 +71,27 @@ def split_sensor_pixels(merged):
         count += split_index
     return list_of_unmerged
 
+def get_image(sensor):
+    """
+    TODO
+    Make a 2D sensor for visualization purposes.
+    """
+    if not hasattr(sensor, 'image_shape'):
+        raise ValueError("Sensor dataset does not have an 'image_shape' variable. A 2D image cannot be formed.")
+    img_data = xr.Dataset(
+        data_vars={
+            'x': (['imgdim0', 'imgdim1'],sensor.cam_x.data.reshape(sensor.image_shape.data,order='F')),
+            'y': (['imgdim0', 'imgdim1'],sensor.cam_y.data.reshape(sensor.image_shape.data,order='F')),
+            'mu': (['imgdim0', 'imgdim1'],sensor.cam_mu.data.reshape(sensor.image_shape.data,order='F')),
+            'phi': (['imgdim0', 'imgdim1'],sensor.cam_phi.data.reshape(sensor.image_shape.data,order='F'))
+        }
+    )
+    for stokes in sensor.stokes_index:
+        if sensor.stokes.sel({'stokes_index': stokes}):
+            img_data[str(stokes.data)] = (['imgdim0','imgdim1'],sensor[str(stokes.data)].data.reshape(
+                                        sensor.image_shape.data,order='F'))
+    return img_data
+
 def get_observables(sensor, rendered_rays):
     """
     TODO

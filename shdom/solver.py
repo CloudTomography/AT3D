@@ -189,7 +189,6 @@ class RTE(object):
         TODO
         """
         # Source parameters
-        # TODO: check that srctpye is supported
         self._srctype = source.srctype.data
         self._solarflux = source.solarflux.data
         self._solarmu = source.solarmu.data
@@ -202,8 +201,8 @@ class RTE(object):
         """
         TODO
         """
+
         # Surface parameters
-        # TODO: check that surface parameters are implementerd
         self._maxsfcpars = surface.maxsfcpars.data
         self._sfctype = str(surface.sfctype.data)
         self._gndalbedo = surface.gndalbedo.data
@@ -214,7 +213,12 @@ class RTE(object):
         self._delysfc = surface.delysfc.data
         self._nsfcpar = surface.nsfcpar.data
         self._sfcparms = surface.sfcparms.data
-        self._sfcgridparms = np.zeros((self._nsfcpar,self._maxnbc), dtype=np.float32,order='F')#surface.sfcgridparms.data
+        self._sfcgridparms = np.zeros((self._nsfcpar,self._maxnbc), dtype=np.float32,order='F')
+
+        if (self._nxsfc > 1) & (self._delxsfc * (self._nxsfc + 1) < self._grid.x[-1] - self._grid.x[0]):
+            warnings.warn('Specified surface does not span RTE grid in the x direction.')
+        if (self._nysfc > 1) & (self._delysfc * (self._nysfc + 1) < self._grid.y[-1] - self._grid.y[0]):
+            warnings.warn('Specified surface does not span RTE grid in the y direction.')
 
         if (self._sfctype[-1] in ('R', 'O')) and (self._nstokes > 1):
             raise ValueError("surface brdf '{}' is only supported for unpolarized radiative transfer (num_stokes=1)".format(surface.name.data))
