@@ -1,7 +1,8 @@
 import sys
 import xarray as xr
 import numpy as np
-from shdom import core, util
+from shdom import core, util, checks
+import warnings
 
 class RTE(object):
     """
@@ -29,11 +30,16 @@ class RTE(object):
     -----
     k-distribution not supported.
     """
-
-    def __init__(self, numerical_params, medium, source, surface, num_stokes=1, name=None):
+    @checks.dataset_checks(medium=[(checks.check_range,[('ssalb',0.0,1.0)]),(checks.check_positivity,'extinction'),
+                    (checks.check_hasdim, [('extinction', ['x', 'y', 'z']), ('ssalb', ['x', 'y', 'z']),
+                    ('table_index', ['x', 'y', 'z'])]),
+                    checks.check_legendre_rte, checks.check_grid])
+    def __init__(self, numerical_params, medium, source, surface, num_stokes=1, name=None,
+                atmosphere=None):
 
         # Check number of stokes and setup type of solver
-        assert num_stokes in [1, 3, 4], 'num_stokes should be {1, 3, 4}'
+        if num_stokes not in (1,3,4):
+            raise ValueError("num_stokes should be {1, 3, 4} not '{}'".format(num_stokes))
         self._type = 'Radiance' if num_stokes == 1 else 'Polarization'
         self._nstokes = num_stokes
         self._nstleg = 1 if num_stokes == 1 else 6
@@ -67,10 +73,6 @@ class RTE(object):
         self._setup_source(source)
         self.source = source
 
-        # Setup surface
-        self._setup_surface(surface)
-        self.surface = surface
-
         # k-distribution not supported yet
         self._kdist = False
         self._ng = 1
@@ -83,13 +85,104 @@ class RTE(object):
         self._iters = 0
 
         # TODO: check that all scatterers are on the same grid
+        failed_list = []
+        for i,gridded in enumerate(self.medium):
+            if np.all(gridded.coords['x'] != self.medium[0].coords['x']) | \
+                np.all(gridded.coords['y'] != self.medium[0].coords['y']) | \
+                np.all(gridded.coords['z'] != self.medium[0].coords['z']):
+                failed_list.append(i)
+        if len(failed_list) > 0:
+            raise ValueError("mediums do not have consistent grids with the first medium", *failed_list)
+
         self._grid = xr.Dataset({'x': self.medium[0].coords['x'],
                                  'y': self.medium[0].coords['y'],
                                  'z': self.medium[0].coords['z']})
         self._setup_grid(self._grid)
 
-        # Temperature is used for thermal radiation. Not supported yet.
-        self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32)
+        # Setup surface
+        self._setup_surface(surface)
+        self.surface = surface
+
+        # Temperature is used for thermal radiation
+        self._setup_atmosphere(atmosphere)
+        self.atmosphere = atmosphere
+
+    def _setup_atmosphere(self, atmosphere):
+        """TODO
+        As atmosphere is currently a keyword argument with a default value,
+        it cannot be treated via the @datset_checks.
+        So this function does all of the checking.
+        """
+        if atmosphere is None:
+            self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32)
+            if self._srctype in ('T', 'B'):
+                warnings.warn('temperature was not specifed despite using thermal source.',category=RuntimeWarning)
+        elif isinstance(atmosphere, xr.Dataset):
+            try:
+                checks.check_grid(atmosphere)
+            except ValueError as err:
+                raise ValueError("atmosphere grid error.", *err.args)
+
+            if np.all(atmosphere.x == self._grid.x) & np.all(atmosphere.y == self._grid.y) & \
+                np.all(atmosphere.z==self._grid.z):
+
+                if 'temperature' in atmosphere.data_vars:
+                    try:
+                        checks.check_positivity(atmosphere, 'temperature')
+                        self._pa.tempp = atmosphere.temperature.data.ravel().astype(np.float32)
+                    except ValueError:
+                        raise ValueError("'temperature' in atmosphere dataset is negative")
+
+                else:
+                    warnings.warn("'temperature' not found in atmosphere dataset.",category=RuntimeWarning)
+                    self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32)
+                    if self._srctype in ('T', 'B'):
+                        warnings.warn('temperature was not specifed in atmosphere file despite using thermal source.', category=RuntimeWarning)
+
+                if 'gas_absorption' in atmosphere.data_vars:
+                    try:
+                        checks.check_positivity(atmosphere, 'gas_absorption')
+                    except ValueError:
+                        raise ValueError("'gas_absorption' in atmosphere dataset is negative.")
+                    try:
+                        checks.check_hasdim(atmosphere, ('gas_absorption',['z']))
+                    except KeyError:
+                        raise KeyError(("'gas_absorption' in atmosphere dataset is missing expected dimension 'z'."))
+                    #check if gases collapse to 1D.
+                    test = True
+                    if ('x' in atmosphere.gas_absorption.dims) & ('y' in atmosphere.gas_absorption.dims):
+                        for x in atmosphere.x:
+                            for y in atmosphere.y:
+                                test_temp = np.allclose(atmosphere.gas_absorption.isel(x=0,y=0).data, atmosphere.gas_absorption.sel(x=x,y=y))
+                                if not test_temp:
+                                    test = False
+                        gas_1d = atmosphere.gas_absorption.isel(x=0,y=0).data
+                    elif ('x' in atmosphere.gas_absorption.dims):
+                        for x in atmosphere.x:
+                            test_temp = np.allclose(atmosphere.gas_absorption.isel(x=0).data, atmosphere.gas_absorption.sel(x=x))
+                            if not test_temp:
+                                test = False
+                        gas_1d = atmosphere.gas_absorption.isel(x=0).data
+                    elif ('y' in atmosphere.gas_absorption.dims):
+                        for y in atmosphere.y:
+                            test_temp = np.allclose(atmosphere.gas_absorption.isel(y=0).data, atmosphere.gas_absorption.sel(y=y))
+                            if not test_temp:
+                                test = False
+                        gas_1d = atmosphere.gas_absorption.isel(y=0).data
+                    elif atmosphere.gas_absorption.dims == tuple('z'):
+                        gas_1d = atmosphere.gas_absorption.data
+                    if test:
+                        self._pa.nzckd = atmosphere.sizes['z']
+                        self._pa.zckd = atmosphere.z.data
+                        self._pa.gasabs = gas_1d
+                    else:
+                        raise ValueError("'2D/3D gas absorption in atmosphere file is not currently supported'")
+                warnings.warn("No gas absorption found in atmosphere file. Variable name should be 'gas_absorption'.",
+                                category=RuntimeWarning)
+            else:
+                raise ValueError('atmosphere does not have a consistent grid with medium')
+        else:
+            raise ValueError("Atmosphere should be an xr.Dataset")
 
     def _setup_source(self, source):
         """
@@ -121,7 +214,16 @@ class RTE(object):
         self._delysfc = surface.delysfc.data
         self._nsfcpar = surface.nsfcpar.data
         self._sfcparms = surface.sfcparms.data
-        self._sfcgridparms = surface.sfcgridparms.data
+        self._sfcgridparms = np.zeros((self._nsfcpar,self._maxnbc), dtype=np.float32,order='F')#surface.sfcgridparms.data
+
+        if (self._sfctype[-1] in ('R', 'O')) and (self._nstokes > 1):
+            raise ValueError("surface brdf '{}' is only supported for unpolarized radiative transfer (num_stokes=1)".format(surface.name.data))
+
+        if self._sfctype.endswith('L'):
+            self._maxbcrad = 2 * self._maxnbc
+        else:
+            self._maxbcrad = int((2 + self._nmu * self._nphi0max / 2) * self._maxnbc)
+
 
     def _setup_numerical_params(self, numerical_params):
         """
@@ -148,14 +250,13 @@ class RTE(object):
 
         # Setup horizontal boundary conditions
         # TODO: check that BC is strictly open or periodic
-        self._bcflag = 0
-        if numerical_params.x_boundary_condition == 'open':
-            self._bcflag += 1
-        if numerical_params.y_boundary_condition == 'open':
-            self._bcflag += 2
-
-        # Independent pixel not supported yet
         self._ipflag = numerical_params.ip_flag.data
+
+        self._bcflag = 0
+        if (numerical_params.x_boundary_condition == 'open') & (self._ipflag in (0,2,4,6)):
+            self._bcflag += 1
+        if (numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0,1,4,5)):
+            self._bcflag += 2
 
     def _setup_grid(self, grid):
         """
@@ -303,13 +404,9 @@ class RTE(object):
         assert 4.0 * 8.0 * self._maxic <= sys.maxsize, 'size of gridptr array (8*maxic) probably exceeds max integer number of bytes: %d' % 8 * self._maxic
 
         self._maxnbc = int(self._maxig * 3 / self._nz)
-        self._maxsfcpars = 4
-        if self._sfctype.endswith('L'):
-            self._maxbcrad = 2 * self._maxnbc
-        else:
-            self._maxbcrad = int((2 + self._nmu * self._nphi0max / 2) * self._maxnbc)
 
-    def _init_solution(self):
+
+    def _init_solution(self, make_big_arrays=True):
         """
         TODO: improve this
         Initilize the solution (I, J fields) from the direct transmission and a simple layered model.
@@ -325,16 +422,18 @@ class RTE(object):
             self._pa.albedop[:, i] = scatterer.ssalb.data.ravel()
             self._pa.iphasep[:, i] = scatterer.table_index.data.ravel() + self._pa.iphasep.max()
 
-        #TODO 0 indices may appear in the clear sky for the first optical scatterer.
-        #set them to 1. This should be revisited after all checks are developed for the
-        #workflow that creates table_index.
+        #In regions which are not covered by any optical scatterer they have an iphasep of 0.
+        #In original SHDOM these would be pointed to the rayleigh phase function (which is always included
+        #in the legendre table even if there is no rayleigh extinction.)
+        #Here, instead we set them to whatever the first phase function is.
+        #An arbitrary valid choice can be made as the contribution from these grid points is zero.
         self._pa.iphasep[np.where(self._pa.iphasep == 0)] = 1
 
         # Concatenate all scatterer tables into one table
         max_legendre = max([scatterer.sizes['legendre_index'] for scatterer in self.medium])
-        padded_legcoefs = [scatterer.legcoef.pad({'legendre_index': (0, max_legendre - scatterer.legcoef.sizes['legendre_index'])}) for scatterer in self.medium]
+        padded_legcoefs = [scatterer.legcoef.pad({'legendre_index': (0, max_legendre - scatterer.legcoef.sizes['legendre_index'])},
+                                                    constant_values=0.0) for scatterer in self.medium]
         legendre_table = xr.concat(padded_legcoefs, dim='table_index')
-        #legendre_table = xr.concat([scatterer.legcoef for scatterer in self.medium], dim='table_index')
 
         self._pa.numphase = legendre_table.sizes['table_index']
 
@@ -352,8 +451,6 @@ class RTE(object):
             legendre_table = legendre_table.pad({'legendre_index': (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])},
                                constant_values=0.0)
 
-        #TODO CHECK THAT THIS RAVELLING CAUSES CORRECT LEGENP for unpacking into ._legen
-        #during transfer_pa_to_grid.
         # Check if scalar or vector RTE
         if self._nstokes == 1:
             self._pa.legenp = legendre_table.isel(stokes_index=0).data.ravel(order='F').astype(np.float32)
@@ -370,6 +467,11 @@ class RTE(object):
 
         self._npart = len(self.medium)
         self._nstphase = min(self._nstleg, 2)
+
+        if make_big_arrays:
+            self._make_big_arrays()
+
+    def _make_big_arrays(self):
 
         # Transfer property arrays into internal grid structures
         self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
@@ -409,8 +511,6 @@ class RTE(object):
         self._oldnpts = 0
         self._solcrit = 1.0
         self._iters = 0
-
-
 
         #Release big arrays if they exist before a call to core.init_solution
         #to prevent doubling the memory image when it is not necessary.
@@ -574,7 +674,7 @@ class RTE(object):
                 gasabs=self._pa.gasabs
             )
 
-    def solve(self, maxiter, init_solution=True, verbose=True):
+    def solve(self, maxiter, init_solution=True, setup_grid=True,verbose=True):
         """
         Main solver routine. This routine is comprised of two parts:
           1. Initialization, optional
@@ -584,6 +684,8 @@ class RTE(object):
         ----------
         maxiter: integer
             Maximum number of iterations for the iterative solution.
+        setup_grid: boolean
+            If True then a new grid is initialized. If False then the grid (including adaptive grid points)
         init_solution: boolean, default=True
             If False the solution is initialized according to the existing radiance and source function saved within the RteSolver object (previously computed)
             If True or no prior solution (I,J fields) exists then an initialization is performed (part 1.).
@@ -591,8 +693,9 @@ class RTE(object):
             True will output solution iteration information into stdout.
         """
         # Part 1: Initialize solution (from a layered model)
-        if init_solution:
+        if setup_grid:
             self._setup_grid(self._grid)
+        if init_solution:
             self._init_solution()
 
         # Part 2: Solution itertaions
@@ -869,6 +972,45 @@ class RTE(object):
 
         return sensor
 
+    def optical_path(self, sensor):
+
+        camx = sensor['ray_x'].data
+        camy = sensor['ray_y'].data
+        camz = sensor['ray_z'].data
+        cammu = sensor['ray_mu'].data
+        camphi = sensor['ray_phi'].data
+        #TODO
+        #Some checks on the dimensions: this kind of thing.
+        assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
+        total_pix = sensor.sizes['nrays']
+
+        #optical_depth = np.full(self._npts, 999)
+        tau = core.optical_depth(
+                nx=self._rte_solver._nx,
+                ny=self._rte_solver._ny,
+                nz=self._rte_solver._nz,
+                npts=self._rte_solver._npts,
+                ncells=self._rte_solver._ncells,
+                gridptr=self._rte_solver._gridptr,
+                neighptr=self._rte_solver._neighptr,
+                treeptr=self._rte_solver._treeptr,
+                cellflags=self._rte_solver._cellflags,
+                bcflag=self._rte_solver._bcflag,
+                ipflag=self._rte_solver._ipflag,
+                xgrid=self._rte_solver._xgrid,
+                ygrid=self._rte_solver._ygrid,
+                zgrid=self._rte_solver._zgrid,
+                gridpos=self._rte_solver._gridpos,
+                camx=camx,
+                camy=camy,
+                camz=camz,
+                cammu=cammu,
+                camphi=camphi,
+                npix=total_pix,
+                total_ext=self._rte_solver._total_ext[:self._rte_solver._npts]
+            )
+        sensor['optical_path'] = (['nrays'], tau)
+        return sensor
     @property
     def num_iterations(self):
         return self._iters

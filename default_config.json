@@ -27,7 +27,7 @@
     "description": "(DELTAM) True for delta-M scaling of medium and Nakajima and Tanaka method of computing radiances."
   },
   "spherical_harmonics_accuracy": {
-    "default_value": 0.01,
+    "default_value": 0.0,
     "description": [
       "(SHACC) adaptive spherical harmonic truncation accuracy; the spherical harmonic source function series is truncated after the terms are below this level.",
       "Truncation can still happens if SHACC=0 (for 0 source terms).This is also an absolute measure, and is approximately the level of accuracy."
@@ -42,7 +42,7 @@
     "description": "(SOLACC) solution accuracy - tolerance for solution criterion."
   },
   "max_total_mb": {
-    "default_value": 10000.0,
+    "default_value": 4000.0,
     "description": "approximate maximum memory to use (MB for 4 byte reals)"
   },
   "adapt_grid_factor": {

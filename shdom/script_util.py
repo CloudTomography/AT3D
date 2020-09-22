@@ -5,6 +5,16 @@ import numpy as np
 from collections import OrderedDict
 import xarray as xr
 
+def make_forward_sensors(sensors):
+
+    forward_sensors = OrderedDict()
+    for key,sensor in sensors.items():
+        forward_sensor= OrderedDict()
+        forward_sensor['sensor_list'] = [single_sensor.copy(deep=True) for single_sensor in sensor['sensor_list']]
+        forward_sensors[key] = forward_sensor
+
+    return forward_sensors
+
 def get_unique_wavelengths(sensor_dict):
     """
     TODO

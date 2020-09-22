@@ -24,8 +24,8 @@ def to_grid(wavelengths, atmosphere, rte_grid):
     """
     atmosphere_on_rte_grid = atmosphere.interp({'z':rte_grid.z})
     rayleigh_poly_tables = compute_table(wavelengths).rename('legcoef')
-    rayleigh_extinction = compute_extinction(wavelengths,atmosphere_on_rte_grid.Temperature,
-                                                           surface_pressure=atmosphere_on_rte_grid.Pressure.data[0])
+    rayleigh_extinction = compute_extinction(wavelengths,atmosphere_on_rte_grid.temperature,
+                                                           surface_pressure=atmosphere_on_rte_grid.pressure.data[0])
 
     rayleigh_ssalb = xr.DataArray(
                         name='ssalb',
@@ -49,6 +49,7 @@ def to_grid(wavelengths, atmosphere, rte_grid):
         temp = rayleigh_final.sel({'wavelength': wavelength})
         #add a 'wavelength_center' attribute as this is what solver.RTE needs.
         temp.attrs['wavelength_center'] = wavelength
+        temp = temp.assign_attrs(atmosphere.attrs)
         output[wavelength] = temp
 
     return output

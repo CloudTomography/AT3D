@@ -90,7 +90,8 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
     """
     coord_list = []
     name_list = []
-    units_list = []
+    size_distribution_list = []
+
     for name,parameter in size_distribution_parameters.items():
         try:
             coord_min, coord_max,n,spacing,units = parameter
@@ -104,14 +105,14 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
         else:
             raise NotImplementedError
         coord_list.append(coord)
-        units_list.append(name + ' [{}]'.format(units))
+        size_distribution_list.append(name + ' [{}, {}, {}, {}, {}]'.format(coord_min, coord_max,n,spacing,units))
         name_list.append(name)
 
     meshgrid = np.meshgrid(*coord_list,indexing='ij')
     parameter_dict = OrderedDict()
     coord_dict = OrderedDict()
     coord_dict['radius'] = radii
-    units_list.append(radius_units)
+    size_distribution_list.append('radius units [{}]'.format(radius_units))
     for name,grid,coord in zip(name_list,meshgrid,coord_list):
 
         parameter_dict[name] = grid.ravel()
@@ -124,28 +125,14 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
     #TODO this can fail silently in some cases (produce nans), add checks.
     number_density = number_density_raveled.reshape(grid_shape)
 
-    #TODO: should this be a data array
     size_dist_grid = xr.Dataset(
             data_vars = {
                 'number_density': (list(coord_dict.keys()), number_density),
             },
             coords=dict(coord_dict),
-            attrs={'units': units_list,
-                  'distribution_type': size_distribution_function.__name__
+            attrs={'size_distribution_inputs': size_distribution_list,
+                  'distribution_type': size_distribution_function.__name__,
                   },
+                  #TODO add coordmin/max/n and spacing for full traceability.
     )
     return size_dist_grid
-
-
-#example usage
-# number_density_grid = get_size_distribution_grid(mie_table['radius'],size_distribution_function=gamma,
-#                                 reff=[4.5,20.0,10,'linear','micron'],veff=[0.01,0.1,5,'linear','unitless'],
-#                                 radius_units=mie_table.attrs['units'][0])
-
-
-
-
-#example usage
-# number_density_grid = get_size_distribution_grid(mie_table['radius'],size_distribution_function=gamma,
-#                                 reff=[4.5,20.0,10,'linear','micron'],veff=[0.01,0.1,5,'linear','unitless'],
-#                                 radius_units=mie_table.attrs['units'][0])

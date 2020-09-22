@@ -45,6 +45,7 @@ def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
     if table_attempt is not None:
         table=table_attempt
     else:
+        print('making mie_table. . . may take a while.')
         table = compute_table(particle_type, wavelength_band,
                     minimum_effective_radius, max_integration_radius,
                      wavelength_averaging, wavelength_resolution,
@@ -150,7 +151,7 @@ def compute_table(particle_type, wavelength_band,
         attrs={
             'particle_type': particle_type,
             'refractive_index': (rindex.real, rindex.imag),
-            'refractive_index source': str(refractive_index),
+            'refractive_index_source': str(refractive_index),
             'table_type': table_type.decode(),
             'units': ['Radius [micron]', 'Wavelength [micron]'],
             'wavelength_band': wavelength_band,
@@ -186,24 +187,26 @@ def load_table(relative_path,particle_type, wavelength_band,
             ]
 
     for file in file_list:
+        try:
+            if file.endswith('.nc'):
+                with xr.open_dataset(os.path.join(relative_path,file)) as dataset:
+                    #open_dataset reads data lazily.
+                    test=True
 
-        if file.endswith('.nc') and 'mie_table' in file:
-            with xr.open_dataset(os.path.join(relative_path,file)) as dataset:
-                #open_dataset reads data lazily.
-                test=True
+                    for name, attr in zip(names, list_of_input):
+                        attr_file = dataset.attrs[name]
 
-                for name, attr in zip(names, list_of_input):
-                    attr_file = dataset.attrs[name]
+                        if isinstance(attr,tuple):
+                            temp = np.all(attr==attr_file)
+                        else:
+                            temp = attr==attr_file
 
-                    if isinstance(attr,tuple):
-                        temp = np.all(attr==attr_file)
-                    else:
-                        temp = attr==attr_file
-
-                    if not temp:
-                        test=False
-                if test:
-                    table = file
+                        if not temp:
+                            test=False
+                    if test:
+                        table = file
+        except:
+            continue
     if table is not None:
         table = xr.load_dataset(os.path.join(relative_path,table))
     return table

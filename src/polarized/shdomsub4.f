@@ -367,6 +367,237 @@ C         to calculate the Stokes radiance vector for this pixel
       RETURN
       END
 
+      SUBROUTINE GRADIENT_L2_OLD(NSTOKES, NX, NY, NZ, NPTS, NBPTS,
+     .           NCELLS,
+     .           NBCELLS, ML, MM, NCS, NLM, NSTLEG, NLEG, NUMPHASE,
+     .           NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
+     .           BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, SOLARAZ,
+     .           SFCTYPE, NSFCPAR, SFCGRIDPARMS, MAXNBC, NTOPPTS,
+     .           NBOTPTS, BCPTR, BCRAD, GNDTEMP, GNDALBEDO, SKYRAD,
+     .           WAVENO, WAVELEN, UNITS, XGRID, YGRID, ZGRID, GRIDPOS,
+     .           GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS, EXTINCT,
+     .           ALBEDO, LEGEN, IPHASE, DIRFLUX, FLUXES, SHPTR,
+     .           SOURCE, CAMX, CAMY, CAMZ, CAMMU, CAMPHI, NPIX,
+     .           GRADOUT, COST, MEASUREMENTS, RSHPTR, STOKESOUT,
+     .           NPART, TOTAL_EXT, RADIANCE, NUMDER, PARTDER, DEXT,
+     .           DALB, DIPHASE, DLEG, NSCATANGLE, YLMSUN, PHASETAB,
+     .           NSTPHASE, DPHASETAB, DNUMPHASE, SOLARFLUX, NPX, NPY,
+     .           NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS, EXTDIRP,
+     .           UNIFORMZLEV, DPATH, DPTR, EXACT_SINGLE_SCATTER,
+     .           WEIGHTS, UNCERTAINTIES, JACOBIAN,MAKEJACOBIAN,
+     .           JACOBIANPTR, COUNTER)
+Cf2py threadsafe
+      IMPLICIT NONE
+      LOGICAL EXACT_SINGLE_SCATTER
+Cf2py intent(in) ::  EXACT_SINGLE_SCATTER
+      INTEGER NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS
+      INTEGER NBPTS, NCELLS, NBCELLS
+Cf2py intent(in) :: NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS, NBPTS, NBCELLS
+      INTEGER NPX, NPY, NPZ
+      REAL    DELX, DELY, XSTART, YSTART
+      REAL    ZLEVELS(*)
+      REAL    EXTDIRP(*)
+      DOUBLE PRECISION UNIFORMZLEV
+Cf2py intent(in) :: DELX, DELY, XSTART, YSTART NPX, NPY, NPZ, ZLEVELS, EXTDIRP, UNIFORMZLEV
+      INTEGER ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
+Cf2py intent(in) :: ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
+      INTEGER  DNUMPHASE
+Cf2py intent(in) :: DNUMPHASE
+      INTEGER NMU, NPHI0MAX, NPHI0(*)
+Cf2py intent(in) :: NMU, NPHI0MAX, NPHI0
+      INTEGER MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
+Cf2py intent(in) :: MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
+      INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
+Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
+      INTEGER SHPTR(*), BCPTR(MAXNBC,2), RSHPTR(*)
+Cf2py intent(in) :: SHPTR, BCPTR, RSHPTR
+      INTEGER*2 CELLFLAGS(*)
+      INTEGER IPHASE(NPTS,NPART)
+Cf2py intent(in) :: CELLFLAGS, IPHASE
+      LOGICAL DELTAM
+Cf2py intent(in) :: DELTAM
+      REAL    SOLARFLUX, SOLARMU, SOLARAZ
+Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ
+      REAL    GNDTEMP, GNDALBEDO, SKYRAD, WAVENO(2), WAVELEN
+Cf2py intent(in) :: GNDTEMP, GNDALBEDO, SKYRAD, WAVENO, WAVELEN
+      REAL    MU(*), PHI(NMU,*), WTDO(NMU,*)
+Cf2py intent(in) :: MU, PHI, WTDO
+      REAL    XGRID(*), YGRID(*), ZGRID(*), GRIDPOS(3,*)
+Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
+      REAL    SFCGRIDPARMS(*), BCRAD(NSTOKES,*)
+Cf2py intent(in) :: SFCGRIDPARMS, BCRAD
+      REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
+      REAL    TOTAL_EXT(NPTS), LEGEN(NSTLEG,0:NLEG,*)
+Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN, TOTAL_EXT
+      REAL    DIRFLUX(*), FLUXES(2,*)
+      REAL    SOURCE(NSTOKES, *), RADIANCE(NSTOKES,*)
+Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE, RADIANCE
+      REAL CAMX(*), CAMY(*), CAMZ(*)
+      DOUBLE PRECISION CAMMU(*), CAMPHI(*)
+Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
+      INTEGER  NPIX
+Cf2py intent(in) :: NPIX
+      REAL   MEASUREMENTS(NSTOKES,*), DLEG(NSTLEG,0:NLEG,DNUMPHASE)
+      REAL   DEXT(NBPTS,NUMDER), DALB(NBPTS,NUMDER)
+      INTEGER DIPHASE(NBPTS,NUMDER)
+Cf2py intent(in) :: MEASUREMENTS, DEXT ,DALB, DIPHASE, DLEG
+      REAL   STOKESOUT(NSTOKES,NPIX)
+Cf2py intent(out) :: STOKESOUT
+      DOUBLE PRECISION  GRADOUT(NBPTS,NUMDER), COST
+Cf2py intent(out) :: GRADOUT, COST, STOKESOUT
+      CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
+Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
+      INTEGER NUMDER, PARTDER(NUMDER)
+Cf2py intent(in) :: NUMDER, PARTDER
+      INTEGER NSCATANGLE, NSTPHASE
+      REAL YLMSUN(NSTLEG,NLM), PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
+      REAL DPHASETAB(NSTPHASE,DNUMPHASE,NSCATANGLE)
+Cf2py intent(in) :: YLMSUN, PHASETAB
+Cf2py intent(in) :: NSCATANGLE, YLMSUN, PHASETAB, DPHASETAB, NSTPHASE
+      REAL DPATH(8*(NPX+NPY+NPZ),*), WEIGHTS(NSTOKES), WEIGHT
+      REAL UNCERTAINTIES(NSTOKES,NSTOKES,*)
+      INTEGER DPTR(8*(NPX+NPY+NPZ),*)
+Cf2py intent(in) :: DPATH, DPTR, WEIGHTS, UNCERTAINTIES
+
+      REAL JACOBIAN(NSTOKES,NUMDER,*)
+Cf2py intent(in,out) :: JACOBIAN
+      LOGICAL MAKEJACOBIAN
+Cf2py intent(in) :: MAKEJACOBIAN
+      INTEGER JI, JACOBIANPTR(2,*)
+Cf2py intent(in,out) JACOBIANPTR
+      INTEGER COUNTER
+Cf2py intent(out) COUNTER
+
+      REAL PIXEL_ERROR
+      DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER), VISRAD(NSTOKES)
+      INTEGER I, J, L, SIDE, IVIS
+      LOGICAL VALIDRAD
+      DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
+      DOUBLE PRECISION U, R, PI
+      DOUBLE PRECISION X0, Y0, Z0
+      DOUBLE PRECISION XE,YE,ZE, TRANSMIT
+      INTEGER M, ME, MS, NS, NS1
+
+      INTEGER, ALLOCATABLE :: LOFJ(:)
+      ALLOCATE (LOFJ(NLM))
+
+      GRADOUT = 0.0D0
+      COUNTER = 1
+      J = 0
+      DO L = 0, ML
+        ME = MIN(L,MM)
+        MS = -ME
+        DO M = MS, ME
+          J = J + 1
+          LOFJ(J) = L
+        ENDDO
+      ENDDO
+
+C         Make the isotropic radiances for the top boundary
+      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
+     .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
+C         Make the bottom boundary radiances for the Lambertian surfaces.
+C          Compute the upwelling bottom radiances using the downwelling fluxes.
+      IF (SFCTYPE .EQ. 'FL') THEN
+        CALL FIXED_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
+     .             DIRFLUX, FLUXES, SRCTYPE, GNDTEMP, GNDALBEDO,
+     .             WAVENO, WAVELEN, UNITS, NSTOKES, BCRAD(1,1+NTOPPTS))
+      ELSE IF (SFCTYPE .EQ. 'VL') THEN
+        CALL VARIABLE_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
+     .               DIRFLUX, FLUXES, SRCTYPE, NSFCPAR, SFCGRIDPARMS,
+     .               NSTOKES, BCRAD(1,1+NTOPPTS))
+      ENDIF
+
+      PI = ACOS(-1.0D0)
+C         Loop over pixels in image
+      COST = 0.0D0
+      DO IVIS = 1, NPIX
+        X0 = CAMX(IVIS)
+        Y0 = CAMY(IVIS)
+        Z0 = CAMZ(IVIS)
+        MU2 = CAMMU(IVIS)
+        PHI2 = CAMPHI(IVIS)
+        MURAY = -MU2
+        PHIRAY = PHI2 - PI
+
+C             Extrapolate ray to domain top if above
+        IF (Z0 .GT. ZGRID(NZ)) THEN
+          IF (MURAY .GE. 0.0) THEN
+            VISRAD(:) = 0.0
+            GOTO 900
+          ENDIF
+          R = (ZGRID(NZ) - Z0)/MURAY
+          X0 = X0 + R*SQRT(1-MURAY**2)*COS(PHIRAY)
+          Y0 = Y0 + R*SQRT(1-MURAY**2)*SIN(PHIRAY)
+          Z0 = ZGRID(NZ)
+        ELSE IF (Z0 .LT. ZGRID(1)) THEN
+          WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
+          STOP
+        ENDIF
+
+C         Integrate the extinction and source function along this ray
+C         to calculate the Stokes radiance vector for this pixel
+        TRANSMIT = 1.0D0 ; VISRAD = 0.0D0; RAYGRAD = 0.0D0
+        CALL GRAD_INTEGRATE_1RAY (BCFLAG, IPFLAG, NSTOKES, NSTLEG,
+     .             NSTPHASE, NSCATANGLE, PHASETAB,
+     .             NX, NY, NZ, NPTS, NCELLS,
+     .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
+     .             XGRID, YGRID, ZGRID, GRIDPOS,
+     .             ML, MM, NLM, NLEG, NUMPHASE,
+     .             NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
+     .             DELTAM, SRCTYPE, WAVELEN, SOLARMU,SOLARAZ,
+     .             EXTINCT, ALBEDO, LEGEN,
+     .             IPHASE, DIRFLUX, SHPTR, SOURCE,
+     .             YLMSUN, MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD,
+     .             SFCTYPE, NSFCPAR, SFCGRIDPARMS, MU2, PHI2,
+     .             X0, Y0, Z0, XE, YE, ZE, SIDE, TRANSMIT, VISRAD,
+     .   	       VALIDRAD, TOTAL_EXT, NPART, RAYGRAD, RSHPTR,
+     .             RADIANCE, LOFJ, PARTDER, NUMDER, DEXT, DALB,
+     .             DIPHASE, DLEG, NBPTS, DNUMPHASE, SOLARFLUX, NPX,
+     .             NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
+     .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
+     .             EXACT_SINGLE_SCATTER)
+900     CONTINUE
+
+        DO NS = 1, NSTOKES
+          STOKESOUT(NS,IVIS) = VISRAD(NS)
+          PIXEL_ERROR = STOKESOUT(NS,IVIS) - MEASUREMENTS(NS,IVIS)
+C          IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
+C              DO JI = 1, NBPTS
+C                IF (ANY(ABS(RAYGRAD(1,JI,:))>0.0)) THEN
+C                  JACOBIANPTR(1,COUNTER) = IVIS
+C                  JACOBIANPTR(2,COUNTER) = JI
+C                  JACOBIAN(:,COUNTER) = JACOBIAN(:,COUNTER) +
+C     .            WEIGHTS(NS)*RAYGRAD(NS,JI,:)
+C                  IF (NS .EQ. 1) THEN
+C                    COUNTER = COUNTER + 1
+C                  ENDIF
+C                ENDIF
+C              ENDDO
+C          ENDIF
+          DO NS1 = 1, NSTOKES
+            WEIGHT = UNCERTAINTIES(NS,NS1,IVIS)*WEIGHTS(NS)
+            GRADOUT = GRADOUT + WEIGHT*PIXEL_ERROR*RAYGRAD(NS,:,:)
+            COST = COST + 0.5 * WEIGHT*PIXEL_ERROR**2
+          ENDDO
+        ENDDO
+
+        IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
+          DO JI = 1, NBPTS
+            IF (ANY(ABS(RAYGRAD(1,JI,:))>0.0)) THEN
+              JACOBIANPTR(1,COUNTER) = IVIS
+              JACOBIANPTR(2,COUNTER) = JI
+              JACOBIAN(:,:,COUNTER) = JACOBIAN(:,:,COUNTER) +
+     .        RAYGRAD(:,JI,:)
+              COUNTER = COUNTER + 1
+            ENDIF
+          ENDDO
+        ENDIF
+
+      ENDDO
+      RETURN
+      END
+
 
       SUBROUTINE GRADIENT_L2(NSTOKES, NX, NY, NZ, NPTS, NBPTS, NCELLS,
      .           NBCELLS, ML, MM, NCS, NLM, NSTLEG, NLEG, NUMPHASE,
@@ -473,7 +704,6 @@ Cf2py intent(in) RAYS_PER_PIXEL
       DOUBLE PRECISION   RAY_WEIGHTS(*), STOKES_WEIGHTS(NSTOKES, *)
 Cf2py intent(in) RAY_WEIGHTS, STOKES_WEIGHTS
 
-      DOUBLE PRECISION SYNTHETIC_MEASUREMENT(NSTOKES)
       DOUBLE PRECISION PIXEL_ERROR
       DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER), VISRAD(NSTOKES)
       DOUBLE PRECISION RAYGRAD_PIXEL(NSTOKES,NBPTS,NUMDER)
@@ -490,6 +720,7 @@ Cf2py intent(in) RAY_WEIGHTS, STOKES_WEIGHTS
       ALLOCATE (LOFJ(NLM))
 
       GRADOUT = 0.0D0
+      STOKESOUT = 0.0D0
       COUNTER = 1
 
       J = 0
@@ -522,7 +753,6 @@ C         Loop over pixels in image
       COST = 0.0D0
       IRAY = 0
       DO IPIX = 1, NPIX
-        SYNTHETIC_MEASUREMENT = 0.0D0
         RAYGRAD_PIXEL = 0.0D0
         DO I2=1 ,RAYS_PER_PIXEL(IPIX)
           IRAY = IRAY + 1
@@ -573,21 +803,32 @@ C         to calculate the Stokes radiance vector for this pixel
      .             EXACT_SINGLE_SCATTER)
   900     CONTINUE
 
-          DO NS=1,NSTOKES
-            SYNTHETIC_MEASUREMENT(NS) = SYNTHETIC_MEASUREMENT(NS) +
-     .          VISRAD(NS)*RAY_WEIGHTS(IRAY)*
-     .          STOKES_WEIGHTS(NS,IPIX)
-            STOKESOUT(NS,IPIX) = SYNTHETIC_MEASUREMENT(NS)
-            PRINT *, IPIX, IRAY, NS, MINVAL(RAYGRAD(NS,:,:)),
-     .        MAXVAL(RAYGRAD(NS,:,:))
-            RAYGRAD_PIXEL(NS,:,:) = RAYGRAD_PIXEL(NS,:,:) +
-     .          RAYGRAD(NS,:,:)*RAY_WEIGHTS(IRAY)*
-     .          STOKES_WEIGHTS(NS,IPIX)
-          ENDDO
-        ENDDO
 
+
+          DO NS=1,NSTOKES
+            STOKESOUT(NS,IPIX) = STOKESOUT(NS,IPIX) + VISRAD(NS)*
+     .            RAY_WEIGHTS(IRAY)*STOKES_WEIGHTS(NS,IPIX)
+            RAYGRAD_PIXEL(NS,:,:) = RAYGRAD_PIXEL(NS,:,:) +
+     .            RAYGRAD(NS,:,:)*RAY_WEIGHTS(IRAY)*
+     .            STOKES_WEIGHTS(NS,IPIX)
+!checks just in case.
+            IF (ANY(ISNAN(RAYGRAD(NS,:,:)))) THEN
+             PRINT *, 'NaN in gradient.', IPIX, IRAY, NS,
+     .       MINVAL(RAYGRAD(NS,:,:)),
+     .        MAXVAL(RAYGRAD(NS,:,:)), ANY(ISNAN(RAYGRAD(NS,:,:))),
+     .        X0, Y0, Z0
+            ENDIF
+            IF (ANY(ABS(RAYGRAD(NS,:,:)) > 1e2)) THEN
+              PRINT *, 'Large Value in gradient',IPIX, IRAY, NS,
+     .          MINVAL(RAYGRAD(NS,:,:)),
+     .        MAXVAL(RAYGRAD(NS,:,:)), ANY(ISNAN(RAYGRAD(NS,:,:))),
+     .        X0, Y0, Z0
+            ENDIF
+          ENDDO
+        ENDDO !end of ray loop.
+        !calculations per pixel.
         DO NS = 1, NSTOKES
-          PIXEL_ERROR = SYNTHETIC_MEASUREMENT(NS) -
+          PIXEL_ERROR = STOKESOUT(NS, IPIX) -
      .                    MEASUREMENTS(NS, IPIX)
 
           DO NS1 = 1, NSTOKES
@@ -1032,6 +1273,11 @@ C             Add gradient component due to the direct solar beam propogation
                       ENDIF
                     ELSE
                       DEXTM = DEXT(SSP,IDR)
+                    ENDIF
+                    IF (ANY(ISNAN(DPATH(II,GRIDPOINT)*DEXTM*
+     .                ABSCELL*TRANSMIT*SRCSINGSCAT(:,KK)))) THEN
+                      PRINT *, DPATH(II,GRIDPOINT), DEXTM, ABSCELL,
+     .                  TRANSMIT, SRCSINGSCAT(:, KK), II, KK
                     ENDIF
                     RAYGRAD(:,SSP,IDR) = RAYGRAD(:,SSP,IDR) -
      .                  DPATH(II,GRIDPOINT)*DEXTM*ABSCELL*TRANSMIT*

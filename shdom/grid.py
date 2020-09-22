@@ -25,7 +25,7 @@ def load_2parameter_lwc_file(file_name, density='lwc', origin=(0.0,0.0)):
 
     dset = make_grid(origin[0],(nx-1)*dx,nx,origin[1],(ny-1)*dy,ny,z)
 
-    data = np.genfromtxt('test.txt',skip_header=5)
+    data = np.genfromtxt(file_name,skip_header=5)
 
     lwc = np.zeros((nx,ny,nz))
     reff = np.zeros((nx,ny,nz))*np.nan
@@ -66,7 +66,7 @@ def to_2parameter_lwc_file(file_name, cloud_scatterer,atmosphere=None,fill_tempe
     z = cloud_scatterer.z.data
 
     if atmosphere is not None:
-        temperature = atmosphere.interp({'z': cloud_scatterer.z}).Temperature.data
+        temperature = atmosphere.interp({'z': cloud_scatterer.z}).temperature.data
     else:
         temperature = np.ones(z.shape)*fill_temperature
 
@@ -159,8 +159,8 @@ def resample_onto_grid(grid, data):
     filled = resampled_data.bfill(dim='x').ffill(dim='x').bfill(dim='y').ffill(dim='y').bfill(dim='z').ffill(dim='z')
 
     #overwrite density values so missing data is filled with 0.0
-    filled['density'] = resampled_data.density.fillna(0.0)
-
+    if 'density' in filled:
+        filled['density'] = resampled_data.density.fillna(0.0)
     return filled
 
 def make_grid(xmin,xmax,nx,ymin,ymax,ny,z):

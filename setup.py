@@ -6,9 +6,9 @@ NAME = "shdom"
 EXTENSION_NAME = "pyshdom"
 DESCRIPTION = "3D Radiative Transfer Inversion using the SHDOM forward algorithm"
 LONG_DESCRIPTION ="""
-Pyshdom performs 3D reconstruction of cloud microphysical properties from multi-angle, multi-spectral solar reflected 
-radiation using a non-linear optimization procedure. The core radiative transfer routines are sourced from the 
-Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [1]. 
+Pyshdom performs 3D reconstruction of cloud microphysical properties from multi-angle, multi-spectral solar reflected
+radiation using a non-linear optimization procedure. The core radiative transfer routines are sourced from the
+Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [1].
 The python package was created by Aviad Levis [2], Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois).
 The inversion algorithms for can be found in the following papers:
  - `Levis, Aviad, et al. "Airborne Three-Dimensional Cloud Tomography." Proceedings of the IEEE International Conference on Computer Vision. 2015.`
@@ -34,7 +34,7 @@ classifiers =  ['Development Status :: 3 - Alpha',
 
 
 #
-# Set this to True for compiling the polarized 
+# Set this to True for compiling the polarized
 # version of the SHDOM algorithm.
 #
 POLARIZED_SHDOM = True
@@ -47,7 +47,7 @@ F2PY_MODULE_NAME = 'core'
 F2PY_SRC_PATH = 'src'
 F2PY_SIGN_FILE = '{path}/core.pyf'.format(path=F2PY_SRC_PATH)
 
-F2PY_SHDOM_FILES = ['fftpack.f', 'ocean_brdf.f', 'shdom_nompi.f', 'shdomsub5.f']
+F2PY_SHDOM_FILES = ['fftpack.f', 'ocean_brdf.f', 'shdom_nompi.f', 'shdomsub5.f', 'surface.f']
 
 if POLARIZED_SHDOM:
     F2PY_SHDOM_FILES.extend(['polarized/shdom90.f90',
@@ -55,23 +55,23 @@ if POLARIZED_SHDOM:
                              'polarized/shdomsub2.f',
                              'polarized/shdomsub3.f',
                              'polarized/shdomsub4.f',
-                             'polarized/make_mie_table.f90', 
+                             'polarized/make_mie_table.f90',
                              'polarized/miewig.f',
                              'polarized/indexwatice.f'])
-    
+
 else:
     F2PY_SHDOM_FILES.extend(['unpolarized/shdom90.f90',
                              'unpolarized/shdomsub1.f',
                              'unpolarized/shdomsub2.f',
                              'unpolarized/shdomsub3.f',
                              'unpolarized/shdomsub4.f',
-                             'unpolarized/make_mie_table.f90', 
+                             'unpolarized/make_mie_table.f90',
                              'unpolarized/mieindsub.f'])
 
 F2PY_SHDOM_FILES = [
             '{path}/{file_name}'.format(path=F2PY_SRC_PATH, file_name=file_name) for file_name in F2PY_SHDOM_FILES
 ]
-  
+
 F2PY_CORE_API = [
     'get_mie_table',
     'get_center_wavelen',
@@ -107,13 +107,16 @@ F2PY_CORE_API = [
     'space_carve',
     'precompute_phase_check',
     'precompute_phase_check_grad',
-    'optical_depth'
+    'optical_depth',
+    'prep_surface',
+    'read_properties',
+    'gradient_l2_old'
 ]
 
 def _run_command(cmd):
     proc = subprocess.Popen(cmd, shell=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
     out_file = proc.stdout.read()
-    err_file = proc.stderr.read()                                                                     
+    err_file = proc.stderr.read()
     output = out_file + err_file
     proc.stdout.close()
     proc.stderr.close()
@@ -139,7 +142,7 @@ def createSignatureFile():
         api=' '.join(F2PY_CORE_API)
     )
     _run_command(signature_cmd)
-    
+
 
 def configuration(parent_package='',top_path=None):
     from numpy.distutils.misc_util import Configuration
@@ -170,9 +173,9 @@ def multiple_configurations(name):
 if __name__ == "__main__":
 
     from numpy.distutils.core import setup
-    
+
     createSignatureFile()
-    
+
     setup(
         configuration = configuration,
         packages = setuptools.find_packages(),
@@ -185,6 +188,6 @@ if __name__ == "__main__":
         install_requires=[
             'numdifftools',
             'tensorboardX'
-        ],        
+        ],
         classifiers = classifiers
     )
