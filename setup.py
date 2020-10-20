@@ -113,7 +113,8 @@ F2PY_CORE_API = [
     'compute_netfluxdiv',
     'compute_sh',
     'min_optical_depth',
-    'gradient_l2_old'
+    'gradient_l2_old',
+    'pencil_beam_prop'
 ]
 
 def _run_command(cmd):

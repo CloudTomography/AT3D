@@ -82,11 +82,11 @@ C       Get the maximum single scattering albedo over all processors
      .             NCS, NLM, NMU, NPHI, NLEG, NUMPHASE, NPHI0,
      .             MU, PHI, WTDO, BCFLAG, IPFLAG, DELTAM,
      .             SRCTYPE, SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD,
-     .             SFCTYPE, GNDTEMP, GNDALBEDO, NXSFC, NYSFC,
+     .             SFCTYPE, GNDTEMP, GNDALBEDO, NXSFC, NYSFC,CELLFLAGS,
      .             DELXSFC, DELYSFC, NSFCPAR, SFCPARMS, SFCGRIDPARMS,
      .             UNITS, WAVENO, WAVELEN, ACCELFLAG, XGRID, YGRID,
      .             ZGRID, TEMP, PLANCK, EXTINCT, ALBEDO, LEGEN, IPHASE,
-     .             MAXNBC, MAXBCRAD, NTOPPTS, NBOTPTS, BCPTR,
+     .             MAXNBC, MAXBCRAD, NTOPPTS, NBOTPTS, BCPTR,NEIGHPTR,
      .             NPTS, GRIDPOS, NCELLS, GRIDPTR,  TREEPTR, RSHPTR,
      .             SHPTR, OSHPTR, SOURCE, DELSOURCE, RADIANCE, FLUXES,
      .             DIRFLUX, YLMSUN, UNIFORMZLEV, NPX, NPY, NPZ, DELX,
@@ -116,8 +116,10 @@ Cf2py intent(in) :: MAXIV, MAXIC, MAXIG, MAXIDO, NPHI0MAX
 Cf2py intent(in) :: MAXNBC, MAXBCRAD
       INTEGER NPTS, NCELLS
 Cf2py intent(in) :: NPTS, NCELLS
-      INTEGER GRIDPTR(8,*), TREEPTR(2,*)
-Cf2py intent(in) :: GRIDPTR, TREEPTR
+      INTEGER GRIDPTR(8,*), TREEPTR(2,*), NEIGHPTR(6,*)
+Cf2py intent(in) :: GRIDPTR, TREEPTR, NEIGHPTR
+      INTEGER*2 CELLFLAGS(*)
+Cf2py intent(in) CELLFLAGS
       INTEGER  IPHASE(MAXIG,NPART)
 Cf2py intent(in) :: IPHASE
       LOGICAL DELTAM, ACCELFLAG
@@ -212,6 +214,13 @@ C    Compute the solar transmission in DIRFLUX.
      .                         SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS,
      .                         NX, XGRID, NY, YGRID, DIRFLUX)
         ELSE
+C          PRINT *, '?'
+C          CALL PENCIL_BEAM_PROP(0.25D0, 0.25D0,2.0D0, BCFLAG, IPFLAG,
+C     .      1.0, 1.0, 0.0, DIRFLUX(:NPTS), TOTAL_EXT(:NPTS), NX,NY,NZ,
+C     .      NCELLS, NPTS, CELLFLAGS(:NCELLS), XGRID, YGRID, ZGRID,
+C     .      GRIDPOS(:,:NPTS),
+C     .      GRIDPTR(:,:NCELLS), NEIGHPTR(:,:NCELLS), TREEPTR(:,:NCELLS))
+C
           CALL MAKE_DIRECT (NPTS, BCFLAG, IPFLAG, DELTAM,
      .             ML, NSTLEG, NLEG, SOLARFLUX, SOLARMU,
      .             SOLARAZ,  GRIDPOS, DIRFLUX,

@@ -110,7 +110,7 @@ class RTE(object):
     def _setup_atmosphere(self, atmosphere):
         """TODO
         As atmosphere is currently a keyword argument with a default value,
-        it cannot be treated via the @datset_checks.
+        it cannot be treated via the @dataset_checks.
         So this function does all of the checking.
         """
         if atmosphere is None:
@@ -227,7 +227,6 @@ class RTE(object):
             self._maxbcrad = 2 * self._maxnbc
         else:
             self._maxbcrad = int((2 + self._nmu * self._nphi0max / 2) * self._maxnbc)
-
 
     def _setup_numerical_params(self, numerical_params):
         """
@@ -595,7 +594,9 @@ class RTE(object):
             gridpos=self._gridpos,
             ncells=self._ncells,
             gridptr=self._gridptr,
+            cellflags=self._cellflags,
             treeptr=self._treeptr,
+            neighptr=self._neighptr,
             npx=self._pa.npx,
             npy=self._pa.npy,
             npz=self._pa.npz,
@@ -1131,7 +1132,7 @@ class RTE(object):
             else:
                 nshout = 4
 
-            shterms = shdom.core.compute_sh(nshout=nshout,nstokes=self._nstokes,
+            shterms = core.compute_sh(nshout=nshout,nstokes=self._nstokes,
                                npts=self._npts,
                                srctype=self._srctype,
                                solarmu = self._solarmu,
@@ -1182,7 +1183,7 @@ class RTE(object):
                             'flux_down': (['x','y','z'], self._fluxes[0,:self._nbpts].reshape(
                                                         self._nx, self._ny, self._nz)),
                             'flux_up': (['x','y','z'], self._fluxes[1,:self._nbpts].reshape(
-                                                        self._nx, self._ny, rself._nz)),
+                                                        self._nx, self._ny, self._nz)),
                             'flux_direct': (['x','y','z'], self._dirflux[:self._nbpts].reshape(
                                                     self._nx, self._ny, self._nz)),
                             },

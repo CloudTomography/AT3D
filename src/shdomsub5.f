@@ -1492,3 +1492,295 @@ C       Compute the inner derivatives (minus the path lengths)
 
       RETURN
       END
+
+      SUBROUTINE PENCIL_BEAM_PROP (X0, Y0, Z0, BCFLAG, IPFLAG,
+     .                   SOLARFLUX, SOLARMU, SOLARAZ,
+     .                   DIRFLUX, TOTAL_EXT,
+     .                   NX, NY, NZ, NCELLS, NPTS, CELLFLAGS,
+     .                   XGRID, YGRID, ZGRID, GRIDPOS,GRIDPTR,
+     .                   NEIGHPTR, TREEPTR)
+
+C    Calculates the source function for a pencil-beam source.
+      IMPLICIT NONE
+      INTEGER BCFLAG, IPFLAG
+Cf2py intent(in) BCFLAG, IPFLAG
+      INTEGER NX, NY, NZ, NPTS, NCELLS, SIDE
+Cf2py intent(in) NX,NY,NPTS,NCELLS
+      INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
+Cf2py intent(in) GRIDPTR, NEIGHPTR, TREEPTR
+      INTEGER*2 CELLFLAGS(NCELLS)
+Cf2py intent(in) CELLFLAGS
+      LOGICAL VALIDRAD
+      REAL    SOLARMU, SOLARAZ, SOLARFLUX
+Cf2py intent(in) SOLARMU, SOLARAZ, SOLARFLUX
+      REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
+Cf2py intent(in) XGRID, YGRID, ZGRID, GRIDPOS
+      REAL    DIRFLUX(NPTS), TOTAL_EXT(NPTS)
+Cf2py intent(in) TOTAL_EXT
+Cf2py intent(out) DIRFLUX
+      DOUBLE PRECISION MU2, PHI2, X0,Y0,Z0, XE,YE,ZE
+Cf2py intent(in) X0, Y0,Z0
+      DOUBLE PRECISION TRANSMIT
+
+      INTEGER BITX, BITY, BITZ, IOCT, ICELL, INEXTCELL, IFACE
+Cf2py intent(out) ICELL, INEXTCELL, IFACE
+      INTEGER IOPP, NTAU, IT, I, IPT1, IPT2, J, L
+      LOGICAL DONE, IPINX, IPINY, OPENBCFACE
+      INTEGER JFACE, KFACE, IC, MAXCELLSCROSS, NGRID
+      INTEGER OPPFACE(6), OLDIPTS(8), DONETHIS(8)
+      INTEGER DONEFACE(8,7), ONEX(8), ONEY(8)
+      REAL    EXT0, EXT1, EXTN
+      REAL    XM,YM
+      DOUBLE PRECISION PI, CX, CY, CZ, CXINV, CYINV, CZINV
+      DOUBLE PRECISION XN, YN, ZN, XI, YI, ZI
+      DOUBLE PRECISION SO, SOX, SOY, SOZ, EPS
+      DOUBLE PRECISION TAUTOL, TAUGRID, S, DELS, TRANSCUT
+      DOUBLE PRECISION EXT, TAU, TRANSCELL, ABSCELL
+      DOUBLE PRECISION U,V,W, DELX,DELY,DELZ, INVDELX,INVDELY,INVDELZ
+      DOUBLE PRECISION F(8), WEIGHTS(8)
+
+      DATA OPPFACE/2,1,4,3,6,5/
+      DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
+      DATA DONEFACE/0,0,0,0,0,0,0,0, 0,1,0,3,0,5,0,7, 2,0,4,0,6,0,8,0,
+     .              0,0,1,2,0,0,5,6, 3,4,0,0,5,6,0,0,
+     .              0,0,0,0,1,2,3,4, 5,6,7,8,0,0,0,0/
+
+      TRANSMIT = 1.0D0
+C         TRANSCUT is the transmission to stop the integration at
+      TRANSCUT = 5.0E-5
+C         TAUTOL is the maximum optical path for the subgrid intervals
+      TAUTOL = 0.2
+      DIRFLUX = 0.0
+
+      EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
+      MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
+      PI = ACOS(-1.0D0)
+      MU2 = SOLARMU
+C         Make the ray direction (opposite to the outgoing direction)
+      CX = SQRT(1.0D0-MU2**2)*COS(SOLARAZ-PI)
+      CY = SQRT(1.0D0-MU2**2)*SIN(SOLARAZ-PI)
+      CZ = -MU2
+      IF (ABS(CX) .GT. 1.0E-6) THEN
+        CXINV = 1.0D0/CX
+      ELSE
+        CX = 0.0
+        CXINV = 1.0E6
+      ENDIF
+      IF (ABS(CY) .GT. 1.0E-6) THEN
+        CYINV = 1.0D0/CY
+      ELSE
+        CY = 0.0
+        CYINV = 1.0E6
+      ENDIF
+      IF (ABS(CZ) .GT. 1.0E-6) THEN
+        CZINV = 1.0D0/CZ
+      ELSE
+        CZ = 0.0
+        CZINV = 1.0E6
+      ENDIF
+C         Setup for the ray path direction
+      IF (CX .LT. 0.0) THEN
+        BITX = 1
+      ELSE
+        BITX = 0
+      ENDIF
+      IF (CY .LT. 0.0) THEN
+        BITY = 1
+      ELSE
+        BITY = 0
+      ENDIF
+      IF (CZ .LT. 0.0) THEN
+        BITZ = 1
+      ELSE
+        BITZ = 0
+      ENDIF
+      IOCT = 1 + BITX + 2*BITY + 4*BITZ
+      XM = 0.5*(XGRID(1)+XGRID(NX))
+      YM = 0.5*(YGRID(1)+YGRID(NY))
+      PRINT *,  'x,y,z', X0,Y0,Z0
+C         Start at the desired point, getting the extinction and source there
+      XE = X0
+      YE = Y0
+      ZE = Z0
+!      ZE = MAX(MIN(Z0,DBLE(ZGRID(NZ))),DBLE(ZGRID(1)))
+      CALL LOCATE_GRID_CELL (NX, NY, NZ, XGRID, YGRID, ZGRID,
+     .                  NCELLS, TREEPTR, GRIDPTR, CELLFLAGS, GRIDPOS,
+     .                  BCFLAG, IPFLAG, XE, YE, ZE,  ICELL)
+c      print '(A,5(1X,F8.5),1X,I6)',
+c     .     'INTEGRATE_1RAY:',X0,Y0,Z0,MU2,PHI2,ICELL
+      IFACE = 0
+      NGRID = 0
+C         Loop until reach a Z boundary or transmission is very small
+      VALIDRAD = .FALSE.
+      DO WHILE (.NOT. VALIDRAD .AND. ICELL .GT. 0)
+C           Make sure current cell is valid
+        IF (ICELL .LE. 0) THEN
+          WRITE (6,*)'INTEGRATE_1RAY: ICELL=',ICELL,
+     .                MU2,PHI2,XE,YE,ZE
+          STOP
+        ENDIF
+        NGRID = NGRID + 1
+
+        CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XE, YE, ZE, F)
+        EXT1 = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
+     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
+     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
+     .         F(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
+     .         F(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
+     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
+     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
+     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
+        PRINT *, EXT1
+C           This cell is independent pixel if IP mode or open boundary
+C             conditions and ray is leaving domain (i.e. not entering)
+        IPINX = BTEST(INT(CELLFLAGS(ICELL)),0) .AND.
+     .          .NOT. ( BTEST(BCFLAG,0) .AND.
+     .          ((CX.GT.0.AND.XE.LT.XM) .OR. (CX.LT.0.AND.XE.GT.XM)) )
+        IPINY = BTEST(INT(CELLFLAGS(ICELL)),1) .AND.
+     .          .NOT. ( BTEST(BCFLAG,1) .AND.
+     .          ((CY.GT.0.AND.YE.LT.YM) .OR. (CY.LT.0.AND.YE.GT.YM)) )
+
+C           Find boundaries of the current cell
+C           Find the three possible intersection planes (X,Y,Z)
+C             from the coordinates of the opposite corner grid point
+        IOPP = GRIDPTR(9-IOCT,ICELL)
+C           Get the distances to the 3 planes and select the closest
+C             (always need to deal with the cell that is wrapped)
+        IF (IPINX) THEN
+          SOX = 1.0E20
+        ELSE
+          SOX = (GRIDPOS(1,IOPP)-XE)*CXINV
+        ENDIF
+        IF (IPINY) THEN
+          SOY = 1.0E20
+        ELSE
+          SOY = (GRIDPOS(2,IOPP)-YE)*CYINV
+        ENDIF
+        SOZ = (GRIDPOS(3,IOPP)-ZE)*CZINV
+        SO = MIN(SOX,SOY,SOZ)
+        IF (SO .LT. -EPS) THEN
+          WRITE (6,*) 'INTEGRATE_1RAY: SO<0  ',
+     .      MU2,PHI2,XE,YE,ZE,SO,ICELL
+          STOP
+        ENDIF
+        XN = XE + SO*CX
+        YN = YE + SO*CY
+        ZN = ZE + SO*CZ
+C           Find the optical path across the grid cell and figure how
+C             many subgrid intervals to use
+
+        CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XN, YN, ZN, F)
+        EXTN = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
+     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
+     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
+     .         F(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
+     .         F(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
+     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
+     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
+     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
+
+        TAUGRID = SO*0.5*(EXT1+EXTN)
+        NTAU = MAX(1,1+INT(TAUGRID/TAUTOL))
+        DELS = SO/NTAU
+
+C           Loop over the subgrid cells
+        DO IT = 1, NTAU
+          PRINT *, TRANSMIT
+          S = IT*DELS
+          XI = XE + S*CX
+          YI = YE + S*CY
+          ZI = ZE + S*CZ
+
+          CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XI, YI, ZI, F)
+          EXT0 = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
+     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
+     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
+     .         F(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
+     .         F(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
+     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
+     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
+     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
+
+C            Compute the subgrid radiance: integration of the source function
+          EXT = 0.5*(EXT0+EXT1)
+          IF (EXT .NE. 0.0) THEN
+            TAU=EXT*DELS
+            ABSCELL = TAU*(1.0-0.5*TAU*(1.0-0.33333333333*TAU))
+            TRANSCELL = 1.0 - ABSCELL
+
+          ELSE
+            ABSCELL = 0.0
+            TRANSCELL = 1.0
+          ENDIF
+          DO I=1,8
+            IF (EXT0 > 1e-5) THEN
+              WEIGHTS(I) = F(I)*TOTAL_EXT(GRIDPTR(1,ICELL))/EXT0
+            ELSE
+              WEIGHTS(I) = F(I)*TOTAL_EXT(GRIDPTR(1,ICELL))*1e5
+            ENDIF
+            DIRFLUX(GRIDPTR(I,ICELL)) = DIRFLUX(GRIDPTR(I,ICELL)) +
+     .            SOLARFLUX*TRANSMIT*WEIGHTS(I)
+          ENDDO
+          TRANSMIT = TRANSMIT*TRANSCELL
+          EXT1 = EXT0
+C                End of sub grid cell loop
+        ENDDO
+C               Get the intersection face number (i.e. neighptr index)
+        IF (SOX .LE. SOZ .AND. SOX .LE. SOY) THEN
+          IFACE = 2-BITX
+          JFACE = 1
+          OPENBCFACE=BTEST(INT(CELLFLAGS(ICELL)),0).AND.BTEST(BCFLAG,0)
+        ELSE IF (SOY .LE. SOZ) THEN
+          IFACE = 4-BITY
+          JFACE = 2
+          OPENBCFACE=BTEST(INT(CELLFLAGS(ICELL)),1).AND.BTEST(BCFLAG,1)
+        ELSE
+          IFACE = 6-BITZ
+          JFACE = 3
+          OPENBCFACE=.FALSE.
+        ENDIF
+C            Get the next cell to go to
+        INEXTCELL = NEIGHPTR(IFACE,ICELL)
+        PRINT *, 'inextcell',INEXTCELL
+        IF (INEXTCELL .LT. 0) THEN
+          CALL NEXT_CELL (XN, YN, ZN, IFACE, JFACE, ICELL, GRIDPOS,
+     .           GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,  INEXTCELL)
+        ENDIF
+C             If going to same or larger face then use previous face
+        IF (NEIGHPTR(IFACE,ICELL) .GE. 0 .AND. .NOT.OPENBCFACE) THEN
+          KFACE = IFACE
+          IC = ICELL
+        ELSE
+C             If going to smaller face then use next face (more accurate)
+          KFACE = OPPFACE(IFACE)
+          IC = INEXTCELL
+          IFACE = 0
+        ENDIF
+C           Get the location coordinate
+        IF (INEXTCELL .GT. 0) THEN
+          IF (JFACE .EQ. 1) THEN
+            XN = GRIDPOS(1,GRIDPTR(IOCT,INEXTCELL))
+          ELSE IF (JFACE .EQ. 2) THEN
+            YN = GRIDPOS(2,GRIDPTR(IOCT,INEXTCELL))
+          ELSE
+            ZN = GRIDPOS(3,GRIDPTR(IOCT,INEXTCELL))
+          ENDIF
+        ENDIF
+C           If the transmission is greater than zero and not at a
+C             boundary then prepare for next cell
+        IF (TRANSMIT .LT. TRANSCUT .OR. NGRID.GT.MAXCELLSCROSS) THEN
+          VALIDRAD = .TRUE.
+        ELSE IF (INEXTCELL .EQ. 0 .AND. IFACE .GE. 5) THEN
+          VALIDRAD = .TRUE.
+        ELSE
+          ICELL = INEXTCELL
+        ENDIF
+        XE = XN
+        YE = YN
+        ZE = ZN
+      ENDDO
+
+      SIDE = IFACE
+
+      RETURN
+      END

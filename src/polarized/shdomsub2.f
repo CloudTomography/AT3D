@@ -417,8 +417,8 @@ Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
      .	          NPART, NBPTS)
-
       DO IP = 1, NPTS
+C27237,27283
         DIRPATH = 0.0
         CALL DIRECT_BEAM_PROP
      .           (0, GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP),

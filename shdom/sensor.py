@@ -26,14 +26,27 @@ def merge_sensors_forward(sensors):
     """
     TODO
     """
-    var_list = ['ray_x','ray_y','ray_z','ray_mu','ray_phi']
+
+    var_list = ['ray_x','ray_y','ray_z','ray_mu','ray_phi','ray_weight','pixel_index']
 
     output = {}
     for var in var_list:
         concatenated = xr.concat([sensor[var] for sensor in sensors], dim='nrays')
         output[var] = ('nrays', concatenated)
+
+
     output['stokes'] = xr.concat([sensor.stokes for sensor in sensors],dim='nimage')
     output['rays_per_image'] = ('nimage', np.array([sensor.sizes['nrays'] for sensor in sensors]))
+    output['rays_per_pixel'] = ('npixels', np.concatenate([np.unique(sensor.pixel_index,return_counts=True)[1]\
+                                                          for sensor in sensors]))
+    # var_list = ['ray_x','ray_y','ray_z','ray_mu','ray_phi']
+    #
+    # output = {}
+    # for var in var_list:
+    #     concatenated = xr.concat([sensor[var] for sensor in sensors], dim='nrays')
+    #     output[var] = ('nrays', concatenated)
+    # output['stokes'] = xr.concat([sensor.stokes for sensor in sensors],dim='nimage')
+    # output['rays_per_image'] = ('nimage', np.array([sensor.sizes['nrays'] for sensor in sensors]))
     merged_dataset = xr.Dataset(data_vars=output)
 
     return merged_dataset
@@ -134,7 +147,6 @@ def merge_sensors_inverse(sensors, solver):
     for var in var_list:
         concatenated = xr.concat([sensor[var] for sensor in sensors], dim='nrays')
         output[var] = ('nrays', concatenated)
-
 
     output['stokes'] = xr.concat([sensor.stokes for sensor in sensors],dim='nimage')
     output['rays_per_image'] = ('nimage', np.array([sensor.sizes['nrays'] for sensor in sensors]))
