@@ -50,7 +50,7 @@ def render_one_solver(solver,merged_sensor, sensor_mapping, sensors, maxiter=100
     solver.solve(maxiter=maxiter,init_solution=True,verbose=verbose,setup_grid=setup_grid)
     split = np.array_split(np.arange(merged_sensor.sizes['nrays']),n_jobs)
     start_end = [(a.min(),a.max()) for a in split]
-    out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(solver.integrate_to_sensor, check_pickle=False)(merged_sensor.sel(nrays=slice(start,end+1))) for start,end in start_end)
+    out = Parallel(n_jobs=n_jobs)(delayed(solver.integrate_to_sensor, check_pickle=False)(merged_sensor.sel(nrays=slice(start,end+1))) for start,end in start_end)
 
     var_list_nray = [str(name) for name in out[0].data_vars if str(name) not in ('rays_per_image', 'stokes',
                                                                                 'rays_per_pixel')]
@@ -122,24 +122,29 @@ def subdivide_raytrace_jobs(rte_sensors, solvers, n_jobs):
     for key, merged_sensor in rte_sensors.items():
         split = np.array_split(np.arange(merged_sensor.sizes['nrays']),render_jobs[key])
         start_end = [(i.min(),i.max()) for i in split]
+        #print(start_end)
         #adjust start and end indices so that rays are grouped by their parent pixel.
-        index_diffs = merged_sensor.pixel_index.diff(dim='nrays')
-        transitions = np.where(index_diffs.data==1)[0] + 1
+        index_diffs = np.append(merged_sensor.pixel_index.diff(dim='nrays').data,1) #add last end pixel.
+        ends = np.where(index_diffs==1)[0] + 1
         updated_start_end = []
-        updated_start_end.append((0, transitions[np.abs(transitions - start_end[0][1]).argmin()] + 1))
+        updated_start_end.append((0, ends[np.abs(ends - start_end[0][1]).argmin()]))
+
         for i in range(1,len(start_end)):
             new_start = updated_start_end[i-1][1]
             if i < len(start_end) - 1:
-                new_end = transitions[np.abs(transitions - start_end[i][1]).argmin()] + 1
+                new_end = ends[np.abs(ends - start_end[i][1]).argmin()]
             else:
                 new_end = start_end[i][1] + 1
-            updated_start_end.append((new_start, new_end))
-        ray_start_end.extend(updated_start_end)
 
+            updated_start_end.append((new_start, new_end))
+
+        ray_start_end.extend(updated_start_end)
         pixel_inds = np.cumsum(np.concatenate([np.array([0]), merged_sensor.rays_per_pixel.data])).astype(np.int)
+        #return updated_start_end, pixel_inds
         for start,end in updated_start_end:
             a = np.where(pixel_inds == start)[0][0]
             b=np.where(pixel_inds == end)[0][0]
+
             pixel_start_end.append((a,b))
             keys.append(key)
 
@@ -166,17 +171,42 @@ def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False
                                 sensors, maxiter, verbose, n_jobs)
 
         else:
-            keys, ray_start_end, pixel_start_end = subdivide_raytrace_jobs
-            #decide on the division of n_jobs among solvers based on total number of pixels.
-            render_jobs = OrderedDict()
-            pixel_count = 0
-            for key, merged_sensor in rte_sensors.items():
-                pixel_count += merged_sensor.sizes['nrays']
-                render_jobs[key] = pixel_count
+            if n_jobs==1:
+                out = [solvers[key].integrate_to_sensor(rte_sensors[key] for key in solvers.keys()]
 
-            for key,render_job in render_jobs.items():
-                render_jobs[key] = max(np.round(render_job/pixel_count * n_jobs).astype(np.int),1)
+            else:
+                #decide on the division of n_jobs among solvers based on total number of pixels.
+                #Note that the number of n_jobs here doesn't have to be the number of workers but can instead
+                #be the number of subdivided job. This could be modified to ensure that all jobs are the correct size.
+                #as is, this will make slightly more tasks than there are workers (n_jobs).
+                keys, ray_start_end, pixel_start_end = subdivide_raytrace_jobs(rte_sensors, solvers, n_jobs)
 
-            Parallel(n_jobs=len(list(solvers.keys())), backend="threading")(
-                delayed(render_one_solver, check_pickle=False)(solvers[key],rte_sensors[key], sensor_mapping[key],
-                sensors,maxiter, verbose=verbose, n_jobs=render_jobs[key], setup_grid=setup_grid, init_solution=init_solution) for key in solvers.keys())
+                out= Parallel(n_jobs=n_jobs)(
+                                delayed(solvers[key].integrate_to_sensor)(rte_sensors[key].sel(
+                                nrays=slice(ray_start,ray_end),npixels=slice(pix_start, pix_end)))
+                            for key, (ray_start,ray_end),(pix_start,pix_end) in zip(keys, ray_start_end, pixel_start_end))
+
+            #re arrange output so it goes in the original sensor objects.
+            for key in np.unique(keys):
+
+                #group output by solver.
+                indices = np.where(key == np.array(keys))[0]
+                out_key = []
+                for index in indices:
+                    out_key.append(out[index])
+
+                var_list_nray = [str(name) for name in out_key[0].data_vars if str(name) not in ('rays_per_image', 'stokes',
+                                                                                            'rays_per_pixel')]
+                merged = {}
+                for var in var_list_nray:
+                    concatenated= xr.concat([data[var] for data in out_key], dim='nrays')
+                    merged[var] = concatenated
+                merged['stokes'] = out_key[0].stokes
+                merged['rays_per_image'] = out_key[0].rays_per_image
+                integrated_rays = xr.Dataset(merged)
+                sensor_mapping = sensor_mappings[key]
+                rendered_rays = shdom.sensor.split_sensor_rays(integrated_rays) #splits into individual images.
+                for i,rendered_ray in enumerate(rendered_rays):
+                    mapping = sensor_mapping[i]
+                    sensor = sensors[mapping[0]]['sensor_list'][mapping[1]]
+                    shdom.sensor.get_observables(sensor, rendered_ray)     #modifies sensor in-place. Also averages over sub-pixel rays.
