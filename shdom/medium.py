@@ -67,15 +67,3 @@ def get_bounding_box(medium):
     )
     # TODO add units from the grid to the bounding box if exists
     return bounding_box
-
-def combine_to_medium(scatterers):
-    """
-    TODO
-    """
-    mediums = OrderedDict()
-    for key in np.atleast_1d(scatterers)[0].keys():
-        scatterer_list = []
-        for scatterer in scatterers:
-            scatterer_list.append(scatterer[key])
-        mediums[key] = scatterer_list
-    return mediums

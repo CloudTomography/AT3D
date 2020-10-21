@@ -1784,3 +1784,122 @@ C             boundary then prepare for next cell
 
       RETURN
       END
+
+      SUBROUTINE YLMALL_WRAP (TRANSPOSE, MU, PHI, ML, MM, NLM,NSTLEG,
+     .                          YR)
+C       This subroutine computes a set of normalized real generalized
+C     spherical harmonic functions (YR) for a particular direction mu,phi.
+C     (Doicu et al. 2013; http://dx.doi.org/10.1016/j.jqsrt.2012.12.009)
+C     ML is the maximum meridional mode, MM is the maximum azimuthal mode.
+C     NSTLEG is the number of matrix elements returned, either 1 for the
+C     1,1 term or 6 for the 6 unique elements of the 4x4 matrix.
+C     J = 2*(L*(L+1))/2 + M+1  for L<=MM
+C     J = (2*MM+1)*L-MM*(2+2*(MM-1))/2 + M+1  for L>MM
+      IMPLICIT NONE
+      INTEGER ML, MM, NSTLEG, NLM
+Cf2py intent(in) :: ML, MM, NSTLEG, NLM
+      REAL    MU, PHI
+Cf2py intent(in) :: MU, PHI
+      LOGICAL TRANSPOSE
+Cf2py intent(in) :: TRANSPOSE
+      REAL YR(NSTLEG,NLM)
+Cf2py intent(out) :: YR
+      INTEGER           J, M, MABS, L
+      DOUBLE PRECISION  X, PI, FCT, P1, P2, P3, COSM, SINM, SIGN
+      DOUBLE PRECISION, ALLOCATABLE :: DM0(:), DM2P(:), DM2M(:)
+
+
+      IF (NSTLEG .EQ. 1) THEN
+        CALL YLMALL_UNPOL (MU, PHI, ML, MM, YR)
+        RETURN
+      ENDIF
+
+      ALLOCATE (DM0(0:ML), DM2P(0:ML), DM2M(0:ML))
+      X = DBLE(MU)
+
+      PI  = DACOS(- 1.D0)
+      FCT = 1.D0/DSQRT(2.D0*PI)
+
+C       sign accounting for transpose matrices
+      IF (.NOT. TRANSPOSE) THEN
+        SIGN =  1.D0
+      ELSE
+        SIGN = -1.D0
+      END IF
+
+C     ..................................................................
+C                                M = 0
+      M = 0
+      CALL WIGNERFCT02P2M_NORMALIZED (X, ML, M,  DM0, DM2P, DM2M)
+      DO L = 0, ML
+        IF (L .LE. MM) THEN
+          J = L*(L+1) + M + 1
+        ELSE
+          J = (2*MM+1)*L - MM**2 + M + 1
+        ENDIF
+        P1 = FCT*DM0(L)
+        P2 = -0.5D0*FCT*(DM2P(L) + DM2M(L))
+        P3 = -0.5D0*FCT*(DM2P(L) - DM2M(L))
+
+C       --- Unm = Pnm*cos(m*phi) ---
+        YR(1,J) =  P1
+        IF (NSTLEG .EQ. 6) THEN
+          YR(2,J) = P2
+          YR(3,J) = P2
+          YR(4,J) = P1
+          YR(5,J) = P3
+          YR(6,J) = P3
+        ENDIF
+      END DO
+
+C     ..................................................................
+C                                   M =/ 0
+      DO MABS = 1, MM
+        CALL WIGNERFCT02P2M_NORMALIZED (X, ML, MABS,DM0, DM2P, DM2M)
+        COSM = COS(MABS*PHI)
+        SINM = SIN(MABS*PHI)
+        DO L = MABS, ML
+C         ..............................................................
+C                                     M > 0
+          M = MABS
+          IF (L .LE. MM) THEN
+            J = L * (L+1) + M + 1
+          ELSE
+            J = (2*MM+1) * L - MM**2 + M + 1
+          ENDIF
+          P1 = FCT*DM0(L)
+          P2 = -0.5D0*FCT*(DM2P(L) + DM2M(L))
+          P3 = -0.5D0*FCT*(DM2P(L) - DM2M(L))
+C
+C         --- Unm = Pnm*cos(m*phi) - D*Pnm*sin(m*phi) ---
+          YR(1,J) = P1*COSM - P1*SINM
+          IF (NSTLEG .EQ. 6) THEN
+            YR(2,J) = P2*COSM - P2*SINM
+            YR(3,J) = P2*COSM + P2*SINM
+            YR(4,J) = P1*COSM + P1*SINM
+            YR(5,J) = P3*COSM - SIGN*P3*SINM
+            YR(6,J) = P3*COSM + SIGN*P3*SINM
+          ENDIF
+C         ..............................................................
+C                                      M < 0
+          M = -MABS
+          IF (L .LE. MM) THEN
+            J = L*(L+1) + M + 1
+          ELSE
+            J = (2*MM + 1)*L - MM**2 + M + 1
+          ENDIF
+
+C         --- Vnm = Pnm*sin(m*phi) + D*Pnm*cos(m*phi) ---
+          YR(1,J) = P1*SINM + P1*COSM
+          IF (NSTLEG .EQ. 6) THEN
+            YR(2,J) = P2*SINM + P2*COSM
+            YR(3,J) = P2*SINM - P2*COSM
+            YR(4,J) = P1*SINM - P1*COSM
+            YR(5,J) = P3*SINM + SIGN*P3*COSM
+            YR(6,J) = P3*SINM - SIGN*P3*COSM
+          ENDIF
+        END DO
+      END DO
+      DEALLOCATE (DM0, DM2P, DM2M)
+      RETURN
+      END

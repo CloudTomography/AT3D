@@ -131,7 +131,10 @@ def dataset_checks(**argchecks):
 
                     #If the arg is not a list of (presumed) datasets
                     #then make it a list
-                    if isinstance(kargs[argname], list):
+                    if isinstance(kargs[argname], dict):
+                        karg_list = list(kargs[argname].values())
+                        list_flag = True
+                    elif isinstance(kargs[argname], list):
                         karg_list = kargs[argname]
                         list_flag = True
                     else:
@@ -163,7 +166,10 @@ def dataset_checks(**argchecks):
                 else:
                     #arg was passed as a positional argument
                     position = positionals.index(argname)
-                    if isinstance(pargs[position], list):
+                    if isinstance(pargs[position], dict):
+                        arg_list = list(pargs[position].values())
+                        list_flag = True
+                    elif isinstance(pargs[position], list):
                         arg_list = pargs[position]
                         list_flag = True
                     else:

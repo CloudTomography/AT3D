@@ -69,10 +69,10 @@ def load_forward_model(file_name):
         surface = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/surface']))
         source = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/source']))
 
-        medium_list = []
-        for i, med in solver['medium'].groups.items():
-            medium_list.append(xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
-                        'solvers/'+str(key)+'/medium/'+str(i)])))
+        mediums = OrderedDict()
+        for name, med in solver['medium'].groups.items():
+            mediums[name] = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
+                        'solvers/'+str(key)+'/medium/'+str(name)]))
 
         if 'atmosphere' in solver.groups.keys():
             atmosphere = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
@@ -81,7 +81,7 @@ def load_forward_model(file_name):
             atmosphere=None
 
         solver_dict[float(key)] = shdom.solver.RTE(numerical_params=numerical_params,
-                                            medium=medium_list,
+                                            medium=mediums,
                                            source=source,
                                            surface=surface,
                                             num_stokes=num_stokes,
@@ -113,5 +113,5 @@ def save_forward_model(file_name,sensors, solvers):
         solver._grid.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'grid', format='NETCDF4',engine='netcdf4')
         if solver.atmosphere is not None:
             solver.atmosphere.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'atmosphere', format='NETCDF4',engine='netcdf4')
-        for j, med in enumerate(solver.medium):
-            med.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'medium/'+str(j), format='NETCDF4',engine='netcdf4')
+        for name, med in solver.medium.items():
+            med.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'medium/'+str(name), format='NETCDF4',engine='netcdf4')

@@ -114,7 +114,8 @@ F2PY_CORE_API = [
     'compute_sh',
     'min_optical_depth',
     'gradient_l2_old',
-    'pencil_beam_prop'
+    'pencil_beam_prop',
+    'ylmall_wrap'
 ]
 
 def _run_command(cmd):

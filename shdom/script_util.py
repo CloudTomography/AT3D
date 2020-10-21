@@ -94,12 +94,21 @@ def combine_to_medium(scatterers):
     TODO
     """
     mediums = OrderedDict()
-    for key in np.atleast_1d(scatterers)[0].keys():
-        scatterer_list = []
-        for scatterer in scatterers:
-            scatterer_list.append(scatterer[key])
-        mediums[key] = scatterer_list
+    if isinstance(scatterers, dict) or isinstance(scatterers, OrderedDict):
+        for key in list(scatterers.values())[0].keys():
+            scatterer_dict = OrderedDict()
+            for name,scatterer in scatterers.items():
+                scatterer_dict[name] = scatterer[key]
+            mediums[key] = scatterer_dict
+
+    else:
+        for key in np.atleast_1d(scatterers)[0].keys():
+            scatterer_list = []
+            for scatterer in scatterers:
+                scatterer_list.append(scatterer[key])
+            mediums[key] = scatterer_list
     return mediums
+
 
 def subdivide_raytrace_jobs(rte_sensors, solvers, n_jobs):
     """

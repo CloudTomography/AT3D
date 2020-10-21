@@ -87,17 +87,19 @@ def set_state_fn(state):
                                         name=None
                                        )
 
-#run set_state_fn to populate cloud_optical_scatterers so that unknown_scatterers can be formed.
-set_state_fn(initial.density.data[mask])
+# #run set_state_fn to populate cloud_optical_scatterers so that unknown_scatterers can be formed.
+# set_state_fn(initial.density.data[mask])
+#
+# #assign unknowns whose gradients will contribute the state gradient.
+# #note that these can be distinct from the state, ie if state is a combination of lwc/reff.
+# cloud_unknowns = OrderedDict()
+# for key, scatterer in cloud_optical_scatterers.items():
+#     cloud_unknowns[key] = (scatterer, cloud_poly_tables[key], 'density')
+#
+# unordered_unknown_scatterers = [cloud_unknowns]
+# unknown_scatterers = shdom.script_util.combine_to_medium(unordered_unknown_scatterers)
 
-#assign unknowns whose gradients will contribute the state gradient.
-#note that these can be distinct from the state, ie if state is a combination of lwc/reff.
-cloud_unknowns = OrderedDict()
-for key, scatterer in cloud_optical_scatterers.items():
-    cloud_unknowns[key] = (scatterer, cloud_poly_tables[key], 'density')
-
-unordered_unknown_scatterers = [cloud_unknowns]
-unknown_scatterers = shdom.script_util.combine_to_medium(unordered_unknown_scatterers)
+unknown_scatterers = [('cloud', cloud_poly_tables,['density', 'reff'])]
 
 def project_gradient_to_state(gradient):
     #for help writing this run the gradient e.g. shdom.gradient.levis_approx_uncorrelated_l2

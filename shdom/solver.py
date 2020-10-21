@@ -4,6 +4,7 @@ import numpy as np
 from shdom import core, util, checks
 import warnings
 import copy
+from collections import OrderedDict
 
 class RTE(object):
     """
@@ -45,10 +46,24 @@ class RTE(object):
         self._nstokes = num_stokes
         self._nstleg = 1 if num_stokes == 1 else 6
 
-        self.medium = [medium] if not isinstance(medium, list) else medium
+        if isinstance(medium, OrderedDict):
+            self.medium = medium
+        else:
+            mediumdict= OrderedDict()
+            if isinstance(medium, dict):
+                for key,val in medium.items():
+                    mediumdict[key] = val
+            else:
+                try:
+                    iter(medium)
+                except TypeError:
+                    raise TypeError("Medium input must be an OrderedDict, dict, or an iterable")
+                for i,val in enumerate(medium):
+                    mediumdict['scatterer_{:03d}'.format(i)] = val
+            self.medium = mediumdict
 
         # Check that all optical scatterers have the same wavelength
-        wavelengths = [scatterer.attrs['wavelength_center'] for scatterer in self.medium if \
+        wavelengths = [scatterer.attrs['wavelength_center'] for scatterer in self.medium.values() if \
                        scatterer.attrs['wavelength_center'] is not None]
         assert len(wavelengths) > 0, 'At least one scatterer has to have a wavelength defined'
         assert np.allclose(wavelengths[0], wavelengths), 'scatterers have different wavelengths {}'.format(wavelengths)
@@ -85,26 +100,26 @@ class RTE(object):
         # No iterations have taken place
         self._iters = 0
 
-        # TODO: check that all scatterers are on the same grid
+        #check that all scatterers are on the same grid
         failed_list = []
-        for i,gridded in enumerate(self.medium):
-            if np.all(gridded.coords['x'] != self.medium[0].coords['x']) | \
-                np.all(gridded.coords['y'] != self.medium[0].coords['y']) | \
-                np.all(gridded.coords['z'] != self.medium[0].coords['z']):
+        for i,gridded in enumerate(self.medium.values()):
+            if np.all(gridded.coords['x'] != list(self.medium.values())[0].coords['x']) | \
+                np.all(gridded.coords['y'] != list(self.medium.values())[0].coords['y']) | \
+                np.all(gridded.coords['z'] != list(self.medium.values())[0].coords['z']):
                 failed_list.append(i)
         if len(failed_list) > 0:
             raise ValueError("mediums do not have consistent grids with the first medium", *failed_list)
 
-        self._grid = xr.Dataset({'x': self.medium[0].coords['x'],
-                                 'y': self.medium[0].coords['y'],
-                                 'z': self.medium[0].coords['z']})
+        self._grid = xr.Dataset({'x': list(self.medium.values())[0].coords['x'],
+                                 'y': list(self.medium.values())[0].coords['y'],
+                                 'z': list(self.medium.values())[0].coords['z']})
         self._setup_grid(self._grid)
 
         # Setup surface
         self._setup_surface(surface)
         self.surface = surface
 
-        # Temperature is used for thermal radiation
+        # atmosphere includes temperature for thermal radiation
         self._setup_atmosphere(atmosphere)
         self.atmosphere = atmosphere
 
@@ -421,7 +436,7 @@ class RTE(object):
         self._pa.extinctp = np.zeros(shape=[self._nbpts, len(self.medium)], dtype=np.float32)
         self._pa.albedop = np.zeros(shape=[self._nbpts, len(self.medium)], dtype=np.float32)
         self._pa.iphasep = np.zeros(shape=[self._nbpts, len(self.medium)], dtype=np.int32)
-        for i, scatterer in enumerate(self.medium):
+        for i, scatterer in enumerate(self.medium.values()):
             self._pa.extinctp[:, i] = scatterer.extinction.data.ravel()
             self._pa.albedop[:, i] = scatterer.ssalb.data.ravel()
             self._pa.iphasep[:, i] = scatterer.table_index.data.ravel() + self._pa.iphasep.max()
@@ -434,9 +449,9 @@ class RTE(object):
         self._pa.iphasep[np.where(self._pa.iphasep == 0)] = 1
 
         # Concatenate all scatterer tables into one table
-        max_legendre = max([scatterer.sizes['legendre_index'] for scatterer in self.medium])
+        max_legendre = max([scatterer.sizes['legendre_index'] for scatterer in self.medium.values()])
         padded_legcoefs = [scatterer.legcoef.pad({'legendre_index': (0, max_legendre - scatterer.legcoef.sizes['legendre_index'])},
-                                                    constant_values=0.0) for scatterer in self.medium]
+                                                    constant_values=0.0) for scatterer in self.medium.values()]
         legendre_table = xr.concat(padded_legcoefs, dim='table_index')
 
         self._pa.numphase = legendre_table.sizes['table_index']

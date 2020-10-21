@@ -3,6 +3,9 @@ import xarray as xr
 from collections import OrderedDict
 import shdom
 from joblib import Parallel, delayed
+import inspect
+import copy
+import pandas as pd
 
 def calculate_direct_beam_derivative(solvers):
     """
@@ -61,16 +64,15 @@ def calculate_direct_beam_derivative(solvers):
         solver._direct_derivative_ptr = direct_derivative_ptr
 
 
-def create_derivative_tables(solvers,unknown_scatterers):
+def create_derivative_tables(unknown_scatterers):
     """
     TODO
     """
     partial_derivative_tables = OrderedDict()
-
-    for key in solvers.keys():
-        medium = solvers[key].medium
-        partial_derivative_list = []
-        for unknown_scatterer, table, variable_names in unknown_scatterers[key]:
+    for key in unknown_scatterers[0][1].keys(): #the wavelengths in the poly tables.
+        partial_derivative_dict = OrderedDict()
+        for unknown_scatterer, tables, variable_names in unknown_scatterers:
+            table = tables[key]
             variable_names = np.atleast_1d(variable_names)
             #For each unknown_scatterer compute the tables of derivatives
             valid_microphysics_coords = {name:table[name] for name in table.coords if name not in ('table_index', 'stokes_index')}
@@ -112,13 +114,8 @@ def create_derivative_tables(solvers,unknown_scatterers):
                     raise ValueError('Invalid unknown scatterer name', variable_name)
 
                 derivatives_tables[variable_name] = differentiated
-
-            #find the index which each unknown scatterer corresponds to in the scatterer list.
-            for i,scatterer in enumerate(medium):
-                if unknown_scatterer is scatterer:
-                    partial_derivative_list.append((i, derivatives_tables))
-        partial_derivative_tables[key] = partial_derivative_list
-
+            partial_derivative_dict[unknown_scatterer] = derivatives_tables
+        partial_derivative_tables[key] = partial_derivative_dict
     return partial_derivative_tables
 
 
@@ -126,14 +123,16 @@ def get_derivatives(solvers, all_derivative_tables):
     """
     TODO
     Calculates partial derivatives on the rte_grid.
-    The solvers are modified in place to now contain the partial_derivatives
+    The solvers are modified in place to contain the partial_derivatives
     """
+    #TODO more detailed checks that derivative tables match solver scatterers.
+    #At the moment it is assumed that they are defined consistently.
     for key, rte_solver in solvers.items():
 
         rte_solver._precompute_phase()
         solver_derivative_table = all_derivative_tables[key]
-        num_derivatives = sum([len(scatterer_derivative_table.values()) for i,scatterer_derivative_table in \
-                              solver_derivative_table
+        num_derivatives = sum([len(scatterer_derivative_table.values()) for name,scatterer_derivative_table in \
+                              solver_derivative_table.items()
                               ])
         rte_solver._num_derivatives = np.array(num_derivatives, dtype=np.int32)
         unknown_scatterer_indices = []
@@ -142,22 +141,24 @@ def get_derivatives(solvers, all_derivative_tables):
         dalb = np.zeros(shape=[rte_solver._nbpts, num_derivatives], dtype=np.float32)
         diphase = np.zeros(shape=[rte_solver._nbpts, num_derivatives], dtype=np.int32)
 
-        #one loop through to find max legendre.
+        #one loop through to find max_legendre and unkonwn_scatterer_indices
         max_legendre = []
-        for i,scatterer_derivative_table in solver_derivative_table:
-            scatterer = rte_solver.medium[i]
+        i = 0
+        for name,scatterer_derivative_table in solver_derivative_table.items():
+            scatterer = rte_solver.medium[name]
             for variable_derivative_table in scatterer_derivative_table.values():
                 derivative_on_grid = shdom.medium.table_to_grid(scatterer,variable_derivative_table)
                 max_legendre.append(derivative_on_grid.sizes['legendre_index'])
                 unknown_scatterer_indices.append(i+1)
+            i += 1
         max_legendre = max(max_legendre)
         rte_solver._unknown_scatterer_indices = np.array(unknown_scatterer_indices).astype(np.int32)
 
         #second loop to assign everything else.
         padded_legcoefs = []
         count = 0
-        for i,scatterer_derivative_table in solver_derivative_table:
-            scatterer = rte_solver.medium[i]
+        for name,scatterer_derivative_table in solver_derivative_table.items():
+            scatterer = rte_solver.medium[name]
             for variable_derivative_table in scatterer_derivative_table.values():
                 derivative_on_grid = shdom.medium.table_to_grid(scatterer,variable_derivative_table)
 
@@ -258,6 +259,7 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True):
     jacobian = np.empty((rte_solver._nstokes,rte_solver._num_derivatives,1,1),order='F',dtype=np.float32)
     num_jacobian_pts = 1
     jacobian_ptr = np.zeros(num_jacobian_pts)
+    jacobian_flag=False
 
     gradient, loss, images, jacobian = shdom.core.gradient_l2(
         uncertainties=uncertainties,
@@ -336,7 +338,7 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True):
         zgrid=rte_solver._zgrid,
         gridpos=rte_solver._gridpos,
         sfcgridparms=rte_solver._sfcgridparms,
-        bcrad=rte_solver._bcrad,
+        bcrad=copy.deepcopy(rte_solver._bcrad),
         extinct=rte_solver._extinct[:rte_solver._npts],
         albedo=rte_solver._albedo[:rte_solver._npts],
         legen=rte_solver._legen,
@@ -502,7 +504,7 @@ def jacobian(rte_solver, sensor, indices_for_jacobian, exact_single_scatter=True
         zgrid=rte_solver._zgrid,
         gridpos=rte_solver._gridpos,
         sfcgridparms=rte_solver._sfcgridparms,
-        bcrad=rte_solver._bcrad,
+        bcrad=copy.deepcopy(rte_solver._bcrad),
         extinct=rte_solver._extinct[:rte_solver._npts],
         albedo=rte_solver._albedo[:rte_solver._npts],
         legen=rte_solver._legen,
@@ -674,7 +676,7 @@ def grad_l2_old(rte_solver, sensor, exact_single_scatter=True,
         zgrid=rte_solver._zgrid,
         gridpos=rte_solver._gridpos,
         sfcgridparms=rte_solver._sfcgridparms,
-        bcrad=rte_solver._bcrad,
+        bcrad=copy.deepcopy(rte_solver._bcrad),
         extinct=rte_solver._extinct[:rte_solver._npts],
         albedo=rte_solver._albedo[:rte_solver._npts],
         legen=rte_solver._legen,
@@ -729,10 +731,10 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
     grad_kwargs = {}
     grad_params = inspect.signature(gradient_fun).parameters
     for name,value in kwargs.items():
-        if name in solve_params.keys():
-            if solve_params[name].kind in (solve_params[name].POSITIONAL_OR_KEYWORD, solve_params[name].KEYWORD_ONLY,
-                    solve_params[name].VAR_KEYWORD):
-                solve_kwargs[name] = value
+        if name in grad_params.keys():
+            if grad_params[name].kind in (grad_params[name].POSITIONAL_OR_KEYWORD, grad_params[name].KEYWORD_ONLY,
+                    grad_params[name].VAR_KEYWORD):
+                grad_kwargs[name] = value
             else:
                 warnings.warn("kwarg '{}' passed to shdom.gradient.parallel_gradient is unused by \
                                 gradient_fun '{}''".format(name, gradient_fun.__name__))
@@ -744,14 +746,13 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
         raise NotImplementedError
 
     else:
-
         if n_jobs == 1:
             out = [gradient_fun(solvers[key],rte_sensors[key], **grad_kwargs) for key in solvers.keys()]
         else:
             #decide on the division of n_jobs among solvers based on total number of rays.
-            keys, ray_start_end, pixel_start_end = shdom.sensor.subdivide_raytrace_jobs(rte_sensors, solvers, n_jobs)
+            keys, ray_start_end, pixel_start_end = shdom.script_util.subdivide_raytrace_jobs(rte_sensors, solvers, n_jobs)
 
-            out = Parallel(n_jobs=n_jobs)(
+            out = Parallel(n_jobs=n_jobs, backend='threading')(
                 delayed(gradient_fun, check_pickle=False)(solvers[key],rte_sensors[key].sel(nrays=slice(ray_start,ray_end),
                                         npixels=slice(pix_start, pix_end)),**grad_kwargs)
                                 for key, (ray_start,ray_end),(pix_start,pix_end) in zip(keys, ray_start_end, pixel_start_end))
@@ -842,27 +843,11 @@ def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatte
                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter,indices_for_jacobian=indices_for_jacobian)
 
     #turn gradient into a gridded dataset for use in project_gradient_to_state
-    derivative_names = []
-    for unknown_scatterer, table, variable_names in list(unknown_scatterers.values())[0]:
-        variable_names = np.atleast_1d(variable_names)
-        for variable_name in variable_names:
-            derivative_names.append(variable_name)
-    unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices - 1
-    grid = list(solvers.values())[0]._grid
-    gradient_dataset = xr.Dataset(
-                        data_vars = {
-                            'gradient': (['x','y','z','derivative_index'],
-                                         gradient.reshape((grid.sizes['x'], grid.sizes['y'], grid.sizes['z'],-1)))
-                        },
-        coords = {
-            'x': grid.x,
-            'y': grid.y,
-            'z': grid.z,
-            'derivative_name': ('derivative_index', np.array(derivative_names)),
-            'derivative_scatterer_index': ('derivative_index', unknown_scatterer_indices)
-        }
-    )
-    return np.array(loss), gradient, jacobian
+    gradient_dataset = make_gradient_dataset(gradient, unknown_scatterers, solvers)
+    #turn jacobian into a dataset (minimal postprocessing)
+    jacobian_dataset = make_jacobian_dataset(jacobian, unknown_scatterers, indices_for_jacobian, solvers,rte_sensors)
+
+    return np.array(loss), gradient_dataset, jacobian_dataset
 
 
 def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
@@ -892,12 +877,24 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
     loss, gradient = parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=grad_l2,
                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter)
     #turn gradient into a gridded dataset for use in project_gradient_to_state
+    gradient_dataset = make_gradient_dataset(gradient, unknown_scatterers, solvers)
+
+    return np.array(loss), gradient_dataset
+
+
+def make_gradient_dataset(gradient, unknown_scatterers, solvers):
+    """
+    TODO
+    """
     derivative_names = []
-    for unknown_scatterer, table, variable_names in list(unknown_scatterers.values())[0]:
+    for unknown_scatterer, table, variable_names in unknown_scatterers:
         variable_names = np.atleast_1d(variable_names)
         for variable_name in variable_names:
             derivative_names.append(variable_name)
     unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices - 1
+    unknown_scatterer_names = np.array(list(list(solvers.values())[0].medium.keys()))[unknown_scatterer_indices]
+    derivative_index = pd.MultiIndex.from_arrays([unknown_scatterer_names, derivative_names], names=("scatterer_name","variable_name"))
+
     grid = list(solvers.values())[0]._grid
     gradient_dataset = xr.Dataset(
                         data_vars = {
@@ -908,13 +905,46 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
             'x': grid.x,
             'y': grid.y,
             'z': grid.z,
-            'derivative_name': ('derivative_index', np.array(derivative_names)),
-            'derivative_scatterer_index': ('derivative_index', unknown_scatterer_indices)
+            'derivative_index': derivative_index
         }
     )
+    return gradient_dataset
 
-    return np.array(loss), gradient_dataset
+def make_jacobian_dataset(jacobian_list, unknown_scatterers, indices_for_jacobian, solvers,rte_sensors):
+    """
+    TODO
+    """
+    merged_jacobian = np.concatenate(jacobian_list, axis=-1)
+    split_indices = []
+    for rte_sensor in rte_sensors.values():
+        size = rte_sensor.sizes['npixels']
+        split_indices.append(size)
+    split_indices = np.cumsum(split_indices) #TODO verify that no +1 needs to be added etc.
+    split_jacobian = np.split(merged_jacobian, split_indices, axis=-1)[:-1] #TODO verify the [:-1]
 
+    grid = list(solvers.values())[0]._grid
+    grid_index = pd.MultiIndex.from_arrays([grid.x[indices_for_jacobian[0]], grid.y[indices_for_jacobian[1]],grid.z[indices_for_jacobian[2]]], names=("x", "y","z"))
+
+    derivative_names = []
+    for unknown_scatterer, table, variable_names in unknown_scatterers:
+        variable_names = np.atleast_1d(variable_names)
+        for variable_name in variable_names:
+            derivative_names.append(variable_name)
+    unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices - 1
+    unknown_scatterer_names = np.array(list(list(solvers.values())[0].medium.keys()))[unknown_scatterer_indices]
+    derivative_index = pd.MultiIndex.from_arrays([unknown_scatterer_names, derivative_names], names=("scatterer_name","variable_name"))
+
+    jacobian_dataset = xr.Dataset(
+                                data_vars ={
+                                'jacobian_{:1.3f}'.format(wavelength): (['nstokes','derivative_index','grid_index', 'npixels_{:1.3f}'.format(wavelength)], jacobian)
+                                        for wavelength, jacobian in zip(solvers.keys(), split_jacobian)
+                                },
+                    coords={
+                    'grid_index': grid_index,
+                    'derivative_index': derivative_index
+                    }
+    )
+    return jacobian_dataset
 
 # def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sensors, gradient_fun, exact_single_scatter=True,
 #                         **kwargs):
