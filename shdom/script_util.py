@@ -179,8 +179,8 @@ def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False
                 #as is, this will make slightly more tasks than there are workers (n_jobs).
                 keys, ray_start_end, pixel_start_end = subdivide_raytrace_jobs(rte_sensors, solvers, n_jobs)
 
-                out= Parallel(n_jobs=n_jobs)(
-                                delayed(solvers[key].integrate_to_sensor)(rte_sensors[key].sel(
+                out= Parallel(n_jobs=n_jobs, backend='threading')(
+                                delayed(solvers[key].integrate_to_sensor, check_pickle=False)(rte_sensors[key].sel(
                                 nrays=slice(ray_start,ray_end),npixels=slice(pix_start, pix_end)))
                             for key, (ray_start,ray_end),(pix_start,pix_end) in zip(keys, ray_start_end, pixel_start_end))
 

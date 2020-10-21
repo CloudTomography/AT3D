@@ -3,6 +3,7 @@ import xarray as xr
 import numpy as np
 from shdom import core, util, checks
 import warnings
+import copy
 
 class RTE(object):
     """
@@ -930,7 +931,7 @@ class RTE(object):
             zgrid=self._zgrid,
             gridpos=self._gridpos,
             sfcgridparms=self._sfcgridparms,
-            bcrad=self._bcrad,
+            bcrad=copy.deepcopy(self._bcrad),
             extinct=self._extinct[:self._npts],
             albedo=self._albedo[:self._npts],
             legen=self._legen,
