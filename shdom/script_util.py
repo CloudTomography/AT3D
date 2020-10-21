@@ -40,7 +40,7 @@ def parallel_solve(solvers, n_jobs=1, mpi_comm=None, maxiter=100, verbose=True, 
                 solver.solve(maxiter=maxiter, init_solution=init_solution, verbose=verbose,setup_grid=setup_grid)
         else:
             Parallel(n_jobs=n_jobs, backend="threading")(
-                delayed(solver.solve, check_pickle=False)(maxiter, init_solution, verbose,setup_grid=setup_grid) for solver in solvers.values())
+                delayed(solver.solve, check_pickle=False)(maxiter=maxiter, init_solution=init_solution, verbose=verbose,setup_grid=setup_grid) for solver in solvers.values())
 
 def render_one_solver(solver,merged_sensor, sensor_mapping, sensors, maxiter=100, verbose=True, n_jobs=1, init_solution=True,
                         setup_grid=True):
@@ -156,7 +156,7 @@ def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False
     """
     In-place modification of sensors and solvers.
     """
-    rte_sensors, sensor_mapping = sort_sensors(sensors, solvers, 'forward')
+    rte_sensors, sensor_mappings = sort_sensors(sensors, solvers, 'forward')
     parallel_solve(solvers, n_jobs=n_jobs, mpi_comm=mpi_comm, maxiter=maxiter, verbose=verbose, init_solution=init_solution,
                         setup_grid=setup_grid)
     if mpi_comm is not None:
@@ -166,14 +166,12 @@ def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False
 
         if destructive:
             for key in solvers.keys():
-
                 render_one_solver(solvers.pop(key), rte_sensors[key], sensor_mapping[key],
                                 sensors, maxiter, verbose, n_jobs)
-
         else:
             if n_jobs==1:
-                out = [solvers[key].integrate_to_sensor(rte_sensors[key] for key in solvers.keys()]
-
+                out = [solvers[key].integrate_to_sensor(rte_sensors[key]) for key in solvers.keys()]
+                keys = list(solvers.keys())
             else:
                 #decide on the division of n_jobs among solvers based on total number of pixels.
                 #Note that the number of n_jobs here doesn't have to be the number of workers but can instead
@@ -187,7 +185,7 @@ def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False
                             for key, (ray_start,ray_end),(pix_start,pix_end) in zip(keys, ray_start_end, pixel_start_end))
 
             #re arrange output so it goes in the original sensor objects.
-            for key in np.unique(keys):
+            for key in solvers.keys():
 
                 #group output by solver.
                 indices = np.where(key == np.array(keys))[0]

@@ -814,76 +814,6 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
     else:
         return loss, gradient
 
-# def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sensors, gradient_fun, exact_single_scatter=True,
-#                         **kwargs):
-#     """
-#     TODO
-#     """
-#     if n_jobs == 1:
-#         out = [gradient_fun(rte_solver, sensor)]
-#     else:
-#         #split by rays
-#         split = np.array_split(np.arange(sensor.sizes['nrays']),n_jobs)
-#         start_end = [(i.min(),i.max()) for i in split]
-#         #adjust start and end indices so that rays are grouped by pixel.
-#         index_diffs = sensor.pixel_index.diff(dim='nrays')
-#         transitions = np.where(index_diffs.data==1)[0] + 1
-#         updated_start_end = []
-#         updated_start_end.append((0, transitions[np.abs(transitions - start_end[0][1]).argmin()]))
-#         for i in range(1,len(start_end)):
-#             new_start = updated_start_end[i-1][1]
-#             if i < len(start_end) - 1:
-#                 new_end = transitions[np.abs(transitions - start_end[i][1]).argmin()]
-#             else:
-#                 new_end = start_end[i][1] + 1
-#             updated_start_end.append((new_start, new_end))
-#
-#         pixel_start_end = []
-#         pixel_inds = np.cumsum(np.concatenate([np.array([0]), sensor.rays_per_pixel.data])).astype(np.int)
-#         for start,end in updated_start_end:
-#             a = np.where(pixel_inds == start)[0][0]
-#             b=np.where(pixel_inds == end)[0][0]
-#             pixel_start_end.append((a,b))
-#         out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(gradient_fun, check_pickle=False)(rte_solver,sensor.sel(nrays=slice(start,end),
-#         npixels=slice(pix_start, pix_end)),exact_single_scatter=exact_single_scatter, **kwargs)
-#          for (start,end),(pix_start,pix_end) in zip(updated_start_end,pixel_start_end))
-#
-#     #DOESN"T suppport CORRELATED ERRORS.
-#     loss = np.sum(np.array([i[1] for i in out]))
-#     gradient = np.sum(np.stack([i[0] for i in out],axis=-1),axis=-1)
-#
-#     #Modify the forward_sensors in-place to include the latest observations.
-#     var_list_nray = [str(name) for name in out[0][2].data_vars if str(name) not in ('rays_per_image', 'stokes',
-#                                                                                    'rays_per_pixel', 'uncertainties',
-#                                                                                    'measurement_data','stokes_weights',
-#                                                                                    'I','Q','U','V')]
-#     var_list_npixel = [str(name) for name in out[0][2].data_vars if str(name) in ('rays_per_pixel', 'uncertainties',
-#                                                                                    'measurement_data','stokes_weights',
-#                                                                                    'I','Q','U','V')]
-#     merged = {}
-#     for var in var_list_nray:
-#         concatenated= xr.concat([data[2][var] for data in out], dim='nrays')
-#         merged[var] = concatenated
-#     merged2 = {}
-#     for var in var_list_npixel:
-#         concatenated= xr.concat([data[2][var] for data in out], dim='npixels')
-#         merged2[var] = concatenated
-#     merged.update(merged2)
-#     merged['stokes'] = out[0][2].stokes
-#     merged['rays_per_image'] = out[0][2].rays_per_image
-#     integrated_rays = xr.Dataset(merged)
-#
-#     rendered_rays = shdom.sensor.split_sensor_pixels(integrated_rays)
-#     for i,rendered_ray in enumerate(rendered_rays):
-#         mapping = sensor_mapping[i]
-#         forward_sensor = forward_sensors[mapping[0]]['sensor_list'][mapping[1]]
-#         for stokes in forward_sensor.stokes_index:
-#             if rendered_ray['stokes'].sel({'stokes_index':stokes}):
-#                 #modification in-place.
-#                 forward_sensor[str(stokes.data)] = rendered_ray[str(stokes.data)]
-#
-#     return gradient, loss
-
 def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatterers,
                             table_derivatives, indices_for_jacobian, n_jobs=1,mpi_comm=None,verbose=False,
                             maxiter=100, init_solution=True, setup_grid=True,
@@ -984,3 +914,74 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
     )
 
     return np.array(loss), gradient_dataset
+
+
+# def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sensors, gradient_fun, exact_single_scatter=True,
+#                         **kwargs):
+#     """
+#     TODO
+#     """
+#     if n_jobs == 1:
+#         out = [gradient_fun(rte_solver, sensor)]
+#     else:
+#         #split by rays
+#         split = np.array_split(np.arange(sensor.sizes['nrays']),n_jobs)
+#         start_end = [(i.min(),i.max()) for i in split]
+#         #adjust start and end indices so that rays are grouped by pixel.
+#         index_diffs = sensor.pixel_index.diff(dim='nrays')
+#         transitions = np.where(index_diffs.data==1)[0] + 1
+#         updated_start_end = []
+#         updated_start_end.append((0, transitions[np.abs(transitions - start_end[0][1]).argmin()]))
+#         for i in range(1,len(start_end)):
+#             new_start = updated_start_end[i-1][1]
+#             if i < len(start_end) - 1:
+#                 new_end = transitions[np.abs(transitions - start_end[i][1]).argmin()]
+#             else:
+#                 new_end = start_end[i][1] + 1
+#             updated_start_end.append((new_start, new_end))
+#
+#         pixel_start_end = []
+#         pixel_inds = np.cumsum(np.concatenate([np.array([0]), sensor.rays_per_pixel.data])).astype(np.int)
+#         for start,end in updated_start_end:
+#             a = np.where(pixel_inds == start)[0][0]
+#             b=np.where(pixel_inds == end)[0][0]
+#             pixel_start_end.append((a,b))
+#         out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(gradient_fun, check_pickle=False)(rte_solver,sensor.sel(nrays=slice(start,end),
+#         npixels=slice(pix_start, pix_end)),exact_single_scatter=exact_single_scatter, **kwargs)
+#          for (start,end),(pix_start,pix_end) in zip(updated_start_end,pixel_start_end))
+#
+#     #DOESN"T suppport CORRELATED ERRORS.
+#     loss = np.sum(np.array([i[1] for i in out]))
+#     gradient = np.sum(np.stack([i[0] for i in out],axis=-1),axis=-1)
+#
+#     #Modify the forward_sensors in-place to include the latest observations.
+#     var_list_nray = [str(name) for name in out[0][2].data_vars if str(name) not in ('rays_per_image', 'stokes',
+#                                                                                    'rays_per_pixel', 'uncertainties',
+#                                                                                    'measurement_data','stokes_weights',
+#                                                                                    'I','Q','U','V')]
+#     var_list_npixel = [str(name) for name in out[0][2].data_vars if str(name) in ('rays_per_pixel', 'uncertainties',
+#                                                                                    'measurement_data','stokes_weights',
+#                                                                                    'I','Q','U','V')]
+#     merged = {}
+#     for var in var_list_nray:
+#         concatenated= xr.concat([data[2][var] for data in out], dim='nrays')
+#         merged[var] = concatenated
+#     merged2 = {}
+#     for var in var_list_npixel:
+#         concatenated= xr.concat([data[2][var] for data in out], dim='npixels')
+#         merged2[var] = concatenated
+#     merged.update(merged2)
+#     merged['stokes'] = out[0][2].stokes
+#     merged['rays_per_image'] = out[0][2].rays_per_image
+#     integrated_rays = xr.Dataset(merged)
+#
+#     rendered_rays = shdom.sensor.split_sensor_pixels(integrated_rays)
+#     for i,rendered_ray in enumerate(rendered_rays):
+#         mapping = sensor_mapping[i]
+#         forward_sensor = forward_sensors[mapping[0]]['sensor_list'][mapping[1]]
+#         for stokes in forward_sensor.stokes_index:
+#             if rendered_ray['stokes'].sel({'stokes_index':stokes}):
+#                 #modification in-place.
+#                 forward_sensor[str(stokes.data)] = rendered_ray[str(stokes.data)]
+#
+#     return gradient, loss
