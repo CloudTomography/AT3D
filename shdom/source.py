@@ -1,17 +1,19 @@
 import xarray as xr
 import numpy as np
 
-def solar(solar_zenith, solar_azimuth,solarflux=1.0,skyrad=0.0):
+def solar(solarmu, solar_azimuth,solarflux=1.0,skyrad=0.0):
     """
     TODO
     """
+    if not ((-1.0 <= solarmu ) & (solarmu < 0.0)):
+        raise ValueError("solarmu must be in the range -1.0 <= solarmu < 0.0 not '{}'. The SHDOM convention for solar direction is that it points \
+                         in the direction of the propagation of radiance.".format(solarmu))
+
     return xr.Dataset(
         data_vars={
             'name': 'solar_source',
             'solarflux': solarflux,
-            'solar_zenith': solar_zenith,
-            'solar_azimuth': solar_azimuth,
-            'solarmu': np.cos(np.deg2rad(180.0 - solar_zenith)),
+            'solarmu': solarmu,
             'solaraz': np.deg2rad(solar_azimuth),
             'srctype': 'S',
             'units': 'R',
@@ -41,10 +43,8 @@ def thermal(skyrad=0.0, units='radiance'):
         data_vars={
             'name': 'solar_source',
             'solarflux': 0.0,
-            'solar_zenith': 0.0,
-            'solar_azimuth': 0.0,
-            'solarmu': np.cos(np.deg2rad(0.0)),
-            'solaraz': np.deg2rad(0.0),
+            'solarmu': np.nan,
+            'solaraz': np.nan,
             'srctype': 'T',
             'units': units_flag,
             'wavenumber': [10000,10001], #only used for CKD
@@ -52,17 +52,19 @@ def thermal(skyrad=0.0, units='radiance'):
         }
     )
 
-def combined(solar_zenith, solar_azimuth,solarflux=1.0,skyrad=0.0):
+def combined(solar_mu, solar_azimuth,solarflux=1.0,skyrad=0.0):
     """
     TODO
     """
+    if not ((-1.0 <= solarmu) & (solarmu < 0.0)):
+        raise ValueError("solarmu must be in the range -1.0 <= solarmu < 0.0 not '{}'. The SHDOM convention for solar direction is that it points \
+                         in the direction of the propagation of radiance.".format(solarmu))
+
     return xr.Dataset(
         data_vars={
             'name': 'solar_source',
             'solarflux': solarflux,
-            'solar_zenith': solar_zenith,
-            'solar_azimuth': solar_azimuth,
-            'solarmu': np.cos(np.deg2rad(solar_zenith)),
+            'solarmu': solarmu,
             'solaraz': np.deg2rad(solar_azimuth),
             'srctype': 'B',
             'units': 'R',

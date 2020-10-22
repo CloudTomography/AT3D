@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import os
 from collections import OrderedDict
 import sys
+import shutil
 
 file_name = sys.argv[-1]
 
@@ -25,37 +26,6 @@ merged_z_coordinate = shdom.grid.combine_z_coordinates([reduced_atmosphere,cloud
 rte_grid = shdom.grid.make_grid(cloud_scatterer.x.data.min(),cloud_scatterer.x.data.max(),cloud_scatterer.x.data.size,
                            cloud_scatterer.y.data.min(),cloud_scatterer.y.data.max(),cloud_scatterer.y.data.size,
                            merged_z_coordinate)
-#define sensors.
-Sensordict = OrderedDict()
-misr_list = []
-sensor_zenith_list = [75.0,60.0,45.6,26.1,]*2 + [0.0]
-sensor_azimuth_list = [90]*4 + [-90]*4 +[0.0]
-for zenith,azimuth in zip(sensor_zenith_list,sensor_azimuth_list):
-    misr_list.append(
-        shdom.sensor.add_sub_pixel_rays(shdom.sensor.orthographic_projection(0.86, cloud_scatterer,
-                                                                             0.015,0.015, azimuth, zenith,
-                                             altitude='TOA', stokes='I'
-                                            ),FOV=0.0,degree=2)
-    )
-Sensordict['MISR'] = {'sensor_list': misr_list}
-
-wavelengths = shdom.script_util.get_unique_wavelengths(Sensordict)
-
-names = OrderedDict()
-surfaces = OrderedDict()
-sources = OrderedDict()
-numerical_parameters = OrderedDict()
-num_stokes = OrderedDict()
-
-config = shdom.configuration.get_config('./default_config.json')
-config['spherical_harmonics_accuracy'] = 0.01
-
-for wavelength in wavelengths:
-    num_stokes[wavelength] = 1
-    names[wavelength] = None
-    surfaces[wavelength] = shdom.surface.lambertian(albedo=0.0) #surface is wavelength independent.
-    sources[wavelength] = shdom.source.solar(10.0,0.0,solarflux=1.0)
-    numerical_parameters[wavelength] = config
 
 #resample the cloud onto the rte_grid
 cloud_scatterer_on_rte_grid = shdom.grid.resample_onto_grid(rte_grid, cloud_scatterer)
@@ -66,12 +36,43 @@ size_distribution_function = shdom.size_distribution.gamma
 cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.reff.dims,
                                        np.full_like(cloud_scatterer_on_rte_grid.reff.data, fill_value=0.1))
 
-#calculate the optical properties for this scatterer.
-#All wavelengths use consistent settings.
+#define sensors.
+Sensordict = OrderedDict()
+misr_list = []
+sensor_zenith_list = [75.0,60.0,45.6,26.1]*2 + [0.0]
+sensor_azimuth_list = [90]*4 + [-90]*4 +[0.0]
+for zenith,azimuth in zip(sensor_zenith_list,sensor_azimuth_list):
+    misr_list.append(
+        shdom.sensor.add_sub_pixel_rays(shdom.sensor.orthographic_projection(0.86, cloud_scatterer,
+                                                                             0.015,0.015, azimuth, zenith,
+                                             altitude='TOA', stokes='I'
+                                            ),FOV=0.0,degree=2)
+    )
+Sensordict['MISR'] = {'sensor_list': misr_list}
+
+#Define the RTE solvers needed to model the measurements and
+#calculate optical properties.
+wavelengths = shdom.script_util.get_unique_wavelengths(Sensordict)
+
+names = OrderedDict()
+surfaces = OrderedDict()
+sources = OrderedDict()
+numerical_parameters = OrderedDict()
+num_stokes = OrderedDict()
 cloud_poly_tables = OrderedDict()
 cloud_optical_scatterers = OrderedDict()
+
+config = shdom.configuration.get_config('./default_config.json')
+config['spherical_harmonics_accuracy'] = 0.01
+
 for wavelength in wavelengths:
-    #mie_table path is hardcoded for now. . . 
+    num_stokes[wavelength] = 1
+    names[wavelength] = None
+    surfaces[wavelength] = shdom.surface.lambertian(albedo=0.0) #surface is wavelength independent.
+    sources[wavelength] = shdom.source.solar(-1*np.cos(np.deg2rad(10.0)),0.0,solarflux=1.0)
+    numerical_parameters[wavelength] = config
+
+    #optical properties from mie calculations.
     mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength), relative_path='./mie_tables')
     cloud_size_distribution = shdom.size_distribution.get_size_distribution_grid(
                                                             mie_mono_table.radius.data,
@@ -83,17 +84,13 @@ for wavelength in wavelengths:
     cloud_optical_scatterers[wavelength] = shdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
     cloud_poly_tables[wavelength] = poly_table
 
-#save mie_table for later. at the moment saving/overwriting is done regardless of whether
-#it is loaded or calculated so it can be overwritten. (but only if identical.)
-if not os.path.exists('./mie_tables'):
-    os.makedir('./mie_tables')
-mie_mono_table.to_netcdf('./mie_tables/mie_table_0.86.nc')
-
 #calculate rayleigh properties.
 rayleigh_scatterer_list = shdom.rayleigh.to_grid(wavelengths,atmosphere,rte_grid)
 
 #just regroup optical properties to be grouped by wavelength for solver.
-mediums = shdom.script_util.combine_to_medium([cloud_optical_scatterers, rayleigh_scatterer_list])
+
+#SCATTERERS CAN (and should) BE NAMED.
+mediums = shdom.script_util.combine_to_medium({'cloud':cloud_optical_scatterers, 'rayleigh':rayleigh_scatterer_list})
 
 #define all solvers.
 solvers = OrderedDict()
@@ -105,9 +102,9 @@ for key,name in names.items():
                                     num_stokes=num_stokes[key],
                                     name=name
                                    )
+
 #solve RTE and calculate measurements.
 shdom.script_util.get_measurements(solvers, Sensordict, maxiter=100, n_jobs=8, verbose=True)
-
-#save all inputs (should be fully traceable).
+shutil.copy(__file__, 'copied_script.py')
+#save measurements, and also document all inputs.
 shdom.util.save_forward_model(file_name, Sensordict, solvers)
-print('Complete')

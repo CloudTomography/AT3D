@@ -5,6 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from collections import OrderedDict
+import shutil
+import datetime as dt
 
 os.chdir('/Users/jesserl2/Documents/Code/aviad_pyshdom_dev/pyshdom_dev/')
 #shdom.util.set_pyshdom_path()
@@ -87,18 +89,7 @@ def set_state_fn(state):
                                         name=None
                                        )
 
-# #run set_state_fn to populate cloud_optical_scatterers so that unknown_scatterers can be formed.
-# set_state_fn(initial.density.data[mask])
-#
-# #assign unknowns whose gradients will contribute the state gradient.
-# #note that these can be distinct from the state, ie if state is a combination of lwc/reff.
-# cloud_unknowns = OrderedDict()
-# for key, scatterer in cloud_optical_scatterers.items():
-#     cloud_unknowns[key] = (scatterer, cloud_poly_tables[key], 'density')
-#
-# unordered_unknown_scatterers = [cloud_unknowns]
-# unknown_scatterers = shdom.script_util.combine_to_medium(unordered_unknown_scatterers)
-
+#SIMPLIFIED definition of unknown scatterers. These must match names in the scatterers.
 unknown_scatterers = [('cloud', cloud_poly_tables,['density', 'reff'])]
 
 def project_gradient_to_state(gradient):
@@ -106,10 +97,10 @@ def project_gradient_to_state(gradient):
     #on the initial state and examine the output and code of that function.
     #This is based on unknown scatterers and set_state_fn.
 
-    #find the component of the gradient that is relevant (there is only one in this case so it is redundant)
-    cond1 = np.where((gradient.derivative_name.data == 'density') & (gradient.derivative_scatterer_index.data == 0))
+    #find the component of the gradient that is relevant.
+    #NEW just select the names here based on what was chosen in unknown scatterers.
     #apply any change of spatial basis (in this case just a mask.)
-    out_gradient = gradient.gradient.data[mask[0],mask[1],mask[2],cond1[0]]
+    out_gradient = gradient.gradient.sel(variable_name='density', scatterer_name='cloud').data[mask[0],mask[1],mask[2]]
     return out_gradient.ravel(order='F')
 
 #at the moment the bounds are specified unknown-by-unknown.
@@ -134,16 +125,16 @@ result = optimizer.minimize(initial.density.data[mask])
 #save the final synthetic forward model and measurements.
 shdom.util.save_forward_model(save_name, forward_sensors, solvers_reconstruct)
 
-import datetime as dt
 to_save = xr.Dataset(
                 data_vars={
                 'final_state': ('state_dim',result.x),
                 'intial_state': ('state_dim',initial.density.data[mask]),
                 'input_name': file_name,
-                'file_name': sys.argv[0], #optimization result isnot reproducible without the script so save the script.
+                'file_name': sys.argv[0], #optimization result is not reproducible without the script so save the script.
                 'time': dt.datetime.now() #and the date.
                 }
 )
 #append some extra stuff.
 #This file coulbe be opened earlier and have callback output appended to it as well.
 to_save.to_netcdf(save_name,'a',group='optimization_result')
+shutil.copy(__file__, 'copied_script.py')

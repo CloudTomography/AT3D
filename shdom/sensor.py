@@ -6,7 +6,7 @@ def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength):
     """
     TODO
     """
-    stokes_bool = [component in stokes for component in ['I', 'Q', 'U', 'V']]
+    stokes_bool = [component in stokes for component in ('I', 'Q', 'U', 'V')]
     dataset = xr.Dataset(
             data_vars={
                 'wavelength': wavelength,
@@ -39,14 +39,7 @@ def merge_sensors_forward(sensors):
     output['rays_per_image'] = ('nimage', np.array([sensor.sizes['nrays'] for sensor in sensors]))
     output['rays_per_pixel'] = ('npixels', np.concatenate([np.unique(sensor.pixel_index,return_counts=True)[1]\
                                                           for sensor in sensors]))
-    # var_list = ['ray_x','ray_y','ray_z','ray_mu','ray_phi']
-    #
-    # output = {}
-    # for var in var_list:
-    #     concatenated = xr.concat([sensor[var] for sensor in sensors], dim='nrays')
-    #     output[var] = ('nrays', concatenated)
-    # output['stokes'] = xr.concat([sensor.stokes for sensor in sensors],dim='nimage')
-    # output['rays_per_image'] = ('nimage', np.array([sensor.sizes['nrays'] for sensor in sensors]))
+
     merged_dataset = xr.Dataset(data_vars=output)
 
     return merged_dataset
@@ -334,8 +327,8 @@ def make_new_rays(theta_ref,phi_ref,theta_prime,phi_prime):
     new_phi = np.arctan2(new_ray[:,1,:],new_ray[:,0,:])
     return new_mu,new_phi
 
-def add_sub_pixel_rays(sensor,FOV,inplace=True,sampling='gaussian_cone',seed=None,degree=None,
-                      nrays=None):
+def add_sub_pixel_rays(sensor,FOV,sampling='gaussian_cone',seed=None,degree=None,
+                      nrays=None,inplace=True):
     """
     TODO
 
