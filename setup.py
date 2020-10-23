@@ -114,7 +114,7 @@ F2PY_CORE_API = [
     'compute_sh',
     'min_optical_depth',
     'gradient_l2_old',
-    'average_subpixel_rays'
+    'average_subpixel_rays',
     'pencil_beam_prop',
     'ylmall_wrap'
 ]

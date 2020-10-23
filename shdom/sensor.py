@@ -124,7 +124,7 @@ def get_observables(sensor, rendered_rays):
     else:
         observed_stokes = np.stack([var.data for name,var in temp.data_vars.items() if name != 'pixel_index'],axis=0)
         stokes_names = [name for name,var in temp.data_vars.items() if name != 'pixel_index']
-        observables = shdom.core.average_subpixel_rays(pixel_index = temp.pixel_index.data, nstokes=1,
+        observables = core.average_subpixel_rays(pixel_index = temp.pixel_index.data, nstokes=observed_stokes.shape[0],
                                             weighted_stokes=observed_stokes,nrays=temp.nrays.size,
                                             npixels=sensor.npixels.size)
         for i, name in enumerate(stokes_names):
