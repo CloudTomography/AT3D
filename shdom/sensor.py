@@ -357,12 +357,182 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
         sensor['pixel_index'] = ('nrays', pixel_index)
         sensor['ray_weight'] = ('nrays', ray_weight)
         sensor['use_subpixel_rays'] = True
-        sensor['subpixel_ray_args'] = sub_pixel_ray_args
+        sensor.attrs['subpixel_ray_args'] = sub_pixel_ray_args
 
     else:
         #duplicate ray variables to sensor dataset.
         sensor = add_null_subpixel_rays(sensor)
     return sensor
+
+def perspective_projection(wavelength, fov,
+                           x_resolution, y_resolution, position_vector,
+                           lookat_vector,up_vector,stokes='I',
+                          sub_pixel_ray_args={'method':None}):
+    """
+    TODO
+    A Perspective trasnormation (pinhole camera).
+    Parameters
+    ----------
+    wavelength: float,
+        Wavelength in [micron]
+    bounding_box: xarray.Dataset/DataArray
+        An xarray which contains the x,y,z coordinates which will be used
+        to compute the bounding_box for the domain.
+    fov: float
+        Field of view [deg]
+    x_resolution: int
+        Number of pixels in camera x axis
+    y_resolution: int
+        Number of pixels in camera y axis
+    position_vector: list of 3 float elements
+        [x , y , z] which are:
+        Location in global x coordinates [km] (North)
+        Location in global y coordinates [km] (East)
+        Location in global z coordinates [km] (Up)
+    lookat_vector: list of 3 float elements
+        [x , y , z] which are:
+        Point in global x coordinates [km] (North) where the camera is pointing at
+        Point in global y coordinates [km] (East) where the camera is pointing at
+        Point in global z coordinates [km] (Up) where the camera is pointing at
+    up_vector: list of 3 float elements
+        The up vector determines the roll of the camera.
+    samples: int
+        samples per pixel, e.g. rays backprojected per pixel.
+    stokes: list or string
+       list or string of stokes components to observe ['I', 'Q', 'U', 'V'].
+    """
+    norm = lambda x: x / np.linalg.norm(x, axis=0)
+
+    #assert samples>=1, "Sample per pixel is an integer >= 1"
+    #assert int(samples) == samples, "Sample per pixel is an integer >= 1"
+
+    assert int(x_resolution) == x_resolution, "x_resolution is an integer >= 1"
+    assert int(y_resolution) == y_resolution, "y_resolution is an integer >= 1"
+
+    # The bounding_box is not nessesary in the prespactive projection, but we still may consider
+    # to use if we project the rays on the bounding_box when the differences in mu , phi angles are below certaine precision.
+    #     if(bounding_box is not None):
+
+    #         xmin, ymin, zmin = bounding_box.x.data.min(),bounding_box.y.data.min(),bounding_box.z.data.min()
+    #         xmax, ymax, zmax = bounding_box.x.data.max(),bounding_box.y.data.max(),bounding_box.z.data.max()
+
+    nx = x_resolution
+    ny = y_resolution
+    position = np.array(position_vector, dtype=np.float32)
+    lookat = np.array(lookat_vector, dtype=np.float32)
+    up = np.array(up_vector)
+    direction = lookat - position
+
+    zaxis = norm(direction)
+    xaxis = norm(np.cross(up, zaxis))
+    yaxis = np.cross(zaxis, xaxis)
+    rotation_matrix = np.stack((xaxis, yaxis, zaxis), axis=1)
+
+    M = max(nx,ny)
+    npix = nx*ny
+    R = np.array([nx,ny])/M # R will be used to scale the sensor meshgrid.
+    dy = 2*R[1]/ny # pixel length in y direction in the normalized image plane.
+    dx = 2*R[0]/nx # pixel length in x direction in the normalized image plane.
+    x_s, y_s, z_s = np.meshgrid(np.linspace(-R[0], R[0]-dx, nx), np.linspace(-R[1], R[1]-dy, ny), 1.0)
+
+    # Here x_c, y_c, z_c coordinates on the image plane before transformation to the requaired observation angle
+    focal = 1.0 / np.tan(np.deg2rad(fov) / 2.0) # focal (normalized) length when the sensor size is 2 e.g. r in [-1,1).
+    fov_x = np.rad2deg( 2*np.arctan(R[0]/focal) )
+    fov_y = np.rad2deg( 2*np.arctan(R[1]/focal) )
+
+    k = np.array([[focal, 0, 0],
+                        [0, focal, 0],
+                        [0, 0, 1]], dtype=np.float32)
+    inv_k = np.linalg.inv(k)
+
+    homogeneous_coordinates = np.stack([x_s.ravel(), y_s.ravel(), z_s.ravel()])
+
+    x_c, y_c, z_c = norm(np.matmul(
+        rotation_matrix, np.matmul(inv_k, homogeneous_coordinates)))
+    # Here x_c, y_c, z_c coordinates on the image plane after transformation to the requaired observation
+
+    # x,y,z mu, phi in the global coordinates:
+    mu = -z_c.astype(np.float64)
+    phi = (np.arctan2(y_c, x_c) + np.pi).astype(np.float64)
+    x = np.full(npix, position[0], dtype=np.float32)
+    y = np.full(npix, position[1], dtype=np.float32)
+    z = np.full(npix, position[2], dtype=np.float32)
+
+    image_shape = [nx,ny]
+    sensor = shdom.sensor.make_sensor_dataset(x.ravel(), y.ravel(), z.ravel(), mu.ravel(), phi.ravel(), stokes, wavelength)
+    # compare to orthographic projection, prespective projection may not have bounding box.
+    #     if(bounding_box is not None):
+    #         sensor['bounding_box'] = xr.DataArray(np.array([xmin,ymin,zmin,xmax,ymax,zmax]),
+    #                                               coords={'bbox': ['xmin','ymin','zmin','xmax','ymax','zmax']},dims='bbox')
+
+    sensor['image_shape'] = xr.DataArray(image_shape, coords={'image_dims': ['nx', 'ny']}, dims='image_dims')
+    sensor.attrs = {
+        'projection': 'Perspective',
+        'fov_deg': fov,
+        'fov_x_deg': fov_x,
+        'fov_y_deg': fov_y,
+        'x_resolution': x_resolution,
+        'y_resolution': y_resolution,
+        'position': position,
+        'lookat': lookat,
+        'rotation_matrix': rotation_matrix,
+        'sensor_to_camera_transform_matrix':k
+
+    }
+
+    if sub_pixel_ray_args['method'] is not None:
+
+        #generate the weights and perturbations to the pixel positions in the image plane.
+        sub_pixel_ray_method, subpixel_ray_kwargs_x,subpixel_ray_kwargs_y = shdom.sensor.parse_sub_pixel_ray_args(sub_pixel_ray_args)
+        position_perturbations_x, weights_x = sub_pixel_ray_method(x_s.size, **subpixel_ray_kwargs_x)
+        position_perturbations_y, weights_y = sub_pixel_ray_method(y_s.size, **subpixel_ray_kwargs_y)
+
+        #merge the two dimensions
+        perturbations_x = np.repeat(position_perturbations_x[...,np.newaxis]*dx/2.0,
+                                    position_perturbations_y.shape[-1], axis=-1)
+        perturbations_y = np.repeat(position_perturbations_y[...,np.newaxis,:]*dy/2.0,
+                                    position_perturbations_x.shape[-1], axis=-2)
+        big_weightx = np.repeat(weights_x[...,np.newaxis], weights_y.shape[-1],axis=-1)
+        big_weighty = np.repeat(weights_y[...,np.newaxis,:], weights_x.shape[-1],axis=-2)
+
+        #apply perturbations to original image plane coordinates.
+        x_ray = (x_s.ravel()[:,np.newaxis,np.newaxis] + perturbations_x).ravel()
+        y_ray = (y_s.ravel()[:,np.newaxis,np.newaxis] + perturbations_y).ravel()
+        z_ray = np.repeat(np.repeat(z_s.ravel()[:,np.newaxis,np.newaxis], perturbations_x.shape[-2], axis=-2),
+                          perturbations_y.shape[-1], axis=-1).ravel()
+        ray_homogeneous = np.stack([x_ray, y_ray, z_ray])
+
+        x_c, y_c, z_c = norm(np.matmul(
+            rotation_matrix, np.matmul(inv_k, ray_homogeneous)))
+        # Here x_c, y_c, z_c coordinates on the image plane after transformation to the requaired observation
+
+        # x,y,z mu, phi in the global coordinates:
+        mu = -z_c.astype(np.float64)
+        phi = (np.arctan2(y_c, x_c) + np.pi).astype(np.float64)
+        x = np.full(x_c.size, position[0], dtype=np.float32)
+        y = np.full(x_c.size, position[1], dtype=np.float32)
+        z = np.full(x_c.size, position[2], dtype=np.float32)
+
+        #make the pixel indices and ray weights.
+        pixel_index = np.repeat(np.repeat(range(len(sensor.cam_mu.data)),
+                                          weights_x.shape[-1]), weights_y.shape[-1])
+        ray_weight = (big_weightx*big_weighty).ravel()
+        #update ray variables to sensor dataset.
+        sensor['ray_mu'] = ('nrays',mu)
+        sensor['ray_phi'] = ('nrays',phi)
+        sensor['ray_x'] = ('nrays',x)
+        sensor['ray_y'] = ('nrays',y)
+        sensor['ray_z'] = ('nrays',z)
+        sensor['pixel_index'] = ('nrays', pixel_index)
+        sensor['ray_weight'] = ('nrays', ray_weight)
+        sensor['use_subpixel_rays'] = True
+        sensor.attrs['subpixel_ray_args'] = sub_pixel_ray_args
+    else:
+            #duplicate ray variables to sensor dataset.
+        sensor = shdom.sensor.add_null_subpixel_rays(sensor)
+    return sensor
+
+
 
 # def gaussian_cone(npixels,degree, FOV):
 #     """
