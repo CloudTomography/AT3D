@@ -2,6 +2,7 @@ import xarray as xr
 import numpy as np
 import itertools
 import inspect
+from shdom import core
 
 def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength):
     """
@@ -118,15 +119,16 @@ def get_observables(sensor, rendered_rays):
     temp = xr.merge(merge_list)
 
     if not sensor.use_subpixel_rays:
-        #avoid expensive groupby if no subpixel rays are used.
         for stokes in temp.data_vars:
             sensor[stokes] = ('npixels', temp[stokes].data)
     else:
-        #only do the group_by once, not for every stokes.
-        observed = temp.groupby('pixel_index').sum()
-
-        for stokes in observed.data_vars:
-            sensor[stokes] = ('npixels', observed[stokes].data)
+        observed_stokes = np.stack([var.data for name,var in temp.data_vars.items() if name != 'pixel_index'],axis=0)
+        stokes_names = [name for name,var in temp.data_vars.items() if name != 'pixel_index']
+        observables = shdom.core.average_subpixel_rays(pixel_index = temp.pixel_index.data, nstokes=1,
+                                            weighted_stokes=observed_stokes,nrays=temp.nrays.size,
+                                            npixels=sensor.npixels.size)
+        for i, name in enumerate(stokes_names):
+            sensor[name] = ('npixels', observables[i])
 
     return sensor
 
@@ -459,7 +461,7 @@ def perspective_projection(wavelength, fov,
     z = np.full(npix, position[2], dtype=np.float32)
 
     image_shape = [nx,ny]
-    sensor = shdom.sensor.make_sensor_dataset(x.ravel(), y.ravel(), z.ravel(), mu.ravel(), phi.ravel(), stokes, wavelength)
+    sensor = make_sensor_dataset(x.ravel(), y.ravel(), z.ravel(), mu.ravel(), phi.ravel(), stokes, wavelength)
     # compare to orthographic projection, prespective projection may not have bounding box.
     #     if(bounding_box is not None):
     #         sensor['bounding_box'] = xr.DataArray(np.array([xmin,ymin,zmin,xmax,ymax,zmax]),
@@ -483,7 +485,7 @@ def perspective_projection(wavelength, fov,
     if sub_pixel_ray_args['method'] is not None:
 
         #generate the weights and perturbations to the pixel positions in the image plane.
-        sub_pixel_ray_method, subpixel_ray_kwargs_x,subpixel_ray_kwargs_y = shdom.sensor.parse_sub_pixel_ray_args(sub_pixel_ray_args)
+        sub_pixel_ray_method, subpixel_ray_kwargs_x,subpixel_ray_kwargs_y = parse_sub_pixel_ray_args(sub_pixel_ray_args)
         position_perturbations_x, weights_x = sub_pixel_ray_method(x_s.size, **subpixel_ray_kwargs_x)
         position_perturbations_y, weights_y = sub_pixel_ray_method(y_s.size, **subpixel_ray_kwargs_y)
 
@@ -529,7 +531,7 @@ def perspective_projection(wavelength, fov,
         sensor.attrs['subpixel_ray_args'] = sub_pixel_ray_args
     else:
             #duplicate ray variables to sensor dataset.
-        sensor = shdom.sensor.add_null_subpixel_rays(sensor)
+        sensor = add_null_subpixel_rays(sensor)
     return sensor
 
 

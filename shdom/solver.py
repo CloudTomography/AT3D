@@ -198,7 +198,7 @@ class RTE(object):
             else:
                 raise ValueError('atmosphere does not have a consistent grid with medium')
         else:
-            raise ValueError("Atmosphere should be an xr.Dataset")
+            raise TypeError("Atmosphere should be an xr.Dataset")
 
     def _setup_source(self, source):
         """
