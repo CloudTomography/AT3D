@@ -55,17 +55,19 @@ class Load_from_csv_test(TestCase):
 
 class Microphysics_load_from_csv_test(TestCase):
     def setUp(self):
-        self.droplets = load_from_csv('../synthetic_cloud_fields/jpl_les/rico32x37x26.txt')
-
-    def test_load_from_csv_density(self):
-        self.assertAlmostEqual(self.droplets.density.data[self.droplets.density.data>0].mean(), 0.265432, places=6)
-
+        scatterer = shdom.grid.load_from_csv('../synthetic_cloud_fields/jpl_les/rico32x37x26.txt', density='lwc', origin=(0.0,0.0))
+        x = scatterer.x.data
+        y = scatterer.y.data
+        z = scatterer.z.data
+        rte_grid = shdom.grid.make_grid(x.min(), x.max(), x.size, y.min(), y.max(), y.size, z)
+        self.droplets = shdom.grid.resample_onto_grid(rte_grid, scatterer)
+        self.droplets['veff'] = (self.droplets.reff.dims, np.full_like(self.droplets.reff.data, fill_value=0.1))
+    def test_load_from_csv_lwc(self):
+            self.assertAlmostEqual(self.droplets.density.data[self.droplets.density.data>0].mean(), 0.265432, places=6)
     def test_load_from_csv_reff(self):
         self.assertAlmostEqual(self.droplets.reff.data[self.droplets.reff.data>0].mean(), 16.433409, places=6)
-
     def test_load_from_csv_veff(self):
         self.assertAlmostEqual(self.droplets.veff.data[self.droplets.veff.data>0].mean(), 0.100000, places=6)
-
 
 class Microphysics_save_to_netcdf_test(TestCase):
     def setUp(self):
