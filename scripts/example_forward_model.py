@@ -43,10 +43,11 @@ sensor_zenith_list = [75.0,60.0,45.6,26.1]*2 + [0.0]
 sensor_azimuth_list = [90]*4 + [-90]*4 +[0.0]
 for zenith,azimuth in zip(sensor_zenith_list,sensor_azimuth_list):
     misr_list.append(
-        shdom.sensor.add_sub_pixel_rays(shdom.sensor.orthographic_projection(0.86, cloud_scatterer,
-                                                                             0.015,0.015, azimuth, zenith,
-                                             altitude='TOA', stokes='I'
-                                            ),FOV=0.0,degree=2)
+                    shdom.sensor.orthographic_projection(0.86, cloud_scatterer,0.02,0.015, azimuth, zenith,
+                                             altitude='TOA', stokes='I', subpixel_ray_args={'method': shdom.sensor.gaussian,
+                                                                                            'degree': (3,2)} #non-square pixel so add more
+                                                                                                            #subpixel rays in larger direction.
+                                            )
     )
 Sensordict['MISR'] = {'sensor_list': misr_list}
 
