@@ -5,6 +5,26 @@ import numpy as np
 from collections import OrderedDict
 import xarray as xr
 
+def get_image(sensor, order='F'):
+    if not hasattr(sensor, 'image_shape'):
+        raise ValueError("Sensor dataset does not have an 'image_shape' variable. A 2D image cannot be formed.")
+    shape = sensor.image_shape.data
+    d1 = 'imgdim0'
+    d2 = 'imgdim1'
+    img_data = xr.Dataset(
+        data_vars={
+            'x': ([d1,d2], sensor.cam_x.data.reshape(shape, order=order)),
+            'y': ([d1,d2], sensor.cam_y.data.reshape(shape, order=order)),
+            'mu': ([d1,d2], sensor.cam_mu.data.reshape(shape, order=order)),
+            'phi': ([d1,d2], sensor.cam_phi.data.reshape(shape, order=order))
+        }
+    )
+    for stokes in sensor.stokes_index:
+        if sensor.stokes.sel({'stokes_index': stokes}):
+            stokes_key = str(stokes.data)
+            img_data[stokes_key] = ([d1,d2], sensor[stokes_key].data.reshape(shape, order=order))
+    return img_data
+
 def make_forward_sensors(sensors):
 
     forward_sensors = OrderedDict()
