@@ -49,7 +49,7 @@ class Microphysics_save_to_csv_test(TestCase):
         self.test_fname = 'test_rico32x37x26.nc'
         self.droplets = shdom.grid.resample_onto_grid(scatterer, scatterer)
         self.droplets['veff'] = (self.droplets.reff.dims, np.full_like(self.droplets.reff.data, fill_value=0.1))
-        self.droplets.to_netcdf(test_fname)
+        self.droplets.to_netcdf(self.test_fname)
 
     def test_saved_microphysics(self):
         new_droplets = xr.load_dataset(self.test_fname)
