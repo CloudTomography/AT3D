@@ -69,7 +69,7 @@ class Shdom_rt_simulation_test(TestCase):
         poly_table = calculate_mie('../mie_tables', 'Water', self.wavelength)
         optical_properties = shdom.medium.table_to_grid(scatterer_grid, poly_table)
 
-        config_dataset = shdom.configuration.get_config('../orig_config.json')
+        config_dataset = shdom.configuration.get_config('./orig_config.json')
         surface = shdom.surface.lambertian(albedo=0.0)
         source = shdom.source.solar(solar_zenith=0, solar_azimuth=0.0)
         self.solvers = OrderedDict()
