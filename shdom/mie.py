@@ -239,7 +239,7 @@ def get_poly_table(size_distribution, mie_mono_table):
     legen_index = np.meshgrid(*coord_lengths, indexing='ij')
 
     #TODO: Does this need + 1 here?
-    table_index = np.ravel_multi_index(legen_index, dims=[coord.size for coord in coord_lengths]) + 1
+    table_index = np.ravel_multi_index(legen_index, dims=[coord.size for coord in coord_lengths])
     coords['table_index'] = (list(size_distribution.coords.keys())[1:], table_index)
     coords['stokes_index'] = mie_mono_table.coords['stokes_index']
 

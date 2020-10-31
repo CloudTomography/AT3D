@@ -359,7 +359,9 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
         sensor['pixel_index'] = ('nrays', pixel_index)
         sensor['ray_weight'] = ('nrays', ray_weight)
         sensor['use_subpixel_rays'] = True
-        sensor.attrs['subpixel_ray_args'] = sub_pixel_ray_args
+        sub_pixel_ray_args['method'] = sub_pixel_ray_args['method'].__name__
+        for attribute in sub_pixel_ray_args:
+            sensor.attrs['sub_pixel_ray_args_{}'.format(attribute)] = sub_pixel_ray_args[attribute]
 
     else:
         #duplicate ray variables to sensor dataset.
@@ -528,7 +530,10 @@ def perspective_projection(wavelength, fov,
         sensor['pixel_index'] = ('nrays', pixel_index)
         sensor['ray_weight'] = ('nrays', ray_weight)
         sensor['use_subpixel_rays'] = True
-        sensor.attrs['subpixel_ray_args'] = sub_pixel_ray_args
+
+        sub_pixel_ray_args['method'] = sub_pixel_ray_args['method'].__name__
+        for attribute in sub_pixel_ray_args:
+            sensor.attrs['sub_pixel_ray_args_{}'.format(attribute)] = sub_pixel_ray_args[attribute]
     else:
             #duplicate ray variables to sensor dataset.
         sensor = add_null_subpixel_rays(sensor)

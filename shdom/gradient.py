@@ -124,6 +124,8 @@ def get_derivatives(solvers, all_derivative_tables):
     TODO
     Calculates partial derivatives on the rte_grid.
     The solvers are modified in place to contain the partial_derivatives
+
+    This requires density to be defined in scatterer.
     """
     #TODO more detailed checks that derivative tables match solver scatterers.
     #At the moment it is assumed that they are defined consistently.
@@ -147,7 +149,7 @@ def get_derivatives(solvers, all_derivative_tables):
         for name,scatterer_derivative_table in solver_derivative_table.items():
             scatterer = rte_solver.medium[name]
             for variable_derivative_table in scatterer_derivative_table.values():
-                derivative_on_grid = shdom.medium.table_to_grid(scatterer,variable_derivative_table)
+                derivative_on_grid = shdom.medium.table_to_grid(scatterer,variable_derivative_table, inverse_mode=True)
                 max_legendre.append(derivative_on_grid.sizes['legendre_index'])
                 unknown_scatterer_indices.append(i+1)
             i += 1
@@ -425,7 +427,6 @@ def jacobian(rte_solver, sensor, indices_for_jacobian, exact_single_scatter=True
     num_jacobian_pts = np.size(jacobian_ptrs)
     jacobian = np.empty((rte_solver._nstokes, rte_solver._num_derivatives, num_jacobian_pts, total_pix), order='F', dtype=np.float32)
     jacobian_flag = True
-    jacobian_ptrs += 1
 
     gradient, loss, images, jacobian = shdom.core.gradient_l2(
         uncertainties=uncertainties,
@@ -841,7 +842,6 @@ def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatte
     loss, gradient, jacobian = parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors,
                         gradient_fun=shdom.gradient.jacobian,
                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter,indices_for_jacobian=indices_for_jacobian)
-
     #turn gradient into a gridded dataset for use in project_gradient_to_state
     gradient_dataset = make_gradient_dataset(gradient, unknown_scatterers, solvers)
     #turn jacobian into a dataset (minimal postprocessing)

@@ -90,7 +90,7 @@ def load_forward_model(file_name):
         rte_grid = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/grid']))
 
     return sensor_dict, solver_dict, rte_grid
-
+#TODO add checks here for if file exists etc.
 def save_forward_model(file_name,sensors, solvers):
     """
     TODO

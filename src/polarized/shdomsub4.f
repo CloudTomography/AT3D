@@ -824,6 +824,10 @@ C         to calculate the Stokes radiance vector for this pixel
           ENDDO
         ENDDO !end of ray loop.
         !calculations per pixel.
+C        PIXEL_ERROR = STOKESOUT(:, IPIX) - MEASUREMENTS(:, IPIX)
+C        CALL UPDATE_COSTFUNCTION(PIXEL_ERROR, RAYGRAD_PIXEL, GRADOUT,
+C     .          COST, UNCERTAINTIES, FLAG, NSTOKES, NBPTS, NUMDER)
+C
         DO NS = 1, NSTOKES
           PIXEL_ERROR = STOKESOUT(NS, IPIX) -
      .                    MEASUREMENTS(NS, IPIX)
@@ -833,7 +837,7 @@ C         to calculate the Stokes radiance vector for this pixel
             COST = COST + 0.5 * WEIGHT*PIXEL_ERROR**2
           ENDDO
         ENDDO
-
+C
         IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
 
           DO JI = 1,NUM_JACOBIAN_PTS
@@ -846,6 +850,35 @@ C            ENDDO
           END DO
         ENDIF
       ENDDO
+      RETURN
+      END
+
+      SUBROUTINE UPDATE_COSTFUNCTION (PIXEL_ERROR, RAYGRAD_PIXEL,
+     .             GRADOUT,COST, UNCERTAINTIES, FLAG,NSTOKES,
+     .             NBPTS, NUMDER)
+
+      CHARACTER*2 FLAG
+      INTEGER NBPTS, NUMDER, NSTOKES
+      DOUBLE PRECISION COST, GRADOUT(NBPTS,NUMDER)
+      DOUBLE PRECISION RAYGRAD_PIXEL(NSTOKES,NBPTS,NUMDER)
+      DOUBLE PRECISION PIXEL_ERROR(NSTOKES)
+      DOUBLE PRECISION UNCERTAINTIES(NSTOKES,NSTOKES)
+
+      INTEGER I,J
+
+      IF (FLAG .EQ. 'L2') THEN
+        DO I=1,NSTOKES
+          DO J=1,NSTOKES
+            COST = COST + 0.5 * UNCERTAINTIES(I,J) * PIXEL_ERROR(I)**2
+            GRADOUT = GRADOUT + 0.5 * UNCERTAINTIES(I,J) *
+     .        PIXEL_ERROR(I)*RAYGRAD_PIXEL(I,:,:)
+           ENDDO
+         ENDDO
+      ELSEIF (FLAG .EQ. 'NC') THEN
+
+
+      ENDIF
+
       RETURN
       END
 

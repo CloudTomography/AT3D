@@ -7,10 +7,14 @@ import xarray as xr
 from shdom import checks
 
 @checks.dataset_checks(microphysics=(checks.check_positivity, 'density'))
-def table_to_grid(microphysics, poly_table):
+def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=False):
     """
     TODO
     Interpolates the poly table onto the microphysics grid.
+
+    #TODO add checks that poly_table spans the microphysics. If only a single value
+    is in the poly_table (from the size distribution) then nans fill optical properties
+    silently as linear interpolation fails.
     """
     #CHECK FOR CORRECTLY NORMALIZED POLY_TABLE
     #check for missing microphysical coordinates.
@@ -22,10 +26,15 @@ def table_to_grid(microphysics, poly_table):
 
     interp_coords = {name:microphysics[name] for name in poly_table.coords if name not in ('table_index', 'stokes_index')}
 
-    ssalb = poly_table.ssalb.interp(interp_coords)
-    extinction_efficiency = poly_table.extinction.interp(interp_coords)
+    interp_method = 'nearest' if exact_table else 'linear'
+    ssalb = poly_table.ssalb.interp(interp_coords, method=interp_method)
+    extinction_efficiency = poly_table.extinction.interp(interp_coords, method=interp_method)
 
-    extinction = extinction_efficiency * microphysics.density
+    if not inverse_mode:
+        extinction = extinction_efficiency * microphysics.density
+    else:
+        extinction = extinction_efficiency
+
     extinction.name = 'extinction'
     table_index = poly_table.coords['table_index'].interp(coords=interp_coords, method='nearest').round().astype(int)
     unique_table_indices, inverse = np.unique(table_index.data, return_inverse=True)
@@ -57,13 +66,13 @@ def table_to_grid(microphysics, poly_table):
     return optical_properties
 
 
-def get_bounding_box(medium):
-    bounding_box = xr.DataArray(
-        data=[medium.x[0].data, medium.y[0].data, medium.z[0].data,
-              medium.x[-1].data, medium.y[-1].data, medium.z[-1].data],
-        coords={'bb_index': ['xmin', 'ymin', 'zmin', 'xmax', 'ymax', 'zmax']},
-        dims='bb_index',
-        attrs={'type': '3D bounding box'}
-    )
-    # TODO add units from the grid to the bounding box if exists
-    return bounding_box
+# def get_bounding_box(medium):
+#     bounding_box = xr.DataArray(
+#         data=[medium.x[0].data, medium.y[0].data, medium.z[0].data,
+#               medium.x[-1].data, medium.y[-1].data, medium.z[-1].data],
+#         coords={'bb_index': ['xmin', 'ymin', 'zmin', 'xmax', 'ymax', 'zmax']},
+#         dims='bb_index',
+#         attrs={'type': '3D bounding box'}
+#     )
+#     # TODO add units from the grid to the bounding box if exists
+#     return bounding_box

@@ -165,19 +165,19 @@ def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False
     In-place modification of sensors and solvers.
     """
     rte_sensors, sensor_mappings = sort_sensors(sensors, solvers, 'forward')
-    test = []
-    for solver in solvers.values():
-        try:
-            solver.check_solved()
-            test.append(True)
-        except:
-            test.append(False)
-    if not all(test):
-        parallel_solve(solvers, n_jobs=n_jobs, mpi_comm=mpi_comm, maxiter=maxiter, verbose=verbose, init_solution=init_solution,
-                            setup_grid=setup_grid)
-    else:
-        if verbose:
-            print('All solvers have already been solved, progressing straight to ray integrations.')
+    # test = []
+    # for solver in solvers.values():
+    #     try:
+    #         solver.check_solved()
+    #         test.append(True)
+    #     except:
+    #         test.append(False)
+    # if not all(test):
+    parallel_solve(solvers, n_jobs=n_jobs, mpi_comm=mpi_comm, maxiter=maxiter, verbose=verbose, init_solution=init_solution,
+                        setup_grid=setup_grid)
+    # else:
+    #     if verbose:
+    #         print('All solvers have already been solved, progressing straight to ray integrations.')
 
     if mpi_comm is not None:
         raise NotImplementedError
