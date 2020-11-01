@@ -61,10 +61,10 @@ def compute_table(particle_type, wavelength_band,
     This function does the hard work of computing a monomodal mie table.
     See 'get_mono_table' for more details.
     """
-
     #wavelength band
     wavelen1, wavelen2 = wavelength_band
-    assert wavelen1 <= wavelen2 , 'Minimum wavelength must be smaller than maximum'
+    if wavelen1 > wavelen2:
+        raise ValueError('wavelen1 must be <= wavelen2')
 
     avgflag = 'C'
     if wavelen1 == wavelen2:
