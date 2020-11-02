@@ -751,7 +751,7 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
             out = [gradient_fun(solvers[key],rte_sensors[key], **grad_kwargs) for key in solvers.keys()]
         else:
             #decide on the division of n_jobs among solvers based on total number of rays.
-            keys, ray_start_end, pixel_start_end = shdom.script_util.subdivide_raytrace_jobs(rte_sensors, solvers, n_jobs)
+            keys, ray_start_end, pixel_start_end = shdom.script_util._subdivide_raytrace_jobs(rte_sensors, solvers, n_jobs)
 
             out = Parallel(n_jobs=n_jobs, backend='threading')(
                 delayed(gradient_fun, check_pickle=False)(solvers[key],rte_sensors[key].sel(nrays=slice(ray_start,ray_end),
@@ -791,7 +791,7 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
                 integrated_rays = xr.Dataset(merged)
 
                 sensor_mapping = sensor_mappings[key]
-                rendered_rays = shdom.sensor.split_sensor_pixels(integrated_rays)
+                rendered_rays = shdom.sensor._split_sensor_pixels(integrated_rays)
                 for i,rendered_ray in enumerate(rendered_rays):
                     mapping = sensor_mapping[i]
                     forward_sensor = forward_sensors[mapping[0]]['sensor_list'][mapping[1]]

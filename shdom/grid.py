@@ -156,11 +156,15 @@ def resample_onto_grid(grid, data):
         grid = xr.Dataset(
                     coords=grid
         )
-    #linearly interpolate onto the grid.
-    #data is broadcasted to 3D.
     data_copy = data.copy(deep=True)
     if 'density' in data:
         data_copy['density'] = data.density.fillna(0.0)
+
+    # all variables except 'density'shouldn't be filled with zero at undefined points
+    # as this can cause very different values from expected in the following linear interpolation.
+    # Note that the following choice of backward and forward filling in (x,y,z) order is subjective.
+    # The validity of this method relies on the assumption that microphysics don't decay towards cloud edge and instead maintain
+    # a typical value. 'z' is always filled last as microphysics are expected to vary strongly in the vertical.
     for name,var in data.data_vars.items():
         if name != 'density':
             if ('x' in var.coords) & ('y' in var.coords) & ('z' in var.coords):
@@ -179,23 +183,24 @@ def resample_onto_grid(grid, data):
                 data_copy[name] = var.bfill(dim='z').ffill(dim='z')
 
     resampled_data = data_copy.interp_like(grid, method='linear').broadcast_like(grid)
+    #for variables which weren't defined at every point in the rte_grid, perform filling.
     filled = resampled_data.bfill(dim='x').ffill(dim='x').bfill(dim='y').ffill(dim='y').bfill(dim='z').ffill(dim='z')
 
     #overwrite density values so missing data is filled with 0.0
     if 'density' in filled:
         filled['density'] = resampled_data.density.fillna(0.0)
-    for name, datavar in filled.data_vars: #consistency check.
+    for name, datavar in filled.data_vars.items(): #consistency check.
         assert np.bitwise_not(np.all(np.isnan(datavar.data))), "Unexpected NaN in '{}'".format(name)
     return filled
 
-def make_grid(xmax,nx,ymax,ny,z):
+def make_grid(xmin: float, xmax: float, nx: int,ymin: float, ymax: float,ny: int, z: np.ndarray) -> xr.Dataset:
     """
     TODO
     """
-    #TODO checks on z to make sure its monotonic.
+    #checks on z to make sure its monotonic.
     z = np.asarray(z)
-    if (not np.all(np.sort(z) == z)) or (not np.all(z >=0.0)) or (np.unique(z1).size != z.size) or (z.ndim != 1):
-        raise ValueError('z must be >= 0 and strictly increasing.')
+    if (not np.all(np.sort(z) == z)) or (not np.all(z >=0.0)) or (np.unique(z).size != z.size) or (z.ndim != 1):
+        raise ValueError('z must be >= 0, strictly increasing and 1-D')
     return xr.Dataset(
         coords = {
             'x': np.linspace(xmin,xmax,nx),
@@ -232,9 +237,9 @@ def merge_two_z_coordinates(z1,z2):
     z2 = np.asarray(z2)
 
     if (not np.all(np.sort(z1) == z1)) or (not np.all(z1 >=0.0)) or (np.unique(z1).size != z1.size) or (z1.ndim != 1):
-        raise ValueError('z1 must be >= 0 and strictly increasing.')
+        raise ValueError('z1 must be >= 0,strictly increasing and 1-D')
     if (not np.all(np.sort(z2) == z2)) or (not np.all(z2 >=0.0)) or (np.unique(z2).size != z2.size) or (z2.ndim != 1):
-        raise ValueError('z1 must be >= 0 and strictly increasing.')
+        raise ValueError('z2 must be >= 0,strictly increasing and 1-D')
 
     # Bottom part of the atmosphere (no grid intersection)
     z_bottom = z1[z1 < z2[0]] if z1[0] < z2[0] else z2[z2 < z1[0]]

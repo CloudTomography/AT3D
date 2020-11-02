@@ -62,14 +62,16 @@ def render_one_solver(solver,merged_sensor, sensor_mapping, sensors, maxiter=100
     merged['rays_per_image'] = out[0].rays_per_image
     integrated_rays = xr.Dataset(merged)
 
-    rendered_rays = shdom.sensor.split_sensor_rays(integrated_rays)
+    rendered_rays = shdom.sensor._split_sensor_rays(integrated_rays)
     for i,rendered_ray in enumerate(rendered_rays):
         mapping = sensor_mapping[i]
         sensor = sensors[mapping[0]]['sensor_list'][mapping[1]]
-        unused = shdom.sensor.get_observables(sensor, rendered_ray)
+        unused = shdom.sensor._get_observables(sensor, rendered_ray)
 
 def sort_sensors(sensors, solvers, merge):
-
+    """
+    TODO
+    """
     rte_sensors = OrderedDict()
     sensor_mapping = OrderedDict()
 
@@ -82,9 +84,9 @@ def sort_sensors(sensors, solvers, merge):
                     sensor_list.append(sensor)
                     mapping_list.append((instrument,i))
         if merge == 'forward':
-            merged = shdom.sensor.merge_sensors_forward(sensor_list)
+            merged = shdom.sensor._merge_sensors_forward(sensor_list)
         elif merge == 'inverse':
-            merged = shdom.sensor.merge_sensors_inverse(sensor_list, solver)
+            merged = shdom.sensor._merge_sensors_inverse(sensor_list, solver)
         rte_sensors[key] = merged
         sensor_mapping[key] = mapping_list
     return rte_sensors, sensor_mapping
@@ -110,7 +112,7 @@ def combine_to_medium(scatterers):
     return mediums
 
 
-def subdivide_raytrace_jobs(rte_sensors, solvers, n_jobs):
+def _subdivide_raytrace_jobs(rte_sensors, solvers, n_jobs):
     """
     TODO
     """
@@ -164,6 +166,7 @@ def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False
     """
     In-place modification of sensors and solvers.
     """
+
     rte_sensors, sensor_mappings = sort_sensors(sensors, solvers, 'forward')
     # test = []
     # for solver in solvers.values():
@@ -197,7 +200,7 @@ def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False
                 #Note that the number of n_jobs here doesn't have to be the number of workers but can instead
                 #be the number of subdivided job. This could be modified to ensure that all jobs are the correct size.
                 #as is, this will make slightly more tasks than there are workers (n_jobs).
-                keys, ray_start_end, pixel_start_end = subdivide_raytrace_jobs(rte_sensors, solvers, n_jobs)
+                keys, ray_start_end, pixel_start_end = _subdivide_raytrace_jobs(rte_sensors, solvers, n_jobs)
 
                 out= Parallel(n_jobs=n_jobs, backend='threading')(
                                 delayed(solvers[key].integrate_to_sensor, check_pickle=False)(rte_sensors[key].sel(
@@ -223,8 +226,8 @@ def get_measurements(solvers,sensors, n_jobs=1, mpi_comm=None, destructive=False
                 merged['rays_per_image'] = out_key[0].rays_per_image
                 integrated_rays = xr.Dataset(merged)
                 sensor_mapping = sensor_mappings[key]
-                rendered_rays = shdom.sensor.split_sensor_rays(integrated_rays) #splits into individual images.
+                rendered_rays = shdom.sensor._split_sensor_rays(integrated_rays) #splits into individual images.
                 for i,rendered_ray in enumerate(rendered_rays):
                     mapping = sensor_mapping[i]
                     sensor = sensors[mapping[0]]['sensor_list'][mapping[1]]
-                    shdom.sensor.get_observables(sensor, rendered_ray)     #modifies sensor in-place. Also averages over sub-pixel rays.
+                    shdom.sensor._get_observables(sensor, rendered_ray)     #modifies sensor in-place. Also averages over sub-pixel rays.

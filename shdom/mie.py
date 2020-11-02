@@ -37,7 +37,7 @@ def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
 
     table_attempt=None
     if relative_path is not None:
-        table_attempt = load_table(relative_path,particle_type, wavelength_band,
+        table_attempt = _load_table(relative_path,particle_type, wavelength_band,
                     minimum_effective_radius, max_integration_radius,
                      wavelength_averaging, wavelength_resolution,
                      refractive_index)
@@ -46,14 +46,14 @@ def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
         table=table_attempt
     else:
         print('making mie_table. . . may take a while.')
-        table = compute_table(particle_type, wavelength_band,
+        table = _compute_table(particle_type, wavelength_band,
                     minimum_effective_radius, max_integration_radius,
                      wavelength_averaging, wavelength_resolution,
                      refractive_index)
 
     return table
 
-def compute_table(particle_type, wavelength_band,
+def _compute_table(particle_type, wavelength_band,
                   minimum_effective_radius, max_integration_radius,
                   wavelength_averaging, wavelength_resolution,
                   refractive_index):
@@ -166,7 +166,7 @@ def compute_table(particle_type, wavelength_band,
     return table
 
 
-def load_table(relative_path,particle_type, wavelength_band,
+def _load_table(relative_path,particle_type, wavelength_band,
             minimum_effective_radius=4.0, max_integration_radius=65.0,
              wavelength_averaging=False, wavelength_resolution=0.001,
              refractive_index=None):
