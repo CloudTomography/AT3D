@@ -153,9 +153,15 @@ def resample_onto_grid(grid, data):
         )
     #linearly interpolate onto the grid.
     #data is broadcasted to 3D.
-    resampled_data = data.interp_like(grid).broadcast_like(grid)
+    data_copy = data.copy(deep=True)
+    if 'density' in data:
+        data_copy['density'] = data.density.fillna(0.0)
+    for name,var in data.data_vars.items():
+        if name != 'density':
+            data_copy[name] = var.bfill(dim='x').ffill(dim='x').bfill(dim='y').ffill(dim='y').bfill(dim='z').ffill(dim='z')
 
-    #fill all missing values with unlimited forward and backward filling.
+    resampled_data = data_copy.interp_like(grid, method='linear').broadcast_like(grid)
+
     filled = resampled_data.bfill(dim='x').ffill(dim='x').bfill(dim='y').ffill(dim='y').bfill(dim='z').ffill(dim='z')
 
     #overwrite density values so missing data is filled with 0.0
