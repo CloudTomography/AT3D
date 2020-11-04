@@ -7,7 +7,7 @@ import xarray as xr
 from shdom import checks
 
 @checks.dataset_checks(microphysics=(checks.check_positivity, 'density'))
-def table_to_grid(microphysics, poly_table):
+def table_to_grid(microphysics, poly_table, inverse_mode=False):
     """
     TODO
     Interpolates the poly table onto the microphysics grid.
@@ -24,8 +24,10 @@ def table_to_grid(microphysics, poly_table):
 
     ssalb = poly_table.ssalb.interp(interp_coords)
     extinction_efficiency = poly_table.extinction.interp(interp_coords)
-
-    extinction = extinction_efficiency * microphysics.density
+    if inverse_mode:
+        extinction = extinction_efficiency
+    else:
+        extinction = extinction_efficiency * microphysics.density
     extinction.name = 'extinction'
     table_index = poly_table.coords['table_index'].interp(coords=interp_coords, method='nearest').round().astype(int)
     unique_table_indices, inverse = np.unique(table_index.data, return_inverse=True)
