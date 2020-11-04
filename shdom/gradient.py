@@ -147,7 +147,7 @@ def get_derivatives(solvers, all_derivative_tables):
         for i,scatterer_derivative_table in solver_derivative_table:
             scatterer = rte_solver.medium[i]
             for variable_derivative_table in scatterer_derivative_table.values():
-                derivative_on_grid = shdom.medium.table_to_grid(scatterer,variable_derivative_table)
+                derivative_on_grid = shdom.medium.table_to_grid(scatterer,variable_derivative_table, inverse_mode=True)
                 max_legendre.append(derivative_on_grid.sizes['legendre_index'])
                 unknown_scatterer_indices.append(i+1)
         max_legendre = max(max_legendre)
@@ -159,7 +159,7 @@ def get_derivatives(solvers, all_derivative_tables):
         for i,scatterer_derivative_table in solver_derivative_table:
             scatterer = rte_solver.medium[i]
             for variable_derivative_table in scatterer_derivative_table.values():
-                derivative_on_grid = shdom.medium.table_to_grid(scatterer,variable_derivative_table)
+                derivative_on_grid = shdom.medium.table_to_grid(scatterer,variable_derivative_table, inverse_mode=True)
 
                 dext[:, count] = derivative_on_grid.extinction.data.ravel()
                 dalb[:, count] = derivative_on_grid.ssalb.data.ravel()
