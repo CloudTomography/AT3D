@@ -52,15 +52,18 @@ def load_forward_model(file_name):
     groups = dataset.groups
     sensors = groups['sensors'].groups
     solvers = groups['solvers'].groups
-    sensor_dict = OrderedDict()
-    solver_dict = OrderedDict()
+    sensor_dict = shdom.organization.SensorsDict()
+    solver_dict = shdom.organization.SolversDict()
 
     for key,sensor in sensors.items():
         sensor_list = []
         for i, image in sensor.groups.items():
-            sensor_list.append(xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
+
+            sensor_dict.add_sensor(key, xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
                 'sensors/'+str(key)+'/'+str(i)])))
-        sensor_dict[key] = {'sensor_list':sensor_list}
+        #     sensor_list.append(xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
+        #         'sensors/'+str(key)+'/'+str(i)])))
+        # sensor_dict[key] = {'sensor_list':sensor_list}
 
     for key, solver in solvers.items():
         numerical_params = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
@@ -80,12 +83,13 @@ def load_forward_model(file_name):
         else:
             atmosphere=None
 
-        solver_dict[float(key)] = shdom.solver.RTE(numerical_params=numerical_params,
+        solver_dict.add_solver(key, shdom.solver.RTE(numerical_params=numerical_params,
                                             medium=mediums,
                                            source=source,
                                            surface=surface,
                                             num_stokes=num_stokes,
                                             name=None
+                                           )
                                            )
         rte_grid = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/grid']))
 

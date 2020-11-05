@@ -3,6 +3,7 @@ import numpy as np
 import itertools
 import inspect
 from shdom import core
+import typing
 
 def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength, fill_ray_variables=False):
     """
@@ -42,59 +43,6 @@ def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength, fill_ray_variables
     if fill_ray_variables:
         dataset = _add_null_subpixel_rays(dataset)
     return dataset
-
-def get_image(sensor):
-    """
-    TODO
-    Make a 2D sensor for visualization purposes.
-    """
-    if not hasattr(sensor, 'image_shape'):
-        raise ValueError("Sensor dataset does not have an 'image_shape' variable. A 2D image cannot be formed.")
-    img_data = xr.Dataset(
-        data_vars={
-            'x': (['imgdim0', 'imgdim1'],sensor.cam_x.data.reshape(sensor.image_shape.data,order='F')),
-            'y': (['imgdim0', 'imgdim1'],sensor.cam_y.data.reshape(sensor.image_shape.data,order='F')),
-            'mu': (['imgdim0', 'imgdim1'],sensor.cam_mu.data.reshape(sensor.image_shape.data,order='F')),
-            'phi': (['imgdim0', 'imgdim1'],sensor.cam_phi.data.reshape(sensor.image_shape.data,order='F'))
-        }
-    )
-    for stokes in sensor.stokes_index:
-        if sensor.stokes.sel({'stokes_index': stokes}):
-            img_data[str(stokes.data)] = (['imgdim0','imgdim1'],sensor[str(stokes.data)].data.reshape(
-                                        sensor.image_shape.data,order='F'))
-    return img_data
-
-def _get_observables(sensor, rendered_rays):
-    """
-    TODO
-    Currently averages over the sub_pixel rays and only takes
-    the observables that are needed.
-    """
-    if not sensor.use_subpixel_rays:
-        merge_list = []
-    else:
-        merge_list = [sensor.pixel_index]
-    for stokes in sensor.stokes_index:
-        if rendered_rays['stokes'].sel({'stokes_index':stokes}):
-            weighted_stokes = (sensor.ray_weight*rendered_rays[str(stokes.data)])
-            weighted_stokes.name = '{}'.format(str(stokes.data))
-            merge_list.append(weighted_stokes)
-
-    temp = xr.merge(merge_list)
-
-    if not sensor.use_subpixel_rays:
-        for stokes in temp.data_vars:
-            sensor[stokes] = ('npixels', temp[stokes].data)
-    else:
-        observed_stokes = np.stack([var.data for name,var in temp.data_vars.items() if name != 'pixel_index'],axis=0)
-        stokes_names = [name for name,var in temp.data_vars.items() if name != 'pixel_index']
-        observables = core.average_subpixel_rays(pixel_index = temp.pixel_index.data, nstokes=observed_stokes.shape[0],
-                                            weighted_stokes=observed_stokes,nrays=temp.nrays.size,
-                                            npixels=sensor.npixels.size)
-        for i, name in enumerate(stokes_names):
-            sensor[name] = ('npixels', observables[i])
-
-    return sensor
 
 def stochastic(npixels,nrays, seed=None):
     """
@@ -418,107 +366,8 @@ def perspective_projection(wavelength, fov,
         sensor = _add_null_subpixel_rays(sensor)
     return sensor
 
-def _merge_sensors_forward(sensors):
-    """
-    TODO
-    """
-    if not isinstance(sensors, (typing.List, typing.Tuple)):
-        raise TypeError("'sensors' should be a Tuple or List")
-    if not all([isinstance(sensor, xr.Dataset) for sensor in sensors]):
-        raise TypeError("Every element of 'sensors' should be an xr.Dataset")
 
-    var_list = ['ray_x','ray_y','ray_z','ray_mu','ray_phi','ray_weight','pixel_index']
-    missing_value = False
-    for i,sensor in enumerate(sensors):
-        for var in var_list:
-            if not var in sensor.data_vars:
-                raise KeyError("'{}' is missing from element '{}' of 'sensors'."
-                                "This element is not a valid sensor dataset.".format(var, i))
 
-    output = {}
-    for var in var_list:
-        concatenated = xr.concat([sensor[var] for sensor in sensors], dim='nrays')
-        output[var] = ('nrays', concatenated)
-
-    output['stokes'] = xr.concat([sensor.stokes for sensor in sensors],dim='nimage')
-    output['rays_per_image'] = ('nimage', np.array([sensor.sizes['nrays'] for sensor in sensors]))
-    output['rays_per_pixel'] = ('npixels', np.concatenate([np.unique(sensor.pixel_index,return_counts=True)[1]\
-                                                          for sensor in sensors]))
-
-    merged_dataset = xr.Dataset(data_vars=output)
-    return merged_dataset
-
-def _split_sensor_rays(merged):
-    """
-    TODO
-    """
-    list_of_unmerged = []
-    count = 0
-
-    for i in range(merged.sizes['nimage']):
-        split_index = merged.rays_per_image[i].data
-        split = merged.sel({'nrays': slice(count, count+split_index), 'nimage':i})
-
-        list_of_unmerged.append(split)
-        count += split_index
-    return list_of_unmerged
-
-def _split_sensor_pixels(merged):
-    """
-    TODO
-    """
-    pixel_inds = np.cumsum(np.concatenate([np.array([0]), merged.rays_per_pixel.data])).astype(np.int)
-    pixels_per_image = []
-    for ray_image in merged.rays_per_image.data:
-        pixels_per_image.append(np.where(pixel_inds == ray_image)[0][0])
-
-    list_of_unmerged = []
-    count = 0
-    for i in range(merged.sizes['nimage']):
-        split_index = pixels_per_image[i]
-        split = merged.sel({'npixels': slice(count, count+split_index), 'nimage':i})
-        list_of_unmerged.append(split)
-        count += split_index
-    return list_of_unmerged
-
-def _merge_sensors_inverse(sensors, solver):
-    """
-    TODO
-    """
-    var_list = ['ray_x','ray_y','ray_z','ray_mu','ray_phi','ray_weight','pixel_index']
-
-    output = {}
-    for var in var_list:
-        concatenated = xr.concat([sensor[var] for sensor in sensors], dim='nrays')
-        output[var] = ('nrays', concatenated)
-
-    output['stokes'] = xr.concat([sensor.stokes for sensor in sensors],dim='nimage')
-    output['rays_per_image'] = ('nimage', np.array([sensor.sizes['nrays'] for sensor in sensors]))
-    output['rays_per_pixel'] = ('npixels', np.concatenate([np.unique(sensor.pixel_index,return_counts=True)[1]\
-                                                          for sensor in sensors]))
-    stokes_weights = []
-    stokes_datas = []
-    for sensor in sensors:
-        stokes_weight = np.zeros((solver._nstokes, sensor.sizes['npixels']))
-        stokes_data = np.zeros((solver._nstokes, sensor.sizes['npixels']))
-        for i,stokes in enumerate(sensor.stokes_index):
-            if stokes in list(sensor.data_vars):
-                stokes_weight[i,:] = 1.0
-                stokes_data[i,:] = sensor[str(stokes.data)]
-
-        stokes_weights.append(stokes_weight)
-        stokes_datas.append(stokes_data)
-
-    output['stokes_weights'] = (['nstokes','npixels'], np.concatenate(stokes_weights,axis=-1))
-    output['measurement_data'] = (['nstokes','npixels'], np.concatenate(stokes_datas,axis=-1))
-
-    merged_sensors = xr.Dataset(data_vars=output)
-
-    #TODO HARDCODED UNCERTAINTIES
-    merged_sensors['uncertainties'] = xr.DataArray(data= np.ones((merged_sensors.sizes['nstokes'],
-                                merged_sensors.sizes['nstokes'], merged_sensors.sizes['npixels'])),
-                                dims=['nstokes', 'nstokes2', 'npixels']) #NB Be aware that repeated dims cause errors. so the second dim is set to 'nstokes2' Issue 1378 on xarray.
-    return merged_sensors
 
 def _parse_sub_pixel_ray_args(sub_pixel_ray_args):
     """

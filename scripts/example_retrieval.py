@@ -20,12 +20,10 @@ save_name = sys.argv[2]
 sensor_dict, solvers, rte_grid = shdom.util.load_forward_model(file_name)
 
 #define a copy of sensor_dict for storing synthetic measurements.
-forward_sensors = shdom.script_util.make_forward_sensors(sensor_dict)
-wavelengths = np.array(list(solvers.keys())) #strictly speaking these are keys may not always be wavelength.
-                                             #if not then loop through solvers like a normal person.
+forward_sensors = sensor_dict.make_forward_sensors()
+wavelengths = forward_sensors.get_unique_wavelengths()
 
-#define all scattering properties. These could also be parsed directly from the medium objects in solvers.
-#but lazy.
+#define all scattering properties. In general, these will be defined here rather than read from forward problem.
 size_distribution_function = shdom.size_distribution.gamma
 
 cloud_poly_tables = OrderedDict()

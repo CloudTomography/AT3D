@@ -55,9 +55,9 @@ def check_grid(dataset):
     y = dataset.y.diff('y')
 
     fail_list = []
-    if not np.allclose(x,x[0]):
+    if not np.allclose(x,x[0],atol=1e-6):
         fail_list.append('x')
-    if not np.allclose(y,y[0]):
+    if not np.allclose(y,y[0], atol=1e-6):
         fail_list.append('y')
     if len(fail_list) > 0:
         raise ValueError("Grid coordinates must be equispaced for the RTE solver.", *fail_list)

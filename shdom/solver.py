@@ -525,6 +525,19 @@ class RTE(object):
         if make_big_arrays:
             self._make_big_arrays()
 
+    def _release_big_arrays(self):
+
+        self._source = None
+        self._radiance=None
+        self._delsource = None
+        self._work = None
+        self._work1 = None
+        self._work2 = None
+        self._sfc_brdf_do = None
+        self._fluxes = None
+        self._dirflux = None
+        self._bcrad = None
+
     def _make_big_arrays(self):
 
         # Restart solution criteria
@@ -535,16 +548,7 @@ class RTE(object):
         #Release big arrays if they exist before a call to core.init_solution
         #to prevent doubling the memory image when it is not necessary.
         if hasattr(self, '_radiance'):
-            self._source = None
-            self._radiance=None
-            self._delsource = None
-            self._work = None
-            self._work1 = None
-            self._work2 = None
-            self._sfc_brdf_do = None
-            self._fluxes = None
-            self._dirflux = None
-            self._bcrad = None
+            self._release_big_arrays()
 
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, \
         self._sfcgridparms, self._ntoppts, self._nbotpts, self._bcptr, self._rshptr, self._shptr, self._oshptr, \
@@ -1256,6 +1260,135 @@ class RTE(object):
     @property
     def num_iterations(self):
         return self._iters
+
+        def _direct_beam_derivative(self):
+        """
+        Calculate the geometry of the direct beam at each point and solver.
+        Solver is modified in-place.
+        TODO
+        """
+        #calculate the solar direct beam on the base grid
+        #which ensures the solver has the required information to
+        #calculate the derivative.
+        self._make_direct()
+
+        direct_derivative_path, direct_derivative_ptr = \
+            shdom.core.make_direct_derivative(
+                npts=self._npts,
+                gridpos=self._gridpos,
+                npx=self._pa.npx,
+                npy=self._pa.npy,
+                npz=self._pa.npz,
+                delx=self._pa.delx,
+                dely=self._pa.dely,
+                xstart=self._pa.xstart,
+                ystart=self._pa.ystart,
+                zlevels=self._pa.zlevels,
+                ipdirect=self._ipdirect,
+                di=self._di,
+                dj=self._dj,
+                dk=self._dk,
+                epss=self._epss,
+                epsz=self._epsz,
+                xdomain=self._xdomain,
+                ydomain=self._ydomain,
+                cx=self._cx,
+                cy=self._cy,
+                cz=self._cz,
+                cxinv=self._cxinv,
+                cyinv=self._cyinv,
+                czinv=self._czinv,
+                uniformzlev=self._uniformzlev,
+                delxd=self._delxd,
+                delyd=self._delyd
+            )
+        self._direct_derivative_ptr = direct_derivative_ptr
+        self._direct_derivative_path = direct_derivative_path
+
+    def calculate_microphysical_partial_derivatives(self, table_to_grid_method, table_data):
+
+        self._precompute_phase()
+        #solver_derivative_table = #all_derivative_tables[key]
+        num_derivatives = sum([len(scatterer_derivative_table.values()) for name,scatterer_derivative_table in \
+                              table_data.items()
+                              ])
+        self._num_derivatives = np.array(num_derivatives, dtype=np.int32)
+        unknown_scatterer_indices = []
+
+        dext = np.zeros(shape=[self._nbpts, num_derivatives], dtype=np.float32)
+        dalb = np.zeros(shape=[self._nbpts, num_derivatives], dtype=np.float32)
+        diphase = np.zeros(shape=[self._nbpts, num_derivatives], dtype=np.int32)
+
+        #one loop through to find max_legendre and unkonwn_scatterer_indices
+        max_legendre = []
+        i = 0
+        for name,scatterer_derivative_table in table_data.items():
+            scatterer = self.medium[name]
+            for variable_derivative_table in scatterer_derivative_table.values():
+                derivative_on_grid = table_to_grid_method(scatterer, variable_derivative_table)#, inverse_mode=True)
+                max_legendre.append(derivative_on_grid.sizes['legendre_index'])
+                unknown_scatterer_indices.append(i+1)
+            i += 1
+        max_legendre = max(max_legendre)
+        self._unknown_scatterer_indices = np.array(unknown_scatterer_indices).astype(np.int32)
+
+        #second loop to assign everything else.
+        padded_legcoefs = []
+        count = 0
+        for name,scatterer_derivative_table in table_data.items():
+            scatterer = self.medium[name]
+            for variable_derivative_table in scatterer_derivative_table.values():
+                derivative_on_grid = table_to_grid_method(scatterer, variable_derivative_table)
+
+                dext[:, count] = derivative_on_grid.extinction.data.ravel()
+                dalb[:, count] = derivative_on_grid.ssalb.data.ravel()
+                diphase[:, count] = derivative_on_grid.table_index.data.ravel() + diphase.max()
+
+                padded_legcoefs.append(derivative_on_grid.legcoef.pad(
+                    {'legendre_index': (0, max_legendre - derivative_on_grid.legcoef.sizes['legendre_index'])},
+                    constant_values=0.0
+                ))
+
+                count += 1
+
+        #COPIED FROM solver.RTE
+        #In regions which are not covered by any optical scatterer they have an iphasep of 0.
+        #In original SHDOM these would be pointed to the rayleigh phase function (which is always included
+        #in the legendre table even if there is no rayleigh extinction.)
+        #Here, instead we set them to whatever the first phase function is.
+        #An arbitrary valid choice can be made as the contribution from these grid points is zero.
+        diphase[np.where(diphase == 0)] = 1
+
+        # Concatenate all legendre tables into one table
+        legendre_table = xr.concat(padded_legcoefs, dim='table_index')
+        dnumphase = legendre_table.sizes['table_index']
+        dleg = legendre_table.data
+        #TODO make sure the shaping of dleg and consistent with legenp/._legen. (._nleg and numphase)
+        #For a single scatterer/variable dnumphase == numphase, but this is not always the case.
+
+        # zero the first term of the first component of the phase function
+        # gradient. Pre-scale the legendre moments by 1/(2*l+1) which
+        # is done in the forward problem in TRILIN_INTERP_PROP
+        scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0,self._nleg+1)]))
+        dleg[0,0,:] = 0.0
+        dleg = dleg[:self._nstleg] / scaling_factor
+
+        dphasetab = shdom.core.precompute_phase_check_grad(
+                                                     negcheck=False,
+                                                     nstphase=self._nstphase,
+                                                     nstleg=self._nstleg,
+                                                     nscatangle=self._nscatangle,
+                                                     nstokes=self._nstokes,
+                                                     dnumphase=dnumphase,
+                                                     ml=self._ml,
+                                                     nlm=self._nlm,
+                                                     nleg=self._nleg,
+                                                     dleg=dleg,
+                                                     deltam=self._deltam
+                                                     )
+
+        self._dphasetab, self._dext, self._dalb, self._diphase, self._dleg, self._dnumphase = \
+        dphasetab, dext, dalb, diphase, dleg, dnumphase
 
 
 class ShdomPropertyArrays(object):
