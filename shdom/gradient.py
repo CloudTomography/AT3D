@@ -3,6 +3,7 @@ import xarray as xr
 from collections import OrderedDict
 import shdom
 from joblib import Parallel, delayed
+import copy
 
 def calculate_direct_beam_derivative(solvers):
     """
@@ -342,7 +343,7 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True,
         zgrid=rte_solver._zgrid,
         gridpos=rte_solver._gridpos,
         sfcgridparms=rte_solver._sfcgridparms,
-        bcrad=rte_solver._bcrad,
+        bcrad=copy.deepcopy(rte_solver._bcrad),
         extinct=rte_solver._extinct[:rte_solver._npts],
         albedo=rte_solver._albedo[:rte_solver._npts],
         legen=rte_solver._legen,
@@ -515,7 +516,7 @@ def grad_l2_old(rte_solver, sensor, exact_single_scatter=True,
         zgrid=rte_solver._zgrid,
         gridpos=rte_solver._gridpos,
         sfcgridparms=rte_solver._sfcgridparms,
-        bcrad=rte_solver._bcrad,
+        bcrad=copy.deepcopy(rte_solver._bcrad),
         extinct=rte_solver._extinct[:rte_solver._npts],
         albedo=rte_solver._albedo[:rte_solver._npts],
         legen=rte_solver._legen,
