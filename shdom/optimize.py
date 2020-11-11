@@ -29,7 +29,7 @@ class ObjectiveFunction(object):
                                                         n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,
                                                        maxiter=maxiter,init_solution=init_solution,
                                                        exact_single_scatter=exact_single_scatter)
-            state_gradient = project_gradient_to_state(gradient)
+            state_gradient = project_gradient_to_state(state, gradient)
             return loss, state_gradient
 
         return cls(measurements, loss_function, min_bounds=min_bounds, max_bounds=max_bounds)

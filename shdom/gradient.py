@@ -7,58 +7,6 @@ import inspect
 import copy
 import pandas as pd
 
-# def calculate_direct_beam_derivative(solvers):
-#     """
-#     Calculate the geometry of the direct beam at each point and solver.
-#     Solver is modified in-place.
-#     TODO
-#     """
-#
-#     #Only use the first solver.
-#     rte_solver = list(solvers.values())[0]
-#
-#     #calculate the solar direct beam on the base grid
-#     #which ensures the solver has the required information to
-#     #calculate the derivative.
-#     #TODO check that only one solver needs to have the direct_beam calcualted.
-#     rte_solver._make_direct()
-#
-#     direct_derivative_path, direct_derivative_ptr = \
-#         shdom.core.make_direct_derivative(
-#             npts=rte_solver._npts,
-#             gridpos=rte_solver._gridpos,
-#             npx=rte_solver._pa.npx,
-#             npy=rte_solver._pa.npy,
-#             npz=rte_solver._pa.npz,
-#             delx=rte_solver._pa.delx,
-#             dely=rte_solver._pa.dely,
-#             xstart=rte_solver._pa.xstart,
-#             ystart=rte_solver._pa.ystart,
-#             zlevels=rte_solver._pa.zlevels,
-#             ipdirect=rte_solver._ipdirect,
-#             di=rte_solver._di,
-#             dj=rte_solver._dj,
-#             dk=rte_solver._dk,
-#             epss=rte_solver._epss,
-#             epsz=rte_solver._epsz,
-#             xdomain=rte_solver._xdomain,
-#             ydomain=rte_solver._ydomain,
-#             cx=rte_solver._cx,
-#             cy=rte_solver._cy,
-#             cz=rte_solver._cz,
-#             cxinv=rte_solver._cxinv,
-#             cyinv=rte_solver._cyinv,
-#             czinv=rte_solver._czinv,
-#             uniformzlev=rte_solver._uniformzlev,
-#             delxd=rte_solver._delxd,
-#             delyd=rte_solver._delyd
-#         )
-#
-#     for solver in solvers.values():
-#         solver._direct_derivative_path = direct_derivative_path
-#         solver._direct_derivative_ptr = direct_derivative_ptr
-
-
 def create_derivative_tables(unknown_scatterers):
     """
     TODO
@@ -782,7 +730,7 @@ def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatte
     solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method,
                                                 unknown_scatterers.table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
     #prepare the sensors for the fortran subroutine for calculating gradient.
-    rte_sensors, sensor_mapping = measurements.sort_sensors(solvers, inverse=True)
+    rte_sensors, sensor_mapping = forward_sensors.sort_sensors(solvers, measurements)
     loss, gradient, jacobian = parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors,
                         gradient_fun=shdom.gradient.jacobian,
                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter,indices_for_jacobian=indices_for_jacobian)
@@ -821,13 +769,13 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
                                                 unknown_scatterers.table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
 
     #prepare the sensors for the fortran subroutine for calculating gradient.
-    rte_sensors, sensor_mapping = measurements.sort_sensors(solvers, inverse=True)
+    rte_sensors, sensor_mapping = forward_sensors.sort_sensors(solvers, measurements)
 
     loss, gradient = parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=grad_l2,
                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter)
 
     #uncorrelated l2.
-    loss = 10**6*np.sum(loss) / forward_sensors.nmeasurements
+    loss = 10**6*np.sum(loss)/ forward_sensors.nmeasurements
     gradient =  10**6*np.sum(gradient, axis=-1)/ forward_sensors.nmeasurements
 
     #turn gradient into a gridded dataset for use in project_gradient_to_state

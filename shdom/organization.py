@@ -38,9 +38,9 @@ class SensorsDict(OrderedDict):
                 nmeasurements += sensor.npixels.size*np.sum(sensor.stokes.data)
         return nmeasurements
 
-    def sort_sensors(self, solvers, inverse=False):
+    def sort_sensors(self, solvers, measurements=None):
         """
-        TODO
+        TODO check that measurements matches self.
         """
         rte_sensors = OrderedDict()
         sensor_mappings = OrderedDict()
@@ -64,10 +64,17 @@ class SensorsDict(OrderedDict):
             output['rays_per_image'] = ('nimage', np.array([sensor.sizes['nrays'] for sensor in sensor_list]))
             output['rays_per_pixel'] = ('npixels', np.concatenate([np.unique(sensor.pixel_index,return_counts=True)[1]\
                                                                   for sensor in sensor_list]))
-            if inverse:
+
+            if measurements is not None:
+                sensor_list_measure = []
+                for instrument, instrument_data in measurements.items():
+                    for i, sensor in enumerate(instrument_data['sensor_list']):
+                        if key == sensor.wavelength:
+                            sensor_list_measure.append(sensor)
+                            #no need for mapping as the sensors should match.
                 stokes_weights = []
                 stokes_datas = []
-                for sensor in sensor_list:
+                for sensor in sensor_list_measure:
                     stokes_weight = np.zeros((solver._nstokes, sensor.sizes['npixels']))
                     stokes_data = np.zeros((solver._nstokes, sensor.sizes['npixels']))
                     for i,stokes in enumerate(sensor.stokes_index):
@@ -80,9 +87,10 @@ class SensorsDict(OrderedDict):
 
                 output['stokes_weights'] = (['nstokes','npixels'], np.concatenate(stokes_weights,axis=-1))
                 output['measurement_data'] = (['nstokes','npixels'], np.concatenate(stokes_datas,axis=-1))
+
             merged_sensors = xr.Dataset(data_vars=output)
 
-            if inverse:
+            if measurements is not None:
                 #TODO HARDCODED UNCERTAINTIES.
                 #If we add an uncertainty model to sensors then this should be processed here.
                 merged_sensors['uncertainties'] = xr.DataArray(data= np.ones((merged_sensors.sizes['nstokes'],

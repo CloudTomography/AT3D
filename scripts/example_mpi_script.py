@@ -13,9 +13,9 @@ cloud_scatterer = shdom.grid.load_from_csv('./synthetic_cloud_fields/jpl_les/ric
 #load atmosphere
 atmosphere = xr.open_dataset('./ancillary_data/AFGL_summer_mid_lat.nc')
 #subset the atmosphere, choose only the bottom kilometre.
-reduced_atmosphere = atmosphere.sel({'z': atmosphere.coords['z'].data[atmosphere.coords['z'].data <= 1.0]})
+#reduced_atmosphere = atmosphere.sel({'z': atmosphere.coords['z'].data[atmosphere.coords['z'].data <= 1.0]})
 #merge the atmosphere and cloud z coordinates
-merged_z_coordinate = shdom.grid.combine_z_coordinates([reduced_atmosphere,cloud_scatterer])
+merged_z_coordinate = shdom.grid.combine_z_coordinates([cloud_scatterer])
 
 #make a merged grid for the rte.
 rte_grid = shdom.grid.make_grid(cloud_scatterer.x.data.min(),cloud_scatterer.x.data.max(),cloud_scatterer.x.data.size,
@@ -40,17 +40,17 @@ for zenith,azimuth in zip(sensor_zenith_list,sensor_azimuth_list):
     sensors_dict.add_sensor('MISR',
                     shdom.sensor.orthographic_projection(0.86, cloud_scatterer,0.02,0.02,
                                                          azimuth, zenith,
-                                                         altitude='TOA', stokes=['I','Q','U'])
+                                                         altitude='TOA', stokes=['I'])
     )
-for wavelength in (1.65, 2.2, 3.7):
-    sensors_dict.add_sensor('MODIS',
-                    shdom.sensor.orthographic_projection(wavelength,
-                                                         cloud_scatterer,
-                                                         0.02,0.02, 0.0,0.0,altitude='TOA',
-                                                         stokes=['I'])
-    )
+# for wavelength in (1.65, 2.2, 3.7):
+#     sensors_dict.add_sensor('MODIS',
+#                     shdom.sensor.orthographic_projection(wavelength,
+#                                                          cloud_scatterer,
+#                                                          0.02,0.02, 0.0,0.0,altitude='TOA',
+#                                                          stokes=['I'])
+#     )
 
-wavelengths = sensors_dict.get_unique_wavelengths()
+wavelengths = sensors_dict.get_unique_solvers()
 min_stokes = sensors_dict.get_minimum_stokes()
 solvers = shdom.organization.SolversDict()
 
@@ -70,18 +70,18 @@ for wavelength in wavelengths:
     cloud_optical_scatterer = shdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
 
     solvers.add_solver(wavelength, shdom.solver.RTE(numerical_params=shdom.configuration.get_config('./default_config.json'),
-                                    medium={'cloud': cloud_optical_scatterer, 'rayleigh': rayleigh_scatterer_list[wavelength]},
+                                    medium={'cloud': cloud_optical_scatterer },#, 'rayleigh': rayleigh_scatterer_list[wavelength]},
                                    source=shdom.source.solar(-1*np.cos(np.deg2rad(10.0)),0.0,solarflux=1.0),
                                    surface=shdom.surface.lambertian(albedo=0.0),
                                     num_stokes=min_stokes[wavelength],
                                     name=None
                                    ))
 
-import mpi4py.MPI as MPI
-mpi_comm = MPI.COMM_WORLD
-print('I am {} of {}'.format(mpi_comm.Get_rank(), mpi_comm.Get_size()))
+#import mpi4py.MPI as MPI
+#mpi_comm = MPI.COMM_WORLD
+#print('I am {} of {}'.format(mpi_comm.Get_rank(), mpi_comm.Get_size()))
 
-shdom.organization.get_measurements(solvers, sensors_dict, mpi_comm=mpi_comm, destructive=True)
+shdom.organization.get_measurements(solvers, sensors_dict, n_jobs=4)
 
-if mpi_comm.Get_rank() == 0:
-    shdom.util.save_forward_model(file_name, sensors_dict, solvers)
+#if mpi_comm.Get_rank() == 0:
+shdom.util.save_forward_model(file_name, sensors_dict, solvers)
