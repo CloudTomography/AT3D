@@ -22,13 +22,11 @@ class ObjectiveFunction(object):
         """
         NB The passed set_state_fn must be defined using the solvers/unknown_scatterers defined at the script level.
         """
-        table_derivatives = shdom.gradient.create_derivative_tables(unknown_scatterers)
-
         def loss_function(state, measurements):
 
             set_state_fn(state)
             loss, gradient = shdom.gradient.levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
-                                                       table_derivatives, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,
+                                                        n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,
                                                        maxiter=maxiter,init_solution=init_solution,
                                                        exact_single_scatter=exact_single_scatter)
             state_gradient = project_gradient_to_state(gradient)

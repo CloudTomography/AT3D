@@ -3,7 +3,7 @@ from collections import OrderedDict
 import numpy as np
 import xarray as xr
 from joblib import Parallel, delayed
-from shdom import core
+from shdom import core, gradient, medium
 
 class SensorsDict(OrderedDict):
     def __init__(self, *args, **kwargs):
@@ -21,21 +21,22 @@ class SensorsDict(OrderedDict):
         """
         TODO
         """
-        forward_sensors = Sensors()
-        for key,sensor in self.items():
-            forward_sensor= OrderedDict()
-            forward_sensor['sensor_list'] = [single_sensor.copy(deep=True) for
-                                             single_sensor in sensor['sensor_list']]
-            forward_sensors[key] = forward_sensor
+        forward_sensors = SensorsDict()
+        for key,instrument in self.items():
+            forward_instrument= OrderedDict()
+            forward_instrument['sensor_list'] = [single_sensor.copy(deep=True) for
+                                             single_sensor in instrument['sensor_list']]
+            forward_sensors[key] = forward_instrument
 
         return forward_sensors
 
     @property
-    def npixels(self):
-        npixels = 0
+    def nmeasurements(self):
+        nmeasurements = 0
         for instrument in self.values():
             for sensor in instrument['sensor_list']:
-                npixels += sensor.npixels.size
+                nmeasurements += sensor.npixels.size*np.sum(sensor.stokes.data)
+        return nmeasurements
 
     def sort_sensors(self, solvers, inverse=False):
         """
@@ -66,7 +67,7 @@ class SensorsDict(OrderedDict):
             if inverse:
                 stokes_weights = []
                 stokes_datas = []
-                for sensor in sensors:
+                for sensor in sensor_list:
                     stokes_weight = np.zeros((solver._nstokes, sensor.sizes['npixels']))
                     stokes_data = np.zeros((solver._nstokes, sensor.sizes['npixels']))
                     for i,stokes in enumerate(sensor.stokes_index):
@@ -110,11 +111,11 @@ class SensorsDict(OrderedDict):
         """
         TODO
         """
-        min_stokes = OrderedDict({wavelength:0 for wavelength in self.get_unique_wavelengths()})
-        for wavelength in min_stokes:
+        min_stokes = OrderedDict({key:0 for key in self.get_unique_solvers()})
+        for key in min_stokes:
             for instrument in self.values():
                 for sensor in instrument['sensor_list']:
-                    if wavelength == float(sensor.wavelength.data):
+                    if key == float(sensor.wavelength.data):
                         if np.all(sensor.stokes.data):
                             nstoke = 4
                         else:
@@ -153,7 +154,51 @@ class SensorsDict(OrderedDict):
                                             sensor.image_shape.data,order='F'))
         return img_data
 
-    def add_measurements(self, sensor_mappings, measurements, measurement_keys, inverse=False):
+    def add_measurements_inverse(self, sensor_mappings, measurements, measurement_keys):
+        """
+        TODO
+        """
+
+        for key in sensor_mappings:
+            #group output from different (possibly parallel) workers by unique solver key (sensor_mappings.keys() == solvers.keys()).
+            #if not parallel then measurement_keys == solvers.keys().
+            indices = np.where(key == np.array(measurement_keys))[0]
+            measurements_by_key = [measurements[i] for i in indices]
+
+            variable_list_nray = [str(name) for name in measurements_by_key[0].data_vars if str(name) not in ('rays_per_image', 'stokes',
+                                                                                           'rays_per_pixel', 'uncertainties',
+                                                                                           'measurement_data','stokes_weights',
+                                                                                           'I','Q','U','V')]
+            variable_list_npixel = [str(name) for name in measurements_by_key[0].data_vars if str(name) in ('rays_per_pixel', 'uncertainties',
+                                                                                           'measurement_data','stokes_weights',
+                                                                                           'I','Q','U','V')]
+            merged = {}
+            for name in variable_list_nray:
+                merged[name] = xr.concat([data[name] for data in measurements_by_key], dim='nrays')
+            #process pixel variables for inverse problem.
+            merged_pixel_variables = {}
+            for name in variable_list_npixel:
+                merged_pixel_variables[name] = xr.concat([data[name] for data in measurements_by_key], dim='npixels')
+            merged.update(merged_pixel_variables)
+            merged['stokes'] = measurements_by_key[0].stokes
+            merged['rays_per_image'] = measurements_by_key[0].rays_per_image
+            merged_measurements = xr.Dataset(merged)
+
+            pixel_inds = np.cumsum(np.concatenate([np.array([0]), merged_measurements.rays_per_pixel.data])).astype(np.int)
+            pixels_per_image = [np.where(pixel_inds == ray_image)[0][0] for ray_image in merged_measurements.rays_per_image.data]
+
+            count = 0
+            for i in range(merged_measurements.sizes['nimage']):
+                split_index = pixels_per_image[i]
+                sensor_measurements = merged_measurements.sel({'npixels': slice(count, count+split_index), 'nimage':i})
+                forward_sensor = self[sensor_mappings[key][i][0]]['sensor_list'][sensor_mappings[key][i][1]]
+                for stokes in forward_sensor.stokes_index:
+                    if forward_sensor['stokes'].sel({'stokes_index':stokes}):
+                        forward_sensor[str(stokes.data)] = sensor_measurements[str(stokes.data)]
+                count += split_index
+
+
+    def add_measurements_forward(self, sensor_mappings, measurements, measurement_keys):
         """
         TODO
         output_keys
@@ -168,25 +213,11 @@ class SensorsDict(OrderedDict):
 
             #Separately treat inverse and forward problem as inverse has different variables
             #and pixel variables have already been created.
-            if inverse:
-                variable_list_nray = [str(name) for name in measurements_by_key[0].data_vars if str(name) not in ('rays_per_image', 'stokes',
-                                                                                               'rays_per_pixel', 'uncertainties',
-                                                                                               'measurement_data','stokes_weights',
-                                                                                               'I','Q','U','V')]
-                variable_list_npixel = [str(name) for name in measurements_by_key[0].data_vars if str(name) in ('rays_per_pixel', 'uncertainties',
-                                                                                               'measurement_data','stokes_weights',
-                                                                                               'I','Q','U','V')]
-            else:
-                variable_list_nray = [str(name) for name in measurements_by_key[0].data_vars if str(name) not in ('rays_per_image', 'stokes',
-                                                                                            'rays_per_pixel')]
+            variable_list_nray = [str(name) for name in measurements_by_key[0].data_vars if str(name) not in ('rays_per_image', 'stokes',
+                                                                                        'rays_per_pixel')]
             merged = {}
             for name in variable_list_nray:
                 merged[name] = xr.concat([data[name] for data in measurements_by_key], dim='nrays')
-            if inverse: #process pixel variables for inverse problem.
-                merged_pixel_variables = {}
-                for name in variable_list_npixel:
-                    merged_pixel_variables[name] = xr.concat([data[name] for data in measurements_by_key], dim='npixels')
-                merged.update(merged_pixel_variables)
             merged['stokes'] = measurements_by_key[0].stokes
             merged['rays_per_image'] = measurements_by_key[0].rays_per_image
             merged_measurements = xr.Dataset(merged)
@@ -197,21 +228,13 @@ class SensorsDict(OrderedDict):
             for i in range(merged_measurements.sizes['nimage']):
                 split_index = merged_measurements.rays_per_image[i].data
                 sensor_measurements = merged_measurements.sel({'nrays': slice(count, count+split_index), 'nimage':i})
-
-                #calculate observables. subpixelrays and stokes weights are
-                #treated in gradient function so directly update stokes observables for inverse problem.
-                if inverse:
-                    forward_sensor = self[sensor_mappings[key][i][0]]['sensor_list'][sensor_mappings[key][i][1]]
-                    for stokes in forward_sensor.stokes_index:
-                        if new_measurements['stokes'].sel({'stokes_index':stokes}):
-                            forward_sensor[str(stokes.data)] = new_measurements[str(stokes.data)]
-                else: #treat subpixel rays and stokes weights for forward problem.
-                    self._calculate_observables(sensor_mappings[key][i], sensor_measurements)
+                #calculate observables.
+                self._calculate_observables(sensor_mappings[key][i], sensor_measurements)
                 count += split_index
 
     def _calculate_observables(self, mapping, rendered_rays):
         """
-        TODO
+        TODO TESTS NEEDED.
         Currently averages over the sub_pixel rays and only takes
         the observables that are needed.
         """
@@ -250,16 +273,17 @@ class SolversDict(OrderedDict):
         #the key already exists.
         self[key] = value
 
-    def parallel_solve(self, n_jobs=1,maxiter=100, verbose=True, init_solution=True,
+    def parallel_solve(self, n_jobs=1,mpi_comm=None,maxiter=100, verbose=True, init_solution=True,
                     setup_grid=True):
         """
         TODO
         """
-        for i in range(0, len(solvers), mpi_comm.Get_size()):
-            index = i + mpi_comm.Get_rank()
-            if index < len(solvers):
-                key = list(solvers)[index]
-                solvers[key].solve(maxiter=maxiter, verbose=verbose, init_solution=init_solution,setup_grid=setup_grid)
+        if mpi_comm is not None:
+            for i in range(0, len(solvers), mpi_comm.Get_size()):
+                index = i + mpi_comm.Get_rank()
+                if index < len(solvers):
+                    key = list(solvers)[index]
+                    solvers[key].solve(maxiter=maxiter, verbose=verbose, init_solution=init_solution,setup_grid=setup_grid)
 
         if n_jobs==1:
             for solver in self.values():
@@ -291,6 +315,32 @@ class SolversDict(OrderedDict):
         for key in self:
             self[key].calculate_microphysical_partial_derivatives(table_to_grid_method, table_data[key])
 
+class UnknownScatterers(OrderedDict):
+    def __init__(self, *args, **kwargs):
+        super(OrderedDict, self).__init__(*args, **kwargs)
+
+        def regular_grid(scatterer, table_data):
+            return medium.table_to_grid(scatterer, table_data, inverse_mode=True)
+
+        self._table_to_grid_method = regular_grid
+
+    def add_unknown(self, scatterer_name, variable_name_list, table_data):
+        if self._table_to_grid_method.__name__ == 'regular_grid':
+            self[scatterer_name] = {'variable_name_list': np.atleast_1d(variable_name_list), 'table_data_input': table_data}
+        else:
+            raise NotImplementedError
+
+    def create_derivative_tables(self):
+
+        inputs = [(scatterer_name, self[scatterer_name]['table_data_input'],
+                   self[scatterer_name]['variable_name_list'])
+                 for scatterer_name in self]
+        self.table_data = gradient.create_derivative_tables(inputs)
+
+    @property
+    def table_to_grid_method(self):
+        return self._table_to_grid_method
+
 
 def get_measurements(solvers, sensors, n_jobs=1, mpi_comm=None, maxiter=100,verbose=True, init_solution=True,
                     setup_grid=True, destructive=False):
@@ -317,10 +367,10 @@ def get_measurements(solvers, sensors, n_jobs=1, mpi_comm=None, maxiter=100,verb
             out_flat = [item for sublist in out for item in sublist]
             keys_flat = [item for sublist in keys for item in sublist]
             organized_out = [out_flat[keys_flat.index(key)] for key in solvers]
-            sensors.add_measurements(sensor_mappings, organized_out, list(solvers))
+            sensors.add_measurements_forward(sensor_mappings, organized_out, list(solvers))
 
     else:
-        solvers.parallel_solve(n_jobs=n_jobs, maxiter=maxiter, verbose=verbose, init_solution=init_solution,
+        solvers.parallel_solve(n_jobs=n_jobs, mpi_comm=mpi_comm,maxiter=maxiter, verbose=verbose, init_solution=init_solution,
                             setup_grid=setup_grid)
         if n_jobs==1:
             out = [solvers[key].integrate_to_sensor(rte_sensors[key]) for key in solvers]
@@ -337,7 +387,7 @@ def get_measurements(solvers, sensors, n_jobs=1, mpi_comm=None, maxiter=100,verb
                             nrays=slice(ray_start,ray_end),npixels=slice(pix_start, pix_end)))
                         for key, (ray_start,ray_end),(pix_start,pix_end) in zip(keys, ray_start_end, pixel_start_end))
 
-            sensors.add_measurements(sensor_mappings, out, keys)
+        sensors.add_measurements_forward(sensor_mappings, out, keys)
 
 def subdivide_raytrace_jobs(rte_sensors, n_jobs):
     """

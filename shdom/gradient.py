@@ -751,9 +751,8 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
         gradient = np.stack([i[0] for i in out],axis=-1)
         loss = np.array([i[1] for i in out])
         forward_model_output = [i[2] for i in out]
-
         #modify forward sensors in place to contain updated forward model estimates.
-        forward_sensors.add_measurements(sensor_mappings, forward_model_output, keys, inverse=True)
+        forward_sensors.add_measurements_inverse(sensor_mappings, forward_model_output, keys)
 
     #special treatment of jacobian out.
     if gradient_fun == shdom.gradient.jacobian:
@@ -762,8 +761,7 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
     else:
         return loss, gradient
 
-def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatterers,
-                            table_to_grid_method, indices_for_jacobian, n_jobs=1,mpi_comm=None,verbose=False,
+def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatterers, indices_for_jacobian, n_jobs=1,mpi_comm=None,verbose=False,
                             maxiter=100, init_solution=True, setup_grid=True,
                             exact_single_scatter=True):
 
@@ -781,8 +779,8 @@ def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatte
         #only needs to be called once.
         solvers.add_direct_beam_derivatives()
 
-    solvers.add_microphysical_partial_derivatives(table_to_grid_method, table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
-
+    solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method,
+                                                unknown_scatterers.table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
     #prepare the sensors for the fortran subroutine for calculating gradient.
     rte_sensors, sensor_mapping = measurements.sort_sensors(solvers, inverse=True)
     loss, gradient, jacobian = parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors,
@@ -790,8 +788,8 @@ def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatte
                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter,indices_for_jacobian=indices_for_jacobian)
 
     #uncorrelated l2.
-    loss = np.sum(loss) / forward_sensors.npixels
-    gradient =  np.sum(gradient, axis=-1)/ forward_sensors.npixels
+    loss = 10**6*np.sum(loss) / forward_sensors.nmeasurements
+    gradient =  10**6*np.sum(gradient, axis=-1)/ forward_sensors.nmeasurements
 
     #turn gradient into a gridded dataset for use in project_gradient_to_state
     gradient_dataset = make_gradient_dataset(gradient, unknown_scatterers, solvers)
@@ -801,10 +799,9 @@ def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatte
     return np.array(loss), gradient_dataset, jacobian_dataset
 
 
-def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
-                                table_to_grid_method, n_jobs=1,
+def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers, n_jobs=1,
                                  mpi_comm=None,verbose=False, maxiter=100, init_solution=True,
-                                 exact_single_scatter=True):
+                                 exact_single_scatter=True, setup_grid=True):
     """TODO"""
     #note this division of solving and 'raytracing' is not optimal for distributed memory parallelization
     #where tasks take varying amounts of time.
@@ -820,7 +817,8 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
         #only needs to be called once.
         solvers.add_direct_beam_derivatives()
 
-    solvers.add_microphysical_partial_derivatives(table_to_grid_method, table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
+    solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method,
+                                                unknown_scatterers.table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
 
     #prepare the sensors for the fortran subroutine for calculating gradient.
     rte_sensors, sensor_mapping = measurements.sort_sensors(solvers, inverse=True)
@@ -829,8 +827,8 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter)
 
     #uncorrelated l2.
-    loss = np.sum(loss) / forward_sensors.npixels
-    gradient =  np.sum(gradient, axis=-1)/ forward_sensors.npixels
+    loss = 10**6*np.sum(loss) / forward_sensors.nmeasurements
+    gradient =  10**6*np.sum(gradient, axis=-1)/ forward_sensors.nmeasurements
 
     #turn gradient into a gridded dataset for use in project_gradient_to_state
     gradient_dataset = make_gradient_dataset(gradient, unknown_scatterers, solvers)
@@ -843,12 +841,14 @@ def make_gradient_dataset(gradient, unknown_scatterers, solvers):
     TODO
     """
     derivative_names = []
-    for unknown_scatterer, table, variable_names in unknown_scatterers:
-        variable_names = np.atleast_1d(variable_names)
-        for variable_name in variable_names:
+    unknown_scatterer_names2  = []
+    for name,values in unknown_scatterers.items():
+        for variable_name in values['variable_name_list']:
             derivative_names.append(variable_name)
+            unknown_scatterer_names2.append(name)
     unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices - 1
     unknown_scatterer_names = np.array(list(list(solvers.values())[0].medium.keys()))[unknown_scatterer_indices]
+    assert np.all(unknown_scatterer_names == np.atleast_1d(unknown_scatterer_names2)), 'Two different ways of listing unknown scatterer names do not match.'
     derivative_index = pd.MultiIndex.from_arrays([unknown_scatterer_names, derivative_names], names=("scatterer_name","variable_name"))
 
     grid = list(solvers.values())[0]._grid
@@ -882,12 +882,14 @@ def make_jacobian_dataset(jacobian_list, unknown_scatterers, indices_for_jacobia
     grid_index = pd.MultiIndex.from_arrays([grid.x[indices_for_jacobian[0]], grid.y[indices_for_jacobian[1]],grid.z[indices_for_jacobian[2]]], names=("x", "y","z"))
 
     derivative_names = []
-    for unknown_scatterer, table, variable_names in unknown_scatterers:
-        variable_names = np.atleast_1d(variable_names)
-        for variable_name in variable_names:
+    unknown_scatterer_names2  = []
+    for name,values in unknown_scatterers.items():
+        for variable_name in values['variable_name_list']:
             derivative_names.append(variable_name)
+            unknown_scatterer_names2.append(name)
     unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices - 1
     unknown_scatterer_names = np.array(list(list(solvers.values())[0].medium.keys()))[unknown_scatterer_indices]
+    assert np.all(unknown_scatterer_names == np.atleast_1d(unknown_scatterer_names2)), 'Two different ways of listing unknown scatterer names do not match.'
     derivative_index = pd.MultiIndex.from_arrays([unknown_scatterer_names, derivative_names], names=("scatterer_name","variable_name"))
 
     jacobian_dataset = xr.Dataset(

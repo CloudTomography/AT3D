@@ -1228,7 +1228,7 @@ class RTE(object):
         """
         self.check_solved()
         if not hasattr(self, '_netfluxdiv'):
-            netfluxdiv = shdom.core.compute_netfluxdiv(nstokes=self._nstokes,
+            netfluxdiv = core.compute_netfluxdiv(nstokes=self._nstokes,
                                            npts=self._npts,
                                            rshptr=self._rshptr[:self._npts+1],
                                           srctype=self._srctype,
@@ -1261,7 +1261,7 @@ class RTE(object):
     def num_iterations(self):
         return self._iters
 
-        def _direct_beam_derivative(self):
+    def _direct_beam_derivative(self):
         """
         Calculate the geometry of the direct beam at each point and solver.
         Solver is modified in-place.
@@ -1273,8 +1273,9 @@ class RTE(object):
         self._make_direct()
 
         direct_derivative_path, direct_derivative_ptr = \
-            shdom.core.make_direct_derivative(
+            core.make_direct_derivative(
                 npts=self._npts,
+                bcflag=self._bcflag,
                 gridpos=self._gridpos,
                 npx=self._pa.npx,
                 npy=self._pa.npy,
@@ -1373,7 +1374,7 @@ class RTE(object):
         dleg[0,0,:] = 0.0
         dleg = dleg[:self._nstleg] / scaling_factor
 
-        dphasetab = shdom.core.precompute_phase_check_grad(
+        dphasetab = core.precompute_phase_check_grad(
                                                      negcheck=False,
                                                      nstphase=self._nstphase,
                                                      nstleg=self._nstleg,

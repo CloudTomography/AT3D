@@ -83,7 +83,7 @@ def load_forward_model(file_name):
         else:
             atmosphere=None
 
-        solver_dict.add_solver(key, shdom.solver.RTE(numerical_params=numerical_params,
+        solver_dict.add_solver(float(key), shdom.solver.RTE(numerical_params=numerical_params,
                                             medium=mediums,
                                            source=source,
                                            surface=surface,
