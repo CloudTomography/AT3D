@@ -369,7 +369,6 @@ def jacobian(rte_solver, sensor, indices_for_jacobian, exact_single_scatter=True
     num_jacobian_pts = np.size(jacobian_ptrs)
     jacobian = np.empty((rte_solver._nstokes, rte_solver._num_derivatives, num_jacobian_pts, total_pix), order='F', dtype=np.float32)
     jacobian_flag = True
-
     gradient, loss, images, jacobian = shdom.core.gradient_l2(
         uncertainties=uncertainties,
         rays_per_pixel=rays_per_pixel,
@@ -736,8 +735,8 @@ def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatte
                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter,indices_for_jacobian=indices_for_jacobian)
 
     #uncorrelated l2.
-    loss = 10**6*np.sum(loss) / forward_sensors.nmeasurements
-    gradient =  10**6*np.sum(gradient, axis=-1)/ forward_sensors.nmeasurements
+    loss = np.sum(loss) / forward_sensors.nmeasurements
+    gradient =  np.sum(gradient, axis=-1)/ forward_sensors.nmeasurements
 
     #turn gradient into a gridded dataset for use in project_gradient_to_state
     gradient_dataset = make_gradient_dataset(gradient, unknown_scatterers, solvers)
@@ -775,8 +774,8 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter)
 
     #uncorrelated l2.
-    loss = 10**6*np.sum(loss)/ forward_sensors.nmeasurements
-    gradient =  10**6*np.sum(gradient, axis=-1)/ forward_sensors.nmeasurements
+    loss = np.sum(loss)/ forward_sensors.nmeasurements
+    gradient =  np.sum(gradient, axis=-1)/ forward_sensors.nmeasurements
 
     #turn gradient into a gridded dataset for use in project_gradient_to_state
     gradient_dataset = make_gradient_dataset(gradient, unknown_scatterers, solvers)

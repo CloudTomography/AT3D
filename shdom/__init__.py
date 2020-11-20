@@ -41,3 +41,4 @@ import shdom.gradient
 import shdom.optimize
 import shdom.space_carve
 import shdom.organization
+import shdom.error

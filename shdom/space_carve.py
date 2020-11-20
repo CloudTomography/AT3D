@@ -101,27 +101,22 @@ class SpaceCarver(object):
         )
         self._nbcells = self._ncells
 
-    def carve(self,sensor_masks, agreement=None):
-        volume = np.zeros((self._nx, self._ny, self._nz))
+
+    def carve(self,sensor_masks, agreement=None, linear_mode=False):
+        #volume = np.zeros((self._nx, self._ny, self._nz), dtype=np.int)
 
         if isinstance(sensor_masks,xr.Dataset):
             sensor_masks = [sensor_masks]
+        volume = np.zeros((len(sensor_masks), 3, self._nx, self._ny, self._nz))
+        for i,  sensor in enumerate(sensor_masks):
 
-        for sensor in sensor_masks:
-
-            if 'cloud_mask' in sensor.data_vars:
-                cloud_mask = sensor['cloud_mask'].data
-                camx = sensor['ray_x'].data[cloud_mask]
-                camy = sensor['ray_y'].data[cloud_mask]
-                camz = sensor['ray_z'].data[cloud_mask]
-                cammu = sensor['ray_mu'].data[cloud_mask]
-                camphi = sensor['ray_phi'].data[cloud_mask]
-            else:
-                camx = sensor['ray_x'].data
-                camy = sensor['ray_y'].data
-                camz = sensor['ray_z'].data
-                cammu = sensor['ray_mu'].data
-                camphi = sensor['ray_phi'].data
+            camx = sensor['ray_x'].data
+            camy = sensor['ray_y'].data
+            camz = sensor['ray_z'].data
+            cammu = sensor['ray_mu'].data
+            camphi = sensor['ray_phi'].data
+            flags = sensor['cloud_mask'].data
+            weights = sensor['weights'].data
 
             assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
             total_pix = camphi.size
@@ -148,23 +143,27 @@ class SpaceCarver(object):
                 cammu=cammu,
                 camphi=camphi,
                 npix=total_pix,
+                flags=flags,
+                weights=weights,
+                linear=linear_mode
             )
-            volume += carved_volume.reshape(self._nx, self._ny, self._nz)
-
-        volume = volume * 1.0 / len(sensor_masks)
+            volume[i] += carved_volume.reshape(3,self._nx, self._ny, self._nz)
 
         space_carved = xr.Dataset(
                         data_vars = {
-                            'volume': (['x','y','z'], volume)
+                            'cloudy_counts': (['nsensors','x','y','z'], volume[:,0]),
+                            'total_counts': (['nsensors','x','y','z'], np.sum(volume[:,:2],axis=1)),
+                            'weights':(['nsensors','x','y','z'], volume[:,2]),
                         },
                         coords={'x':self._grid.x,
                                 'y':self._grid.y,
                                 'z':self._grid.z}
                         )
-        space_carved = space_carved.assign_coords(self._grid)
 
         if agreement is not None:
-            mask = volume > agreement
-            space_carved['mask'] = (['x', 'y', 'z'], mask)
+            mask = ((space_carved.cloudy_counts/space_carved.total_counts > agreement[0]).astype(np.int).mean('nsensors') >= agreement[1]).astype(np.int)
+            masked_weights = (space_carved.weights/space_carved.total_counts).mean('nsensors')
+            space_carved['mask'] = mask
+            space_carved['masked_weights'] = masked_weights
 
         return space_carved

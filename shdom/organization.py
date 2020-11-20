@@ -15,7 +15,10 @@ class SensorsDict(OrderedDict):
         self[key]['sensor_list'].append(value)
 
     def _add_instrument(self, key):
-        self[key] = {'sensor_list': []}
+        self[key] = {'sensor_list': [], 'uncertainty_model': None}
+
+    def add_uncertainty_model(self, key, uncertainty_model):
+        self[key]['uncertainty_model'] = uncertainty_model
 
     def make_forward_sensors(self):
         """
@@ -45,6 +48,18 @@ class SensorsDict(OrderedDict):
         rte_sensors = OrderedDict()
         sensor_mappings = OrderedDict()
 
+        if measurements is not None:
+            for key, solver in solvers.items():
+                for instrument, instrument_data in measurements.items():
+                    for i,sensor in enumerate(instrument_data['sensor_list']):
+                        if key == sensor.wavelength:
+                            if instrument_data['uncertainty_model'] is None:
+                                uncertainty_data = 1000*np.ones((solver._nstokes, solver._nstokes, sensor.sizes['npixels']))
+                                sensor['uncertainties'] = (['nstokes', 'nstokes2', 'npixels'], uncertainty_data)
+                            else:
+                                if 'uncertainties' not in sensor:
+                                    instrument_data['uncertainty_model'].calculate_uncertainties(sensor, solver._nstokes)
+
         for key, solver in solvers.items():
             sensor_list = []
             mapping_list = []
@@ -66,12 +81,15 @@ class SensorsDict(OrderedDict):
                                                                   for sensor in sensor_list]))
 
             if measurements is not None:
+
                 sensor_list_measure = []
+                uncertainty_list_measure = []
                 for instrument, instrument_data in measurements.items():
-                    for i, sensor in enumerate(instrument_data['sensor_list']):
+                    for sensor in instrument_data['sensor_list']:
                         if key == sensor.wavelength:
                             sensor_list_measure.append(sensor)
                             #no need for mapping as the sensors should match.
+
                 stokes_weights = []
                 stokes_datas = []
                 for sensor in sensor_list_measure:
@@ -84,20 +102,31 @@ class SensorsDict(OrderedDict):
 
                     stokes_weights.append(stokes_weight)
                     stokes_datas.append(stokes_data)
-
+                output['uncertainties'] = xr.concat([sensor.uncertainties for sensor in sensor_list_measure], dim='npixels')
                 output['stokes_weights'] = (['nstokes','npixels'], np.concatenate(stokes_weights,axis=-1))
                 output['measurement_data'] = (['nstokes','npixels'], np.concatenate(stokes_datas,axis=-1))
 
+
             merged_sensors = xr.Dataset(data_vars=output)
 
-            if measurements is not None:
-                #TODO HARDCODED UNCERTAINTIES.
-                #If we add an uncertainty model to sensors then this should be processed here.
-                merged_sensors['uncertainties'] = xr.DataArray(data= np.ones((merged_sensors.sizes['nstokes'],
-                                            merged_sensors.sizes['nstokes'], merged_sensors.sizes['npixels'])),
-                                            dims=['nstokes', 'nstokes2', 'npixels'])
-                    #NB Be aware that repeated dims cause errors. so the second dim is set to 'nstokes2' even though they are identical.
-                    #Issue 1378 on xarray.
+            # if measurements is not None:
+            #     #TODO HARDCODED UNCERTAINTIES.
+            #     #If we add an uncertainty model to sensors then this should be processed here.
+            #
+            #
+            #     error_variance = (np.repeat(np.concatenate(stokes_datas,axis=-1)[np.newaxis,...],merged_sensors.sizes['nstokes'],axis=0)*0.02)**2
+            #     uncertainties = np.ones(error_variance.shape)/((0.1*0.001)**2) #error covariance for nothing just in case.
+            #     #uncertainties[np.where(error_variance > 0.0)] = 1.0/error_variance[np.where(error_variance > 0.0)]
+            #     #1.0/(np.repeat(np.concatenate(stokes_datas,axis=-1)[np.newaxis,...],merged_sensors.sizes['nstokes'],axis=0)*0.02)**2
+            #     #uncertainties[np.where(~np.isfinite(uncertainties))] = 0.0
+            #     merged_sensors['uncertainties'] = xr.DataArray(data= uncertainties,
+            #                                                     dims=['nstokes', 'nstokes2', 'npixels'])
+            #
+            #     # np.ones((merged_sensors.sizes['nstokes'],
+            #     #                             merged_sensors.sizes['nstokes'], merged_sensors.sizes['npixels'])),
+            #     #                             dims=['nstokes', 'nstokes2', 'npixels'])
+            #         #NB Be aware that repeated dims cause errors. so the second dim is set to 'nstokes2' even though they are identical.
+            #         #Issue 1378 on xarray.
             rte_sensors[key] = merged_sensors
             sensor_mappings[key] = mapping_list
 

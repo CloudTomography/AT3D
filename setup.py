@@ -116,6 +116,8 @@ F2PY_CORE_API = [
     'gradient_l2_old',
     'average_subpixel_rays',
     'pencil_beam_prop',
+    'project',
+    'util_integrate_rays',
     'ylmall_wrap'
 ]
 

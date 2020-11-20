@@ -138,7 +138,7 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
     if sub_pixel_ray_args['method'] is not None:
 
         #generate the weights and perturbations to the pixel positions in the image plane.
-        sub_pixel_ray_method, subpixel_ray_kwargs_x,subpixel_ray_kwargs_y = parse_sub_pixel_ray_args(sub_pixel_ray_args)
+        sub_pixel_ray_method, subpixel_ray_kwargs_x,subpixel_ray_kwargs_y = _parse_sub_pixel_ray_args(sub_pixel_ray_args)
         position_perturbations_x, weights_x = sub_pixel_ray_method(x.size, **subpixel_ray_kwargs_x)
         position_perturbations_y, weights_y = sub_pixel_ray_method(y.size, **subpixel_ray_kwargs_y)
 
@@ -314,7 +314,7 @@ def perspective_projection(wavelength, fov,
     if sub_pixel_ray_args['method'] is not None:
 
         #generate the weights and perturbations to the pixel positions in the image plane.
-        sub_pixel_ray_method, subpixel_ray_kwargs_x,subpixel_ray_kwargs_y = parse_sub_pixel_ray_args(sub_pixel_ray_args)
+        sub_pixel_ray_method, subpixel_ray_kwargs_x,subpixel_ray_kwargs_y = _parse_sub_pixel_ray_args(sub_pixel_ray_args)
         position_perturbations_x, weights_x = sub_pixel_ray_method(x_s.size, **subpixel_ray_kwargs_x)
         position_perturbations_y, weights_y = sub_pixel_ray_method(y_s.size, **subpixel_ray_kwargs_y)
 

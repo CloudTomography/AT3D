@@ -165,7 +165,6 @@ class Combine_z_coordinates(TestCase):
         maximum = max([dset.z.max() for dset in self.zlist])
         self.assertEqual(maximum, self.combine.max())
 
-
 class Resample_onto_grid(TestCase):
 
     def setUp(self):
@@ -194,6 +193,100 @@ class Resample_onto_grid_values(TestCase):
     def test_resample_1d_onto_grid_valid_temp(self):
         self.assertTrue(np.bitwise_not(np.all(np.isnan(self.grid_1d.temperature.data))))
 
+
+class VerifySolver(TestCase):
+    def setUp(self):
+        shdom_polarized = xr.open_dataset('../shdom_verification/shdomout_rico32x36x26w672_polarized.nc')
+
+        cloud_scatterer = shdom.grid.load_2parameter_lwc_file('../shdom_verification/rico32x36x26.txt',
+                                                   density='lwc',origin=(0.0,0.0))
+
+        #simple 'union' horizontal grid merging for 3D and 1D needs to be fixed.
+        rte_grid = shdom.grid.make_grid(cloud_scatterer.x.data.min(),cloud_scatterer.x.data.max(),cloud_scatterer.x.data.size,
+                                   cloud_scatterer.y.data.min(),cloud_scatterer.y.data.max(),cloud_scatterer.y.data.size,
+                                   np.append(np.array([0.0]),cloud_scatterer.z.data))
+
+        #resample the cloud onto the rte_grid
+        cloud_scatterer_on_rte_grid = shdom.grid.resample_onto_grid(rte_grid, cloud_scatterer)
+
+        #define any necessary variables for microphysics here.
+        size_distribution_function = shdom.size_distribution.gamma
+        #We choose a gamma size distribution and therefore need to define a 'veff' variable.
+        cloud_scatterer_on_rte_grid['alpha'] = (cloud_scatterer_on_rte_grid.reff.dims,
+                                               np.full_like(cloud_scatterer_on_rte_grid.reff.data, fill_value=7))
+
+        wavelengths = np.atleast_1d(0.672)
+
+        x = np.repeat(np.repeat(shdom_polarized.radiance_x.data[np.newaxis,:,np.newaxis],shdom_polarized.radiance_y.size, axis=2),
+                     shdom_polarized.radiance_mu.data.size,axis=0).ravel()
+        y = np.repeat(np.repeat(shdom_polarized.radiance_y.data[np.newaxis,np.newaxis,:],shdom_polarized.radiance_x.size, axis=1),
+                     shdom_polarized.radiance_mu.data.size,axis=0).ravel()
+        mu = np.repeat(np.repeat(shdom_polarized.radiance_mu.data[:,np.newaxis,np.newaxis],shdom_polarized.radiance_x.size, axis=0),
+                       shdom_polarized.radiance_y.size, axis=-1).ravel()
+        phi = np.repeat(np.repeat(shdom_polarized.radiance_phi.data[:,np.newaxis,np.newaxis],shdom_polarized.radiance_x.size, axis=-1),
+                       shdom_polarized.radiance_y.size, axis=-1).ravel()
+        sensor = shdom.sensor.make_sensor_dataset(
+            x.astype(np.float32),
+            y.astype(np.float32),
+            np.full_like(x,fill_value=1.4).astype(np.float32),
+            mu.astype(np.float32),
+            np.deg2rad(phi).astype(np.float32),
+            stokes=['I','Q','U'],wavelength = wavelengths[0], fill_ray_variables=True)
+        Sensordict = shdom.organization.SensorsDict()
+        Sensordict.add_sensor('Sensor0', sensor)
+
+        config = shdom.configuration.get_config('../default_config.json')
+        config['split_accuracy'] = 0.1
+        config['spherical_harmonics_accuracy'] = 0.01
+        config['num_mu_bins'] = 8
+        config['num_phi_bins'] = 16
+        config['solution_accuracy'] = 1e-4
+        config['x_boundary_condition'] = 'periodic'
+        config['y_boundary_condition'] = 'periodic'
+
+        solvers = shdom.organization.SolversDict()
+
+        for wavelength in wavelengths:
+            #print('making mie_table. . . may take a while.')
+
+            #mie table and medium doesn't matter here as it is overwritten by property file.
+            #just need it to initialize a solver.
+            mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength), relative_path='../mie_tables')
+            cloud_size_distribution = shdom.size_distribution.get_size_distribution_grid(
+                                                                    mie_mono_table.radius.data,
+                                size_distribution_function=size_distribution_function,particle_density=1.0,
+                                reff=[5.0,20.0,50,'linear','micron'],
+                                alpha=[7,7.1,2,'linear','unitless'],
+                                )
+            poly_table = shdom.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
+            cloud_optical_scatterer = shdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
+
+            solvers.add_solver(wavelength, shdom.solver.RTE(numerical_params=config,
+                                            medium={'cloud':cloud_optical_scatterer},
+                                           source=shdom.source.solar(-0.5, 0.0, solarflux=1.0),
+                                           surface=shdom.surface.lambertian(albedo=0.05),
+                                            num_stokes=3,
+                                            name=None,
+                                            atmosphere=None
+                                           )
+                                           )
+
+        solver = solvers[0.672]
+        solver._solve_prop(filename = '../shdom_verification/rico32x36x26w672.prp')
+
+        shdom_source = []
+        with open('../shdom_verification/shdom_verification_source_out.out') as f:
+            data = f.readlines()
+            for line in data:
+                if not '*' in line:
+                    shdom_source.append(np.fromstring(line, sep=' '))
+        shdom_source = np.array(shdom_source)
+
+        self.testing = solver._source[:,:solver._npts]
+        self.truth = shdom_source.T
+
+    def test_solver(self):
+        self.assertTrue(np.allclose(self.testing, self.truth))
 
 
 
