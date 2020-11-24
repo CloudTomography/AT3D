@@ -8,7 +8,7 @@ set AWK=awk   # use nawk on SGI and Sun
 
 set Solar=1     # 1 for solar, 0 for thermal
 
-set MakeMieTable=0
+set MakeMieTable=1
 set MakePropertyFile=1
 set RunSHDOM=1
 
@@ -92,7 +92,7 @@ if ($RunSHDOM) then
   #   Set SHDOM parameters:
   set Nstokes=3               # unpolarized radiative transfer
   set IPflag=0                # independent pixel flag (0 = 3D, 3 = IP)
-  set BCflag=3                # horizontal boundary conditions (0 = periodic)
+  set BCflag=0                # horizontal boundary conditions (0 = periodic)
   if ($Solar) then
     set Nmu=8                # number of zenith angles in both hemispheres
     set Nphi=16               # number of azimuth angles
@@ -117,19 +117,21 @@ if ($RunSHDOM) then
   set accel=T                 # solution acceleration flag
   set maxiter=100             # maximum number of iterations
                       # input parameters for output radiances
-  set Routparm="1.0 0.0133 0.0133 0.0 0.0  5 \
-               1.0 0 0.5 0 0.2 0 0.5 90 0.2 90" #0.966 0 0.866 0 0.707 0  0.966 180 0.866 180 0.707 180"
+  set Routparm="20.0 0.02 0.02 0.0 0.0  1 \
+               1.0 0" #0.966 0 0.866 0 0.707 0  0.966 180 0.866 180 0.707 180"
   set Foutparm="2 0.750 0.055 1.0"
 
   set nb=(`head -2 $prpfile | tail -1`)
   echo " "; echo " ";
   if ($Solar) then
     echo "$outbase :  wavelen=$wavelen  Nmu=$Nmu  split=$splitacc"
-    ./put rico32x36x26 $prpfile NONE NONE NONE NONE $Nstokes "$nb[1] $nb[2] $nb[3]" \
+    ./put rico32x36x25 $prpfile NONE NONE NONE NONE $Nstokes "$nb[1] $nb[2] $nb[3]" \
       "$Nmu $Nphi" $BCflag $IPflag $deltaM P S "$flux0 $mu0 $phi0" 0.0 \
       $sfcalb $wavelen "$splitacc $shacc" "$accel $solacc $maxiter"  \
-      1 R $Routparm ${outbase}r.out \
-      shdomout_rico32x36x26w672_polarized.nc 10000 5.0 5.0 1.5 | ./shdom
+      6 R $Routparm ${outbase}r.out  M 1 ${outbase}m.out \
+      S 1 ${outbase}s.out  F 1 ${outbase}f1.out \
+      F $Foutparm ${outbase}f2.out  F 4 ${outbase}f4.out \
+      shdomout_rico32x36x25w672_polarized.nc 10000 5.0 5.0 1.5 | ./shdom
   else
     echo "$outbase :  wavelen=$wavelen  Nmu=$Nmu  split=$splitacc"
     put les2y21w107 $prpfile NONE NONE NONE NONE $Nstokes "$nb[1] $nb[2] $nb[3]" \

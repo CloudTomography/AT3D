@@ -103,12 +103,20 @@ class SpaceCarver(object):
 
 
     def carve(self,sensor_masks, agreement=None, linear_mode=False):
-        #volume = np.zeros((self._nx, self._ny, self._nz), dtype=np.int)
-
+        """
+        TODO
+        """
         if isinstance(sensor_masks,xr.Dataset):
-            sensor_masks = [sensor_masks]
-        volume = np.zeros((len(sensor_masks), 3, self._nx, self._ny, self._nz))
-        for i,  sensor in enumerate(sensor_masks):
+            sensor_list = [sensor_masks]
+        elif isinstance(sensor_masks, type([])):
+            sensor_list = sensor_masks
+        elif isinstance(sensor_masks, shdom.organization.SensorsDict):
+            sensor_list = []
+            for instrument in sensor_masks:
+                sensor_list.extend(sensor_masks[instrument]['sensor_list'])
+
+        volume = np.zeros((len(sensor_list), 3, self._nx, self._ny, self._nz))
+        for i,  sensor in enumerate(sensor_list):
 
             camx = sensor['ray_x'].data
             camy = sensor['ray_y'].data
@@ -167,3 +175,70 @@ class SpaceCarver(object):
             space_carved['masked_weights'] = masked_weights
 
         return space_carved
+
+    def project(self, weights, sensors, return_matrix=False):
+        """
+        TODO
+        """
+        if isinstance(sensors,xr.Dataset):
+            sensor_list = [sensors]
+        elif isinstance(sensors, type([])):
+            sensor_list = sensors
+        elif isinstance(sensors, shdom.organization.SensorsDict):
+            sensor_list = []
+            for instrument in sensors:
+                sensor_list.extend(sensors[instrument]['sensor_list'])
+
+        if 'weights' in weights.data_vars:
+            weights.weights.name = 'density'
+        resampled_weights = shdom.grid.resample_onto_grid(self._grid, weights).density.data.ravel()
+
+        for sensor in sensor_list:
+            camx = sensor['ray_x'].data
+            camy = sensor['ray_y'].data
+            camz = sensor['ray_z'].data
+            cammu = sensor['ray_mu'].data
+            camphi = sensor['ray_phi'].data
+            ray_weights = sensor['ray_weight'].data
+            pixel_indices = sensor['pixel_index'].data
+            total_pix = sensor.npixels.size
+            nrays = sensor.nrays.size
+
+            if return_matrix:
+                raise NotImplementedError
+            else:
+                matrix_size = 1#(self._nx+self._ny+self._nz)
+                matrix_ptrs = np.zeros((matrix_size, total_pix),dtype=np.int)+1
+                matrix = np.zeros((matrix_size, total_pix))
+
+            path,matrix,matrix_ptrs = shdom.core.project(
+                                            nx=self._nx,
+                                            ny=self._ny,
+                                            nz=self._nz,
+                                            npts=self._npts,
+                                            ncells=self._ncells,
+                                            gridptr=self._gridptr,
+                                            neighptr=self._neighptr,
+                                            treeptr=self._treeptr,
+                                            cellflags=self._cellflags,
+                                            bcflag=self._bcflag,
+                                            ipflag=self._ipflag,
+                                            xgrid=self._xgrid,
+                                            ygrid=self._ygrid,
+                                            zgrid=self._zgrid,
+                                            gridpos=self._gridpos,
+                                            camx=camx,
+                                            camy=camy,
+                                            camz=camz,
+                                            cammu=cammu,
+                                            camphi=camphi,
+                                            npix=total_pix,
+                                            matrix=matrix,
+                                            matrix_ptrs=matrix_ptrs,
+                                            return_matrix=False,
+                                            weights=resampled_weights,
+                                            ray_weights=ray_weights,
+                                            pixel_indices=pixel_indices,
+                                            nrays=nrays
+                                        )
+            sensor['integrated_weights'] = ('npixels', path)

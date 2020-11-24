@@ -684,8 +684,9 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
         raise NotImplementedError
 
     else:
-        if n_jobs == 1:
+        if n_jobs == 1 or n_jobs >= forward_sensors.npixels:
             out = [gradient_fun(solvers[key],rte_sensors[key], **grad_kwargs) for key in solvers]
+            keys = list(solvers.keys())
         else:
             #decide on the division of n_jobs among solvers based on total number of rays.
             keys, ray_start_end, pixel_start_end = shdom.organization.subdivide_raytrace_jobs(rte_sensors, n_jobs)

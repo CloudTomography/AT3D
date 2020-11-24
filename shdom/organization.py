@@ -41,6 +41,14 @@ class SensorsDict(OrderedDict):
                 nmeasurements += sensor.npixels.size*np.sum(sensor.stokes.data)
         return nmeasurements
 
+    @property
+    def npixels(self):
+        npixels = 0
+        for instrument in self.values():
+            for sensor in instrument['sensor_list']:
+                npixels += sensor.npixels.size
+        return npixels
+
     def sort_sensors(self, solvers, measurements=None):
         """
         TODO check that measurements matches self.
@@ -409,7 +417,7 @@ def get_measurements(solvers, sensors, n_jobs=1, mpi_comm=None, maxiter=100,verb
     else:
         solvers.parallel_solve(n_jobs=n_jobs, mpi_comm=mpi_comm,maxiter=maxiter, verbose=verbose, init_solution=init_solution,
                             setup_grid=setup_grid)
-        if n_jobs==1:
+        if n_jobs==1 or n_jobs >= sensors.npixels:
             out = [solvers[key].integrate_to_sensor(rte_sensors[key]) for key in solvers]
             keys = list(solvers)
         else:

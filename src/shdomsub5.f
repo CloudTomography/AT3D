@@ -1154,7 +1154,7 @@ C      REAL    PATH(*)
       COUNTER = 1
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
       MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
-C      TAU = 0.0
+      TAU = 0.0
 
 C         Make the ray direction (opposite to the discrete ordinate direction)
       CX = SQRT(1.0-MURAY**2)*COS(PHIRAY)

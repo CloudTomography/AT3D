@@ -6,7 +6,7 @@ import pandas as pd
 
 def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0, max_integration_radius=65.0,
                    wavelength_averaging=False, wavelength_resolution=0.001, refractive_index=None,
-                   relative_path=None):
+                   relative_path=None, verbose=True):
     """
     Mie monodisperse scattering for spherical particles.
     This function will search a given directory to load the requested mie table or will compute it.
@@ -45,18 +45,19 @@ def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
     if table_attempt is not None:
         table=table_attempt
     else:
-        print('making mie_table. . . may take a while.')
+        if verbose:
+            print('making mie_table. . . may take a while.')
         table = _compute_table(particle_type, wavelength_band,
                     minimum_effective_radius, max_integration_radius,
                      wavelength_averaging, wavelength_resolution,
-                     refractive_index)
+                     refractive_index, verbose=verbose)
 
     return table
 
 def _compute_table(particle_type, wavelength_band,
                   minimum_effective_radius, max_integration_radius,
                   wavelength_averaging, wavelength_resolution,
-                  refractive_index):
+                  refractive_index, verbose=True):
     """
     This function does the hard work of computing a monomodal mie table.
     See 'get_mono_table' for more details.
@@ -134,7 +135,8 @@ def _compute_table(particle_type, wavelength_band,
             radii=radii,
             rindex=rindex,
             avgflag=avgflag,
-            partype=partype
+            partype=partype,
+            verbose=verbose
         )
     #return data as an xarray
     table = xr.Dataset(

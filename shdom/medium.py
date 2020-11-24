@@ -25,16 +25,22 @@ def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=Fals
         raise KeyError("microphysics dataset is missing variables for interpolation of table onto grid.", *list(missing))
 
     interp_coords = {name:microphysics[name] for name in poly_table.coords if name not in ('table_index', 'stokes_index')}
+    for interp_coord in interp_coords:
+        if np.any(microphysics[interp_coord] <= poly_table[interp_coord].min()) or \
+            np.any(microphysics[interp_coord] >= poly_table[interp_coord].max()):
+            raise ValueError("Microphysical coordinate '{}' is not within the range of the mie table.".format(
+                                                                                        interp_coord))
 
     interp_method = 'nearest' if exact_table else 'linear'
     ssalb = poly_table.ssalb.interp(interp_coords, method=interp_method)
+    assert not np.any(np.isnan(ssalb.data)), 'Unexpected NaN in ssalb'
     extinction_efficiency = poly_table.extinction.interp(interp_coords, method=interp_method)
 
     if not inverse_mode:
         extinction = extinction_efficiency * microphysics.density
     else:
         extinction = extinction_efficiency
-
+    assert not np.any(np.isnan(extinction.data)), 'Unexpected NaN in extinction'
     extinction.name = 'extinction'
     table_index = poly_table.coords['table_index'].interp(coords=interp_coords, method='nearest').round().astype(int)
     unique_table_indices, inverse = np.unique(table_index.data, return_inverse=True)
@@ -57,6 +63,8 @@ def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=Fals
     table_coords = {'table_index': (['x','y','z'],subset_table_index.data)}
 
     optical_properties =optical_properties.assign_coords(table_coords)
+    assert not np.any(np.isnan(optical_properties.table_index.data)), 'Unexpected NaN in table_index'
+    assert not np.any(np.isnan(optical_properties.legcoef.data)), 'Unexpected NaN in legcoef'
 
     #inherit attributes.
     optical_properties = optical_properties.assign_attrs(poly_table.attrs)

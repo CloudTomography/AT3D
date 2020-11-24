@@ -1,30 +1,31 @@
 SUBROUTINE GET_MIE_TABLE (NRETAB, MAXLEG, WAVELEN1, WAVELEN2, WAVELENCEN, DELTAWAVE, &
                           PARDENS, SRETAB, ERETAB, ALPHA, GAMMA, MAXRADIUS, RINDEX, PARTYPE, &
-                          AVGFLAG, DISTFLAG, REFF, EXTINCT,SSALB,NLEG,LEGCOEF,LOGRE)
-! 
+                          AVGFLAG, DISTFLAG, REFF, EXTINCT,SSALB,NLEG,LEGCOEF,LOGRE, &
+                          VERBOSE)
+!
 ! Does Mie computations to create a scattering table as a function of
-! effective radius for gamma, modified gamma, or lognormal size distributions 
+! effective radius for gamma, modified gamma, or lognormal size distributions
 ! of spherical particles.  The particles may be water or ice (in which case
 ! the program provides the index of refraction depending on wavelength) or
 ! "aerosols" (in which case the index of refraction is user specified).
-! For water or ice particles the scattering properties may be averaged 
-! over the desired spectral range with Planck function weighting.  
-! The phase functions in the output scattering table are represented 
+! For water or ice particles the scattering properties may be averaged
+! over the desired spectral range with Planck function weighting.
+! The phase functions in the output scattering table are represented
 ! with Legendre series.  For polarized output, the six unique elements of
-! the phase matrix are represented with Wigner d-function expansions 
+! the phase matrix are represented with Wigner d-function expansions
 ! (Doicu et al., 2013, JQSRT, http://dx.doi.org/10.1016/j.jqsrt.2012.12.009).
 !
-!  compile: pgf90 -fast -o make_mie_table  make_mie_table.f90 
+!  compile: pgf90 -fast -o make_mie_table  make_mie_table.f90
 !                 indexwatice.f  miewig.f
-!    
+!
 !    Frank Evans    University of Colorado       May 2003
 !  Modified for polarization                     March 2012
 !  Modified for modified gamma distribution      September 2012
 !  Modified for Wigner d-function coefficients   July 2012
   IMPLICIT NONE
   INTEGER :: NRETAB
-  LOGICAL :: LOGRE
-!  f2py intent(in) :: NRETAB, LOGRE
+  LOGICAL :: LOGRE, VERBOSE
+!  f2py intent(in) :: NRETAB, LOGRE, VERBOSE
   REAL :: WAVELEN1, WAVELEN2, DELTAWAVE, PARDENS
 !  f2py intent(in) :: WAVELEN1, WAVELEN2, DELTAWAVE, PARDENS
   REAL :: SRETAB, ERETAB, ALPHA, GAMMA, MAXRADIUS
@@ -51,7 +52,7 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXLEG, WAVELEN1, WAVELEN2, WAVELENCEN, DELTAW
   ELSE IF (PARTYPE == 'I') THEN
     PARDENS = 0.916
   ENDIF
-  
+
    ! Get the average index of refraction for water or ice
   IF (PARTYPE /= 'A') THEN
     CALL GET_REFRACT_INDEX (PARTYPE, WAVELEN1, WAVELEN2, RINDEX)
@@ -73,7 +74,7 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXLEG, WAVELEN1, WAVELEN2, WAVELENCEN, DELTAW
 
   CALL COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, PARTYPE, &
                               WAVELENCEN, RINDEX, NSIZE, RADII, MAXLEG, &
-                              EXTINCT1, SCATTER1, NLEG1, LEGCOEF1)
+                              EXTINCT1, SCATTER1, NLEG1, LEGCOEF1, VERBOSE)
 
 
   ! Loop over the number of output tabulated effective radii
@@ -87,7 +88,7 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXLEG, WAVELEN1, WAVELEN2, WAVELENCEN, DELTAW
       REFF(I) = (ERETAB-SRETAB)*FLOAT(I-1)/(NRETAB-1) + SRETAB
     ENDIF
     ! Calculate the discrete size number concentrations (ND), which vary
-    ! according to a truncated gamma, modified gamma, or lognormal 
+    ! according to a truncated gamma, modified gamma, or lognormal
     ! distribution that gives the desired effective radius (REFF) and LWC (1 g/m^3).
     CALL MAKE_SIZE_DIST (DISTFLAG, PARDENS, NSIZE, RADII, REFF(I), ALPHA, GAMMA, &
                          ND)
@@ -110,7 +111,7 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXLEG, WAVELEN1, WAVELEN2, WAVELENCEN, DELTAW
     IF (ABS(LEGCOEF(1,0,I)-1.0) > 0.0001) THEN
       PRINT *,'Phase function not normalized for Reff=',REFF,LEGCOEF(1,0,I)
       STOP
-    ENDIF 
+    ENDIF
     IF (EXTINCT(I) > 0.0) THEN
       SSALB(I) = SCATTER/EXTINCT(I)
     ENDIF
@@ -156,7 +157,7 @@ SUBROUTINE USER_INPUT (POLTAB, WAVELEN1,WAVELEN2, PARTYPE, RINDEX, PARDENS, &
     WRITE(*,*) 'Average Mie properties over wavelength or use Planck weighted'
     WRITE(*,*) '  index of refraction at center wavelength (A or C)'
     READ(*,'(A1)') AVGFLAG
-    WRITE (*,'(1X,A1)') AVGFLAG   
+    WRITE (*,'(1X,A1)') AVGFLAG
     IF (AVGFLAG == 'A') THEN
       WRITE(*,*) 'Wavelength interval for averaging (micron)'
       READ(*,*) DELTAWAVE
@@ -168,7 +169,7 @@ SUBROUTINE USER_INPUT (POLTAB, WAVELEN1,WAVELEN2, PARTYPE, RINDEX, PARDENS, &
   ELSE
     PARTYPE = 'A'
     WRITE (*,*) 'Aerosol complex index of refraction (negative imaginary part)'
-    READ (*,*) RINDEX 
+    READ (*,*) RINDEX
     WRITE (*,*) RINDEX
     WRITE (*,*) 'Aerosol particle bulk density (g/cm^3)'
     READ (*,*) PARDENS
@@ -269,12 +270,12 @@ END SUBROUTINE GET_SIZES
 
 
 SUBROUTINE GET_CENTER_WAVELEN (WAVELEN1, WAVELEN2, WAVELENCEN)
-!  Returns the Planck weighted center wavelength averaged over the 
+!  Returns the Planck weighted center wavelength averaged over the
 ! wavelength interval (WAVELEN1 < WAVELEN2 [microns]).  A solar
 ! blackbody temperature of 5800 K is used for the Planck weighting
 ! if the average wavelength is less than 3 microns, no Planck weighting
-! is done for an average wavelength between 3 and 5 microns, and a 
-! blackbody temperature of 270 K is done for an average wavelength 
+! is done for an average wavelength between 3 and 5 microns, and a
+! blackbody temperature of 270 K is done for an average wavelength
 ! greater than 5 microns.
   IMPLICIT NONE
   REAL, INTENT(IN)  :: WAVELEN1, WAVELEN2
@@ -284,7 +285,7 @@ SUBROUTINE GET_CENTER_WAVELEN (WAVELEN1, WAVELEN2, WAVELENCEN)
   REAL :: WAVECEN, DELWAVE, WAVE, BBTEMP, PLANCK, SUMP, SUMW
 
   IF (WAVELEN1 == WAVELEN2) THEN
-    WAVELENCEN = WAVELEN1  
+    WAVELENCEN = WAVELEN1
   ELSE
     WAVECEN = 0.5*(WAVELEN1+WAVELEN2)
     IF (WAVECEN < 3.0) THEN
@@ -294,11 +295,11 @@ SUBROUTINE GET_CENTER_WAVELEN (WAVELEN1, WAVELEN2, WAVELENCEN)
     ELSE
       BBTEMP = -1.0
       PLANCK = 1.0
-    ENDIF 
+    ENDIF
     DELWAVE = MIN(WAVECEN/100.,0.1*ABS(WAVELEN2-WAVELEN1))
     SUMP = 0.0
     SUMW = 0.0
-    WAVE = WAVELEN1   
+    WAVE = WAVELEN1
     DO WHILE (WAVE <= WAVELEN2)
       IF (BBTEMP > 0) PLANCK = (1.19E8/WAVE**5)/(EXP(1.439E4/(WAVE*BBTEMP))-1)
       SUMP = SUMP + PLANCK
@@ -318,7 +319,7 @@ SUBROUTINE GET_REFRACT_INDEX (PARTYPE, WAVELEN1, WAVELEN2, RINDEX)
  ! averaging is done at 0.05 micron intervals and is weighted by
  ! a Planck function at 5800 K temperature for central wavelengths
  ! less than 3 microns, a flat function between 3 and 5 microns, and
- ! 270 K Planck function beyond 5 microns.  
+ ! 270 K Planck function beyond 5 microns.
  ! The index of refraction is at -30 C for ice and +10 C for water
  ! (the temperature dependence is important in the microwave).
   IMPLICIT NONE
@@ -336,7 +337,7 @@ SUBROUTINE GET_REFRACT_INDEX (PARTYPE, WAVELEN1, WAVELEN2, RINDEX)
   ELSE
     BBTEMP = -1.0
     PLANCK = 1.0
-  ENDIF 
+  ENDIF
   DELWAVE = MIN(WAVECEN/100.,0.1*ABS(WAVELEN2-WAVELEN1))
   DELWAVE = MAX(DELWAVE,WAVECEN*1.0E-5)
   SUMP = 0.0
@@ -361,18 +362,18 @@ SUBROUTINE GET_REFRACT_INDEX (PARTYPE, WAVELEN1, WAVELEN2, RINDEX)
 END SUBROUTINE GET_REFRACT_INDEX
 
 
- 
+
 
 SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
                                 PARTYPE, WAVELENCEN, RINDEX, NSIZE, RADII, &
                                 MAXLEG, EXTINCT1, SCATTER1, NLEG1, LEGCOEF1,&
-				TABLE_TYPE)
+				TABLE_TYPE, VERBOSE)
  ! Does a Mie computation for each particle radius in RADII and returns the
  ! optical properties in arrays EXTINCT1, SCATTER1, NLEG1, and LEGCOEF1.
  ! For AVGFLAG='C' the computation is done at a single wavelength (WAVELENCEN),
  ! using the input index of refraction (RINDEX).  For AVGFLAG='A' an
  ! integration of the Mie properties over wavelength is performed for
- ! each radius.  For each wavelength, with spacing DELTAWAVE, the water 
+ ! each radius.  For each wavelength, with spacing DELTAWAVE, the water
  ! or ice (depending on PARTYPE) index of refraction is obtained and
  ! used in the Mie computation for that wavelength, and the Mie optical
  ! properties are averaged with Planck function weighting (blackbody
@@ -380,6 +381,7 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
  ! returned with the product of the phase function times the scattering
  ! coefficient.
   IMPLICIT NONE
+  LOGICAL, INTENT(IN) :: VERBOSE
   INTEGER, INTENT(IN) :: NSIZE, MAXLEG
   REAL,    INTENT(IN) :: WAVELEN1, WAVELEN2, DELTAWAVE, WAVELENCEN
   REAL,    INTENT(IN) :: RADII(NSIZE)
@@ -393,13 +395,15 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
   REAL    :: WAVECEN, WAVE, BBTEMP, PLANCK, SUMP, A
   REAL    :: MRE, MIM, EXT, SCAT, COEF(6,0:MAXLEG)
   COMPLEX :: REFIND
-  
+
   WRITE(*,*) 'Computing mie scattering for all sizes, this may take a while...'
   TABLE_TYPE = 'VECTOR'
   IF (AVGFLAG == 'C') THEN
      ! For using one central wavelength: just call Mie routine for each radius
     DO I = 1, NSIZE
-      WRITE(*,*) 'Computing mie for radius: ', RADII(I), ' microns'
+      IF (VERBOSE) THEN
+        WRITE(*,*) 'Computing mie for radius: ', RADII(I), ' microns'
+      ENDIF
       CALL MIE_ONE (WAVELENCEN, RINDEX, RADII(I), MAXLEG, &
                     EXTINCT1(I), SCATTER1(I), NLEG1(I), LEGCOEF1(1,0,I) )
     ENDDO
@@ -414,7 +418,7 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
     ELSE
       BBTEMP = -1.0
       PLANCK = 1.0
-    ENDIF 
+    ENDIF
     EXTINCT1(:) = 0.0
     SCATTER1(:) = 0.0
     NLEG1(:) = 1
@@ -422,7 +426,9 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
     SUMP = 0.0
     WAVE = WAVELEN1
     DO WHILE (WAVE <= WAVELEN2)   ! Loop over the wavelengths
-      WRITE(*,*) 'Computing mie for wavelength: ', WAVE, ' microns'
+      IF (VERBOSE) THEN
+        WRITE(*,*) 'Computing mie for wavelength: ', WAVE, ' microns'
+      ENDIF
       IF (BBTEMP > 0) PLANCK = (1.19E8/WAVE**5)/(EXP(1.439E4/(WAVE*BBTEMP))-1)
       SUMP = SUMP + PLANCK
       IF (PARTYPE == 'I') THEN   ! Get the index of refraction of water or ice
@@ -432,8 +438,10 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
       ENDIF
       REFIND = CMPLX(MRE,-MIM)
       DO I = 1, NSIZE
-        WRITE(*,*) 'Computing mie for radius: ', RADII(I), &
-                ' microns [wavelength = ', WAVE, 'microns]'
+        IF (VERBOSE) THEN
+          WRITE(*,*) 'Computing mie for radius: ', RADII(I), &
+                  ' microns [wavelength = ', WAVE, 'microns]'
+        ENDIF
         CALL MIE_ONE (WAVE, REFIND, RADII(I), MAXLEG, EXT, SCAT, NL, COEF)
         EXTINCT1(I) = EXTINCT1(I) + PLANCK*EXT
         SCATTER1(I) = SCATTER1(I) + PLANCK*SCAT
@@ -454,7 +462,7 @@ SUBROUTINE MAKE_MULTI_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA,&
 				GAMMA, ND, NDIST)
  ! Calculates the number concentrations (ND in cm^-3) for the NSIZE
  ! discrete particle radii (micron) of a gamma or lognormal size distribution
- ! with an effective radius of REFF (micron), gamma shape parameter or 
+ ! with an effective radius of REFF (micron), gamma shape parameter or
  ! lognormal standard deviation of ALPHA, and mass content of 1 g/m^3.
  ! Also handles modified gamma distributions specified by ALPHA and GAMMA.
   IMPLICIT NONE
@@ -463,20 +471,20 @@ SUBROUTINE MAKE_MULTI_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA,&
   REAL,    INTENT(OUT) :: ND(NSIZE, NDIST)
   CHARACTER(LEN=1), INTENT(IN) :: DISTFLAG
   INTEGER :: K
-  
+
   DO K = 1, NDIST
     CALL MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF(K), ALPHA(K),&
    			GAMMA, ND(1,K))
   ENDDO
 END SUBROUTINE MAKE_MULTI_SIZE_DIST
 
-  
+
 
 
 SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, ND)
  ! Calculates the number concentrations (ND in cm^-3) for the NSIZE
  ! discrete particle radii (micron) of a gamma or lognormal size distribution
- ! with an effective radius of REFF (micron), gamma shape parameter or 
+ ! with an effective radius of REFF (micron), gamma shape parameter or
  ! lognormal standard deviation of ALPHA, and mass content of 1 g/m^3.
  ! Also handles modified gamma distributions specified by ALPHA and GAMMA.
   IMPLICIT NONE
@@ -536,16 +544,16 @@ SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, N
     ELSE
       REHI = REMID
     ENDIF
-  ENDDO  
+  ENDDO
 END SUBROUTINE MAKE_SIZE_DIST
 
 
 
 SUBROUTINE DO_SIZE_DIST (PARDENS, DISTFLAG, ALPHA, GAMMA, RE, NSIZE, RADII, &
                          ND, TRUERE)
- ! For the input effective radius (RE) [um], returns the number concentrations 
- ! ND [cm^-3] and the calculated effective radius TRUERE [um] for a 
- ! gamma, modified gamma, or lognormal size distribution with mass content 
+ ! For the input effective radius (RE) [um], returns the number concentrations
+ ! ND [cm^-3] and the calculated effective radius TRUERE [um] for a
+ ! gamma, modified gamma, or lognormal size distribution with mass content
  ! of 1 g/m^3.
   IMPLICIT NONE
   INTEGER, INTENT(IN) :: NSIZE
@@ -598,10 +606,10 @@ SUBROUTINE WRITE_POLY_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
                             DISTFLAG, ALPHA, GAMMA, NRETAB,&
 			    NVETAB, REFF, VEFF, EXTINCT, SSALB,&
 			    NLEG, LEGCOEF, NDIST, MAXLEG)
- ! Writes the table of Mie scattering properties as a function of 
- ! effective radius.  There are two types of tables output: 
- ! unpolarized with Legendre (Wigner d_l_00) series of a single phase 
- ! matrix element (P11) or polarized with six Wigner d-function series 
+ ! Writes the table of Mie scattering properties as a function of
+ ! effective radius.  There are two types of tables output:
+ ! unpolarized with Legendre (Wigner d_l_00) series of a single phase
+ ! matrix element (P11) or polarized with six Wigner d-function series
  ! of the Mie phase matrix elements.
   IMPLICIT NONE
   INTEGER, INTENT(IN) :: NRETAB, NVETAB, NDIST
@@ -614,7 +622,7 @@ SUBROUTINE WRITE_POLY_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
   CHARACTER(LEN=1), INTENT(IN) :: PARTYPE, DISTFLAG
   CHARACTER(LEN=*), INTENT(IN) :: MIETABFILE
   INTEGER :: I, J, M, N, JP, K, L, NL, NPHASEPOL
-  
+
   OPEN (UNIT=3, FILE=MIETABFILE, STATUS='REPLACE')
   NPHASEPOL = 6
   WRITE (3,'(A)') '! Polarized Mie scattering table vs. effective radius (LWC=1 g/m^3)'
@@ -654,14 +662,14 @@ SUBROUTINE WRITE_POLY_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
   CLOSE (3)
 END SUBROUTINE WRITE_POLY_TABLE
 
-  
+
 SUBROUTINE READ_POLY_TABLE(MIETABFILE, NRETAB, NVETAB, NDIST, REFF, &
                            VEFF, EXTINCT, SSALB, NLEG, LEGCOEF, MAXLEG,&
-			   TABLE_TYPE) 
+			   TABLE_TYPE)
   IMPLICIT NONE
   CHARACTER(LEN=*), INTENT(IN) :: MIETABFILE
   INTEGER, INTENT(IN) :: NRETAB, NVETAB, NDIST
-  REAL, INTENT(OUT) :: REFF(NRETAB), VEFF(NVETAB) 
+  REAL, INTENT(OUT) :: REFF(NRETAB), VEFF(NVETAB)
   REAL, INTENT(OUT) :: EXTINCT(NDIST), SSALB(NDIST)
   INTEGER, INTENT(OUT) :: NLEG(NDIST)
   REAL, INTENT(OUT) :: LEGCOEF(6,0:MAXLEG,NDIST)
@@ -701,13 +709,13 @@ END SUBROUTINE READ_POLY_TABLE
 SUBROUTINE TRANSFORM_LEG_TO_PHASE (MAXLEG, NPHASEPOL, &
 				   PELEM, NLEG, LEGCOEF, &
 				   NANGLE, ANGLE, PHASE)
- ! Transforms the phase matrix element (PELEM=1 to 6) from the Wigner 
- ! d-function based coefficients of the scattering matrix (LEGCOEF) to 
+ ! Transforms the phase matrix element (PELEM=1 to 6) from the Wigner
+ ! d-function based coefficients of the scattering matrix (LEGCOEF) to
  ! a function of angle, PHASE(NANGLE) (at scattering angles in degrees
- ! in ANGLE(:)).  The order of the six elements in LEGCOEF is the four 
+ ! in ANGLE(:)).  The order of the six elements in LEGCOEF is the four
  ! diagonal ones (alpha1, alpha2, alpha3, alpha4) followed by the IQ and
  ! UV coefficients (beta1, beta2).  The phase matrix elements indexed by
- ! PELEM are P11, P22, P33, P44, P12, P34.  If PELEM<0 then the ABS(PELEM) 
+ ! PELEM are P11, P22, P33, P44, P12, P34.  If PELEM<0 then the ABS(PELEM)
  ! phase matrix element is normalized by the P11 element on output in PHASE.
  ! (Doicu et al., 2013, JQSRT, http://dx.doi.org/10.1016/j.jqsrt.2012.12.009).
   IMPLICIT NONE
@@ -734,7 +742,7 @@ SUBROUTINE TRANSFORM_LEG_TO_PHASE (MAXLEG, NPHASEPOL, &
     X = DCOS(ANGLE(J)*PI/180)
     XM = -X
 
-     ! Calculate the desired scattering matrix element for this angle (X) 
+     ! Calculate the desired scattering matrix element for this angle (X)
      ! from the Wigner d-function coefficients
     SELECT CASE (ABS(PELEM))
     CASE (1)
@@ -812,7 +820,7 @@ END SUBROUTINE TRANSFORM_LEG_TO_PHASE
 
 
 SUBROUTINE READ_MONO_TABLE(MIETABFILE, NRTAB, RADIUS, EXTINCT, &
-		     SCATTER, NLEG, LEGCOEF, MAXLEG, TABLE_TYPE) 
+		     SCATTER, NLEG, LEGCOEF, MAXLEG, TABLE_TYPE)
   IMPLICIT NONE
   CHARACTER(LEN=*), INTENT(IN) :: MIETABFILE
   INTEGER, INTENT(IN) :: NRTAB
@@ -849,9 +857,9 @@ END SUBROUTINE READ_MONO_TABLE
 SUBROUTINE WRITE_MONO_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
 			    PARTYPE, PARDENS, RINDEX, NRTAB, &
 			    RADII, EXTINCT, SCATTER, NLEG, MAXLEG, LEGCOEF)
-			    
- ! Writes the table of Mie monodisperse scattering properties as a function of 
- ! radius. 
+
+ ! Writes the table of Mie monodisperse scattering properties as a function of
+ ! radius.
   IMPLICIT NONE
   INTEGER, INTENT(IN) :: NRTAB
   INTEGER, INTENT(IN) :: MAXLEG, NLEG(NRTAB)
@@ -862,7 +870,7 @@ SUBROUTINE WRITE_MONO_TABLE (MIETABFILE, WAVELEN1, WAVELEN2, DELTAWAVE, &
   REAL,    INTENT(IN) :: LEGCOEF(6,0:MAXLEG, NRTAB)
   CHARACTER(LEN=1), INTENT(IN) :: PARTYPE
   CHARACTER(LEN=*), INTENT(IN) :: MIETABFILE
- 
+
   INTEGER :: I, J, JP, K, L, NL, NPHASEPOL
   OPEN (UNIT=3, FILE=MIETABFILE, STATUS='REPLACE')
   NPHASEPOL = 6
@@ -900,7 +908,7 @@ SUBROUTINE GET_POLY_TABLE (ND, NDIST, NSIZE, MAXLEG, NLEG1, EXTINCT1,&
   INTEGER, INTENT(IN) :: NLEG1(NSIZE)
   REAL, INTENT(IN) :: EXTINCT1(NSIZE), SCATTER1(NSIZE)
   REAL, INTENT(IN) :: LEGCOEF1(6,0:MAXLEG, NSIZE)
-  
+
   REAL, INTENT(OUT) :: EXTINCT(NDIST), SSALB(NDIST)
   REAL, INTENT(OUT) :: NLEG(NDIST), LEGCOEF(6,0:MAXLEG,NDIST)
 
@@ -922,12 +930,12 @@ SUBROUTINE GET_POLY_TABLE (ND, NDIST, NSIZE, MAXLEG, NLEG1, EXTINCT1,&
     ENDDO
     DO L = 0, NL
       LEGCOEF(:,L,I) = LEGCOEF(:,L,I)/SCATTER
-      IF (LEGCOEF(1,L,I) .GT. 0.5E-5) NLEG(I) = L 
+      IF (LEGCOEF(1,L,I) .GT. 0.5E-5) NLEG(I) = L
     ENDDO
     IF (ABS(LEGCOEF(1,0,I)-1.0) > 0.0001) THEN
       PRINT *,'Phase function not normalized',I,LEGCOEF(1,0,I)
       STOP
-    ENDIF 
+    ENDIF
     IF (EXTINCT(I) > 0.0) THEN
       SSALB(I) = SCATTER/EXTINCT(I)
     ENDIF
