@@ -195,13 +195,14 @@ class Resample_onto_grid_values(TestCase):
 
 
 class VerifySolver(TestCase):
-    def setUp(self):
-        shdom_polarized = xr.open_dataset('../shdom_verification/shdomout_rico32x36x26w672_polarized.nc')
+
+    @classmethod
+    def setUpClass(cls):
+        #shdom_polarized = xr.open_dataset('../shdom_verification/shdomout_rico32x36x26w672_polarized.nc')
 
         cloud_scatterer = shdom.grid.load_2parameter_lwc_file('../shdom_verification/rico32x36x26.txt',
                                                    density='lwc',origin=(0.0,0.0))
 
-        #simple 'union' horizontal grid merging for 3D and 1D needs to be fixed.
         rte_grid = shdom.grid.make_grid(cloud_scatterer.x.data[1] -cloud_scatterer.x.data[0],cloud_scatterer.x.data.size,
                                    cloud_scatterer.y.data[1] -cloud_scatterer.y.data[0],cloud_scatterer.y.data.size,
                                    np.append(np.array([0.0]),cloud_scatterer.z.data))
@@ -216,22 +217,22 @@ class VerifySolver(TestCase):
                                                np.full_like(cloud_scatterer_on_rte_grid.reff.data, fill_value=7))
 
         wavelengths = np.atleast_1d(0.672)
+        x,y = np.meshgrid(np.arange(0.0,0.62,0.0133), np.arange(0.0,0.70,0.0133))
 
-        x = np.repeat(np.repeat(shdom_polarized.radiance_x.data[np.newaxis,:,np.newaxis],shdom_polarized.radiance_y.size, axis=2),
-                     shdom_polarized.radiance_mu.data.size,axis=0).ravel()
-        y = np.repeat(np.repeat(shdom_polarized.radiance_y.data[np.newaxis,np.newaxis,:],shdom_polarized.radiance_x.size, axis=1),
-                     shdom_polarized.radiance_mu.data.size,axis=0).ravel()
-        mu = np.repeat(np.repeat(shdom_polarized.radiance_mu.data[:,np.newaxis,np.newaxis],shdom_polarized.radiance_x.size, axis=0),
-                       shdom_polarized.radiance_y.size, axis=-1).ravel()
-        phi = np.repeat(np.repeat(shdom_polarized.radiance_phi.data[:,np.newaxis,np.newaxis],shdom_polarized.radiance_x.size, axis=-1),
-                       shdom_polarized.radiance_y.size, axis=-1).ravel()
-        sensor = shdom.sensor.make_sensor_dataset(
-            x.astype(np.float32),
-            y.astype(np.float32),
-            np.full_like(x,fill_value=1.4).astype(np.float32),
-            mu.astype(np.float32),
-            np.deg2rad(phi).astype(np.float32),
-            stokes=['I','Q','U'],wavelength = wavelengths[0], fill_ray_variables=True)
+        x=x.ravel()
+        y=y.ravel()
+
+        mu = np.array([1.0,0.5,0.2,0.5,0.2])
+        phi = np.array([0.0,0.0,0.0,90.0,90.0])
+        z = np.ones(x.size)*1.0
+        x2 = np.tile(x,5)
+        y2 = np.tile(y,5)
+        z2 = np.tile(z,5)
+        mu2 = np.repeat(mu,x.size)
+        phi2 = np.repeat(phi,x.size)
+
+        sensor = shdom.sensor.make_sensor_dataset(x2.ravel(),y2.ravel(),z2.ravel(),mu2.ravel(),np.deg2rad(phi2.ravel()),['I'],
+                                                 0.672, fill_ray_variables=True)
         Sensordict = shdom.organization.SensorsDict()
         Sensordict.add_sensor('Sensor0', sensor)
 
@@ -241,13 +242,11 @@ class VerifySolver(TestCase):
         config['num_mu_bins'] = 8
         config['num_phi_bins'] = 16
         config['solution_accuracy'] = 1e-4
-        config['x_boundary_condition'] = 'periodic'
-        config['y_boundary_condition'] = 'periodic'
+
 
         solvers = shdom.organization.SolversDict()
 
         for wavelength in wavelengths:
-            #print('making mie_table. . . may take a while.')
 
             #mie table and medium doesn't matter here as it is overwritten by property file.
             #just need it to initialize a solver.
@@ -282,11 +281,33 @@ class VerifySolver(TestCase):
                     shdom_source.append(np.fromstring(line, sep=' '))
         shdom_source = np.array(shdom_source)
 
-        self.testing = solver._source[:,:solver._npts]
-        self.truth = shdom_source.T
+        cls.testing = solver._source[:,:solver._npts]
+        cls.truth = shdom_source.T
+        integrated_rays = solver.integrate_to_sensor(sensor)
+        cls.integrated_rays = integrated_rays
+
+        radiances = []
+        with open('../shdom_verification/rico32x36x26w672ar.out') as f:
+            data = f.readlines()
+            for line in data:
+                if not '!' in line:
+                    radiances.append(np.fromstring(line, sep=' '))
+        radiances = np.array(radiances)
+        cls.radiances = radiances
 
     def test_solver(self):
         self.assertTrue(np.allclose(self.testing, self.truth))
+
+    def test_radiance(self):
+        self.assertTrue(np.allclose(self.integrated_rays.I.data, self.radiances[:,2].data, atol=3e-3))
+
+    def test_Q(self):
+        self.assertTrue(np.allclose(self.integrated_rays.Q.data, self.radiances[:,3].data, atol=2e-4))
+
+    def test_U(self):
+        self.assertTrue(np.allclose(self.integrated_rays.U.data, self.radiances[:,4].data, atol=7e-5))
+
+
 
 
 def get_basic_state_for_surface():
@@ -336,8 +357,8 @@ def get_basic_state_for_surface():
 
 
 class Verify_Lambertian_Surfaces(TestCase):
-
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
 
         sensor, rayleigh, config = get_basic_state_for_surface()
         variable_lambertian = shdom.surface.lambertian(albedo=np.linspace(0.0,0.3- (0.3-0.0)/50.0,50)[:,np.newaxis],
@@ -355,8 +376,8 @@ class Verify_Lambertian_Surfaces(TestCase):
         solver.solve(maxiter=100, verbose=False)
         integrated_rays = solver.integrate_to_sensor(sensor)
 
-        self.integrated_rays = integrated_rays
-        self.solver = solver
+        cls.integrated_rays = integrated_rays
+        cls.solver = solver
 
         fluxes = []
         with open('../shdom_verification/brdf_L1f.out') as f:
@@ -365,7 +386,7 @@ class Verify_Lambertian_Surfaces(TestCase):
                 if not '!' in line:
                     fluxes.append(np.fromstring(line, sep=' '))
         fluxes = np.array(fluxes)
-        self.fluxes = fluxes
+        cls.fluxes = fluxes
 
         radiances = []
         with open('../shdom_verification/brdf_L1r.out') as f:
@@ -374,7 +395,7 @@ class Verify_Lambertian_Surfaces(TestCase):
                 if not '!' in line:
                     radiances.append(np.fromstring(line, sep=' '))
         radiances = np.array(radiances)
-        self.radiances = radiances
+        cls.radiances = radiances
 
     def test_flux_direct(self):
         self.assertTrue(np.allclose(self.fluxes[:,4],self.solver.fluxes.flux_direct[:,0,0].data, atol=4e-6))
@@ -391,7 +412,8 @@ class Verify_Lambertian_Surfaces(TestCase):
 
 class Verify_Ocean_Unpolarized_Surfaces(TestCase):
 
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
 
         sensor, rayleigh, config = get_basic_state_for_surface()
         variable_ocean = shdom.surface.ocean_unpolarized(surface_wind_speed = np.linspace(4.0, 12.0-(12.0-4.0)/50.0,50)[:,np.newaxis],
@@ -407,8 +429,8 @@ class Verify_Ocean_Unpolarized_Surfaces(TestCase):
         solver.solve(maxiter=100, verbose=False)
         integrated_rays = solver.integrate_to_sensor(sensor)
 
-        self.integrated_rays = integrated_rays
-        self.solver = solver
+        cls.integrated_rays = integrated_rays
+        cls.solver = solver
 
         fluxes = []
         with open('../shdom_verification/brdf_O1f.out') as f:
@@ -417,7 +439,7 @@ class Verify_Ocean_Unpolarized_Surfaces(TestCase):
                 if not '!' in line:
                     fluxes.append(np.fromstring(line, sep=' '))
         fluxes = np.array(fluxes)
-        self.fluxes = fluxes
+        cls.fluxes = fluxes
 
         radiances = []
         with open('../shdom_verification/brdf_O1r.out') as f:
@@ -426,7 +448,8 @@ class Verify_Ocean_Unpolarized_Surfaces(TestCase):
                 if not '!' in line:
                     radiances.append(np.fromstring(line, sep=' '))
         radiances = np.array(radiances)
-        self.radiances = radiances
+        cls.radiances = radiances
+
 
     def test_flux_direct(self):
         self.assertTrue(np.allclose(self.fluxes[:,4],self.solver.fluxes.flux_direct[:,0,0].data, atol=4e-6))
@@ -442,8 +465,8 @@ class Verify_Ocean_Unpolarized_Surfaces(TestCase):
 
 
 class Verify_RPV_Surfaces(TestCase):
-
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
 
         sensor, rayleigh, config = get_basic_state_for_surface()
         k = np.linspace(0.5, 1.0 - 0.5/50, 50)[:,np.newaxis]
@@ -461,8 +484,8 @@ class Verify_RPV_Surfaces(TestCase):
         solver.solve(maxiter=100, verbose=False)
         integrated_rays = solver.integrate_to_sensor(sensor)
 
-        self.integrated_rays = integrated_rays
-        self.solver = solver
+        cls.integrated_rays = integrated_rays
+        cls.solver = solver
 
         fluxes = []
         with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_R1f.out') as f:
@@ -471,7 +494,7 @@ class Verify_RPV_Surfaces(TestCase):
                 if not '!' in line:
                     fluxes.append(np.fromstring(line, sep=' '))
         fluxes = np.array(fluxes)
-        self.fluxes = fluxes
+        cls.fluxes = fluxes
 
         radiances = []
         with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_R1r.out') as f:
@@ -480,7 +503,7 @@ class Verify_RPV_Surfaces(TestCase):
                 if not '!' in line:
                     radiances.append(np.fromstring(line, sep=' '))
         radiances = np.array(radiances)
-        self.radiances = radiances
+        cls.radiances = radiances
 
     def test_flux_direct(self):
         self.assertTrue(np.allclose(self.fluxes[:,4],self.solver.fluxes.flux_direct[:,0,0].data, atol=4e-6))
@@ -495,8 +518,8 @@ class Verify_RPV_Surfaces(TestCase):
         self.assertTrue(np.allclose(self.radiances[:,-1], self.integrated_rays.I.data, atol=9e-6))
 
 class Verify_WaveFresnel_Surfaces(TestCase):
-
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
 
         sensor, rayleigh, config = get_basic_state_for_surface()
         real_refractive_index =np.ones(50)[:,np.newaxis]*1.33
@@ -515,8 +538,8 @@ class Verify_WaveFresnel_Surfaces(TestCase):
         solver.solve(maxiter=100, verbose=False)
         integrated_rays = solver.integrate_to_sensor(sensor)
 
-        self.integrated_rays = integrated_rays
-        self.solver = solver
+        cls.integrated_rays = integrated_rays
+        cls.solver = solver
 
         fluxes = []
         with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_W1f.out') as f:
@@ -525,7 +548,7 @@ class Verify_WaveFresnel_Surfaces(TestCase):
                 if not '!' in line:
                     fluxes.append(np.fromstring(line, sep=' '))
         fluxes = np.array(fluxes)
-        self.fluxes = fluxes
+        cls.fluxes = fluxes
 
         radiances = []
         with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_W1r.out') as f:
@@ -534,7 +557,7 @@ class Verify_WaveFresnel_Surfaces(TestCase):
                 if not '!' in line:
                     radiances.append(np.fromstring(line, sep=' '))
         radiances = np.array(radiances)
-        self.radiances = radiances
+        cls.radiances = radiances
 
     def test_flux_direct(self):
         self.assertTrue(np.allclose(self.fluxes[:,4],self.solver.fluxes.flux_direct[:,0,0].data, atol=4e-6))
@@ -556,8 +579,8 @@ class Verify_WaveFresnel_Surfaces(TestCase):
 
 
 class Verify_Diner_Surfaces(TestCase):
-
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
 
         sensor, rayleigh, config = get_basic_state_for_surface()
         a = np.ones(50)[:,np.newaxis]*0.2
@@ -578,8 +601,8 @@ class Verify_Diner_Surfaces(TestCase):
         solver.solve(maxiter=100, verbose=False)
         integrated_rays = solver.integrate_to_sensor(sensor)
 
-        self.integrated_rays = integrated_rays
-        self.solver = solver
+        cls.integrated_rays = integrated_rays
+        cls.solver = solver
 
         fluxes = []
         with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_D1f.out') as f:
@@ -588,7 +611,7 @@ class Verify_Diner_Surfaces(TestCase):
                 if not '!' in line:
                     fluxes.append(np.fromstring(line, sep=' '))
         fluxes = np.array(fluxes)
-        self.fluxes = fluxes
+        cls.fluxes = fluxes
 
         radiances = []
         with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_D1r.out') as f:
@@ -597,7 +620,7 @@ class Verify_Diner_Surfaces(TestCase):
                 if not '!' in line:
                     radiances.append(np.fromstring(line, sep=' '))
         radiances = np.array(radiances)
-        self.radiances = radiances
+        cls.radiances = radiances
 
     def test_flux_direct(self):
         self.assertTrue(np.allclose(self.fluxes[:,4],self.solver.fluxes.flux_direct[:,0,0].data, atol=4e-6))
