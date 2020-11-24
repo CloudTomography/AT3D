@@ -112,7 +112,9 @@ class RTE(object):
 
         self._grid = xr.Dataset({'x': list(self.medium.values())[0].coords['x'],
                                  'y': list(self.medium.values())[0].coords['y'],
-                                 'z': list(self.medium.values())[0].coords['z']})
+                                 'z': list(self.medium.values())[0].coords['z'],
+                                 'delx': list(self.medium.values())[0].delx,
+                                 'dely': list(self.medium.values())[0].dely})
         self._setup_grid(self._grid)
 
         # Setup surface
@@ -277,7 +279,7 @@ class RTE(object):
         if (numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0,1,4,5)):
             self._bcflag += 2
 
-    def _solve_prop(self, filename='./shdom_verification/rico32x36x25w672.prp'):
+    def _solve_prop(self, filename='/Users/jesserl2/Documents/Code/aviad_pyshdom_dev/pyshdom_dev/shdom_verification/rico32x36x26w672.prp'):
         """
         This function is for verification against SHDOM.
         Must be polarized. Base grid, source, numerical parameters, surface etc
@@ -390,8 +392,11 @@ class RTE(object):
         self._pa.ystart = grid.y[0]
 
         # TODO: check constant dx and dy
-        self._pa.delx = grid.x[1] - grid.x[0]
-        self._pa.dely = grid.y[1] - grid.y[0]
+
+        #self._pa.delx = grid.x[1] - grid.x[0]
+        self._pa.delx = grid.delx
+        #self._pa.dely = grid.y[1] - grid.y[0]
+        self._pa.dely = grid.dely
         self._pa.zlevels = grid.z
 
         # Initialize shdom internal grid sizes to property array grid

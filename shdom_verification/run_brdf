@@ -1,0 +1,192 @@
+#!/bin/csh
+#   Script that runs SHDOM for solar radiative transfer in independent
+# pixel mode for a 2D medium for demonstrating the various BRDF surface
+# reflection models.  The surface properties may change in the X direction.
+# The atmosphere has only molecular Rayleigh scattering (up to 30 km), and
+# the optical depth is controlled by the wavelength.
+# Outputs hemispheric flux and radiance at a number of angles.
+# The SHDOM radiance files from this script may be plotted with the
+# plot_brdf.pro IDL script.
+
+#  Select sections of script to run
+set MakePrp=1
+set MakeSfc=1
+set RunSHDOM=1
+
+# Set the surface reflection BRDF type:
+#        Type        Description
+#   L  Lambertian    isotropic reflecting radiance
+#   R  RPV-original  Rahman, Pinty, Verstraete; used for land surfaces
+#   O  Ocean         unpolarized ocean parameterization, including
+#                      Cox-Munk Fresnel reflection, foam, and ocean chorophyl
+#   W  WaveFresnel   polarized ocean model with Cox-Munk Fresnel surface
+#   D  Diner et al   unpolarized modified RPV model and polarized Fresnel
+#                      reflection from randomly oriented microfacets
+set BRDFtype=R
+set run=1   # run number (for different BRDF parameters)
+
+#  Set the wavelength (microns), which controls the Rayleigh optical depth
+#   (The Ocean surface reflection also uses the wavelength)
+set wavelen=0.85
+
+#  Choose the file names (property file, surface file, shdom output)
+set prpfile="atmos_ray${wavelen}.prp"
+set sfcfile="brdf_${BRDFtype}${run}.sfc"
+set outbase="brdf_${BRDFtype}${run}"
+
+# Set the parameter ranges for the BRDF
+switch ($BRDFtype)
+ case "L":   # Lambertian    albedo
+   set albedomin=0.0 ; set albedomax=0.3
+   set Nstokes=1
+   breaksw
+ case "R":   # RPV-original  rho0, k, Theta
+   set rho0min=0.1    ; set rho0max=0.1
+   set kmin=0.5       ; set kmax=1.0
+   set Thetamin=-0.24 ; set Thetamax=-0.24
+   set Nstokes=1
+   breaksw
+ case "O":   # Ocean         Wind Speed (m/s), Pigment concentration (mg/m^3
+   set windspeedmin=4.0 ; set windspeedmax=12.0
+   set pigmentmin=0.0   ; set pigmentmax=0.0
+   set Nstokes=1
+   breaksw
+ case "W":   # WaveFresnel   Real, Imaginary refractive index, wind speed (m/s)
+   set realindexmin=1.33 ; set realindexmax=1.33
+   set imagindexmin=0.0  ; set imagindexmax=0.0
+   set windspeedmin=4.0  ; set windspeedmax=12.0
+   set Nstokes=3
+   breaksw
+ case "D":   # Diner et al   a, k, b, zeta, sigma
+   set amin=0.2  ; set amax=0.2
+   set kmin=0.8  ; set kmax=0.8
+   set bmin=0.3  ; set bmax=0.3
+   set zetamin=0    ; set zetamax=1.0
+   set sigmamin=-1  ; set sigmamax=-1
+   set Nstokes=3
+   breaksw
+endsw
+
+
+#  Set size of domain (number of IP columns); the column spacing is dx=0.1
+#    The top of the domain is Z=30 km.
+set Nx=50;
+set dx=`awk -v nx=$Nx 'BEGIN {print 1.0/nx;}'`
+set Tsfc=288  # surface temperature (K)
+
+#  Set the solar direction and flux and wavelength
+set mu0=-0.707;  set phi0=0.0;  set flux0=1.0
+
+#  Set some other SHDOM parameters:
+set Nmu=16; set Nphi=32       # angular resolution
+set BCflag=0;  set IPflag=3;   set deltaM="T"
+set solacc=1.0E-5;  set accel=T;   set maxiter=50
+set splitacc=0.001; set shacc=0.0
+set Ztop=30
+
+
+# ----------------------------------  Start of Processing
+# Compile the "put" command
+if (!(-e put))  cc -o put  put.c
+
+
+if ($MakePrp) then
+   #  Make the SHDOM atmosphere property file with only molecular Rayleigh
+   # scattering using propgen.  The atmosphere is close to a US standard
+   # with a top at 30 km.
+
+  set parfile=NONE
+  set maxnewphase=2
+  set asymtol=0.01
+  set fracphasetol=0.1
+  set Nzother=11
+  set ZTother=(0 288  3 269  6 249  9 230  12 217  15 217  18 217 \
+               21 218  24 221  27 224  30 227)
+  set sfcpres=1013.25
+  set polout=P
+  ./put 0  $parfile  $maxnewphase $asymtol $fracphasetol \
+      $wavelen $sfcpres $Nzother $ZTother $polout $prpfile \
+    | ./propgen | tail -3
+endif
+
+
+
+if ($MakeSfc) then
+#  Make the shdom surface file: uniform in Y, increasing parameter in X
+
+  awk -v nx=$Nx -v dx=$dx -v sfc=$BRDFtype \
+     'BEGIN {printf "%c\n%3d %2d  %5.3f %5.3f\n", sfc, nx,1,dx,dx;}' \
+    >! $sfcfile
+
+  switch ($BRDFtype)
+   case "L":   # Lambertian    albedo
+    awk -v nx=$Nx -v temp=$Tsfc -v albedomin=$albedomin -v albedomax=$albedomax \
+     'BEGIN {for (ix=1; ix<=nx; ix++) {f=(ix-1)/nx; \
+              albedo=albedomin+(albedomax-albedomin)*f;\
+              printf "%3.0f %3.0f %5.1f %5.3f\n",\
+                ix,1,temp,albedo;} }' >> $sfcfile
+    breaksw
+   case "O":   # Ocean         Wind Speed (m/s)
+    awk -v nx=$Nx -v temp=$Tsfc \
+        -v windspeedmin=$windspeedmin -v windspeedmax=$windspeedmax \
+        -v pigmentmin=$pigmentmin -v pigmentmax=$pigmentmax \
+     'BEGIN {for (ix=1; ix<=nx; ix++) {f=(ix-1)/nx; \
+              windspeed=windspeedmin+(windspeedmax-windspeedmin)*f; \
+              pigment=pigmentmin+(pigmentmax-pigmentmin)*f; \
+              printf "%3.0f %3.0f %5.1f %6.3f %5.3f\n",\
+                ix,1,temp,windspeed,pigment;} }' >> $sfcfile
+    breaksw
+   case "R":   # RPV-original  rho0, k, Theta
+    awk -v nx=$Nx -v temp=$Tsfc -v kmin=$kmin -v kmax=$kmax -v rho0min=$rho0min \
+        -v rho0max=$rho0max -v Thetamin=$Thetamin -v Thetamax=$Thetamax \
+     'BEGIN {for (ix=1; ix<=nx; ix++) {f=(ix-1)/nx; \
+              k=kmin+(kmax-kmin)*f; \
+              rho0=rho0min+(rho0max-rho0min)*f; \
+              Theta=Thetamin+(Thetamax-Thetamin)*f;\
+              printf "%3.0f %3.0f %5.1f %5.3f %5.3f %5.3f\n",\
+                ix,1,temp,rho0,k,Theta;} }' >> $sfcfile
+    breaksw
+   case "W":   # WaveFresnel   Real, Imaginary refractive index, wind speed (m/s)
+    awk -v nx=$Nx -v temp=$Tsfc \
+        -v realindexmin=$realindexmin -v realindexmax=$realindexmax \
+        -v imagindexmin=$imagindexmin -v imagindexmax=$imagindexmax \
+        -v windspeedmin=$windspeedmin -v windspeedmax=$windspeedmax \
+     'BEGIN {for (ix=1; ix<=nx; ix++) {f=(ix-1)/nx; \
+              realindex=realindexmin+(realindexmax-realindexmin)*f; \
+              imagindex=imagindexmin+(imagindexmax-imagindexmin)*f; \
+              windspeed=windspeedmin+(windspeedmax-windspeedmin)*f; \
+              printf "%3.0f %3.0f %5.1f %7.5f %8.5f %6.3f\n",\
+                ix,1,temp,realindex,imagindex,windspeed;} }' >> $sfcfile
+    breaksw
+   case "D":   # Diner et al   a, k, b, zeta, sigma
+    awk -v nx=$Nx -v temp=$Tsfc -v amin=$amin -v amax=$amax \
+        -v kmin=$kmin -v kmax=$kmax  -v bmin=$bmin -v bmax=$bmax \
+        -v zetamin=$zetamin -v zetamax=$zetamax \
+        -v sigmamin=$sigmamin -v sigmamax=$sigmamax \
+     'BEGIN {for (ix=1; ix<=nx; ix++) {f=(ix-1)/nx; \
+              a=amin+(amax-amin)*f; \
+              k=kmin+(kmax-kmin)*f; \
+              b=bmin+(bmax-bmin)*f; \
+              zeta=zetamin+(zetamax-zetamin)*f;\
+              sigma=sigmamin+(sigmamax-sigmamin)*f; \
+              printf "%3.0f %3.0f %5.1f %5.3f %5.3f %5.3f %5.3f %5.3f\n",\
+                ix,1,temp,a,k,b,zeta,sigma;} }' >> $sfcfile
+    breaksw
+ endsw
+endif
+
+
+
+if ($RunSHDOM) then
+   # Output the radiance at the top of atmosphere in the solar plane
+  set Routparm="$Ztop  $dx 1  0 0  19  0.1 180 0.2 180 0.3 180 0.4 180 0.5 180 0.6 180 0.7 180 0.8 180 0.9 180 1.0 0 0.9 0 0.8 0 0.7 0 0.6 0 0.5 0 0.4 0 0.3 0 0.2 0 0.1 0"
+#   Output the fluxes at the surface
+  set Foutparm="2 0.0  $dx 1"
+  set Nz=`awk '{if (NR==2) print $3;}' $prpfile`
+   # Run SHDOM
+  ./put SurfaceBRDF $prpfile $sfcfile NONE NONE NONE $Nstokes "$Nx 1 $Nz"\
+    "$Nmu $Nphi" $BCflag $IPflag $deltaM E S "$flux0 $mu0 $phi0" 0.0 \
+     $wavelen  "$splitacc $shacc" "$accel $solacc $maxiter" \
+     2 F $Foutparm ${outbase}f.out  R $Routparm ${outbase}r.out \
+     NONE 20 1.2 1.0 1.5 | ./shdom
+endif

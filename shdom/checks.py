@@ -42,23 +42,25 @@ def check_grid(dataset):
     check_exists(dataset, 'x', 'y', 'z')
 
     #check grid is 3D
-    fail_list = []
-    if len(dataset.x) == 1:
-        fail_list.append('x')
-    if len(dataset.y) == 1:
-        fail_list.append('y')
-    if len(fail_list) > 0:
-        raise ValueError("Grid coordinates with size of 1 are not currently supported.", *fail_list)
+    # fail_list = []
+    # if len(dataset.x) == 1:
+    #     fail_list.append('x')
+    # if len(dataset.y) == 1:
+    #     fail_list.append('y')
+    # if len(fail_list) > 0:
+    #     raise ValueError("Grid coordinates with size of 1 are not currently supported.", *fail_list)
 
     #check equispacing of horizontal grid 'x','y'
     x = dataset.x.diff('x')
     y = dataset.y.diff('y')
 
     fail_list = []
-    if not np.allclose(x,x[0],atol=1e-6):
-        fail_list.append('x')
-    if not np.allclose(y,y[0], atol=1e-6):
-        fail_list.append('y')
+    if len(x) > 1:
+        if not np.allclose(x,x[0],atol=1e-6):
+            fail_list.append('x')
+    if len(y) > 1:
+        if not np.allclose(y,y[0], atol=1e-6):
+            fail_list.append('y')
     if len(fail_list) > 0:
         raise ValueError("Grid coordinates must be equispaced for the RTE solver.", *fail_list)
     check_positivity(dataset,'z')

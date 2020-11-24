@@ -23,8 +23,7 @@ def load_2parameter_lwc_file(file_name, density='lwc', origin=(0.0,0.0)):
     dx,dy = np.fromstring(header['2 parameter LWC file'][1],sep=' ').astype(np.float)
     z = np.fromstring(header['2 parameter LWC file'][2],sep=' ').astype(np.float)
     temperature = np.fromstring(header['2 parameter LWC file'][3],sep=' ').astype(np.float)
-
-    dset = make_grid(origin[0],(nx-1)*dx,nx,origin[1],(ny-1)*dy,ny,z)
+    dset = make_grid(dx, nx, dy, ny, z)
 
     data = np.genfromtxt(file_name,skip_header=5)
 
@@ -108,7 +107,7 @@ def load_from_csv(path, density=None,origin=(0.0,0.0)):
     dx, dy = np.genfromtxt(path, max_rows=1, dtype=float, skip_header=2, delimiter=',')
     z = xr.DataArray(np.genfromtxt(path, max_rows=1, dtype=float, skip_header=3, delimiter=','), coords=[range(nz)], dims=['z'])
 
-    dset = make_grid(origin[0],(nx-1)*dx,nx,origin[1],(ny-1)*dy,ny,z)
+    dset = make_grid(dx, nx, dy, ny, z)
     i,j,k = zip(*df.index)
 
     for name in df.columns:
@@ -191,9 +190,12 @@ def resample_onto_grid(grid, data):
         filled['density'] = resampled_data.density.fillna(0.0)
     for name, datavar in filled.data_vars.items(): #consistency check.
         assert np.bitwise_not(np.all(np.isnan(datavar.data))), "Unexpected NaN in '{}'".format(name)
+
+    filled['delx'] = grid.delx
+    filled['dely'] = grid.dely
     return filled
 
-def make_grid(xmin: float, xmax: float, nx: int,ymin: float, ymax: float,ny: int, z: np.ndarray) -> xr.Dataset:
+def make_grid(delx: float, nx: int,dely: float,ny: int, z: np.ndarray) -> xr.Dataset:
     """
     TODO
     """
@@ -201,13 +203,18 @@ def make_grid(xmin: float, xmax: float, nx: int,ymin: float, ymax: float,ny: int
     z = np.asarray(z)
     if (not np.all(np.sort(z) == z)) or (not np.all(z >=0.0)) or (np.unique(z).size != z.size) or (z.ndim != 1):
         raise ValueError('z must be >= 0, strictly increasing and 1-D')
-    return xr.Dataset(
+
+    grid= xr.Dataset(
         coords = {
-            'x': np.linspace(xmin,xmax,nx),
-            'y': np.linspace(ymin,ymax,ny),
+            'x': np.linspace(0.0, delx*(nx-1), nx),
+            'y': np.linspace(0.0, dely*(ny-1), ny),
             'z': z,
         }
     )
+    grid['delx'] = delx
+    grid['dely'] = dely
+    return grid
+
 def combine_z_coordinates(scatterer_list):
     """
     A wrapper around merge_two_z_coordinates.

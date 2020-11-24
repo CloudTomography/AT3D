@@ -50,6 +50,8 @@ def to_grid(wavelengths, atmosphere, rte_grid):
         #add a 'wavelength_center' attribute as this is what solver.RTE needs.
         temp.attrs['wavelength_center'] = wavelength
         temp = temp.assign_attrs(atmosphere.attrs)
+        temp['delx'] = rte_grid.delx
+        temp['dely'] = rte_grid.dely
         output[wavelength] = temp
 
     return output

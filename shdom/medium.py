@@ -61,6 +61,9 @@ def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=Fals
     #inherit attributes.
     optical_properties = optical_properties.assign_attrs(poly_table.attrs)
     optical_properties = optical_properties.assign_attrs(microphysics.attrs)
+    optical_properties['delx'] = microphysics.delx
+    optical_properties['dely'] = microphysics.dely
+
     #TODO Check for whether these variables are 'in-place' modifications that
             #affect the earlier legendre_table/poly_table etc.
     return optical_properties

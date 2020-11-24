@@ -41,7 +41,7 @@ class Microphysics_load_from_csv_test(TestCase):
         x = scatterer.x.data
         y = scatterer.y.data
         z = scatterer.z.data
-        rte_grid = shdom.grid.make_grid(x.min(), x.max(), x.size, y.min(), y.max(), y.size, z)
+        rte_grid = shdom.grid.make_grid(x[1]-x[0], x.size,y[1]-y[0], y.size, z)
         self.droplets = shdom.grid.resample_onto_grid(rte_grid, scatterer)
         self.droplets['veff'] = (self.droplets.reff.dims, np.full_like(self.droplets.reff.data, fill_value=0.1))
     def test_load_from_csv_lwc(self):
@@ -171,7 +171,7 @@ class Resample_onto_grid(TestCase):
         cloud, atmosphere = make_test_cloud()
         self.cloud = cloud
         self.atmosphere = atmosphere
-        self.rte_grid = shdom.grid.make_grid(0.0, 2.5,30, 0.0,1.6,28,np.linspace(0.0,4.6,19))
+        self.rte_grid = shdom.grid.make_grid(2.5/29,30, 1.6/27 ,28,np.linspace(0.0,4.6,19))
     def test_resample_3d_onto_grid(self):
         shdom.grid.resample_onto_grid(self.rte_grid, self.cloud)
     def test_resample_1d_onto_grid(self):
@@ -182,7 +182,7 @@ class Resample_onto_grid_values(TestCase):
         cloud, atmosphere = make_test_cloud()
         self.cloud = cloud
         self.atmosphere = atmosphere
-        self.rte_grid = shdom.grid.make_grid(0.0, 2.5,30, 0.0,1.6,28,np.linspace(0.0,4.6,19))
+        self.rte_grid = shdom.grid.make_grid(2.5/29,30, 1.6/27 ,28,np.linspace(0.0,4.6,19))
         self.grid_1d = shdom.grid.resample_onto_grid(self.rte_grid, atmosphere)
         self.grid_3d = shdom.grid.resample_onto_grid(self.rte_grid, cloud)
 
@@ -202,8 +202,8 @@ class VerifySolver(TestCase):
                                                    density='lwc',origin=(0.0,0.0))
 
         #simple 'union' horizontal grid merging for 3D and 1D needs to be fixed.
-        rte_grid = shdom.grid.make_grid(cloud_scatterer.x.data.min(),cloud_scatterer.x.data.max(),cloud_scatterer.x.data.size,
-                                   cloud_scatterer.y.data.min(),cloud_scatterer.y.data.max(),cloud_scatterer.y.data.size,
+        rte_grid = shdom.grid.make_grid(cloud_scatterer.x.data[1] -cloud_scatterer.x.data[0],cloud_scatterer.x.data.size,
+                                   cloud_scatterer.y.data[1] -cloud_scatterer.y.data[0],cloud_scatterer.y.data.size,
                                    np.append(np.array([0.0]),cloud_scatterer.z.data))
 
         #resample the cloud onto the rte_grid
@@ -287,6 +287,336 @@ class VerifySolver(TestCase):
 
     def test_solver(self):
         self.assertTrue(np.allclose(self.testing, self.truth))
+
+
+def get_basic_state_for_surface():
+    config = shdom.configuration.get_config('../default_config.json')
+    config['split_accuracy'] = 0.001
+    config['spherical_harmonics_accuracy'] = 0.0
+    config['num_mu_bins'] = 16
+    config['num_phi_bins'] = 32
+    config['solution_accuracy'] = 1e-5
+    config['x_boundary_condition'] = 'periodic'
+    config['y_boundary_condition'] = 'periodic'
+    config['ip_flag'] = 3
+
+    rte_grid = shdom.grid.make_grid(0.02, 50, 0.02, 1,
+                               np.array([0,3.0,6.0,9.0,12.0,15.0,18.0,21.0,24.0,27.0,30.0]))
+
+    atmosphere = xr.Dataset(
+                        data_vars = {
+                            'temperature': ('z', np.array([288.0,269.0,249.0,230.0,217.0,217.0,217.0,
+                                                           218.0,221.0,224.0,227.0])),
+                            'pressure': ('z', np.ones(rte_grid.z.size)*1013.25)
+                        },
+        coords = {
+            'z': rte_grid.z.data
+        }
+    )
+    wavelengths = np.atleast_1d(0.85)
+    rayleigh= shdom.rayleigh.to_grid(wavelengths,atmosphere,rte_grid)
+    rayleigh[0.85]['extinction'] = (['x','y','z'],np.round(rayleigh[0.85].extinction.data,4))
+
+    x = np.linspace(0,1.0-1.0/50,50)
+    y = np.zeros(50)
+    z = np.ones(50)*30.0
+    mu = np.array([0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]+[1.0]+[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9][::-1])
+    phi = np.array([180.0]*9+[0.0]*10)
+
+    x2 = np.tile(x,19)
+    y2 = np.tile(y,19)
+    z2 = np.tile(z,19)
+    mu2 = np.repeat(mu,50)
+    phi2 = np.repeat(phi,50)
+
+    sensor = shdom.sensor.make_sensor_dataset(x2.ravel(),y2.ravel(),z2.ravel(),mu2.ravel(),np.deg2rad(phi2.ravel()),['I'],
+                                             0.85, fill_ray_variables=True)
+    return sensor, rayleigh, config
+
+
+
+class Verify_Lambertian_Surfaces(TestCase):
+
+    def setUp(self):
+
+        sensor, rayleigh, config = get_basic_state_for_surface()
+        variable_lambertian = shdom.surface.lambertian(albedo=np.linspace(0.0,0.3- (0.3-0.0)/50.0,50)[:,np.newaxis],
+                                                       ground_temperature=288.0,delx=0.02,dely=0.04)
+        # variable_ocean = shdom.surface.ocean_unpolarized(surface_wind_speed = np.linspace(4.0, 12.0-(12.0-4.0)/50.0,50)[:,np.newaxis],
+        #                                                 pigmentation = np.zeros((50,1)), ground_temperature=288.0,delx=0.02,dely=0.04)
+        solver = shdom.solver.RTE(numerical_params=config,
+                                        medium={'rayleigh': rayleigh[0.85]},
+                                       source=shdom.source.solar(-0.707, 0.0, solarflux=1.0),
+                                       surface=variable_lambertian,
+                                        num_stokes=1,
+                                        name=None,
+                                        atmosphere=None)
+
+        solver.solve(maxiter=100, verbose=False)
+        integrated_rays = solver.integrate_to_sensor(sensor)
+
+        self.integrated_rays = integrated_rays
+        self.solver = solver
+
+        fluxes = []
+        with open('../shdom_verification/brdf_L1f.out') as f:
+            data = f.readlines()
+            for line in data:
+                if not '!' in line:
+                    fluxes.append(np.fromstring(line, sep=' '))
+        fluxes = np.array(fluxes)
+        self.fluxes = fluxes
+
+        radiances = []
+        with open('../shdom_verification/brdf_L1r.out') as f:
+            data = f.readlines()
+            for line in data:
+                if not '!' in line:
+                    radiances.append(np.fromstring(line, sep=' '))
+        radiances = np.array(radiances)
+        self.radiances = radiances
+
+    def test_flux_direct(self):
+        self.assertTrue(np.allclose(self.fluxes[:,4],self.solver.fluxes.flux_direct[:,0,0].data, atol=4e-6))
+
+    def test_flux_down(self):
+        self.assertTrue(np.allclose(self.fluxes[:,3],self.solver.fluxes.flux_down[:,0,0].data, atol=4e-6))
+
+    def test_flux_down(self):
+        self.assertTrue(np.allclose(self.fluxes[:,2],self.solver.fluxes.flux_up[:,0,0].data, atol=4e-6))
+
+    def test_radiance(self):
+        self.assertTrue(np.allclose(self.radiances[:,-1], self.integrated_rays.I.data, atol=9e-6))
+
+
+class Verify_Ocean_Unpolarized_Surfaces(TestCase):
+
+    def setUp(self):
+
+        sensor, rayleigh, config = get_basic_state_for_surface()
+        variable_ocean = shdom.surface.ocean_unpolarized(surface_wind_speed = np.linspace(4.0, 12.0-(12.0-4.0)/50.0,50)[:,np.newaxis],
+                                                        pigmentation = np.zeros((50,1)), ground_temperature=288.0,delx=0.02,dely=0.04)
+        solver = shdom.solver.RTE(numerical_params=config,
+                                        medium={'rayleigh': rayleigh[0.85]},
+                                       source=shdom.source.solar(-0.707, 0.0, solarflux=1.0),
+                                       surface=variable_ocean,
+                                        num_stokes=1,
+                                        name=None,
+                                        atmosphere=None)
+
+        solver.solve(maxiter=100, verbose=False)
+        integrated_rays = solver.integrate_to_sensor(sensor)
+
+        self.integrated_rays = integrated_rays
+        self.solver = solver
+
+        fluxes = []
+        with open('../shdom_verification/brdf_O1f.out') as f:
+            data = f.readlines()
+            for line in data:
+                if not '!' in line:
+                    fluxes.append(np.fromstring(line, sep=' '))
+        fluxes = np.array(fluxes)
+        self.fluxes = fluxes
+
+        radiances = []
+        with open('../shdom_verification/brdf_O1r.out') as f:
+            data = f.readlines()
+            for line in data:
+                if not '!' in line:
+                    radiances.append(np.fromstring(line, sep=' '))
+        radiances = np.array(radiances)
+        self.radiances = radiances
+
+    def test_flux_direct(self):
+        self.assertTrue(np.allclose(self.fluxes[:,4],self.solver.fluxes.flux_direct[:,0,0].data, atol=4e-6))
+
+    def test_flux_down(self):
+        self.assertTrue(np.allclose(self.fluxes[:,3],self.solver.fluxes.flux_down[:,0,0].data, atol=4e-6))
+
+    def test_flux_down(self):
+        self.assertTrue(np.allclose(self.fluxes[:,2],self.solver.fluxes.flux_up[:,0,0].data, atol=4e-6))
+
+    def test_radiance(self):
+        self.assertTrue(np.allclose(self.radiances[:,-1], self.integrated_rays.I.data, atol=9e-6))
+
+
+class Verify_RPV_Surfaces(TestCase):
+
+    def setUp(self):
+
+        sensor, rayleigh, config = get_basic_state_for_surface()
+        k = np.linspace(0.5, 1.0 - 0.5/50, 50)[:,np.newaxis]
+        theta = np.ones(50)[:,np.newaxis]*-0.24
+        rho0 = np.ones(50)[:,np.newaxis]*0.1
+        surface = shdom.surface.RPV_unpolarized(rho0,k,theta, ground_temperature=288.0, delx=0.02,dely=0.02)
+        solver = shdom.solver.RTE(numerical_params=config,
+                                                medium={'rayleigh': rayleigh[0.85]},
+                                               source=shdom.source.solar(-0.707, 0.0, solarflux=1.0),
+                                               surface=surface,
+                                                num_stokes=1,
+                                                name=None,
+                                                atmosphere=None)
+
+        solver.solve(maxiter=100, verbose=False)
+        integrated_rays = solver.integrate_to_sensor(sensor)
+
+        self.integrated_rays = integrated_rays
+        self.solver = solver
+
+        fluxes = []
+        with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_R1f.out') as f:
+            data = f.readlines()
+            for line in data:
+                if not '!' in line:
+                    fluxes.append(np.fromstring(line, sep=' '))
+        fluxes = np.array(fluxes)
+        self.fluxes = fluxes
+
+        radiances = []
+        with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_R1r.out') as f:
+            data = f.readlines()
+            for line in data:
+                if not '!' in line:
+                    radiances.append(np.fromstring(line, sep=' '))
+        radiances = np.array(radiances)
+        self.radiances = radiances
+
+    def test_flux_direct(self):
+        self.assertTrue(np.allclose(self.fluxes[:,4],self.solver.fluxes.flux_direct[:,0,0].data, atol=4e-6))
+
+    def test_flux_down(self):
+        self.assertTrue(np.allclose(self.fluxes[:,3],self.solver.fluxes.flux_down[:,0,0].data, atol=4e-6))
+
+    def test_flux_down(self):
+        self.assertTrue(np.allclose(self.fluxes[:,2],self.solver.fluxes.flux_up[:,0,0].data, atol=4e-6))
+
+    def test_radiance(self):
+        self.assertTrue(np.allclose(self.radiances[:,-1], self.integrated_rays.I.data, atol=9e-6))
+
+class Verify_WaveFresnel_Surfaces(TestCase):
+
+    def setUp(self):
+
+        sensor, rayleigh, config = get_basic_state_for_surface()
+        real_refractive_index =np.ones(50)[:,np.newaxis]*1.33
+        imaginary_refractive_index = np.zeros(50)[:,np.newaxis]
+        surface_wind_speed = np.linspace(4.0, 12.0-8.0/50, 50)[:,np.newaxis]
+        surface = shdom.surface.wave_fresnel(real_refractive_index, imaginary_refractive_index, surface_wind_speed,
+                                            ground_temperature=288.0, delx=0.02,dely=0.02)
+        solver = shdom.solver.RTE(numerical_params=config,
+                                                medium={'rayleigh': rayleigh[0.85]},
+                                               source=shdom.source.solar(-0.707, 0.0, solarflux=1.0),
+                                               surface=surface,
+                                                num_stokes=3,
+                                                name=None,
+                                                atmosphere=None)
+
+        solver.solve(maxiter=100, verbose=False)
+        integrated_rays = solver.integrate_to_sensor(sensor)
+
+        self.integrated_rays = integrated_rays
+        self.solver = solver
+
+        fluxes = []
+        with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_W1f.out') as f:
+            data = f.readlines()
+            for line in data:
+                if not '!' in line:
+                    fluxes.append(np.fromstring(line, sep=' '))
+        fluxes = np.array(fluxes)
+        self.fluxes = fluxes
+
+        radiances = []
+        with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_W1r.out') as f:
+            data = f.readlines()
+            for line in data:
+                if not '!' in line:
+                    radiances.append(np.fromstring(line, sep=' '))
+        radiances = np.array(radiances)
+        self.radiances = radiances
+
+    def test_flux_direct(self):
+        self.assertTrue(np.allclose(self.fluxes[:,4],self.solver.fluxes.flux_direct[:,0,0].data, atol=4e-6))
+
+    def test_flux_down(self):
+        self.assertTrue(np.allclose(self.fluxes[:,3],self.solver.fluxes.flux_down[:,0,0].data, atol=4e-6))
+
+    def test_flux_down(self):
+        self.assertTrue(np.allclose(self.fluxes[:,2],self.solver.fluxes.flux_up[:,0,0].data, atol=4e-6))
+
+    def test_radiance(self):
+        self.assertTrue(np.allclose(self.radiances[:,2], self.integrated_rays.I.data, atol=9e-6))
+
+    def test_Q(self):
+        self.assertTrue(np.allclose(self.radiances[:,3], self.integrated_rays.Q.data, atol=9e-6))
+
+    def test_U(self):
+        self.assertTrue(np.allclose(self.radiances[:,4], self.integrated_rays.U.data, atol=9e-6))
+
+
+class Verify_Diner_Surfaces(TestCase):
+
+    def setUp(self):
+
+        sensor, rayleigh, config = get_basic_state_for_surface()
+        a = np.ones(50)[:,np.newaxis]*0.2
+        k = np.ones(50)[:,np.newaxis]*0.8
+        b = np.ones(50)[:,np.newaxis]*0.3
+        zeta = np.linspace(0., 1.0 - 1.0/50, 50)[:,np.newaxis]
+        sigma = np.ones(50)[:,np.newaxis]*-1.0
+
+        surface = shdom.surface.diner(a,k,b,zeta,sigma, ground_temperature=288.0, delx=0.02,dely=0.02)
+        solver = shdom.solver.RTE(numerical_params=config,
+                                                        medium={'rayleigh': rayleigh[0.85]},
+                                                       source=shdom.source.solar(-0.707, 0.0, solarflux=1.0),
+                                                       surface=surface,
+                                                        num_stokes=3,
+                                                        name=None,
+                                                        atmosphere=None)
+
+        solver.solve(maxiter=100, verbose=False)
+        integrated_rays = solver.integrate_to_sensor(sensor)
+
+        self.integrated_rays = integrated_rays
+        self.solver = solver
+
+        fluxes = []
+        with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_D1f.out') as f:
+            data = f.readlines()
+            for line in data:
+                if not '!' in line:
+                    fluxes.append(np.fromstring(line, sep=' '))
+        fluxes = np.array(fluxes)
+        self.fluxes = fluxes
+
+        radiances = []
+        with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_D1r.out') as f:
+            data = f.readlines()
+            for line in data:
+                if not '!' in line:
+                    radiances.append(np.fromstring(line, sep=' '))
+        radiances = np.array(radiances)
+        self.radiances = radiances
+
+    def test_flux_direct(self):
+        self.assertTrue(np.allclose(self.fluxes[:,4],self.solver.fluxes.flux_direct[:,0,0].data, atol=4e-6))
+
+    def test_flux_down(self):
+        self.assertTrue(np.allclose(self.fluxes[:,3],self.solver.fluxes.flux_down[:,0,0].data, atol=4e-6))
+
+    def test_flux_down(self):
+        self.assertTrue(np.allclose(self.fluxes[:,2],self.solver.fluxes.flux_up[:,0,0].data, atol=4e-6))
+
+    def test_radiance(self):
+        self.assertTrue(np.allclose(self.radiances[:,2], self.integrated_rays.I.data, atol=9e-6))
+
+    def test_Q(self):
+        self.assertTrue(np.allclose(self.radiances[:,3], self.integrated_rays.Q.data, atol=9e-6))
+
+    def test_U(self):
+        self.assertTrue(np.allclose(self.radiances[:,4], self.integrated_rays.U.data, atol=9e-6))
+
 
 
 
