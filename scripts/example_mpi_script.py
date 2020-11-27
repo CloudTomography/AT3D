@@ -18,8 +18,8 @@ atmosphere = xr.open_dataset('./ancillary_data/AFGL_summer_mid_lat.nc')
 merged_z_coordinate = shdom.grid.combine_z_coordinates([cloud_scatterer])
 
 #make a merged grid for the rte.
-rte_grid = shdom.grid.make_grid(cloud_scatterer.x.data.min(),cloud_scatterer.x.data.max(),cloud_scatterer.x.data.size,
-                           cloud_scatterer.y.data.min(),cloud_scatterer.y.data.max(),cloud_scatterer.y.data.size,
+rte_grid = shdom.grid.make_grid(cloud_scatterer.x[1]-cloud_scatterer.x[0],cloud_scatterer.x.size,
+                           cloud_scatterer.y[1]-cloud_scatterer.y[0],cloud_scatterer.y.size,
                            merged_z_coordinate)
 
 #resample the cloud onto the rte_grid
@@ -40,7 +40,9 @@ for zenith,azimuth in zip(sensor_zenith_list,sensor_azimuth_list):
     sensors_dict.add_sensor('MISR',
                     shdom.sensor.orthographic_projection(0.86, cloud_scatterer,0.02,0.02,
                                                          azimuth, zenith,
-                                                         altitude='TOA', stokes=['I'])
+                                                         altitude='TOA', stokes=['I'],
+                                                         sub_pixel_ray_args={'method':shdom.sensor.gaussian,
+                                                         'degree':2})
     )
 # for wavelength in (1.65, 2.2, 3.7):
 #     sensors_dict.add_sensor('MODIS',

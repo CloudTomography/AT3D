@@ -809,7 +809,7 @@ C     outgoing radiance (RAD) at the point X0,Y0,Z0.
       REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
       REAL    MURAY, PHIRAY, MU2, PHI2, WEIGHT
       DOUBLE PRECISION X0, Y0, Z0
-      REAL  VOLUME(3,NPTS)
+      REAL  VOLUME(3,NPTS), TEMP_VOLUME(NPTS), PATH_SUM
       LOGICAL LINEAR
       INTEGER FLAG
       INTEGER BITX, BITY, BITZ, IOCT, ICELL, INEXTCELL, IFACE
@@ -828,6 +828,7 @@ C     outgoing radiance (RAD) at the point X0,Y0,Z0.
 
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
       MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
+
 
 C         Make the ray direction (opposite to the discrete ordinate direction)
       CX = SQRT(1.0-MURAY**2)*COS(PHIRAY)
@@ -955,7 +956,7 @@ C		Compute the gradient field in direction  (MU2,PHI2)
               ENDIF
               IF (LINEAR) THEN
                 VOLUME(3,GRIDPTR(K,ICELL)) =
-     .              VOLUME(3,GRIDPTR(K,ICELL)) + WEIGHT*SO*F(K)
+     .              VOLUME(3,GRIDPTR(K,ICELL)) + WEIGHT*(SO*F(K))
               ELSE
                 VOLUME(3,GRIDPTR(K,ICELL)) =
      .              VOLUME(3,GRIDPTR(K,ICELL)) + WEIGHT

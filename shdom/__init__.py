@@ -42,3 +42,4 @@ import shdom.optimize
 import shdom.space_carve
 import shdom.organization
 import shdom.error
+import shdom.checkpoint

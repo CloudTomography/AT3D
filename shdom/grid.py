@@ -201,8 +201,8 @@ def make_grid(delx: float, nx: int,dely: float,ny: int, z: np.ndarray) -> xr.Dat
     """
     #checks on z to make sure its monotonic.
     z = np.asarray(z)
-    if (not np.all(np.sort(z) == z)) or (not np.all(z >=0.0)) or (np.unique(z).size != z.size) or (z.ndim != 1):
-        raise ValueError('z must be >= 0, strictly increasing and 1-D')
+    if (not np.all(np.sort(z) == z)) or (not np.all(z >=0.0)) or (np.unique(z).size != z.size) or (z.ndim != 1) or (z.size < 2):
+        raise ValueError('z must be >= 0, strictly increasing, 1-D and contain at least 2 points.')
 
     grid= xr.Dataset(
         coords = {

@@ -118,6 +118,11 @@ F2PY_CORE_API = [
     'pencil_beam_prop',
     'project',
     'util_integrate_rays',
+    'util_locate_point',
+    'util_get_interp_kernel',
+    'check_property_input',
+    'nearest_binary',
+    'inner_product',
     'ylmall_wrap'
 ]
 
