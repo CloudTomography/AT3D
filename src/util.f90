@@ -61,9 +61,9 @@ subroutine nearest_binary(size, reference, val, index_low, &
   return
 end subroutine nearest_binary
 
-subroutine inner_product(nx1,ny1,nz1, &
+subroutine cell_average(nx1,ny1,nz1, &
   nx2,ny2,nz2, values1, values2, xgrid1,ygrid1,zgrid1, &
-  xgrid2,ygrid2,zgrid2, reference, other)
+  xgrid2,ygrid2,zgrid2, ref_vol, ref_val, other_vol, other_val)
 
   double precision xgrid1(nx1),ygrid1(ny1),zgrid1(nz1)
 !f2py intent(in) xgrid1, ygrid1, zgrid1
@@ -72,15 +72,15 @@ subroutine inner_product(nx1,ny1,nz1, &
   double precision values1(nx1,ny1,nz1), values2(nx2,ny2,nz2)
 !f2py intent(in) values1, values2
   double precision ref_vol(nx1-1,ny1-1,nz1-1), ref_val(nx1-1,ny1-1,nz1-1)
-!f2py intent(out) reference
+!f2py intent(out) ref_vol, ref_val
   double precision other_vol(nx1-1,ny1-1,nz1-1), other_val(nx1-1,ny1-1,nz1-1)
-!f2py intent(out) other
+!f2py intent(out) other_vol, other_val
 
   double precision dx1,dy1,dz1,dx2,dy2,dz2
   double precision min_x,min_y,min_z,max_x,max_y,max_z
   integer ic,jc,kc, i,j,k
   integer index_low(3), index_high(3), temp_low, temp_high
-  integer gridptr(3,8), t, index_low1(3), index_high1(3)
+  integer gridptr(3,8), t
   double precision f(8), location(3)
 
   other = 0.0D0
@@ -95,15 +95,10 @@ subroutine inner_product(nx1,ny1,nz1, &
         location(1) = xgrid1(ic) + dx1/2
         location(2) = ygrid1(jc) + dy1/2
         location(3) = zgrid1(kc) + dz1/2
-        index_low1(1) = ic
-        index_low1(2) = jc
-        index_low1(3) = kc
-        index_high1(1) = ic + 1
-        index_high1(2) = jc + 1
-        index_high1(3) = kc + 1
+
         ! call util_locate_point(nx1,ny1,nz1,xgrid1,ygrid1,zgrid1, &
         !     location, gridptr)
-        call util_get_interp_kernel2(index_low1, index_high1, location(1), location(2), &
+        call util_get_interp_kernel2(ic,jc,kc, location(1), location(2), &
           location(3), f,nx1,ny1,nz1,xgrid1,ygrid1,zgrid1)
 
         ref_val(ic,jc,kc) = ref_val(ic,jc,kc) +  dx1*dy1*dz1*f(1)* &
@@ -111,21 +106,19 @@ subroutine inner_product(nx1,ny1,nz1, &
         ref_val(ic,jc,kc) = ref_val(ic,jc,kc) +  dx1*dy1*dz1*f(2)* &
                                   values1(ic+1,jc,kc)
         ref_val(ic,jc,kc) = ref_val(ic,jc,kc) +  dx1*dy1*dz1*f(3)* &
-                                  values1(ic+1,jc+1,kc)
-        ref_val(ic,jc,kc) = ref_val(ic,jc,kc) +  dx1*dy1*dz1*f(4)* &
                                   values1(ic,jc+1,kc)
+        ref_val(ic,jc,kc) = ref_val(ic,jc,kc) +  dx1*dy1*dz1*f(4)* &
+                                  values1(ic+1,jc+1,kc)
         ref_val(ic,jc,kc) = ref_val(ic,jc,kc) +  dx1*dy1*dz1*f(5)* &
                                   values1(ic,jc,kc+1)
         ref_val(ic,jc,kc) = ref_val(ic,jc,kc) +  dx1*dy1*dz1*f(6)* &
                                   values1(ic+1,jc,kc+1)
         ref_val(ic,jc,kc) = ref_val(ic,jc,kc) +  dx1*dy1*dz1*f(7)* &
-                                  values1(ic+1,jc+1,kc+1)
-        ref_val(ic,jc,kc) = ref_val(ic,jc,kc) +  dx1*dy1*dz1*f(8)* &
                                   values1(ic,jc+1,kc+1)
-
+        ref_val(ic,jc,kc) = ref_val(ic,jc,kc) +  dx1*dy1*dz1*f(8)* &
+                                  values1(ic+1,jc+1,kc+1)
 
         ref_vol(ic,jc,kc) = dx1*dy1*dz1
-
         !for further speed up, replace these searches with an increment scheme
         !as index_low_new = index_high_old when ic is incremented (i think.)
         call nearest_binary(nx2, xgrid2, xgrid1(ic), index_low(1), &
@@ -159,27 +152,28 @@ subroutine inner_product(nx1,ny1,nz1, &
                 location(1) = 0.5*(min_x + max_x)
                 location(2) = 0.5*(min_y + max_y)
                 location(3) = 0.5*(min_z + max_z)
+
                 ! call util_locate_point(nx2,ny2,nz2,xgrid2,ygrid2,zgrid2, &
                 !     location, gridptr)
-                call util_get_interp_kernel2(index_low, index_high, location(1), location(2), &
+                call util_get_interp_kernel2(i,j,k, location(1), location(2), &
                   location(3), f,nx2,ny2,nz2,xgrid2,ygrid2,zgrid2)
-                !
+
                 other_val(ic,jc,kc) = other_val(ic,jc,kc) +  dx2*dy2*dz2*f(1)* &
                                           values2(i,j,k)
                 other_val(ic,jc,kc) = other_val(ic,jc,kc) +  dx2*dy2*dz2*f(2)* &
                                           values2(i+1,j,k)
                 other_val(ic,jc,kc) = other_val(ic,jc,kc) +  dx2*dy2*dz2*f(3)* &
-                                          values2(i+1,j+1,k)
-                other_val(ic,jc,kc) = other_val(ic,jc,kc) +  dx2*dy2*dz2*f(4)* &
                                           values2(i,j+1,k)
+                other_val(ic,jc,kc) = other_val(ic,jc,kc) +  dx2*dy2*dz2*f(4)* &
+                                          values2(i+1,j+1,k)
                 other_val(ic,jc,kc) = other_val(ic,jc,kc) +  dx2*dy2*dz2*f(5)* &
                                           values2(i,j,k+1)
                 other_val(ic,jc,kc) = other_val(ic,jc,kc) +  dx2*dy2*dz2*f(6)* &
                                           values2(i+1,j,k+1)
                 other_val(ic,jc,kc) = other_val(ic,jc,kc) +  dx2*dy2*dz2*f(7)* &
-                                          values2(i+1,j+1,k+1)
-                other_val(ic,jc,kc) = other_val(ic,jc,kc) +  dx2*dy2*dz2*f(8)* &
                                           values2(i,j+1,k+1)
+                other_val(ic,jc,kc) = other_val(ic,jc,kc) +  dx2*dy2*dz2*f(8)* &
+                                          values2(i+1,j+1,k+1)
 
                 other_vol(ic,jc,kc)  = other_vol(ic,jc,kc) + dx2*dy2*dz2
 
@@ -191,7 +185,7 @@ subroutine inner_product(nx1,ny1,nz1, &
       enddo
     enddo
   enddo
-end subroutine inner_product
+end subroutine cell_average
 
 
 subroutine util_integrate_rays(nrays, nx, ny, nz, xgrid, ygrid, zgrid, &
@@ -485,12 +479,12 @@ subroutine util_locate_point(nx, ny, nz, xgrid, ygrid, zgrid, &
   call nearest_binary(nx, xgrid, location(1),i,j)
   gridptr(1,1) = i
   gridptr(1,2) = j
-  gridptr(1,3) = j
-  gridptr(1,4) = i
+  gridptr(1,3) = i
+  gridptr(1,4) = j
   gridptr(1,5) = i
   gridptr(1,6) = j
-  gridptr(1,7) = j
-  gridptr(1,8) = i
+  gridptr(1,7) = i
+  gridptr(1,8) = j
 
   call nearest_binary(ny, ygrid, location(2),i,j)
   gridptr(2,1) = i
@@ -498,9 +492,9 @@ subroutine util_locate_point(nx, ny, nz, xgrid, ygrid, zgrid, &
   gridptr(2,3) = j
   gridptr(2,4) = j
   gridptr(2,5) = i
-  gridptr(2,6) = j
+  gridptr(2,6) = i
   gridptr(2,7) = j
-  gridptr(2,8) = i
+  gridptr(2,8) = j
 
   call nearest_binary(nz, zgrid, location(3),i,j)
   gridptr(3,1) = i
@@ -556,12 +550,12 @@ subroutine util_locate_point(nx, ny, nz, xgrid, ygrid, zgrid, &
   return
 end subroutine util_locate_point
 
-subroutine util_get_interp_kernel2(index_low,index_high,xn,yn, zn,f,nx,ny,nz, &
+subroutine util_get_interp_kernel2(i,j,k,xn,yn, zn,f,nx,ny,nz, &
   xgrid, ygrid, zgrid)
   implicit none
 
-  integer nx,ny,nz,index_low(3), index_high(3)
-!f2py intent(in) index_low, index_high
+  integer nx,ny,nz,i,j,k!index_low(3), index_high(3)
+!f2py intent(in) i,j,k
   double precision xn, yn, zn, f(8)
 !f2py intent(in) xn, yn, zn
 !f2py intent(out) f
@@ -570,39 +564,45 @@ subroutine util_get_interp_kernel2(index_low,index_high,xn,yn, zn,f,nx,ny,nz, &
   double precision u,v,w, delx,dely, delz
   double precision invdelx, invdely, invdelz
 
-  delx = xgrid(index_high(1)) - xgrid(index_low(1))
-  dely = ygrid(index_high(2)) - xgrid(index_low(2))
-  delz = zgrid(index_high(3)) - xgrid(index_low(3))
-
-  if (delx .le. 0.0) then
-    invdelx = 1.0
+  if ((xn > xgrid(i+1)) .or. (xn < xgrid(i)) .or. &
+      (yn > ygrid(j+1)) .or. (yn < ygrid(j)) .or. &
+      (zn > zgrid(k+1)) .or. (zn < zgrid(k))) then
+    f = 0.0D0
   else
-    invdelx = 1.0D0/delx
-  endif
-  if (dely .le. 0.0) then
-    invdely = 1.0
-  else
-    invdely = 1.0D0/dely
-  endif
-  if (delz .le. 0.0) then
-    invdelz = 1.0
-  else
-    invdelz = 1.0D0/delz
-  endif
 
-  u = (xn - xgrid(index_low(1)))*invdelx
-  v = (yn - ygrid(index_low(2)))*invdely
-  w = (zn - zgrid(index_low(3)))*invdely
+    delx = xgrid(i + 1) - xgrid(i)!xgrid(index_high(1)) - xgrid(index_low(1))
+    dely = ygrid(j + 1) - ygrid(j)!ygrid(index_high(2)) - xgrid(index_low(2))
+    delz = zgrid(k + 1) - zgrid(k)!zgrid(index_high(3)) - xgrid(index_low(3))
 
-  f(1) = (1-W)*(1-V)*(1-U)
-  f(2) = (1-W)*(1-V)*U
-  f(3) = (1-W)*V*(1-U)
-  f(4) = (1-W)*V*U
-  f(5) = W*(1-V)*(1-U)
-  f(6) = W*(1-V)*U
-  f(7) = W*V*(1-U)
-  f(8) = W*V*U
+    if (delx .le. 0.0) then
+      invdelx = 1.0
+    else
+      invdelx = 1.0D0/delx
+    endif
+    if (dely .le. 0.0) then
+      invdely = 1.0
+    else
+      invdely = 1.0D0/dely
+    endif
+    if (delz .le. 0.0) then
+      invdelz = 1.0
+    else
+      invdelz = 1.0D0/delz
+    endif
 
+    u = (xn - xgrid(i))*invdelx
+    v = (yn - ygrid(j))*invdely
+    w = (zn - zgrid(k))*invdelz
+
+    f(1) = (1-w)*(1-v)*(1-u)
+    f(2) = (1-w)*(1-v)*u
+    f(3) = (1-w)*v*(1-u)
+    f(4) = (1-w)*v*u
+    f(5) = w*(1-v)*(1-u)
+    f(6) = w*(1-v)*u
+    f(7) = w*v*(1-u)
+    f(8) = w*v*u
+  endif
   return
 end subroutine util_get_interp_kernel2
 
@@ -645,7 +645,7 @@ subroutine util_get_interp_kernel(gridptr,xn,yn, zn,f,nx,ny,nz, &
 
   u = (xn - xgrid(gridptr(1,2)))*invdelx
   v = (yn - ygrid(gridptr(2,1)))*invdely
-  w = (zn - zgrid(gridptr(3,1)))*invdely
+  w = (zn - zgrid(gridptr(3,1)))*invdelz
 
   f(1) = (1-W)*(1-V)*(1-U)
   f(2) = (1-W)*(1-V)*U

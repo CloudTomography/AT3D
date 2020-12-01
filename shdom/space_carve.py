@@ -188,9 +188,11 @@ class SpaceCarver(object):
             sensor_list = []
             for instrument in sensors:
                 sensor_list.extend(sensors[instrument]['sensor_list'])
-
+        weights = weights.copy(deep=True)
         if 'weights' in weights.data_vars:
             weights.weights.name = 'density'
+        weights.drop_vars([name for name in weights.variables if name not in ('x','y','z','density')])
+
         resampled_weights = shdom.grid.resample_onto_grid(self._grid, weights).density.data.ravel()
 
         for sensor in sensor_list:

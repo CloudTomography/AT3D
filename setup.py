@@ -119,10 +119,10 @@ F2PY_CORE_API = [
     'project',
     'util_integrate_rays',
     'util_locate_point',
-    'util_get_interp_kernel',
+    'util_get_interp_kernel2',
     'check_property_input',
     'nearest_binary',
-    'inner_product',
+    'cell_average',
     'ylmall_wrap'
 ]
 

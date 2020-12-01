@@ -36,10 +36,9 @@ import shdom.solver
 import shdom.sensor
 import shdom.grid
 import shdom.checks
-import shdom.script_util
 import shdom.gradient
 import shdom.optimize
 import shdom.space_carve
-import shdom.organization
+import shdom.util
 import shdom.error
-import shdom.checkpoint
+import shdom.callback
