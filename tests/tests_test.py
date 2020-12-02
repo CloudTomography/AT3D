@@ -234,7 +234,7 @@ class VerifySolver(TestCase):
 
         sensor = shdom.sensor.make_sensor_dataset(x2.ravel(),y2.ravel(),z2.ravel(),mu2.ravel(),np.deg2rad(phi2.ravel()),['I'],
                                                  0.672, fill_ray_variables=True)
-        Sensordict = shdom.organization.SensorsDict()
+        Sensordict = shdom.util.SensorsDict()
         Sensordict.add_sensor('Sensor0', sensor)
 
         config = shdom.configuration.get_config('../default_config.json')
@@ -245,7 +245,7 @@ class VerifySolver(TestCase):
         config['solution_accuracy'] = 1e-4
 
 
-        solvers = shdom.organization.SolversDict()
+        solvers = shdom.util.SolversDict()
 
         for wavelength in wavelengths:
 
@@ -659,8 +659,8 @@ class ParallelizationNoSubpixelRays(TestCase):
         size_distribution_function = shdom.size_distribution.gamma
 
         #define sensors.
-        Sensordict = shdom.organization.SensorsDict()
-        Sensordict2 = shdom.organization.SensorsDict()
+        Sensordict = shdom.util.SensorsDict()
+        Sensordict2 = shdom.util.SensorsDict()
         misr_list = []
         sensor_zenith_list = [75.0,60.0,45.6,26.1]*2 + [0.0]
         sensor_azimuth_list = [90]*4 + [-90]*4 +[0.0]
@@ -680,7 +680,7 @@ class ParallelizationNoSubpixelRays(TestCase):
         wavelengths = Sensordict.get_unique_solvers()
 
         cloud_poly_tables = OrderedDict()
-        solvers = shdom.organization.SolversDict()
+        solvers = shdom.util.SolversDict()
 
         for wavelength in wavelengths:
 
@@ -722,8 +722,8 @@ class ParallelizationNoSubpixelRays(TestCase):
                                             name=None
                                            )
             solvers.add_solver(wavelength,solver)
-            shdom.organization.get_measurements(solvers, Sensordict, maxiter=100, n_jobs=8, verbose=False)
-            shdom.organization.get_measurements(solvers, Sensordict2, maxiter=100, n_jobs=1, verbose=False)
+            shdom.util.get_measurements(solvers, Sensordict, maxiter=100, n_jobs=8, verbose=False)
+            shdom.util.get_measurements(solvers, Sensordict2, maxiter=100, n_jobs=1, verbose=False)
             #Sensordict['MISR']['sensor_list'][0].to_netcdf('../shdom_verification/RenderedSensorReference_nosubpixel.nc')
 
             cls.solvers = solvers
@@ -758,8 +758,8 @@ class ParallelizationSubpixelRays(TestCase):
         size_distribution_function = shdom.size_distribution.gamma
 
         #define sensors.
-        Sensordict = shdom.organization.SensorsDict()
-        Sensordict2 = shdom.organization.SensorsDict()
+        Sensordict = shdom.util.SensorsDict()
+        Sensordict2 = shdom.util.SensorsDict()
         misr_list = []
         sensor_zenith_list = [75.0,60.0,45.6,26.1]*2 + [0.0]
         sensor_azimuth_list = [90]*4 + [-90]*4 +[0.0]
@@ -783,7 +783,7 @@ class ParallelizationSubpixelRays(TestCase):
         wavelengths = Sensordict.get_unique_solvers()
 
         cloud_poly_tables = OrderedDict()
-        solvers = shdom.organization.SolversDict()
+        solvers = shdom.util.SolversDict()
 
         for wavelength in wavelengths:
 
@@ -825,8 +825,8 @@ class ParallelizationSubpixelRays(TestCase):
                                             name=None
                                            )
             solvers.add_solver(wavelength,solver)
-            shdom.organization.get_measurements(solvers, Sensordict, maxiter=100, n_jobs=8, verbose=False)
-            shdom.organization.get_measurements(solvers, Sensordict2, maxiter=100, n_jobs=1, verbose=False)
+            shdom.util.get_measurements(solvers, Sensordict, maxiter=100, n_jobs=8, verbose=False)
+            shdom.util.get_measurements(solvers, Sensordict2, maxiter=100, n_jobs=1, verbose=False)
 
             #Sensordict['MISR']['sensor_list'][0].to_netcdf('../shdom_verification/RenderedSensorReference_subpixelargs.nc')
             cls.solvers = solvers
@@ -862,7 +862,7 @@ class MicrophysicalDerivatives(TestCase):
         size_distribution_function = shdom.size_distribution.gamma
 
         #define sensors.
-        Sensordict = shdom.organization.SensorsDict()
+        Sensordict = shdom.util.SensorsDict()
         misr_list = []
         sensor_zenith_list = [75.0,60.0,45.6,26.1]*2 + [0.0]
         sensor_azimuth_list = [90]*4 + [-90]*4 +[0.0]
@@ -878,7 +878,7 @@ class MicrophysicalDerivatives(TestCase):
         wavelengths = Sensordict.get_unique_solvers()
 
         cloud_poly_tables = OrderedDict()
-        solvers = shdom.organization.SolversDict()
+        solvers = shdom.util.SolversDict()
 
 
         for wavelength in wavelengths:
@@ -929,7 +929,7 @@ class MicrophysicalDerivatives(TestCase):
 
     def test_ssalb(self):
 
-        unknown_scatterers = shdom.organization.UnknownScatterers()
+        unknown_scatterers = shdom.util.UnknownScatterers()
         unknown_scatterers.add_unknown('cloud', ['ssalb'],self.cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         self.solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method, unknown_scatterers.table_data)
@@ -941,7 +941,7 @@ class MicrophysicalDerivatives(TestCase):
 
     def test_extinction(self):
 
-        unknown_scatterers = shdom.organization.UnknownScatterers()
+        unknown_scatterers = shdom.util.UnknownScatterers()
         unknown_scatterers.add_unknown('cloud', ['extinction'],self.cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         solvers = self.solvers
@@ -954,7 +954,7 @@ class MicrophysicalDerivatives(TestCase):
 
     def test_density(self):
 
-        unknown_scatterers = shdom.organization.UnknownScatterers()
+        unknown_scatterers = shdom.util.UnknownScatterers()
         unknown_scatterers.add_unknown('cloud', ['density'],self.cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         solvers = self.solvers
@@ -968,7 +968,7 @@ class MicrophysicalDerivatives(TestCase):
 
     def test_legendre(self):
 
-        unknown_scatterers = shdom.organization.UnknownScatterers()
+        unknown_scatterers = shdom.util.UnknownScatterers()
         unknown_scatterers.add_unknown('cloud', ['legendre_0_10'],self.cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         solvers = self.solvers
@@ -1002,7 +1002,7 @@ class VerifyJacobian(TestCase):
         size_distribution_function = shdom.size_distribution.gamma
 
         #define sensors.
-        Sensordict = shdom.organization.SensorsDict()
+        Sensordict = shdom.util.SensorsDict()
 
         sensor = shdom.sensor.make_sensor_dataset(np.array([0.05]),np.array([0.05]),
                                                   np.array([0.7]),np.array([1.0]),
@@ -1015,7 +1015,7 @@ class VerifyJacobian(TestCase):
         wavelengths = Sensordict.get_unique_solvers()
 
         cloud_poly_tables = OrderedDict()
-        solvers = shdom.organization.SolversDict()
+        solvers = shdom.util.SolversDict()
 
         for wavelength in wavelengths:
 
@@ -1057,9 +1057,9 @@ class VerifyJacobian(TestCase):
                                            )
 
             solvers.add_solver(wavelength,solver)
-        shdom.organization.get_measurements(solvers, Sensordict, maxiter=100, n_jobs=8, verbose=False)
+        shdom.util.get_measurements(solvers, Sensordict, maxiter=100, n_jobs=8, verbose=False)
 
-        unknown_scatterers = shdom.organization.UnknownScatterers()
+        unknown_scatterers = shdom.util.UnknownScatterers()
         unknown_scatterers.add_unknown('cloud', ['extinction'],cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method, unknown_scatterers.table_data)
