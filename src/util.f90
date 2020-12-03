@@ -209,6 +209,7 @@ subroutine util_integrate_rays(nrays, nx, ny, nz, xgrid, ygrid, zgrid, &
   paths = -999.0
   do n=1,nrays
     tau = 0.0
+    !extrapolate ray to domain.
     call util_integrate_ray(start_positions(:,n), end_positions(:,n),&
                             tau, weights, xgrid, ygrid, zgrid,     &
                             nx,ny,nz)
@@ -275,7 +276,7 @@ subroutine util_integrate_ray(start_position, end_position,       &
   if (ye .le. ygrid(1)) then
     ye = ygrid(1) + eps
   else if (ye .ge.ygrid(ny)) then
-    ye = ygrid(nx) - eps
+    ye = ygrid(ny) - eps
   endif
   if (ze .le. zgrid(1)) then
     ze = zgrid(1) + eps
@@ -311,14 +312,14 @@ subroutine util_integrate_ray(start_position, end_position,       &
 
     if (cy .ge. 1.0e-6) then
       soy = (ygrid(gridptr(2,3)) - ye)*cyinv
-    elseif (cx .le. -1.0e-6) then
+    elseif (cy .le. -1.0e-6) then
       soy = (ygrid(gridptr(2,2)) - ye)*cyinv
     else
       soy = 1.0e20
     endif
     if (cz .ge. 1.0e-6) then
       soz = (zgrid(gridptr(3,5)) - ze)*czinv
-    elseif (cx .le. -1.0e-6) then
+    elseif (cz .le. -1.0e-6) then
       soz = (zgrid(gridptr(3,4)) - ze)*czinv
     else
       soz = 1.0e20
@@ -461,6 +462,141 @@ subroutine util_next_cell(a,b,c,cx,cy,cz,gridptr)
 
 end subroutine util_next_cell
 
+! subroutine extrapolate_to_domain_edge(nx,ny,nz,xgrid,ygrid,zgrid, &
+!   cx_old,cy_old,cz_old,cxinv,cyinv,czinv, position, end)
+!   implicit none
+!
+!   integer nx,ny,nz
+!   double precision xgrid(nx), ygrid(ny), zgrid(nz)
+! !f2py intent(in) xgrid, ygrid, zgrid
+!   double precision position(3),cx_old,cy_old,cz_old
+!   double precision cxinv, cyinv, czinv
+! !f2py intent(in, out) position
+! !f2py intent(in) cx_old, cy_old, cz_old
+! !f2py intent(in) cxinv, cyinv, czinv
+!   logical end
+! !f2py intent(in) end
+!
+!   double precision sox1,sox2,soy1,soy2,soz1,soz2,so
+!   double precision cx,cy,cz,x0,y0,z0
+!
+! !if outside domain, extrapolate ray to domain edge.
+!   if ((xgrid(1) .ge. position(1)) .or. &
+!     (xgrid(nx) .le. position(1)) .or. &
+!     (ygrid(1) .ge. position(2)) .or. &
+!       (ygrid(ny) .le. position(2)) .or. &
+!     (zgrid(1) .ge. position(3)) .or. &
+!       (zgrid(nz) .le. position(3))) then
+!
+!     if (end) then
+!       cx = -cx_old
+!       cy = -cy_old
+!       cz = -cz_old
+!     else
+!       cx = cx_old
+!       cy = cy_old
+!       cz = cz_old
+!     endif
+!
+! !distances to all potential matches.
+!     if (cx .ge. 1.0e-6) then
+!       sox1 = (xgrid(1) - position(1))*cxinv
+!       sox2 = (xgrid(nx) - position(1))*cxinv
+!     elseif (cx .le. -1.0e-6) then
+!       sox1 = (xgrid(1) - position(1))*cxinv
+!       sox2 = (xgrid(nx) - position(1))*cxinv
+!     else
+!       sox1 = 1.0e20
+!       sox2 = 1.0e20
+!     endif
+!     if (cy .ge. 1.0e-6) then
+!       soy1 = (ygrid(1) - position(2))*cyinv
+!       soy2= (ygrid(ny) - position(2))*cyinv
+!     elseif (cy .le. -1.0e-6) then
+!       soy1 = (ygrid(1) - position(2))*cyinv
+!       soy2 = (ygrid(ny) - position(2))*cyinv
+!     else
+!       soy1 = 1.0e20
+!       soy2 = 1.0e20
+!     endif
+!     if (cz .ge. 1.0e-6) then
+!       soz1 = (zgrid(1) - position(3))*czinv
+!       soz2 = (zgrid(nz) - position(3))*czinv
+!     elseif (cz .le. -1.0e-6) then
+!       soz1 = (zgrid(1) - position(3))*czinv
+!       soz2 = (zgrid(nz) - position(3))*czinv
+!     else
+!       soz1 = 1.0e20
+!       soz2 = 1.0e20
+!     endif
+!     print *, sox1,sox2,soy1,soy2,soz1,soz2
+! !test each potential match for validity.
+! !take the valid match with the smallest distance.
+!
+!     so = 1.0e20
+!     if (min(sox1, so) .eq. sox1) then
+!       z0 = position(3) + sox1*cz
+!       y0 = position(2) + sox1*cy
+!       if ((z0 .ge. zgrid(1)) .and. (z0 .le. zgrid(nz)) .and. &
+!         (y0 .ge. ygrid(1)) .and. (y0 .le. ygrid(ny))) then
+!         so = sox1
+!       endif
+!     endif
+!       print *,'sox1', sox1,so
+!     if (min(sox2, so) .eq. sox2) then
+!       z0 = position(3) + sox2*cz
+!       y0 = position(2) + sox2*cy
+!       if ((z0 .ge. zgrid(1)) .and. (z0 .le. zgrid(nz)) .and. &
+!         (y0 .ge. ygrid(1)) .and. (y0 .le. ygrid(ny))) then
+!         so = sox2
+!       endif
+!     endif
+!       print *,'sox2', sox2,so
+!     if (min(soy1, so) .eq. soy1) then
+!       z0 = position(3) + soy1*cz
+!       x0 = position(1) + soy1*cx
+!       if ((z0 .ge. zgrid(1)) .and. (z0 .le. zgrid(nz)) .and. &
+!         (x0 .ge. xgrid(1)) .and. (x0 .le. xgrid(nx))) then
+!         so = soy1
+!       endif
+!     endif
+!       print *,'soy1', soy1,so
+!     if (min(soy2, so) .eq. soy2) then
+!       z0 = position(3) + soy2*cz
+!       x0 = position(1) + soy2*cx
+!       if ((z0 .ge. zgrid(1)) .and. (z0 .le. zgrid(nz)) .and. &
+!         (x0 .ge. xgrid(1)) .and. (x0 .le. xgrid(nx))) then
+!         so = soy2
+!       endif
+!     endif
+!       print *,'soy2', soy2,so
+!     if (min(soz1, so) .eq. soz1) then
+!       y0 = position(2) + soz1*cy
+!       x0 = position(1) + soz1*cx
+!       if ((y0 .ge. ygrid(1)) .and. (y0 .le. ygrid(ny)) .and. &
+!         (x0 .ge. xgrid(1)) .and. (x0 .le. xgrid(nx))) then
+!         so = soz1
+!       endif
+!     endif
+!       print *,'soz1', soz1,so
+!     if (min(soz2, so) .eq. soz2) then
+!       y0 = position(2) + soz2*cy
+!       x0 = position(1) + soz2*cx
+!       if ((y0 .ge. ygrid(1)) .and. (y0 .le. ygrid(ny)) .and. &
+!         (x0 .ge. xgrid(1)) .and. (x0 .le. xgrid(nx))) then
+!         so = soy2
+!       endif
+!     endif
+!       print *,'soz2', soz2,so
+!
+!     position(1) = position(1) + so*cx
+!     position(2) = position(2) + so*cy
+!     position(3) = position(3) + so*cz
+!
+!   endif
+!   return
+! end subroutine extrapolate_to_domain_edge
+!
 
 subroutine util_locate_point(nx, ny, nz, xgrid, ygrid, zgrid, &
   location, gridptr)
@@ -623,8 +759,8 @@ subroutine util_get_interp_kernel(gridptr,xn,yn, zn,f,nx,ny,nz, &
   double precision u,v,w, delx,dely, delz
   double precision invdelx, invdely, invdelz
 
-  delx = xgrid(gridptr(1,3)) - xgrid(gridptr(1,2))
-  dely = ygrid(gridptr(2,2)) - xgrid(gridptr(2,1))
+  delx = xgrid(gridptr(1,2)) - xgrid(gridptr(1,1))
+  dely = ygrid(gridptr(2,3)) - xgrid(gridptr(2,2))
   delz = zgrid(gridptr(3,5)) - xgrid(gridptr(3,4))
 
   if (delx .le. 0.0) then
@@ -643,7 +779,7 @@ subroutine util_get_interp_kernel(gridptr,xn,yn, zn,f,nx,ny,nz, &
     invdelz = 1.0D0/delz
   endif
 
-  u = (xn - xgrid(gridptr(1,2)))*invdelx
+  u = (xn - xgrid(gridptr(1,1)))*invdelx
   v = (yn - ygrid(gridptr(2,1)))*invdely
   w = (zn - zgrid(gridptr(3,1)))*invdelz
 
