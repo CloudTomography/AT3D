@@ -11,7 +11,7 @@ file_name = sys.argv[-1]
 cloud_scatterer = shdom.grid.load_from_csv('./synthetic_cloud_fields/jpl_les/rico32x37x26.txt',
                                            density='lwc',origin=(0.0,0.0))
 #load atmosphere
-atmosphere = xr.open_dataset('./ancillary_data/AFGL_summer_mid_lat.nc')
+#atmosphere = xr.open_dataset('./ancillary_data/AFGL_summer_mid_lat.nc')
 #subset the atmosphere, choose only the bottom kilometre.
 #reduced_atmosphere = atmosphere.sel({'z': atmosphere.coords['z'].data[atmosphere.coords['z'].data <= 1.0]})
 #merge the atmosphere and cloud z coordinates
@@ -32,9 +32,9 @@ cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.reff.dims,
                                        np.full_like(cloud_scatterer_on_rte_grid.reff.data, fill_value=0.1))
 
 #define sensors.
-sensors_dict = shdom.organization.SensorsDict()
+sensors_dict = shdom.util.SensorsDict()
 
-sensor_zenith_list = [75.0,60.0,45.6,26.1]*2 + [0.0]
+sensor_zenith_list =  [75.0,60.0,45.6,26.1]*2 + [0.0]
 sensor_azimuth_list = [90]*4 + [-90]*4 +[0.0]
 for zenith,azimuth in zip(sensor_zenith_list,sensor_azimuth_list):
     sensors_dict.add_sensor('MISR',
@@ -44,17 +44,19 @@ for zenith,azimuth in zip(sensor_zenith_list,sensor_azimuth_list):
                                                          sub_pixel_ray_args={'method':shdom.sensor.gaussian,
                                                          'degree':2})
     )
-# for wavelength in (1.65, 2.2, 3.7):
-#     sensors_dict.add_sensor('MODIS',
-#                     shdom.sensor.orthographic_projection(wavelength,
-#                                                          cloud_scatterer,
-#                                                          0.02,0.02, 0.0,0.0,altitude='TOA',
-#                                                          stokes=['I'])
-#     )
+for wavelength in (1.65, 2.2, 3.7):
+    sensors_dict.add_sensor('MODIS',
+                    shdom.sensor.orthographic_projection(wavelength,
+                                                         cloud_scatterer,
+                                                         0.04,0.04, 0.0,0.0,altitude='TOA',
+                                                         stokes=['I'],
+                                                         sub_pixel_ray_args={'method':shdom.sensor.gaussian,
+                                                         'degree':4})
+    )
 
 wavelengths = sensors_dict.get_unique_solvers()
 min_stokes = sensors_dict.get_minimum_stokes()
-solvers = shdom.organization.SolversDict()
+solvers = shdom.util.SolversDict()
 
 #rayleigh optical properties if desired.
 rayleigh_scatterer_list = shdom.rayleigh.to_grid(wavelengths,atmosphere,rte_grid)
@@ -70,11 +72,16 @@ for wavelength in wavelengths:
                         )
     poly_table = shdom.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
     cloud_optical_scatterer = shdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
-
-    solvers.add_solver(wavelength, shdom.solver.RTE(numerical_params=shdom.configuration.get_config('./default_config.json'),
+    config = shdom.configuration.get_config('./default_config.json')
+    # config['num_mu_bins'] = 16
+    # config['num_phi_bins'] = 32
+    # config['split_accuracy'] = 0.03
+    # config['spherical_harmonics_accuracy'] = 0.0
+    # config['solution_accuracy'] = 1e-5
+    solvers.add_solver(wavelength, shdom.solver.RTE(numerical_params=config,
                                     medium={'cloud': cloud_optical_scatterer },#, 'rayleigh': rayleigh_scatterer_list[wavelength]},
-                                   source=shdom.source.solar(-1*np.cos(np.deg2rad(10.0)),0.0,solarflux=1.0),
-                                   surface=shdom.surface.lambertian(albedo=0.0),
+                                   source=shdom.source.solar(-1*np.cos(np.deg2rad(40.0)),0.0,solarflux=1.0),
+                                   surface=shdom.surface.lambertian(albedo=0.04),
                                     num_stokes=min_stokes[wavelength],
                                     name=None
                                    ))
@@ -83,7 +90,7 @@ for wavelength in wavelengths:
 #mpi_comm = MPI.COMM_WORLD
 #print('I am {} of {}'.format(mpi_comm.Get_rank(), mpi_comm.Get_size()))
 
-shdom.organization.get_measurements(solvers, sensors_dict, n_jobs=4)
+shdom.util.get_measurements(solvers, sensors_dict, n_jobs=4)
 
 #if mpi_comm.Get_rank() == 0:
 shdom.util.save_forward_model(file_name, sensors_dict, solvers)

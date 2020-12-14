@@ -22,7 +22,7 @@ save_name = sys.argv[2]
 sensor_dict, solvers, rte_grid =shdom.util.load_forward_model(file_name)
 
 #define an approximate forward_sensor that doesn't have any subpixel rays.
-# forward_sensors = shdom.organization.SensorsDict()
+# forward_sensors = shdom.util.SensorsDict()
 # for instrument in sensor_dict:
 #     sensor_list = sensor_dict[instrument]['sensor_list']
 #     for sensor in sensor_list:
@@ -80,7 +80,7 @@ initial_on_grid = shdom.grid.resample_onto_grid(rte_grid, initial)
 #initialize containers for solvers
 #This 'globals' that will be modified by set_state_fn during the iterations
 #of the reconstruction.
-solvers_reconstruct = shdom.organization.SolversDict()
+solvers_reconstruct = shdom.util.SolversDict()
 
 def set_state_fn(state):
     print(state.min(), state.max())
@@ -118,7 +118,7 @@ def set_state_fn(state):
                                                 )
                                 )
 
-unknown_scatterers = shdom.organization.UnknownScatterers()
+unknown_scatterers = shdom.util.UnknownScatterers()
 unknown_scatterers.add_unknown('cloud', 'extinction', cloud_poly_tables)
 unknown_scatterers.create_derivative_tables()
 
