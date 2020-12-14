@@ -562,8 +562,8 @@ def load_forward_model(file_name):
     groups = dataset.groups
     sensors = groups['sensors'].groups
     solvers = groups['solvers'].groups
-    sensor_dict = shdom.organization.SensorsDict()
-    solver_dict = shdom.organization.SolversDict()
+    sensor_dict = shdom.util.SensorsDict()
+    solver_dict = shdom.util.SolversDict()
 
     for key,sensor in sensors.items():
         sensor_list = []
