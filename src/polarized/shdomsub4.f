@@ -616,8 +616,8 @@ C          ENDIF
      .           NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS, EXTDIRP,
      .           UNIFORMZLEV, DPATH, DPTR, EXACT_SINGLE_SCATTER,
      .           UNCERTAINTIES, JACOBIAN,MAKEJACOBIAN,
-     .           JACOBIANPTR, COUNTER, RAYS_PER_PIXEL, RAY_WEIGHTS,
-     .           STOKES_WEIGHTS)
+     .           JACOBIANPTR, NUM_JACOBIAN_PTS, RAYS_PER_PIXEL,
+     .           RAY_WEIGHTS, STOKES_WEIGHTS)
 Cf2py threadsafe
       IMPLICIT NONE
       LOGICAL EXACT_SINGLE_SCATTER
@@ -686,24 +686,23 @@ Cf2py intent(in) :: NUMDER, PARTDER
       REAL DPHASETAB(NSTPHASE,DNUMPHASE,NSCATANGLE)
 Cf2py intent(in) :: YLMSUN, PHASETAB
 Cf2py intent(in) :: NSCATANGLE, YLMSUN, PHASETAB, DPHASETAB, NSTPHASE
-      REAL DPATH(8*(NPX+NPY+NPZ),*), WEIGHT
-      REAL UNCERTAINTIES(NSTOKES,NSTOKES,*)
+      REAL DPATH(8*(NPX+NPY+NPZ),*)
+      DOUBLE PRECISION UNCERTAINTIES(NSTOKES,NSTOKES,*)
       INTEGER DPTR(8*(NPX+NPY+NPZ),*)
-Cf2py intent(in) :: DPATH, DPTR, WEIGHTS, UNCERTAINTIES
+Cf2py intent(in) :: DPATH, DPTR, UNCERTAINTIES
 
-      REAL JACOBIAN(NSTOKES,NUMDER,*)
+      REAL JACOBIAN(NSTOKES,NUMDER,NUM_JACOBIAN_PTS,*)
 Cf2py intent(in,out) :: JACOBIAN
       LOGICAL MAKEJACOBIAN
 Cf2py intent(in) :: MAKEJACOBIAN
-      INTEGER JI, JACOBIANPTR(2,*)
-Cf2py intent(in,out) JACOBIANPTR
-      INTEGER COUNTER
-Cf2py intent(out) COUNTER
+      INTEGER JI,JJ,JK, NUM_JACOBIAN_PTS, JACOBIANPTR(NUM_JACOBIAN_PTS)
+Cf2py intent(in) :: NUM_JACOBIAN_PTS, JACOBIANPTR
       INTEGER RAYS_PER_PIXEL(*)
-Cf2py intent(in) RAYS_PER_PIXEL
+Cf2py intent(in) :: RAYS_PER_PIXEL
       DOUBLE PRECISION   RAY_WEIGHTS(*), STOKES_WEIGHTS(NSTOKES, *)
-Cf2py intent(in) RAY_WEIGHTS, STOKES_WEIGHTS
+Cf2py intent(in) :: RAY_WEIGHTS, STOKES_WEIGHTS
 
+      DOUBLE PRECISION WEIGHT
       DOUBLE PRECISION PIXEL_ERROR
       DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER), VISRAD(NSTOKES)
       DOUBLE PRECISION RAYGRAD_PIXEL(NSTOKES,NBPTS,NUMDER)
@@ -721,7 +720,6 @@ Cf2py intent(in) RAY_WEIGHTS, STOKES_WEIGHTS
 
       GRADOUT = 0.0D0
       STOKESOUT = 0.0D0
-      COUNTER = 1
 
       J = 0
       DO L = 0, ML
@@ -827,29 +825,61 @@ C         to calculate the Stokes radiance vector for this pixel
           ENDDO
         ENDDO !end of ray loop.
         !calculations per pixel.
+C        PIXEL_ERROR = STOKESOUT(:, IPIX) - MEASUREMENTS(:, IPIX)
+C        CALL UPDATE_COSTFUNCTION(PIXEL_ERROR, RAYGRAD_PIXEL, GRADOUT,
+C     .          COST, UNCERTAINTIES, FLAG, NSTOKES, NBPTS, NUMDER)
+C
         DO NS = 1, NSTOKES
           PIXEL_ERROR = STOKESOUT(NS, IPIX) -
      .                    MEASUREMENTS(NS, IPIX)
-
           DO NS1 = 1, NSTOKES
             WEIGHT = UNCERTAINTIES(NS,NS1,IPIX)
             GRADOUT = GRADOUT + WEIGHT*PIXEL_ERROR*RAYGRAD_PIXEL(NS,:,:)
             COST = COST + 0.5 * WEIGHT*PIXEL_ERROR**2
           ENDDO
         ENDDO
-
+C
         IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
-          DO JI = 1, NBPTS
-            IF (ANY(ABS(RAYGRAD_PIXEL(1,JI,:))>0.0)) THEN
-              JACOBIANPTR(1,COUNTER) = IPIX
-              JACOBIANPTR(2,COUNTER) = JI
-              JACOBIAN(:,:,COUNTER) = JACOBIAN(:,:,COUNTER) +
-     .        RAYGRAD_PIXEL(:,JI,:)
-              COUNTER = COUNTER + 1
-            ENDIF
-          ENDDO
+
+          DO JI = 1,NUM_JACOBIAN_PTS
+C            DO JJ=1,NUMDER
+C              DO JK=1,NSTOKES
+                JACOBIAN(:,:,JI,IPIX) =
+     .            RAYGRAD_PIXEL(:,JACOBIANPTR(JI),:)
+C              ENDDO
+C            ENDDO
+          END DO
         ENDIF
       ENDDO
+      RETURN
+      END
+
+      SUBROUTINE UPDATE_COSTFUNCTION (PIXEL_ERROR, RAYGRAD_PIXEL,
+     .             GRADOUT,COST, UNCERTAINTIES, FLAG,NSTOKES,
+     .             NBPTS, NUMDER)
+
+      CHARACTER*2 FLAG
+      INTEGER NBPTS, NUMDER, NSTOKES
+      DOUBLE PRECISION COST, GRADOUT(NBPTS,NUMDER)
+      DOUBLE PRECISION RAYGRAD_PIXEL(NSTOKES,NBPTS,NUMDER)
+      DOUBLE PRECISION PIXEL_ERROR(NSTOKES)
+      DOUBLE PRECISION UNCERTAINTIES(NSTOKES,NSTOKES)
+
+      INTEGER I,J
+
+      IF (FLAG .EQ. 'L2') THEN
+        DO I=1,NSTOKES
+          DO J=1,NSTOKES
+            COST = COST + 0.5 * UNCERTAINTIES(I,J) * PIXEL_ERROR(I)**2
+            GRADOUT = GRADOUT + 0.5 * UNCERTAINTIES(I,J) *
+     .        PIXEL_ERROR(I)*RAYGRAD_PIXEL(I,:,:)
+           ENDDO
+         ENDDO
+      ELSEIF (FLAG .EQ. 'NC') THEN
+
+
+      ENDIF
+
       RETURN
       END
 
@@ -1274,11 +1304,11 @@ C             Add gradient component due to the direct solar beam propogation
                     ELSE
                       DEXTM = DEXT(SSP,IDR)
                     ENDIF
-                    IF (ANY(ISNAN(DPATH(II,GRIDPOINT)*DEXTM*
-     .                ABSCELL*TRANSMIT*SRCSINGSCAT(:,KK)))) THEN
-                      PRINT *, DPATH(II,GRIDPOINT), DEXTM, ABSCELL,
-     .                  TRANSMIT, SRCSINGSCAT(:, KK), II, KK
-                    ENDIF
+C                    IF (ANY(ISNAN(DPATH(II,GRIDPOINT)*DEXTM*
+C     .                ABSCELL*TRANSMIT*SRCSINGSCAT(:,KK)))) THEN
+C                      PRINT *, DPATH(II,GRIDPOINT), DEXTM, ABSCELL,
+C     .                  TRANSMIT, SRCSINGSCAT(:, KK), II, KK
+C                    ENDIF
                     RAYGRAD(:,SSP,IDR) = RAYGRAD(:,SSP,IDR) -
      .                  DPATH(II,GRIDPOINT)*DEXTM*ABSCELL*TRANSMIT*
      .                  SRCSINGSCAT(:,KK)

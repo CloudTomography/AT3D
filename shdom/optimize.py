@@ -1,6 +1,7 @@
 import scipy.optimize
 import shdom
 import numpy as np
+import time
 
 class ObjectiveFunction(object):
 
@@ -22,16 +23,14 @@ class ObjectiveFunction(object):
         """
         NB The passed set_state_fn must be defined using the solvers/unknown_scatterers defined at the script level.
         """
-        table_derivatives = shdom.gradient.create_derivative_tables(solvers, unknown_scatterers)
-
         def loss_function(state, measurements):
 
             set_state_fn(state)
             loss, gradient = shdom.gradient.levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
-                                                       table_derivatives, n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,
+                                                        n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,
                                                        maxiter=maxiter,init_solution=init_solution,
                                                        exact_single_scatter=exact_single_scatter)
-            state_gradient = project_gradient_to_state(gradient)
+            state_gradient = project_gradient_to_state(state, gradient)
             return loss, state_gradient
 
         return cls(measurements, loss_function, min_bounds=min_bounds, max_bounds=max_bounds)
@@ -43,7 +42,7 @@ class PriorFunction(object):
         self._scale = scale
 
     def __call__(self, state):
-        loss, gradient = self.prior_fn(state)
+        loss, gradient = self._prior_fn(state)
         self._loss = self._scale * loss
         return np.array(self._loss), self._scale * np.array(gradient)
 
@@ -112,7 +111,7 @@ class Optimizer(object):
         """
         self._iteration = iteration_step
         args = {
-            'fun': self._objective_fn,
+            'fun': self.objective,
             'x0': initial_state,
             'method': self._method,
             'jac': True,

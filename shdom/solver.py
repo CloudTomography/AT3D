@@ -4,6 +4,7 @@ import numpy as np
 from shdom import core, util, checks
 import warnings
 import copy
+from collections import OrderedDict
 
 class RTE(object):
     """
@@ -45,10 +46,24 @@ class RTE(object):
         self._nstokes = num_stokes
         self._nstleg = 1 if num_stokes == 1 else 6
 
-        self.medium = [medium] if not isinstance(medium, list) else medium
+        if isinstance(medium, OrderedDict):
+            self.medium = medium
+        else:
+            mediumdict= OrderedDict()
+            if isinstance(medium, dict):
+                for key,val in medium.items():
+                    mediumdict[key] = val
+            else:
+                try:
+                    iter(medium)
+                except TypeError:
+                    raise TypeError("Medium input must be an OrderedDict, dict, or an iterable")
+                for i,val in enumerate(medium):
+                    mediumdict['scatterer_{:03d}'.format(i)] = val
+            self.medium = mediumdict
 
         # Check that all optical scatterers have the same wavelength
-        wavelengths = [scatterer.attrs['wavelength_center'] for scatterer in self.medium if \
+        wavelengths = [scatterer.attrs['wavelength_center'] for scatterer in self.medium.values() if \
                        scatterer.attrs['wavelength_center'] is not None]
         assert len(wavelengths) > 0, 'At least one scatterer has to have a wavelength defined'
         assert np.allclose(wavelengths[0], wavelengths), 'scatterers have different wavelengths {}'.format(wavelengths)
@@ -85,33 +100,35 @@ class RTE(object):
         # No iterations have taken place
         self._iters = 0
 
-        # TODO: check that all scatterers are on the same grid
+        #check that all scatterers are on the same grid
         failed_list = []
-        for i,gridded in enumerate(self.medium):
-            if np.all(gridded.coords['x'] != self.medium[0].coords['x']) | \
-                np.all(gridded.coords['y'] != self.medium[0].coords['y']) | \
-                np.all(gridded.coords['z'] != self.medium[0].coords['z']):
+        for i,gridded in enumerate(self.medium.values()):
+            if np.all(gridded.coords['x'] != list(self.medium.values())[0].coords['x']) | \
+                np.all(gridded.coords['y'] != list(self.medium.values())[0].coords['y']) | \
+                np.all(gridded.coords['z'] != list(self.medium.values())[0].coords['z']):
                 failed_list.append(i)
         if len(failed_list) > 0:
             raise ValueError("mediums do not have consistent grids with the first medium", *failed_list)
 
-        self._grid = xr.Dataset({'x': self.medium[0].coords['x'],
-                                 'y': self.medium[0].coords['y'],
-                                 'z': self.medium[0].coords['z']})
+        self._grid = xr.Dataset({'x': list(self.medium.values())[0].coords['x'],
+                                 'y': list(self.medium.values())[0].coords['y'],
+                                 'z': list(self.medium.values())[0].coords['z'],
+                                 'delx': list(self.medium.values())[0].delx,
+                                 'dely': list(self.medium.values())[0].dely})
         self._setup_grid(self._grid)
 
         # Setup surface
         self._setup_surface(surface)
         self.surface = surface
 
-        # Temperature is used for thermal radiation
+        # atmosphere includes temperature for thermal radiation
         self._setup_atmosphere(atmosphere)
         self.atmosphere = atmosphere
 
     def _setup_atmosphere(self, atmosphere):
         """TODO
         As atmosphere is currently a keyword argument with a default value,
-        it cannot be treated via the @datset_checks.
+        it cannot be treated via the @dataset_checks.
         So this function does all of the checking.
         """
         if atmosphere is None:
@@ -183,14 +200,13 @@ class RTE(object):
             else:
                 raise ValueError('atmosphere does not have a consistent grid with medium')
         else:
-            raise ValueError("Atmosphere should be an xr.Dataset")
+            raise TypeError("Atmosphere should be an xr.Dataset")
 
     def _setup_source(self, source):
         """
         TODO
         """
         # Source parameters
-        # TODO: check that srctpye is supported
         self._srctype = source.srctype.data
         self._solarflux = source.solarflux.data
         self._solarmu = source.solarmu.data
@@ -203,8 +219,8 @@ class RTE(object):
         """
         TODO
         """
+
         # Surface parameters
-        # TODO: check that surface parameters are implementerd
         self._maxsfcpars = surface.maxsfcpars.data
         self._sfctype = str(surface.sfctype.data)
         self._gndalbedo = surface.gndalbedo.data
@@ -215,7 +231,12 @@ class RTE(object):
         self._delysfc = surface.delysfc.data
         self._nsfcpar = surface.nsfcpar.data
         self._sfcparms = surface.sfcparms.data
-        self._sfcgridparms = np.zeros((self._nsfcpar,self._maxnbc), dtype=np.float32,order='F')#surface.sfcgridparms.data
+        self._sfcgridparms = np.zeros((self._nsfcpar,self._maxnbc), dtype=np.float32,order='F')
+
+        if (self._nxsfc > 1) & (self._delxsfc * (self._nxsfc + 1) < self._grid.x[-1] - self._grid.x[0]):
+            warnings.warn('Specified surface does not span RTE grid in the x direction.')
+        if (self._nysfc > 1) & (self._delysfc * (self._nysfc + 1) < self._grid.y[-1] - self._grid.y[0]):
+            warnings.warn('Specified surface does not span RTE grid in the y direction.')
 
         if (self._sfctype[-1] in ('R', 'O')) and (self._nstokes > 1):
             raise ValueError("surface brdf '{}' is only supported for unpolarized radiative transfer (num_stokes=1)".format(surface.name.data))
@@ -224,7 +245,6 @@ class RTE(object):
             self._maxbcrad = 2 * self._maxnbc
         else:
             self._maxbcrad = int((2 + self._nmu * self._nphi0max / 2) * self._maxnbc)
-
 
     def _setup_numerical_params(self, numerical_params):
         """
@@ -259,6 +279,96 @@ class RTE(object):
         if (numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0,1,4,5)):
             self._bcflag += 2
 
+    def _solve_prop(self, filename='/Users/jesserl2/Documents/Code/aviad_pyshdom_dev/pyshdom_dev/shdom_verification/rico32x36x26w672.prp'):
+        """
+        This function is for verification against SHDOM.
+        Must be polarized. Base grid, source, numerical parameters, surface etc
+        must match what is in the SHDOM namelist.
+        """
+        self._init_solution(make_big_arrays=False)
+        #initialize some variables that are modified by the core.read_properties routine.
+        nleg = 800
+        maxleg = 10000
+        #read property information from a file generated by SHDOM's propgen program.
+        npx,npy,npz,maxleg,nleg,proptype,delx,dely, \
+        zout,maxasym,tempp,extinctp,albedop, \
+        legenp,numphase,iphasep \
+         = core.read_properties(propfile=filename,
+                                      maxnz=self._maxnz,
+                                      npx=self._pa.npx,
+                                      npy=self._pa.npy,
+                                      npz=self._pa.npz,
+                                      maxpg=self._maxpg,
+                                      maxpgl = self._maxpgl,
+                                      deltam=self._deltam,
+                                      nstleg=6,
+                                      maxleg=maxleg,
+                                      nleg=nleg
+                                  )
+        #overwrite some things that were set during the self._init_solution.
+        #this is done to account for the differences in selected phase functions.
+        self._maxasym = maxasym
+        self._nleg = nleg
+        self._nscatangle = max(36, min(721, 2 * self._nleg))
+        self._maxleg = maxleg
+        self._maxigl = self._maxig*(self._nleg + 1)
+        self._nstphase = min(self._nstleg, 2)
+        self._pa.tempp = tempp
+        self._pa.extinctp = extinctp
+        self._pa.numphase = numphase
+        self._pa.iphasep = iphasep
+        self._pa.albedop = albedop
+        self._pa.legenp = legenp
+        #overwrite the main optical properties on grid.
+        self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
+        self._total_ext, self._extmin, self._scatmin, self._albmax = core.transfer_pa_to_grid(
+            nstleg=self._nstleg,
+            npart=self._npart,
+            extinctp=self._pa.extinctp,
+            albedop=self._pa.albedop,
+            iphasep=self._pa.iphasep,
+            delx=self._pa.delx,
+            dely=self._pa.dely,
+            xstart=self._pa.xstart,
+            ystart=self._pa.ystart,
+            zlevels=self._pa.zlevels,
+            tempp=self._pa.tempp,
+            legenp=self._pa.legenp,
+            nzckd=self._pa.nzckd,
+            zckd=self._pa.zckd,
+            gasabs=self._pa.gasabs,
+            ml=self._ml,
+            mm=self._mm,
+            numphase=self._pa.numphase,
+            deltam=self._deltam,
+            units=self._units,
+            waveno=self._waveno,
+            wavelen=self._wavelen,
+            gridpos=self._gridpos,
+            nleg=self._nleg,
+            maxig=self._maxig,
+            npx=self._pa.npx,
+            npy=self._pa.npy,
+            npz=self._pa.npz,
+            srctype=self._srctype,
+            npts=self._npts)
+        #finally initialize the radiance/source fields based on the optical properties.
+        self._make_big_arrays()
+        #solve without redoing init_solution which would undo all the work we did.
+        self.solve(maxiter=100, init_solution=False)
+
+    def import_grid(self, other_solver):
+        #If the same base grid is used and other memory parameters.
+        #Then we should be able to import a SPLIT grid to initialize on.
+        if self._grid.equals(other_solver._grid) & self.numerical_params.equals(other_solver.numerical_params) & \
+         (self._nstokes == other_solver._nstokes):
+            self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
+            self._treeptr, self._cellflags, self._nbcells = other_solver._npts, other_solver._ncells,\
+            other_solver._gridpos, other_solver._gridptr, other_solver._neighptr, other_solver._treeptr, \
+            other_solver._cellflags, other_solver._nbcells
+        else:
+            raise ValueError('Base grids and numerical parameters must match to import a split grid from another solver.')
+
     def _setup_grid(self, grid):
         """
         Set the base grid and related grid structures for SHDOM.
@@ -282,8 +392,11 @@ class RTE(object):
         self._pa.ystart = grid.y[0]
 
         # TODO: check constant dx and dy
-        self._pa.delx = grid.x[1] - grid.x[0]
-        self._pa.dely = grid.y[1] - grid.y[0]
+
+        #self._pa.delx = grid.x[1] - grid.x[0]
+        self._pa.delx = grid.delx
+        #self._pa.dely = grid.y[1] - grid.y[0]
+        self._pa.dely = grid.dely
         self._pa.zlevels = grid.z
 
         # Initialize shdom internal grid sizes to property array grid
@@ -418,7 +531,7 @@ class RTE(object):
         self._pa.extinctp = np.zeros(shape=[self._nbpts, len(self.medium)], dtype=np.float32)
         self._pa.albedop = np.zeros(shape=[self._nbpts, len(self.medium)], dtype=np.float32)
         self._pa.iphasep = np.zeros(shape=[self._nbpts, len(self.medium)], dtype=np.int32)
-        for i, scatterer in enumerate(self.medium):
+        for i, scatterer in enumerate(self.medium.values()):
             self._pa.extinctp[:, i] = scatterer.extinction.data.ravel()
             self._pa.albedop[:, i] = scatterer.ssalb.data.ravel()
             self._pa.iphasep[:, i] = scatterer.table_index.data.ravel() + self._pa.iphasep.max()
@@ -431,9 +544,9 @@ class RTE(object):
         self._pa.iphasep[np.where(self._pa.iphasep == 0)] = 1
 
         # Concatenate all scatterer tables into one table
-        max_legendre = max([scatterer.sizes['legendre_index'] for scatterer in self.medium])
+        max_legendre = max([scatterer.sizes['legendre_index'] for scatterer in self.medium.values()])
         padded_legcoefs = [scatterer.legcoef.pad({'legendre_index': (0, max_legendre - scatterer.legcoef.sizes['legendre_index'])},
-                                                    constant_values=0.0) for scatterer in self.medium]
+                                                    constant_values=0.0) for scatterer in self.medium.values()]
         legendre_table = xr.concat(padded_legcoefs, dim='table_index')
 
         self._pa.numphase = legendre_table.sizes['table_index']
@@ -469,11 +582,6 @@ class RTE(object):
         self._npart = len(self.medium)
         self._nstphase = min(self._nstleg, 2)
 
-        if make_big_arrays:
-            self._make_big_arrays()
-
-    def _make_big_arrays(self):
-
         # Transfer property arrays into internal grid structures
         self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
         self._total_ext, self._extmin, self._scatmin, self._albmax = core.transfer_pa_to_grid(
@@ -508,6 +616,25 @@ class RTE(object):
             srctype=self._srctype,
             npts=self._npts)
 
+
+        if make_big_arrays:
+            self._make_big_arrays()
+
+    def _release_big_arrays(self):
+
+        self._source = None
+        self._radiance=None
+        self._delsource = None
+        self._work = None
+        self._work1 = None
+        self._work2 = None
+        self._sfc_brdf_do = None
+        self._fluxes = None
+        self._dirflux = None
+        self._bcrad = None
+
+    def _make_big_arrays(self):
+
         # Restart solution criteria
         self._oldnpts = 0
         self._solcrit = 1.0
@@ -516,16 +643,7 @@ class RTE(object):
         #Release big arrays if they exist before a call to core.init_solution
         #to prevent doubling the memory image when it is not necessary.
         if hasattr(self, '_radiance'):
-            self._source = None
-            self._radiance=None
-            self._delsource = None
-            self._work = None
-            self._work1 = None
-            self._work2 = None
-            self._sfc_brdf_do = None
-            self._fluxes = None
-            self._dirflux = None
-            self._bcrad = None
+            self._release_big_arrays()
 
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, \
         self._sfcgridparms, self._ntoppts, self._nbotpts, self._bcptr, self._rshptr, self._shptr, self._oshptr, \
@@ -591,7 +709,9 @@ class RTE(object):
             gridpos=self._gridpos,
             ncells=self._ncells,
             gridptr=self._gridptr,
+            cellflags=self._cellflags,
             treeptr=self._treeptr,
+            neighptr=self._neighptr,
             npx=self._pa.npx,
             npy=self._pa.npy,
             npz=self._pa.npz,
@@ -851,13 +971,11 @@ class RTE(object):
                 ylmsun=self._ylmsun,
                 runname=self._name
             )
-
     def integrate_to_sensor(self, sensor):
         """
         TODO
         Integrates the source function along rays with geometry specified in sensor.
         """
-
         camx = sensor['ray_x'].data
         camy = sensor['ray_y'].data
         camz = sensor['ray_z'].data
@@ -867,7 +985,7 @@ class RTE(object):
         #Some checks on the dimensions: this kind of thing.
         assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
         total_pix = sensor.sizes['nrays']
-
+        self.check_solved()
         self._precompute_phase()
 
         #TODO Raise warning if observables are not included.
@@ -973,7 +1091,7 @@ class RTE(object):
 
         return sensor
 
-    def optical_path(self, sensor):
+    def optical_path(self, sensor, deltam_scaled_path=False):
 
         camx = sensor['ray_x'].data
         camy = sensor['ray_y'].data
@@ -984,9 +1102,12 @@ class RTE(object):
         #Some checks on the dimensions: this kind of thing.
         assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
         total_pix = sensor.sizes['nrays']
+
+        if not hasattr(self, '_extinct'):
+            self._init_solution(make_big_arrays=False)
 
         #optical_depth = np.full(self._npts, 999)
-        tau = core.optical_depth(
+        optical_path = core.optical_depth(
                 nx=self._nx,
                 ny=self._ny,
                 nz=self._nz,
@@ -1008,12 +1129,24 @@ class RTE(object):
                 cammu=cammu,
                 camphi=camphi,
                 npix=total_pix,
-                total_ext=self._total_ext[:self._npts]
+                extinct=self._extinct[:self._npts],
+                albedo=self._albedo[:self._npts],
+                iphase=self._iphase[:self._npts],
+                legen=self._legen,
+                npart=self._npart,
+                nstleg=self._nstleg,
+                deltam=self._deltam,
+                deltampath=deltam_scaled_path,
+                nleg=self._nleg,
+                ml=self._ml
             )
-        sensor['optical_path'] = (['nrays'], tau)
+        if deltam_scaled_path:
+            sensor['optical_path_deltam'] = (['nrays'], optical_path)
+        else:
+            sensor['optical_path'] = (['nrays'], optical_path)
         return sensor
 
-    def min_optical_depth(self, sensor):
+    def min_optical_path(self, sensor, deltam_scaled_path=False, do_all=False):
 
         camx = sensor['ray_x'].data
         camy = sensor['ray_y'].data
@@ -1025,7 +1158,17 @@ class RTE(object):
         assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
         total_pix = sensor.sizes['nrays']
 
-        tau = core.min_optical_depth(
+        if not hasattr(self, '_extinct'):
+            self._init_solution(make_big_arrays=False)
+
+        if hasattr(self, '_solcrit'):
+            raise ValueError('This function currently requires to be run before RTE.solve()')
+        if do_all:
+            #optical_path = np.zeros((npixels, self._npts))
+            paths_size = total_pix
+        else:
+            paths_size = 1
+        optical_path = core.min_optical_depth(
                 nx=self._nx,
                 ny=self._ny,
                 nz=self._nz,
@@ -1047,14 +1190,319 @@ class RTE(object):
                 cammu=cammu,
                 camphi=camphi,
                 npix=total_pix,
-                total_ext=self._total_ext[:self._npts]
+                extinct=self._extinct[:self._npts],
+                albedo=self._albedo[:self._npts],
+                iphase=self._iphase[:self._npts],
+                legen=self._legen,
+                npart=self._npart,
+                nstleg=self._nstleg,
+                deltam=self._deltam,
+                deltampath=deltam_scaled_path,
+                paths_size=paths_size,
+                nleg=self._nleg,
+                ml=self._ml
             )
-        sensor['min_optical_path'] = (['nvox'], tau)
-        return sensor
+        name = 'min_optical_path'
+        if deltam_scaled_path:
+            name = name + '_deltam'
+        if do_all:
+            optical_path_dataset = xr.Dataset(
+                        data_vars = {
+                        name:(['x','y','z','npixels'],
+                            optical_path[:self._nbpts,:].reshape(
+                            self._nx,self._ny,self._nz, -1)
+                            ),
+                        },
+                        coords = {'x': self._grid.x,
+                                'y': self._grid.y,
+                                'z': self._grid.z,
+                                },
+            )
+        else:
+            optical_path_dataset = xr.Dataset(
+                        data_vars = {
+                        name:(['x','y','z'],
+                            optical_path[:self._nbpts,0].reshape(
+                            self._nx,self._ny,self._nz)
+                            ),
+                        },
+                        coords = {'x': self._grid.x,
+                                'y': self._grid.y,
+                                'z': self._grid.z,
+                                },
+            )
+
+        return optical_path_dataset
+
+
+
+    def check_solved(self):
+        """
+        TODO
+        """
+        if (not hasattr(self, '_solcrit')):
+            raise ValueError('Please run RTE.solve() first.')
+            return False
+        else:
+            if self._solcrit >= self._solacc:
+                raise ValueError('Please run RTE.solve() first.')
+                return False
+            else:
+                return True
+
+    @property
+    def sh_out(self):
+        """
+        TODO
+        SH_OUT from SHDOM in a dataset but only on the tidy base grid.
+        """
+
+        self.check_solved()
+        if not hasattr(self, '_shterms'):
+
+            if self._highorderrad:
+                nshout = 5
+            else:
+                nshout = 4
+
+            shterms = core.compute_sh(nshout=nshout,nstokes=self._nstokes,
+                               npts=self._npts,
+                               srctype=self._srctype,
+                               solarmu = self._solarmu,
+                               solaraz=self._solaraz,
+                               dirflux=self._dirflux[:self._npts],
+                               rshptr=self._rshptr[:self._npts+1],
+                               ml=self._ml,
+                               mm=self._mm,
+                               radiance=self._radiance,
+                                )
+            self._shterms = shterms
+
+        sh_out_dataset = xr.Dataset(
+                            data_vars = {
+                            'mean_intensity': (['x','y','z'], self._shterms[0,:self._nbpts].reshape(
+                                            self._nx, self._ny, self._nz)),
+                            'Fx': (['x','y','z'], self._shterms[1,:self._nbpts].reshape(
+                                            self._nx, self._ny, self._nz)),
+                            'Fy': (['x','y','z'], self._shterms[2,:self._nbpts].reshape(
+                                            self._nx, self._ny, self._nz)),
+                            'Fz': (['x','y','z'], self._shterms[3,:self._nbpts].reshape(
+                                            self._nx, self._ny, self._nz)),
+                            },
+                coords = {'x': self._grid.x,
+                          'y': self._grid.y,
+                          'z': self._grid.z,
+                         },
+                attrs = {
+                'long_names':{'Fx': 'Net Flux in x direction',
+                              'Fy': 'Net Flux in y direction',
+                              'Fz': 'Net Flux in z direction'},
+                }
+        )
+        if self._highorderrad & (self._shterms.shape[0] == 5):
+            sh_out_dataset['rms_higher_rad'] = (['x','y','z'],
+                self._shterms[-1,:self._nbpts].reshape(self._nx, self._ny, self._nz)/(np.sqrt(np.pi*4.0*self._nlm)))
+        return sh_out_dataset
+
+    @property
+    def fluxes(self):
+        """
+        TODO
+        hemispherical fluxes from SHDOM in a dataset but only on the tidy base grid.
+        """
+        self.check_solved()
+        fluxes = xr.Dataset(
+                        data_vars = {
+                            'flux_down': (['x','y','z'], self._fluxes[0,:self._nbpts].reshape(
+                                                        self._nx, self._ny, self._nz)),
+                            'flux_up': (['x','y','z'], self._fluxes[1,:self._nbpts].reshape(
+                                                        self._nx, self._ny, self._nz)),
+                            'flux_direct': (['x','y','z'], self._dirflux[:self._nbpts].reshape(
+                                                    self._nx, self._ny, self._nz)),
+                            },
+                coords = {'x': self._grid.x,
+                          'y': self._grid.y,
+                          'z': self._grid.z,
+                         },
+                attrs={
+                    'long_names': {'flux_down': 'Downwelling Hemispherical Flux',
+                                   'flux_up': 'Upwelling Hemispherical Flux',
+                                  'flux_direct': 'Downwelling Direct Solar Beam Flux (On Horizontal Surface)'},
+                    'units': 'Same units as input flux.'
+                }
+            )
+        return fluxes
+
+    @property
+    def net_flux_div(self):
+        """
+        TODO
+        net flux divergence from SHDOM in a dataset but only on the tidy base grid.
+        """
+        self.check_solved()
+        if not hasattr(self, '_netfluxdiv'):
+            netfluxdiv = core.compute_netfluxdiv(nstokes=self._nstokes,
+                                           npts=self._npts,
+                                           rshptr=self._rshptr[:self._npts+1],
+                                          srctype=self._srctype,
+                                           solarmu=self._solarmu,
+                                           extinct=self._extinct[:self._npts],
+                                          albedo=self._albedo[:self._npts],
+                                           planck=self._planck[:self._npts],
+                                           dirflux=self._dirflux[:self._npts],
+                                          radiance=self._radiance,
+                                          npart=self._npart)
+            self._netfluxdiv = netfluxdiv
+
+        netfluxdiv_datset = xr.Dataset(
+                        data_vars = {
+                            'net_flux_div':(['x','y','z'],self._netfluxdiv[:self._nbpts].reshape(
+                                        self._nx, self._ny, self._nz))
+                            },
+                coords = {'x': self._grid.x,
+                          'y': self._grid.y,
+                          'z': self._grid.z,
+                         },
+                attrs={
+                    'long_names': {'net_flux_div': 'Net Flux Divergence'},
+                    'units': ''
+                }
+            )
+        return netfluxdiv_dataset
 
     @property
     def num_iterations(self):
         return self._iters
+
+    def _direct_beam_derivative(self):
+        """
+        Calculate the geometry of the direct beam at each point and solver.
+        Solver is modified in-place.
+        TODO
+        """
+        #calculate the solar direct beam on the base grid
+        #which ensures the solver has the required information to
+        #calculate the derivative.
+        self._make_direct()
+
+        direct_derivative_path, direct_derivative_ptr = \
+            core.make_direct_derivative(
+                npts=self._npts,
+                bcflag=self._bcflag,
+                gridpos=self._gridpos,
+                npx=self._pa.npx,
+                npy=self._pa.npy,
+                npz=self._pa.npz,
+                delx=self._pa.delx,
+                dely=self._pa.dely,
+                xstart=self._pa.xstart,
+                ystart=self._pa.ystart,
+                zlevels=self._pa.zlevels,
+                ipdirect=self._ipdirect,
+                di=self._di,
+                dj=self._dj,
+                dk=self._dk,
+                epss=self._epss,
+                epsz=self._epsz,
+                xdomain=self._xdomain,
+                ydomain=self._ydomain,
+                cx=self._cx,
+                cy=self._cy,
+                cz=self._cz,
+                cxinv=self._cxinv,
+                cyinv=self._cyinv,
+                czinv=self._czinv,
+                uniformzlev=self._uniformzlev,
+                delxd=self._delxd,
+                delyd=self._delyd
+            )
+        self._direct_derivative_ptr = direct_derivative_ptr
+        self._direct_derivative_path = direct_derivative_path
+
+    def calculate_microphysical_partial_derivatives(self, table_to_grid_method, table_data):
+
+        self._precompute_phase()
+        #solver_derivative_table = #all_derivative_tables[key]
+        num_derivatives = sum([len(scatterer_derivative_table.values()) for name,scatterer_derivative_table in \
+                              table_data.items()
+                              ])
+        self._num_derivatives = np.array(num_derivatives, dtype=np.int32)
+        unknown_scatterer_indices = []
+
+        dext = np.zeros(shape=[self._nbpts, num_derivatives], dtype=np.float32)
+        dalb = np.zeros(shape=[self._nbpts, num_derivatives], dtype=np.float32)
+        diphase = np.zeros(shape=[self._nbpts, num_derivatives], dtype=np.int32)
+
+        #one loop through to find max_legendre and unkonwn_scatterer_indices
+        max_legendre = []
+        i = 0
+        for name,scatterer_derivative_table in table_data.items():
+            scatterer = self.medium[name]
+            for variable_derivative_table in scatterer_derivative_table.values():
+                derivative_on_grid = table_to_grid_method(scatterer, variable_derivative_table)#, inverse_mode=True)
+                max_legendre.append(derivative_on_grid.sizes['legendre_index'])
+                unknown_scatterer_indices.append(i+1)
+            i += 1
+        max_legendre = max(max_legendre)
+        self._unknown_scatterer_indices = np.array(unknown_scatterer_indices).astype(np.int32)
+
+        #second loop to assign everything else.
+        padded_legcoefs = []
+        count = 0
+        for name,scatterer_derivative_table in table_data.items():
+            scatterer = self.medium[name]
+            for variable_derivative_table in scatterer_derivative_table.values():
+                derivative_on_grid = table_to_grid_method(scatterer, variable_derivative_table)
+
+                dext[:, count] = derivative_on_grid.extinction.data.ravel()
+                dalb[:, count] = derivative_on_grid.ssalb.data.ravel()
+                diphase[:, count] = derivative_on_grid.table_index.data.ravel() + diphase.max()
+
+                padded_legcoefs.append(derivative_on_grid.legcoef.pad(
+                    {'legendre_index': (0, max_legendre - derivative_on_grid.legcoef.sizes['legendre_index'])},
+                    constant_values=0.0
+                ))
+
+                count += 1
+
+        #COPIED FROM solver.RTE
+        #In regions which are not covered by any optical scatterer they have an iphasep of 0.
+        #In original SHDOM these would be pointed to the rayleigh phase function (which is always included
+        #in the legendre table even if there is no rayleigh extinction.)
+        #Here, instead we set them to whatever the first phase function is.
+        #An arbitrary valid choice can be made as the contribution from these grid points is zero.
+        diphase[np.where(diphase == 0)] = 1
+
+        # Concatenate all legendre tables into one table
+        legendre_table = xr.concat(padded_legcoefs, dim='table_index')
+        dnumphase = legendre_table.sizes['table_index']
+        dleg = legendre_table.data
+        #TODO make sure the shaping of dleg and consistent with legenp/._legen. (._nleg and numphase)
+        #For a single scatterer/variable dnumphase == numphase, but this is not always the case.
+
+        # zero the first term of the first component of the phase function
+        # gradient. Pre-scale the legendre moments by 1/(2*l+1) which
+        # is done in the forward problem in TRILIN_INTERP_PROP
+        scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0,self._nleg+1)]))
+        dleg[0,0,:] = 0.0
+        dleg = dleg[:self._nstleg] / scaling_factor
+
+        dphasetab = core.precompute_phase_check_grad(
+                                                     negcheck=False,
+                                                     nstphase=self._nstphase,
+                                                     nstleg=self._nstleg,
+                                                     nscatangle=self._nscatangle,
+                                                     nstokes=self._nstokes,
+                                                     dnumphase=dnumphase,
+                                                     ml=self._ml,
+                                                     nlm=self._nlm,
+                                                     nleg=self._nleg,
+                                                     dleg=dleg,
+                                                     deltam=self._deltam
+                                                     )
+
+        self._dphasetab, self._dext, self._dalb, self._diphase, self._dleg, self._dnumphase = \
+        dphasetab, dext, dalb, diphase, dleg, dnumphase
 
 
 class ShdomPropertyArrays(object):

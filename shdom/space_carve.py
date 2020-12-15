@@ -86,8 +86,8 @@ class SpaceCarver(object):
 
         self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
         self._treeptr, self._cellflags = shdom.core.init_cell_structure(
-            maxig=self._nbpts*1.5,
-            maxic=1.5*1.5*self._nbpts,
+            maxig=self._nbpts,
+            maxic=1.1*self._nbpts,
             bcflag=self._bcflag,
             ipflag=self._ipflag,
             nx=self._nx,
@@ -101,27 +101,30 @@ class SpaceCarver(object):
         )
         self._nbcells = self._ncells
 
-    def carve(self,sensor_masks, agreement=None):
-        volume = np.zeros((self._nx, self._ny, self._nz))
 
+    def carve(self,sensor_masks, agreement=None, linear_mode=False):
+        """
+        TODO
+        """
         if isinstance(sensor_masks,xr.Dataset):
-            sensor_masks = [sensor_masks]
+            sensor_list = [sensor_masks]
+        elif isinstance(sensor_masks, type([])):
+            sensor_list = sensor_masks
+        elif isinstance(sensor_masks, shdom.organization.SensorsDict):
+            sensor_list = []
+            for instrument in sensor_masks:
+                sensor_list.extend(sensor_masks[instrument]['sensor_list'])
 
-        for sensor in sensor_masks:
+        volume = np.zeros((len(sensor_list), 3, self._nx, self._ny, self._nz))
+        for i,  sensor in enumerate(sensor_list):
 
-            if 'cloud_mask' in sensor.data_vars:
-                cloud_mask = sensor['cloud_mask'].data
-                camx = sensor['ray_x'].data[cloud_mask]
-                camy = sensor['ray_y'].data[cloud_mask]
-                camz = sensor['ray_z'].data[cloud_mask]
-                cammu = sensor['ray_mu'].data[cloud_mask]
-                camphi = sensor['ray_phi'].data[cloud_mask]
-            else:
-                camx = sensor['ray_x'].data
-                camy = sensor['ray_y'].data
-                camz = sensor['ray_z'].data
-                cammu = sensor['ray_mu'].data
-                camphi = sensor['ray_phi'].data
+            camx = sensor['ray_x'].data
+            camy = sensor['ray_y'].data
+            camz = sensor['ray_z'].data
+            cammu = sensor['ray_mu'].data
+            camphi = sensor['ray_phi'].data
+            flags = sensor['cloud_mask'].data
+            weights = sensor['weights'].data
 
             assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
             total_pix = camphi.size
@@ -148,20 +151,96 @@ class SpaceCarver(object):
                 cammu=cammu,
                 camphi=camphi,
                 npix=total_pix,
+                flags=flags,
+                weights=weights,
+                linear=linear_mode
             )
-            volume += carved_volume.reshape(self._nx, self._ny, self._nz)
-            
-        volume = volume * 1.0 / len(sensor_masks)
+            volume[i] += carved_volume.reshape(3,self._nx, self._ny, self._nz)
 
         space_carved = xr.Dataset(
                         data_vars = {
-                            'volume': (['x','y','z'], volume)
-                        }
+                            'cloudy_counts': (['nsensors','x','y','z'], volume[:,0]),
+                            'total_counts': (['nsensors','x','y','z'], np.sum(volume[:,:2],axis=1)),
+                            'weights':(['nsensors','x','y','z'], volume[:,2]),
+                        },
+                        coords={'x':self._grid.x,
+                                'y':self._grid.y,
+                                'z':self._grid.z}
                         )
-        space_carved = space_carved.assign_coords(self._grid)
 
         if agreement is not None:
-            mask = volume > agreement
-            space_carved['mask'] = (['x', 'y', 'z'], mask)
+            mask = ((space_carved.cloudy_counts/space_carved.total_counts > agreement[0]).astype(np.int).mean('nsensors') >= agreement[1]).astype(np.int)
+            masked_weights = (space_carved.weights/space_carved.total_counts).mean('nsensors')
+            space_carved['mask'] = mask
+            space_carved['masked_weights'] = masked_weights
 
         return space_carved
+
+    def project(self, weights, sensors, return_matrix=False):
+        """
+        TODO
+        """
+        if isinstance(sensors,xr.Dataset):
+            sensor_list = [sensors]
+        elif isinstance(sensors, type([])):
+            sensor_list = sensors
+        elif isinstance(sensors, shdom.organization.SensorsDict):
+            sensor_list = []
+            for instrument in sensors:
+                sensor_list.extend(sensors[instrument]['sensor_list'])
+        weights = weights.copy(deep=True)
+        if 'weights' in weights.data_vars:
+            weights.weights.name = 'density'
+        weights.drop_vars([name for name in weights.variables if name not in ('x','y','z','density')])
+
+        resampled_weights = shdom.grid.resample_onto_grid(self._grid, weights).density.data.ravel()
+
+        for sensor in sensor_list:
+            camx = sensor['ray_x'].data
+            camy = sensor['ray_y'].data
+            camz = sensor['ray_z'].data
+            cammu = sensor['ray_mu'].data
+            camphi = sensor['ray_phi'].data
+            ray_weights = sensor['ray_weight'].data
+            pixel_indices = sensor['pixel_index'].data
+            total_pix = sensor.npixels.size
+            nrays = sensor.nrays.size
+
+            if return_matrix:
+                raise NotImplementedError
+            else:
+                matrix_size = 1#(self._nx+self._ny+self._nz)
+                matrix_ptrs = np.zeros((matrix_size, total_pix),dtype=np.int)+1
+                matrix = np.zeros((matrix_size, total_pix))
+
+            path,matrix,matrix_ptrs = shdom.core.project(
+                                            nx=self._nx,
+                                            ny=self._ny,
+                                            nz=self._nz,
+                                            npts=self._npts,
+                                            ncells=self._ncells,
+                                            gridptr=self._gridptr,
+                                            neighptr=self._neighptr,
+                                            treeptr=self._treeptr,
+                                            cellflags=self._cellflags,
+                                            bcflag=self._bcflag,
+                                            ipflag=self._ipflag,
+                                            xgrid=self._xgrid,
+                                            ygrid=self._ygrid,
+                                            zgrid=self._zgrid,
+                                            gridpos=self._gridpos,
+                                            camx=camx,
+                                            camy=camy,
+                                            camz=camz,
+                                            cammu=cammu,
+                                            camphi=camphi,
+                                            npix=total_pix,
+                                            matrix=matrix,
+                                            matrix_ptrs=matrix_ptrs,
+                                            return_matrix=False,
+                                            weights=resampled_weights,
+                                            ray_weights=ray_weights,
+                                            pixel_indices=pixel_indices,
+                                            nrays=nrays
+                                        )
+            sensor['integrated_weights'] = ('npixels', path)

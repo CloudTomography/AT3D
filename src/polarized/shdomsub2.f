@@ -417,8 +417,8 @@ Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
      .	          NPART, NBPTS)
-
       DO IP = 1, NPTS
+C27237,27283
         DIRPATH = 0.0
         CALL DIRECT_BEAM_PROP
      .           (0, GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP),
@@ -1497,28 +1497,40 @@ C     If IFLAG=0 then the output array is set to the input times the weight.
 
       SUBROUTINE COMPUTE_NETFLUXDIV (NSTOKES, NPTS, RSHPTR, SRCTYPE,
      .             SOLARMU, EXTINCT, ALBEDO, PLANCK, DIRFLUX,
-     .             RADIANCE,  NETFLUXDIV)
+     .             RADIANCE,  NETFLUXDIV, NPART)
 C       Computes the net flux divergence at every grid point.
       IMPLICIT NONE
-      INTEGER NSTOKES, NPTS, RSHPTR(NPTS+1)
-      REAL    PLANCK(NPTS), DIRFLUX(NPTS), SOLARMU
-      REAL    EXTINCT(NPTS), ALBEDO(NPTS)
-      REAL    RADIANCE(NSTOKES,*), NETFLUXDIV(NPTS)
+      INTEGER NSTOKES, NPTS, RSHPTR(NPTS+1), NPART
+Cf2py intent(in) :: NSTOKES, NPTS, RHSPTR, NPART
+      REAL    PLANCK(NPTS, NPART), DIRFLUX(NPTS), SOLARMU
+Cf2py intent(in) :: PLANCK, DIRFLUX, SOLARMU
+      REAL    EXTINCT(NPTS, NPART), ALBEDO(NPTS,NPART)
+Cf2py intent(in) :: EXTINCT, ALBEDO
+      REAL    RADIANCE(NSTOKES,*)
+Cf2py intent(in) :: RADIANCE
+      REAL NETFLUXDIV(NPTS)
+Cf2py intent(out) :: NETFLUXDIV
       CHARACTER SRCTYPE*1
+Cf2py intent(in) :: SRCTYPE
       INTEGER I, IR
       REAL    PI, C, SECMU, HR
+      REAL  ABSORB(NPTS), EMIT(NPTS)
 
       PI = ACOS(-1.0)
       C = SQRT(4.0*PI)
       SECMU = 1.0/ABS(SOLARMU)
+
+      ABSORB = sum(EXTINCT(:,:)*(1-ALBEDO(:,:)),dim=2)
+      EMIT = sum(EXTINCT(:,:)*PLANCK(:,:),dim=2)
+
       DO I = 1, NPTS
         IR = RSHPTR(I)
-        HR = C*EXTINCT(I)*(1-ALBEDO(I))*RADIANCE(1,IR+1)
+        HR = C*ABSORB(I)*RADIANCE(1,IR+1)
         IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
-          HR = HR + EXTINCT(I)*(1.0-ALBEDO(I))*DIRFLUX(I)*SECMU
+          HR = HR + ABSORB(I)*DIRFLUX(I)*SECMU
         ENDIF
         IF (SRCTYPE .EQ. 'T' .OR. SRCTYPE .EQ. 'B') THEN
-          HR = HR - 4*PI*EXTINCT(I)*PLANCK(I)
+          HR = HR - 4*PI*EMIT(I)
         ENDIF
         NETFLUXDIV(I) = -HR
       ENDDO
@@ -1538,9 +1550,15 @@ C     components.  If NSHOUT=5 then the HIGHORDERRAD flag is set and the
 C     rms of the higher order terms in the radiance series is computed.
       IMPLICIT NONE
       INTEGER NSTOKES, NPTS, RSHPTR(NPTS+1), ML, MM, NSHOUT
+Cf2py intent(in) :: NSTOKES, NPTS, RHSPTR, ML,MM, NSHOUT
       REAL    SOLARMU, SOLARAZ, DIRFLUX(NPTS)
-      REAL    RADIANCE(NSTOKES,*), SHTERMS(NSHOUT,NPTS)
+Cf2py intent(in) :: SOLARMU, SOLARAZ, DIRFLUX
+      REAL    RADIANCE(NSTOKES,*)
+Cf2py intent(in) :: RADIANCE
+      REAL    SHTERMS(NSHOUT,NPTS)
+Cf2py intent(out) SHTERMS
       CHARACTER SRCTYPE*1
+Cf2py intent(in) :: SRCTYPE
       INTEGER I, IR, J, NLM
       REAL    PI, A, C, C0, IMEAN, FX, FY, FZ, HORMS
       REAL    SECSOL, SINSOL, SOLX, SOLY, SOLM, F0

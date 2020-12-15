@@ -47,7 +47,7 @@ F2PY_MODULE_NAME = 'core'
 F2PY_SRC_PATH = 'src'
 F2PY_SIGN_FILE = '{path}/core.pyf'.format(path=F2PY_SRC_PATH)
 
-F2PY_SHDOM_FILES = ['fftpack.f', 'ocean_brdf.f', 'shdom_nompi.f', 'shdomsub5.f', 'surface.f']
+F2PY_SHDOM_FILES = ['fftpack.f', 'ocean_brdf.f', 'shdom_nompi.f', 'shdomsub5.f', 'surface.f','util.f90']
 
 if POLARIZED_SHDOM:
     F2PY_SHDOM_FILES.extend(['polarized/shdom90.f90',
@@ -110,8 +110,20 @@ F2PY_CORE_API = [
     'optical_depth',
     'prep_surface',
     'read_properties',
+    'compute_netfluxdiv',
+    'compute_sh',
+    'min_optical_depth',
     'gradient_l2_old',
-    'min_optical_depth'
+    'average_subpixel_rays',
+    'pencil_beam_prop',
+    'project',
+    'util_integrate_rays',
+    'util_locate_point',
+    'util_get_interp_kernel2',
+    'check_property_input',
+    'nearest_binary',
+    'cell_average',
+    'ylmall_wrap'
 ]
 
 def _run_command(cmd):

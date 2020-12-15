@@ -1,0 +1,145 @@
+#!/bin/csh
+#   Example script for monochromatic solar or thermal radiative transfer
+# on the FIRE LES 2D cloud.  Makes Mie tables with make_mie_table, runs
+# propgen to make the SHDOM property file and then shdom to do the
+# radiative transfer.
+set AWK=awk   # use nawk on SGI and Sun
+
+
+set Solar=1     # 1 for solar, 0 for thermal
+
+set MakeMieTable=1
+set MakePropertyFile=1
+set RunSHDOM=1
+
+
+#   Set the file names and wavelength
+if ($Solar) then
+  set scattable="water_w672c.scat"
+  set prpfile="rico32x36x26w672.prp"
+  set outbase="rico32x36x26w672a"
+  set wavelen=0.672
+else
+  set scattable="water_w107c.scat"
+  set prpfile="les2y21w107.prp"
+  set outbase="les2y21w107a"
+  set wavelen=10.7
+endif
+
+
+
+# ----------------------------------  Start of Processing
+# Compile the "put" command
+if (!(-e put))  cc -o put  put.c
+
+
+if ($MakeMieTable) then
+  #  Makes the Mie scattering table for spherical water droplets for
+  # gamma size distributions with a range of effective radius.
+
+  set polarizedtable=T             # F=unpolarized output, T=polarized output
+  set distflag=G                   # G=gamma, L=lognormal size distribution
+  set alpha = 7                    # gamma dist shape parameter
+  set Nretab=50                    # number of effective radius in table
+  set Sretab=5.0; set Eretab=20    # starting, ending effective radius (micron)
+  set logre=F                      # evenly spaced r_e
+  set maxradius=65                 # maximum radius in distribution (micron)
+  set partype = "W"                # W for water
+  set avgflag=C                    #  C for using central wavelength
+
+  ./put $polarizedtable "$wavelen $wavelen" $partype $avgflag $distflag $alpha \
+     "$Nretab $Sretab $Eretab" $logre $maxradius $scattable | ./make_mie_table
+endif
+
+
+
+
+if ($MakePropertyFile) then
+  # Runs propgen to make the SHDOM optical property file from the
+  # type 2 LWC file for the 64x17 stratocumulus LES slice.
+
+  set lwcfile=rico32x36x26.txt # type 2 LWC file
+  set scattypes = (1)
+  set poltabs = (T)       # scattering table polarization flag (F=unpolarized)
+  set maxnewphase=100      # max number of new phase functions to make
+  set asymtol=0.01        # asymmetry parameter tolerance for new one
+  set fracphasetol=0.05   # max fractional error in function for new one
+  set sfcpres=0.0        # surface pressure for Rayleigh scattering (mb)
+    # Set the extra height levels and tmeperatuers for the property file
+  set ZTother=(0.000 288.0)#  0.050 287.5  0.100 287.0  0.150 286.5  0.200 286.0 \
+              #0.250 285.5  0.300 285.0  0.350 284.5  0.400 284.0  0.850 288.0 \
+              #0.900 289.0  0.950 289.5  1.050 290.0)
+  # set ZTother=(0.000 292.22 0.833 292.04 1.667 291.86 2.5 291.68 3.33 291.5 \
+  #              4.167 291.32 5.0 291.14 5.833 290.96 6.67 290.78 7.5 290.6 8.33\
+  #              290.42 9.167 290.24 10.0 290.06 10.833 289.88 11.667 289.7 12.5\
+  #              289.92 13.333 289.14 14.167 290.36 15.0 290.58 15.833 290.8\
+  #              16.667 291.02 17.5 291.24 18.333 291.46 19.167 291.68 20.0 291.9)
+  @ Nzother = $#ZTother / 2
+  set polout=P            # output an unpolarized SHDOM property file
+
+    # Run propgen to make the property file
+  ./put 1 $scattable "$scattypes" "$poltabs" $lwcfile \
+       $maxnewphase $asymtol $fracphasetol \
+       $wavelen $sfcpres $Nzother $ZTother $polout $prpfile  | ./propgen
+endif
+
+
+
+
+if ($RunSHDOM) then
+#   Run SHDOM for either solar or thermal radiative transfer
+
+  #   Set SHDOM parameters:
+  set Nstokes=3               # unpolarized radiative transfer
+  set IPflag=0                # independent pixel flag (0 = 3D, 3 = IP)
+  set BCflag=0                # horizontal boundary conditions (0 = periodic)
+  if ($Solar) then
+    set Nmu=8                # number of zenith angles in both hemispheres
+    set Nphi=16               # number of azimuth angles
+    set deltaM=T              # use delta-M scaling for solar problems
+    set mu0=0.5             # solar cosine zenith angle
+    set phi0=0.0              # solar beam azimuth (degrees)
+    set flux0=1.0             # solar flux (relative)
+    set sfcalb=0.05           # surface Lambertian albedo
+    set splitacc=0.1         # adaptive grid cell splitting accuracy
+    set shacc=0.01           # adaptive spherical harmonic accuracy
+  else
+    set Nmu=8                 # number of zenith angles in both hemispheres
+    set Nphi=16               # number of azimuth angles
+    set deltaM=F              # don't use delta-M scaling
+    set sfcemis=0.98          # surface emissivity
+    set Tsfc=288              # surface temperature (K)
+    set Tsky=0.0              # downwelling brightnes temperature
+    set splitacc=1.0
+    set shacc=0.03
+  endif
+  set solacc=1.0E-4           # solution accuracy
+  set accel=T                 # solution acceleration flag
+  set maxiter=100             # maximum number of iterations
+                      # input parameters for output radiances
+  set Routparm="20.0 0.02 0.02 0.0 0.0  1 \
+               1.0 0" #0.966 0 0.866 0 0.707 0  0.966 180 0.866 180 0.707 180"
+  set Foutparm="2 0.750 0.055 1.0"
+
+  set nb=(`head -2 $prpfile | tail -1`)
+  echo " "; echo " ";
+  if ($Solar) then
+    echo "$outbase :  wavelen=$wavelen  Nmu=$Nmu  split=$splitacc"
+    ./put rico32x36x25 $prpfile NONE NONE NONE NONE $Nstokes "$nb[1] $nb[2] $nb[3]" \
+      "$Nmu $Nphi" $BCflag $IPflag $deltaM P S "$flux0 $mu0 $phi0" 0.0 \
+      $sfcalb $wavelen "$splitacc $shacc" "$accel $solacc $maxiter"  \
+      6 R $Routparm ${outbase}r.out  M 1 ${outbase}m.out \
+      S 1 ${outbase}s.out  F 1 ${outbase}f1.out \
+      F $Foutparm ${outbase}f2.out  F 4 ${outbase}f4.out \
+      shdomout_rico32x36x25w672_polarized.nc 10000 5.0 5.0 1.5 | ./shdom
+  else
+    echo "$outbase :  wavelen=$wavelen  Nmu=$Nmu  split=$splitacc"
+    put les2y21w107 $prpfile NONE NONE NONE NONE $Nstokes "$nb[1] $nb[2] $nb[3]" \
+      "$Nmu $Nphi" $BCflag $IPflag F P T $Tsfc $sfcemis $Tsky R $wavelen \
+      "$splitacc $shacc" "$accel $solacc $maxiter"  \
+      6 R $Routparm ${outbase}r.out  M 1 ${outbase}m.out \
+      S 1 ${outbase}s.out  F 1 ${outbase}f1.out \
+      F $Foutparm ${outbase}f2.out  F 4 ${outbase}f4.out \
+      NONE 10 5.0 5.0 1.5 | shdom
+  endif
+endif

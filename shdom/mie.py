@@ -6,7 +6,7 @@ import pandas as pd
 
 def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0, max_integration_radius=65.0,
                    wavelength_averaging=False, wavelength_resolution=0.001, refractive_index=None,
-                   relative_path=None):
+                   relative_path=None, verbose=True):
     """
     Mie monodisperse scattering for spherical particles.
     This function will search a given directory to load the requested mie table or will compute it.
@@ -37,7 +37,7 @@ def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
 
     table_attempt=None
     if relative_path is not None:
-        table_attempt = load_table(relative_path,particle_type, wavelength_band,
+        table_attempt = _load_table(relative_path,particle_type, wavelength_band,
                     minimum_effective_radius, max_integration_radius,
                      wavelength_averaging, wavelength_resolution,
                      refractive_index)
@@ -45,26 +45,27 @@ def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
     if table_attempt is not None:
         table=table_attempt
     else:
-        print('making mie_table. . . may take a while.')
-        table = compute_table(particle_type, wavelength_band,
+        if verbose:
+            print('making mie_table. . . may take a while.')
+        table = _compute_table(particle_type, wavelength_band,
                     minimum_effective_radius, max_integration_radius,
                      wavelength_averaging, wavelength_resolution,
-                     refractive_index)
+                     refractive_index, verbose=verbose)
 
     return table
 
-def compute_table(particle_type, wavelength_band,
+def _compute_table(particle_type, wavelength_band,
                   minimum_effective_radius, max_integration_radius,
                   wavelength_averaging, wavelength_resolution,
-                  refractive_index):
+                  refractive_index, verbose=True):
     """
     This function does the hard work of computing a monomodal mie table.
     See 'get_mono_table' for more details.
     """
-
     #wavelength band
     wavelen1, wavelen2 = wavelength_band
-    assert wavelen1 <= wavelen2 , 'Minimum wavelength must be smaller than maximum'
+    if wavelen1 > wavelen2:
+        raise ValueError('wavelen1 must be <= wavelen2')
 
     avgflag = 'C'
     if wavelen1 == wavelen2:
@@ -134,7 +135,8 @@ def compute_table(particle_type, wavelength_band,
             radii=radii,
             rindex=rindex,
             avgflag=avgflag,
-            partype=partype
+            partype=partype,
+            verbose=verbose
         )
     #return data as an xarray
     table = xr.Dataset(
@@ -166,7 +168,7 @@ def compute_table(particle_type, wavelength_band,
     return table
 
 
-def load_table(relative_path,particle_type, wavelength_band,
+def _load_table(relative_path,particle_type, wavelength_band,
             minimum_effective_radius=4.0, max_integration_radius=65.0,
              wavelength_averaging=False, wavelength_resolution=0.001,
              refractive_index=None):
@@ -239,7 +241,7 @@ def get_poly_table(size_distribution, mie_mono_table):
     legen_index = np.meshgrid(*coord_lengths, indexing='ij')
 
     #TODO: Does this need + 1 here?
-    table_index = np.ravel_multi_index(legen_index, dims=[coord.size for coord in coord_lengths]) + 1
+    table_index = np.ravel_multi_index(legen_index, dims=[coord.size for coord in coord_lengths])
     coords['table_index'] = (list(size_distribution.coords.keys())[1:], table_index)
     coords['stokes_index'] = mie_mono_table.coords['stokes_index']
 

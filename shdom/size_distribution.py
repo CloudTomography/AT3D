@@ -66,7 +66,6 @@ def lognormal(radii, reff=None ,veff=None,alpha=None, particle_density=1.0):
     return nd
 
 
-
 def get_size_distribution_grid(radii, size_distribution_function=gamma,
                                particle_density=1.0, radius_units='micron',
                                **size_distribution_parameters):
@@ -86,7 +85,6 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
            The type of spacing. Either 'logarithmic' or 'linear'.
        units: string
            The units of the microphysical dimension.
-
     """
     coord_list = []
     name_list = []
@@ -131,6 +129,37 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
             },
             coords=dict(coord_dict),
             attrs={'size_distribution_inputs': size_distribution_list,
+                  'distribution_type': size_distribution_function.__name__,
+                  },
+                  #TODO add coordmin/max/n and spacing for full traceability.
+    )
+    return size_dist_grid
+
+def get_size_distribution_exact(radii, microphysics, size_distribution_function=gamma,
+                               particle_density=1.0, radius_units='micron'):
+    """TODO"""
+    names = {name for name in microphysics.data_vars if name != 'density'}
+
+    unique_values = [np.unique(microphysics[name]) for name in names]
+    all_combinations = np.meshgrid(*unique_values, indexing='ij')
+    parameter_dict = {name:variable.ravel() for name, variable in zip(names, all_combinations)}
+
+    number_density_raveled = size_distribution_function(radii, **parameter_dict,
+                                              particle_density=particle_density)
+    #TODO this can fail silently in some cases (produce nans), add checks.
+    number_density = number_density_raveled.reshape(radii.shape+all_combinations[0].shape)
+
+    coord_dict = OrderedDict()
+    coord_dict['radius'] = radii
+    for name, unique in zip(names, unique_values):
+        coord_dict[name] = unique
+
+    size_dist_grid = xr.Dataset(
+            data_vars = {
+                'number_density': (list(coord_dict.keys()), number_density),
+            },
+            coords=dict(coord_dict),
+            attrs={
                   'distribution_type': size_distribution_function.__name__,
                   },
                   #TODO add coordmin/max/n and spacing for full traceability.
