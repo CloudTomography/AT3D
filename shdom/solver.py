@@ -987,31 +987,71 @@ class RTE(object):
 
         #optical_depth = np.full(self._npts, 999)
         tau = core.optical_depth(
-                nx=self._rte_solver._nx,
-                ny=self._rte_solver._ny,
-                nz=self._rte_solver._nz,
-                npts=self._rte_solver._npts,
-                ncells=self._rte_solver._ncells,
-                gridptr=self._rte_solver._gridptr,
-                neighptr=self._rte_solver._neighptr,
-                treeptr=self._rte_solver._treeptr,
-                cellflags=self._rte_solver._cellflags,
-                bcflag=self._rte_solver._bcflag,
-                ipflag=self._rte_solver._ipflag,
-                xgrid=self._rte_solver._xgrid,
-                ygrid=self._rte_solver._ygrid,
-                zgrid=self._rte_solver._zgrid,
-                gridpos=self._rte_solver._gridpos,
+                nx=self._nx,
+                ny=self._ny,
+                nz=self._nz,
+                npts=self._npts,
+                ncells=self._ncells,
+                gridptr=self._gridptr,
+                neighptr=self._neighptr,
+                treeptr=self._treeptr,
+                cellflags=self._cellflags,
+                bcflag=self._bcflag,
+                ipflag=self._ipflag,
+                xgrid=self._xgrid,
+                ygrid=self._ygrid,
+                zgrid=self._zgrid,
+                gridpos=self._gridpos,
                 camx=camx,
                 camy=camy,
                 camz=camz,
                 cammu=cammu,
                 camphi=camphi,
                 npix=total_pix,
-                total_ext=self._rte_solver._total_ext[:self._rte_solver._npts]
+                total_ext=self._total_ext[:self._npts]
             )
         sensor['optical_path'] = (['nrays'], tau)
         return sensor
+
+    def min_optical_depth(self, sensor):
+
+        camx = sensor['ray_x'].data
+        camy = sensor['ray_y'].data
+        camz = sensor['ray_z'].data
+        cammu = sensor['ray_mu'].data
+        camphi = sensor['ray_phi'].data
+        #TODO
+        #Some checks on the dimensions: this kind of thing.
+        assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
+        total_pix = sensor.sizes['nrays']
+
+        tau = core.min_optical_depth(
+                nx=self._nx,
+                ny=self._ny,
+                nz=self._nz,
+                npts=self._npts,
+                ncells=self._ncells,
+                gridptr=self._gridptr,
+                neighptr=self._neighptr,
+                treeptr=self._treeptr,
+                cellflags=self._cellflags,
+                bcflag=self._bcflag,
+                ipflag=self._ipflag,
+                xgrid=self._xgrid,
+                ygrid=self._ygrid,
+                zgrid=self._zgrid,
+                gridpos=self._gridpos,
+                camx=camx,
+                camy=camy,
+                camz=camz,
+                cammu=cammu,
+                camphi=camphi,
+                npix=total_pix,
+                total_ext=self._total_ext[:self._npts]
+            )
+        sensor['min_optical_path'] = (['nvox'], tau)
+        return sensor
+
     @property
     def num_iterations(self):
         return self._iters

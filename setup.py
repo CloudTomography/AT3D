@@ -110,7 +110,8 @@ F2PY_CORE_API = [
     'optical_depth',
     'prep_surface',
     'read_properties',
-    'gradient_l2_old'
+    'gradient_l2_old',
+    'min_optical_depth'
 ]
 
 def _run_command(cmd):
