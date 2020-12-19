@@ -37,6 +37,7 @@ def to_grid(wavelengths, atmosphere, rte_grid):
     output: OrderedDict
         Dictionary with wavelengths as keys and corresponding Rayleigh xarray.Datasets as values.
     """
+    wavelengths = np.atleast_1d(wavelengths)
     atmosphere_on_rte_grid = atmosphere.interp({'z': rte_grid.z})
     rayleigh_poly_tables = compute_table(wavelengths).rename('legcoef')
     rayleigh_extinction = compute_extinction(
