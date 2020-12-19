@@ -1,15 +1,22 @@
-
-import shdom
 import os
+from unittest import TestCase
+from collections import OrderedDict
 import numpy as np
 import xarray as xr
-import pylab as py
-from unittest import TestCase
-import typing
-from collections import OrderedDict
+import shdom
 
 def make_test_cloud():
+    """
+    Create test cloud and atmosphere Datasets using random values
 
+    Returns
+    -------
+    scatterer : xarray.Dataset
+        Dataset containing density [] and reff [micron] with values between [0, 1)
+        along x, y, z grid [km]
+    atmosphere : xarray.Dataset
+        Dataset containing temperature profile [K] with values between [0, 200) along z [km]
+    """
     np.random.seed(1)
     scatterer = xr.Dataset(
                     data_vars={
@@ -486,7 +493,7 @@ class Verify_RPV_Surfaces(TestCase):
         cls.solver = solver
 
         fluxes = []
-        with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_R1f.out') as f:
+        with open('../shdom_verification/brdf_R1f.out') as f:
             data = f.readlines()
             for line in data:
                 if not '!' in line:
@@ -495,7 +502,7 @@ class Verify_RPV_Surfaces(TestCase):
         cls.fluxes = fluxes
 
         radiances = []
-        with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_R1r.out') as f:
+        with open('../shdom_verification/brdf_R1r.out') as f:
             data = f.readlines()
             for line in data:
                 if not '!' in line:
@@ -540,7 +547,7 @@ class Verify_WaveFresnel_Surfaces(TestCase):
         cls.solver = solver
 
         fluxes = []
-        with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_W1f.out') as f:
+        with open('../shdom_verification/brdf_W1f.out') as f:
             data = f.readlines()
             for line in data:
                 if not '!' in line:
@@ -549,7 +556,7 @@ class Verify_WaveFresnel_Surfaces(TestCase):
         cls.fluxes = fluxes
 
         radiances = []
-        with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_W1r.out') as f:
+        with open('../shdom_verification/brdf_W1r.out') as f:
             data = f.readlines()
             for line in data:
                 if not '!' in line:
@@ -603,7 +610,7 @@ class Verify_Diner_Surfaces(TestCase):
         cls.solver = solver
 
         fluxes = []
-        with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_D1f.out') as f:
+        with open('../shdom_verification/brdf_D1f.out') as f:
             data = f.readlines()
             for line in data:
                 if not '!' in line:
@@ -612,7 +619,7 @@ class Verify_Diner_Surfaces(TestCase):
         cls.fluxes = fluxes
 
         radiances = []
-        with open('/Users/jesserl2/Documents/Code/shdom_test/brdf_D1r.out') as f:
+        with open('../shdom_verification/brdf_D1r.out') as f:
             data = f.readlines()
             for line in data:
                 if not '!' in line:
@@ -1067,18 +1074,11 @@ class VerifyJacobian(TestCase):
         forward_sensors = Sensordict.make_forward_sensors()
 
         out,gradient,jacobian_exact = shdom.gradient.levis_approx_jacobian(Sensordict, solvers, forward_sensors, unknown_scatterers,
-                                                                        ([1],[1],[1]), n_jobs=8,mpi_comm=None,verbose=False,
-                                    maxiter=100, init_solution=False, setup_grid=False,
-                                    exact_single_scatter=True)
+                    ([1],[1],[1]), n_jobs=8,mpi_comm=None,verbose=False,
+                    maxiter=100, init_solution=False, setup_grid=False,
+                    exact_single_scatter=True)
 
         cls.jacobian_exact = jacobian_exact
 
     def test_jacobian(self):
         self.assertAlmostEqual(self.jacobian_exact['jacobian_0.860'][0,0,0,0].data,0.00396336,places=5)
-
-
-
-
-if __name__ == '__main__':
-    import unittest
-    unittest.main()
