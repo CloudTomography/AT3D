@@ -20,38 +20,24 @@ def calculate_mie_mono(directory, filename, particle_type, wavelength):
 
 def calculate_mie(mie_dir, particle_type, wavelength):
     mie_fname = '{}_{:.3f}.nc'.format(particle_type.lower(), wavelength)
-    if not os.path.exists(os.path.join(mie_dir, mie_fname)):
-        mie_table = calculate_mie_mono(mie_dir, mie_fname, particle_type, wavelength)
+    mie_path = os.path.join(mie_dir, mie_fname)
+    if not os.path.exists(mie_path):
+        mie_table = shdom.mie.get_mono_table(particle_type, (wavelength,wavelength), relative_path=mie_path)
     else:
-        mie_table = xr.load_dataset(os.path.join(mie_dir, mie_fname))
+        mie_table = xr.load_dataset(mie_path)
     number_density_grid = shdom.size_distribution.get_size_distribution_grid(
-        mie_table['radius'],
-        size_distribution_function=shdom.size_distribution.gamma,
-        reff=[4.5, 20.0, 10, 'linear', 'micron'],
-        veff=[0.01, 0.1, 5, 'linear', 'unitless'],
-        radius_units=mie_table.attrs['units'][0]
-        )
+                                                        mie_table['radius'],
+                                                        size_distribution_function=shdom.size_distribution.gamma,
+                                                        reff=[4.5, 20.0, 10, 'linear', 'micron'],
+                                                        veff=[0.01, 0.1, 5, 'linear', 'unitless'],
+                                                        radius_units=mie_table.attrs['units'][0]
+                                                        )
     poly_table = shdom.mie.get_poly_table(number_density_grid, mie_table)
     return poly_table
 
-def load_from_csv(path):
-    df = pd.read_csv(path, comment='#', skiprows=4, index_col=['x', 'y', 'z'])
-    nx, ny, nz = np.genfromtxt(path, max_rows=1, dtype=int, delimiter=',')
-    dx, dy = np.genfromtxt(path, max_rows=1, dtype=float, skip_header=2, delimiter=',')
-    z = xr.DataArray(np.genfromtxt(path, max_rows=1, dtype=float, skip_header=3, delimiter=','), coords=[range(nz)], dims=['z'])
-    scatterer = xr.Dataset.from_dataframe(df)
-    scatterer = scatterer.assign_coords({'x': dx * scatterer.x, 'y': dy * scatterer.y, 'z': z[scatterer.z]})
-    scatterer.update({'reff': scatterer.reff.fillna(10.0)})
-    scatterer.update({'lwc': scatterer.lwc.fillna(0.0)})
-    scatterer['veff'] = xr.full_like(scatterer.reff, 0.1)
-    scatterer = scatterer.rename_vars(lwc='density')
-    return scatterer
-
-
 class Load_from_csv_test(TestCase):
     def test_load_from_csv(self, path='../synthetic_cloud_fields/jpl_les/rico32x37x26.txt'):
-        scatterer = load_from_csv(path)
-
+        scatterer = shdom.grid.load_from_csv(path, density='lwc', origin=(0.0,0.0))
 
 class Microphysics_load_from_csv_test(TestCase):
     def setUp(self):
@@ -71,12 +57,11 @@ class Microphysics_load_from_csv_test(TestCase):
 
 class Microphysics_save_to_netcdf_test(TestCase):
     def setUp(self):
-        self.droplets = load_from_csv('../synthetic_cloud_fields/jpl_les/rico32x37x26.txt')
-        self.test_fname = 'test_rico32x37x26.txt'
+        scatterer = shdom.grid.load_from_csv('../synthetic_cloud_fields/jpl_les/rico32x37x26.txt', density='lwc', origin=(0.0,0.0))
+        self.test_fname = 'test_rico32x37x26.nc'
+        self.droplets = shdom.grid.resample_onto_grid(scatterer, scatterer)
+        self.droplets['veff'] = (self.droplets.reff.dims, np.full_like(self.droplets.reff.data, fill_value=0.1))
         self.droplets.to_netcdf(self.test_fname)
-
-    def tearDown(self):
-        os.remove(self.test_fname)
 
     def test_saved_microphysics(self):
         new_droplets = xr.load_dataset(self.test_fname)
@@ -84,6 +69,8 @@ class Microphysics_save_to_netcdf_test(TestCase):
         self.assertEqual(np.sum(self.droplets.reff.data - new_droplets.reff.data), 0)
         self.assertEqual(np.sum(self.droplets.veff.data - new_droplets.veff.data), 0)
 
+    def tearDown(self):
+        os.remove(self.test_fname)
 
 class Shdom_rt_simulation_test(TestCase):
     def setUp(self):

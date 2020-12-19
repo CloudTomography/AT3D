@@ -38,14 +38,14 @@ Future Improvements:
  - Multispectral rendering and optimization
  - Microphysical optimization
  - Single scattering derivatives are exact (along broken ray paths)
- - Main changes to SHDOM core Fortran code: 
+ - Main changes to SHDOM core Fortran code:
      1. Removal of global variables (property array)
-     2. Particle mixing is done at runtime and not as an a-priori computation 
+     2. Particle mixing is done at runtime and not as an a-priori computation
      4. Mie computations are broken down to mono-disperse and poly-disperse
 
 &nbsp;
 
-## Installation 
+## Installation
 Installation using using anaconda package management
 
 Start a clean virtual environment
@@ -56,7 +56,7 @@ source activate pyshdom
 
 Install required packages
 ```
-conda install anaconda dill tensorflow tensorboard pillow joblib
+pip install -r requirements.txt
 ```
 
 Install pyshdom distribution with (either install or develop flag)
@@ -71,18 +71,18 @@ For basic usage follow the following jupyter notebook tutorials
 - notebooks/Radiance Rendering [Single Image].ipynb
 - notebooks/Radiance Rendering [Multiview].ipynb
 - notebooks/Radiance Rendering [Multispectral].ipynb
- 
+
 &nbsp;
 
 ## Main scripts
-For generating rendering and optimization scripts see the list below. 
+For generating rendering and optimization scripts see the list below.
 The scripts folder contains another readme file with examples of how to run each script.
   - scripts/generate_mie_tables.py
   - scripts/render_radiance_toa.py
   - scripts/optimize_extinction_lbfgs.py
   - scripts/optimize_microphysics_lbfgs.py
-  
-For info about command-line flags of each script use 
+
+For info about command-line flags of each script use
 ```
 python script.py --help
 ```
@@ -91,5 +91,4 @@ python script.py --help
 
 ## Usage and Contact
 If you find this package useful please let me know at aviad.levis@gmail.com, I am interested.
-If you use this package in an academic publication please acknowledge the appropriate publications (see LICENSE file). 
-
+If you use this package in an academic publication please acknowledge the appropriate publications (see LICENSE file).
