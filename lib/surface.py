@@ -1,6 +1,7 @@
 import xarray as xr
-from shdom import core
 import numpy as np
+
+import pyshdom.core
 
 def lambertian(albedo, ground_temperature=298.15, delx=None, dely=None):
     """
@@ -207,7 +208,7 @@ def _make_surface_dataset(surface_type, ground_temperature, delx, dely, **kwargs
     list_of_params = [ground_temperature.ravel(order='F')] + [val.ravel(order='F') for val in kwargs.values()]
 
     parms_in = np.stack(list_of_params, axis=0)
-    nsfcpar, sfcparms, gndtemp, gndalbedo = core.prep_surface(maxsfcpts=maxsfcpts,
+    nsfcpar, sfcparms, gndtemp, gndalbedo = pyshdom.core.prep_surface(maxsfcpts=maxsfcpts,
                             maxsfcpars=maxsfcpars, sfctype=sfctype,nxsfc=nxsfc,nysfc=nysfc,delxsfc=delxsfc,
                             delysfc=delysfc,parms_in=parms_in, grid_coords=grid_coords)
     return xr.Dataset(

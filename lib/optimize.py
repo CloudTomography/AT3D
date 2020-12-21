@@ -1,7 +1,8 @@
 import scipy.optimize
-import shdom
 import numpy as np
 import time
+
+import pyshdom.gradient
 
 class ObjectiveFunction(object):
 
@@ -26,7 +27,7 @@ class ObjectiveFunction(object):
         def loss_function(state, measurements):
 
             set_state_fn(state)
-            loss, gradient = shdom.gradient.levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
+            loss, gradient = pyshdom.gradient.levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
                                                         n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,
                                                        maxiter=maxiter,init_solution=init_solution,
                                                        exact_single_scatter=exact_single_scatter)

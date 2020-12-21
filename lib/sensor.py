@@ -2,8 +2,7 @@ import xarray as xr
 import numpy as np
 import itertools
 import inspect
-from shdom import core
-import typing
+
 
 def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength, fill_ray_variables=False):
     """

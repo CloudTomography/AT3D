@@ -3,11 +3,15 @@ Utility functions
 """
 import numpy as np
 from collections import OrderedDict
-import shdom
 import netCDF4 as nc
 import xarray as xr
 from joblib import Parallel, delayed
-from shdom import core, gradient, medium
+
+import pyshdom.core
+import pyshdom.gradient
+import pyshdom.medium
+import pyshdom.solver
+
 
 class SensorsDict(OrderedDict):
     def __init__(self, *args, **kwargs):
@@ -310,7 +314,7 @@ class SensorsDict(OrderedDict):
         else:
             observed_stokes = np.stack([var.data for name,var in temp.data_vars.items() if name != 'pixel_index'],axis=0)
             stokes_names = [name for name,var in temp.data_vars.items() if name != 'pixel_index']
-            observables = core.average_subpixel_rays(pixel_index = temp.pixel_index.data, nstokes=observed_stokes.shape[0],
+            observables = pyshdom.core.average_subpixel_rays(pixel_index = temp.pixel_index.data, nstokes=observed_stokes.shape[0],
                                                 weighted_stokes=observed_stokes,nrays=temp.nrays.size,
                                                 npixels=sensor.npixels.size)
             for i, name in enumerate(stokes_names):
@@ -343,7 +347,7 @@ class SolversDict(OrderedDict):
                 solver.solve(maxiter=maxiter, init_solution=init_solution, verbose=verbose,setup_grid=setup_grid)
         else:
             Parallel(n_jobs=n_jobs, backend="threading")(
-                delayed(solver.solve, check_pickle=False)(maxiter=maxiter, init_solution=init_solution, verbose=verbose,setup_grid=setup_grid)
+                delayed(solver.solve)(maxiter=maxiter, init_solution=init_solution, verbose=verbose,setup_grid=setup_grid)
                 for solver in self.values())
 
     def add_direct_beam_derivatives(self):
@@ -373,7 +377,7 @@ class UnknownScatterers(OrderedDict):
         super(OrderedDict, self).__init__(*args, **kwargs)
 
         def regular_grid(scatterer, table_data):
-            return medium.table_to_grid(scatterer, table_data, inverse_mode=True)
+            return pyshdom.medium.table_to_grid(scatterer, table_data, inverse_mode=True)
 
         self._table_to_grid_method = regular_grid
 
@@ -388,7 +392,7 @@ class UnknownScatterers(OrderedDict):
         inputs = [(scatterer_name, self[scatterer_name]['table_data_input'],
                    self[scatterer_name]['variable_name_list'])
                  for scatterer_name in self]
-        self.table_data = gradient.create_derivative_tables(inputs)
+        self.table_data = pyshdom.gradient.create_derivative_tables(inputs)
 
     @property
     def table_to_grid_method(self):
@@ -436,7 +440,7 @@ def get_measurements(solvers, sensors, n_jobs=1, mpi_comm=None, maxiter=100,verb
             keys, ray_start_end, pixel_start_end = subdivide_raytrace_jobs(rte_sensors, n_jobs)
 
             out= Parallel(n_jobs=n_jobs, backend='threading')(
-                            delayed(solvers[key].integrate_to_sensor, check_pickle=False)(rte_sensors[key].sel(
+                            delayed(solvers[key].integrate_to_sensor)(rte_sensors[key].sel(
                             nrays=slice(ray_start,ray_end),npixels=slice(pix_start, pix_end)))
                         for key, (ray_start,ray_end),(pix_start,pix_end) in zip(keys, ray_start_end, pixel_start_end))
 
@@ -509,9 +513,9 @@ def find_nearest(array, value):
 
 def set_pyshdom_path():
     """set path to pyshdom parent directory"""
-    import os, shdom
+    import os
     from pathlib import Path
-    os.chdir(str(Path(shdom.__path__[0]).parent))
+    os.chdir(str(Path(pyshdom.__path__[0]).parent))
 
 def planck_function(temperature, wavelength, c=2.99792458e8,h=6.62606876e-34,k=1.3806503e-23):
     """
@@ -541,7 +545,7 @@ def cell_average_comparison(reference, other, variable_name):
     zgrid2 = other.z.data
     values2 = other[variable_name].data
 
-    ref_vol,ref_val, other_vol, other_val = shdom.core.cell_average(xgrid1=xgrid1,ygrid1=ygrid1,zgrid1=zgrid1,
+    ref_vol,ref_val, other_vol, other_val = pyshdom.core.cell_average(xgrid1=xgrid1,ygrid1=ygrid1,zgrid1=zgrid1,
                         xgrid2=xgrid2,ygrid2=ygrid2,zgrid2=zgrid2,
                         values1=values1,
                         values2=values2)
@@ -562,8 +566,8 @@ def load_forward_model(file_name):
     groups = dataset.groups
     sensors = groups['sensors'].groups
     solvers = groups['solvers'].groups
-    sensor_dict = shdom.util.SensorsDict()
-    solver_dict = shdom.util.SolversDict()
+    sensor_dict = pyshdom.util.SensorsDict()
+    solver_dict = pyshdom.util.SolversDict()
 
     for key,sensor in sensors.items():
         sensor_list = []
@@ -593,7 +597,7 @@ def load_forward_model(file_name):
         else:
             atmosphere=None
 
-        solver_dict.add_solver(float(key), shdom.solver.RTE(numerical_params=numerical_params,
+        solver_dict.add_solver(float(key), pyshdom.solver.RTE(numerical_params=numerical_params,
                                             medium=mediums,
                                            source=source,
                                            surface=surface,

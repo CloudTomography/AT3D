@@ -2,8 +2,7 @@ import setuptools
 import os
 import subprocess
 
-NAME = "shdom"
-EXTENSION_NAME = "pyshdom"
+NAME = "pyshdom"
 DESCRIPTION = "3D Radiative Transfer Inversion using the SHDOM forward algorithm"
 LONG_DESCRIPTION ="""
 Pyshdom performs 3D reconstruction of cloud microphysical properties from multi-angle, multi-spectral solar reflected
@@ -144,7 +143,6 @@ def _run_command(cmd):
         return output
 
 
-
 def createSignatureFile():
     """Create the signature file for the f2py file."""
     signature_cmd = "{cmd} -h {sign} --overwrite-signature -m {module} {files} only: {api}".format(
@@ -163,6 +161,7 @@ def configuration(parent_package='',top_path=None):
         NAME,
         parent_package,
         top_path,
+        package_path='lib',
         version = VERSION,
         maintainer  = MAINTAINER,
         maintainer_email = MAINTAINER_EMAIL,
@@ -180,9 +179,6 @@ def configuration(parent_package='',top_path=None):
 
     return config
 
-def multiple_configurations(name):
-    return lambda parent_package='', top_path=None: configuration(name, parent_package,top_path)
-
 if __name__ == "__main__":
 
     from numpy.distutils.core import setup
@@ -198,9 +194,5 @@ if __name__ == "__main__":
         tests_require = ['nose',],
         test_suite = 'nose.collector',
         zip_safe = True,
-        install_requires=[
-            'numdifftools',
-            'tensorboardX'
-        ],
         classifiers = classifiers
     )

@@ -16,7 +16,8 @@ wavelengths: float or list / numpy array.
 from collections import OrderedDict
 import numpy as np
 import xarray as xr
-from shdom import core
+
+import pyshdom.core
 
 def to_grid(wavelengths, atmosphere, rte_grid):
     """
@@ -90,7 +91,7 @@ def compute_table(wavelengths):
         A dataset of Legendre coefficients for each wavelength specified.
     """
     wavelengths = np.atleast_1d(wavelengths)
-    legcoefs, table_types = zip(*[core.rayleigh_phase_function(wvl) for wvl in wavelengths])
+    legcoefs, table_types = zip(*[pyshdom.core.rayleigh_phase_function(wvl) for wvl in wavelengths])
     data_arrays = [
         xr.DataArray(name='rayleigh_table',
                      data=legcoef[..., None],
@@ -145,7 +146,7 @@ def compute_extinction(wavelengths, temperature_profile, surface_pressure=1013.0
         dims='z',
         name='rayleigh_extinction_profile',
         coords={'z': temperature_profile.z.values, 'wavelength': wavelength},
-        data=core.rayleigh_extinct(nzt=temperature_profile.size,
+        data=pyshdom.core.rayleigh_extinct(nzt=temperature_profile.size,
                                    zlevels=temperature_profile.z,
                                    temp=temperature_profile.data,
                                    raysfcpres=surface_pressure,
