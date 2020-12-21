@@ -6,7 +6,7 @@ import pandas as pd
 
 def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0, max_integration_radius=65.0,
                    wavelength_averaging=False, wavelength_resolution=0.001, refractive_index=None,
-                   relative_path=None, verbose=True):
+                   relative_dir=None, verbose=True):
     """
     Mie monodisperse scattering for spherical particles.
     This function will search a given directory to load the requested mie table or will compute it.
@@ -30,14 +30,14 @@ def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
         The distance between two wavelength samples in the band. Used only if wavelength_averaging is True.
     refractive_index: complex number or path to refractive index table (CSV)
         The refractive index should have a negative imaginary part. ri = n - ik
-    relative_path: string
+    relative_dir: string
         The path to a directory which contains saved mie_table netcdf files. If there is a file with
         'mie_table' in the name that matches the input parameters this file is loaded.
     """
 
     table_attempt=None
-    if relative_path is not None:
-        table_attempt = _load_table(relative_path,particle_type, wavelength_band,
+    if relative_dir is not None:
+        table_attempt = _load_table(relative_dir, particle_type, wavelength_band,
                     minimum_effective_radius, max_integration_radius,
                      wavelength_averaging, wavelength_resolution,
                      refractive_index)
@@ -168,49 +168,72 @@ def _compute_table(particle_type, wavelength_band,
     return table
 
 
-def _load_table(relative_path,particle_type, wavelength_band,
-            minimum_effective_radius=4.0, max_integration_radius=65.0,
-             wavelength_averaging=False, wavelength_resolution=0.001,
-             refractive_index=None):
+def _load_table(relative_dir, particle_type, wavelength_band,
+                minimum_effective_radius=4.0, max_integration_radius=65.0,
+                wavelength_averaging=False, wavelength_resolution=0.001,
+                refractive_index=None):
     """
     Function that tests whether there is an existing
     mie table that has the specified properties.
+
+    Parameters
+    ----------
+    relative_dir: string
+        The path to a directory which contains saved mie_table netcdf files. If there is a file with
+        'mie_table' in the name that matches the input parameters this file is loaded.
+    particle_type: string
+        Options are 'Water' or 'Aerosol'.
+    wavelength_band: (float, float)
+        (minimum, maximum) wavelength in microns.
+        This defines the spectral band over which to integrate, if both are equal monochrome quantities are computed.
+    minimum_effective_radius: float
+        Minimum effective radius in microns. Used to compute minimum radius for integration.
+    max_integration_radius: float
+        Maximum radius in microns - cutoff for the size distribution integral
+    wavelength_averaging: bool
+        True - average scattering properties over the wavelength_band.
+        False - scattering properties of the central wavelength.
+    wavelength_resolution: float
+        The distance between two wavelength samples in the band. Used only if wavelength_averaging is True.
+    refractive_index: complex number or path to refractive index table (CSV)
+        The refractive index should have a negative imaginary part. ri = n - ik
     """
-    file_list = os.listdir(relative_path)
     table = None
+    if os.path.exists(relative_dir):
+        file_list = os.listdir(relative_dir)
 
-    list_of_input = [particle_type, str(refractive_index), wavelength_band,
-                    minimum_effective_radius, max_integration_radius,
-                    str(wavelength_averaging), wavelength_resolution,
-                    ]
-    names = ['particle_type', 'refractive_index_source', 'wavelength_band',
-            'minimum_effective_radius', 'maximum_integration_radius',
-            'wavelength_averaging', 'wavelength_resolution',
-            ]
+        list_of_input = [particle_type, str(refractive_index), wavelength_band,
+                        minimum_effective_radius, max_integration_radius,
+                        str(wavelength_averaging), wavelength_resolution,
+                        ]
+        names = ['particle_type', 'refractive_index_source', 'wavelength_band',
+                'minimum_effective_radius', 'maximum_integration_radius',
+                'wavelength_averaging', 'wavelength_resolution',
+                ]
 
-    for file in file_list:
-        try:
-            if file.endswith('.nc'):
-                with xr.open_dataset(os.path.join(relative_path,file)) as dataset:
-                    #open_dataset reads data lazily.
-                    test=True
+        for file in file_list:
+            try:
+                if file.endswith('.nc'):
+                    with xr.open_dataset(os.path.join(relative_dir,file)) as dataset:
+                        #open_dataset reads data lazily.
+                        test=True
 
-                    for name, attr in zip(names, list_of_input):
-                        attr_file = dataset.attrs[name]
+                        for name, attr in zip(names, list_of_input):
+                            attr_file = dataset.attrs[name]
 
-                        if isinstance(attr,tuple):
-                            temp = np.all(attr==attr_file)
-                        else:
-                            temp = attr==attr_file
+                            if isinstance(attr,tuple):
+                                temp = np.all(attr==attr_file)
+                            else:
+                                temp = attr==attr_file
 
-                        if not temp:
-                            test=False
-                    if test:
-                        table = file
-        except:
-            continue
-    if table is not None:
-        table = xr.load_dataset(os.path.join(relative_path,table))
+                            if not temp:
+                                test=False
+                        if test:
+                            table = file
+            except:
+                continue
+        if table is not None:
+            table = xr.load_dataset(os.path.join(relative_dir,table))
     return table
 
 def get_poly_table(size_distribution, mie_mono_table):

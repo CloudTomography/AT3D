@@ -258,7 +258,7 @@ class VerifySolver(TestCase):
 
             #mie table and medium doesn't matter here as it is overwritten by property file.
             #just need it to initialize a solver.
-            mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength), relative_path='../mie_tables')
+            mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength), relative_dir='../mie_tables')
             cloud_size_distribution = shdom.size_distribution.get_size_distribution_grid(
                                                                     mie_mono_table.radius.data,
                                 size_distribution_function=size_distribution_function,particle_density=1.0,
@@ -695,7 +695,7 @@ class ParallelizationNoSubpixelRays(TestCase):
             mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength),
                                                       max_integration_radius=10.0,
                                                       minimum_effective_radius=0.1,
-                                                      relative_path='../mie_tables',
+                                                      relative_dir='../mie_tables',
                                                       verbose=False)
             #mie_mono_table.to_netcdf('./mie_tables/MieTable_{}.nc'.format(reff))
             cloud_size_distribution = shdom.size_distribution.get_size_distribution_grid(
@@ -798,7 +798,7 @@ class ParallelizationSubpixelRays(TestCase):
             mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength),
                                                       max_integration_radius=10.0,
                                                       minimum_effective_radius=0.1,
-                                                      relative_path='../mie_tables',
+                                                      relative_dir='../mie_tables',
                                                       verbose=False)
 
             cloud_size_distribution = shdom.size_distribution.get_size_distribution_grid(
@@ -894,7 +894,7 @@ class MicrophysicalDerivatives(TestCase):
             mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength),
                                                       max_integration_radius=10.0,
                                                       minimum_effective_radius=0.1,
-                                                      relative_path='../mie_tables',
+                                                      relative_dir='../mie_tables',
                                                       verbose=False)
             cloud_size_distribution = shdom.size_distribution.get_size_distribution_grid(
                                                                     mie_mono_table.radius.data,
@@ -1030,7 +1030,7 @@ class VerifyJacobian(TestCase):
             mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength),
                                                       max_integration_radius=65.0,
                                                       minimum_effective_radius=0.1,
-                                                      relative_path='../mie_tables',
+                                                      relative_dir='../mie_tables',
                                                       verbose=False)
             cloud_size_distribution = shdom.size_distribution.get_size_distribution_grid(
                                                                     mie_mono_table.radius.data,

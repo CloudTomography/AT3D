@@ -45,7 +45,7 @@ size_distribution_function = shdom.size_distribution.gamma
 cloud_poly_tables = OrderedDict() # keeping poly_tables for later use.
 for wavelength in wavelengths:
     #mie_table path is hardcoded for now. . .
-    mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength), relative_path='./mie_tables')
+    mie_mono_table = shdom.mie.get_mono_table('Water', (wavelength, wavelength), relative_dir='./mie_tables')
     cloud_size_distribution = shdom.size_distribution.get_size_distribution_grid(
                                                             mie_mono_table.radius.data,
                         size_distribution_function=size_distribution_function,particle_density=1.0,

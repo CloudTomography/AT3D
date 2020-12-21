@@ -63,7 +63,7 @@ rayleigh_scatterer_list = shdom.rayleigh.to_grid(wavelengths,atmosphere,rte_grid
 
 for wavelength in wavelengths:
     #optical properties from mie calculations.
-    mie_mono_table = shdom.mie.get_mono_table('Water',(wavelength,wavelength), relative_path='./mie_tables')
+    mie_mono_table = shdom.mie.get_mono_table('Water', (wavelength, wavelength), relative_dir='./mie_tables')
     cloud_size_distribution = shdom.size_distribution.get_size_distribution_grid(
                                                             mie_mono_table.radius.data,
                         size_distribution_function=size_distribution_function,particle_density=1.0,
