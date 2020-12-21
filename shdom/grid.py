@@ -8,61 +8,64 @@ In general, RTE Grids can be arbitrarily defined using the 'make_grid' function
 and scatterers forced to resample onto the specified grid.
 
 """
+import typing
 import pandas as pd
 import numpy as np
 import xarray as xr
-import typing
 
-def load_2parameter_lwc_file(file_name, density='lwc', origin=(0.0,0.0)):
+def load_2parameter_lwc_file(file_name, density='lwc'):
     """
+    TODO
     Function that loads a scatterer from the '2 parameter lwc file' format used by
     SHDOM and i3rc monte carlo model.
     """
     header = pd.read_csv(file_name, nrows=4)
-    nx,ny,nz = np.fromstring(header['2 parameter LWC file'][0],sep=' ').astype(np.int)
-    dx,dy = np.fromstring(header['2 parameter LWC file'][1],sep=' ').astype(np.float)
-    z = np.fromstring(header['2 parameter LWC file'][2],sep=' ').astype(np.float)
-    temperature = np.fromstring(header['2 parameter LWC file'][3],sep=' ').astype(np.float)
+    nx, ny, nz = np.fromstring(header['2 parameter LWC file'][0], sep=' ').astype(np.int)
+    dx, dy = np.fromstring(header['2 parameter LWC file'][1], sep=' ').astype(np.float)
+    z = np.fromstring(header['2 parameter LWC file'][2], sep=' ').astype(np.float)
+    temperature = np.fromstring(header['2 parameter LWC file'][3], sep=' ').astype(np.float)
     dset = make_grid(dx, nx, dy, ny, z)
 
-    data = np.genfromtxt(file_name,skip_header=5)
+    data = np.genfromtxt(file_name, skip_header=5)
 
-    lwc = np.zeros((nx,ny,nz))*np.nan
-    reff = np.zeros((nx,ny,nz))*np.nan
+    lwc = np.zeros((nx, ny, nz))*np.nan
+    reff = np.zeros((nx, ny, nz))*np.nan
 
-    lwc[data[:,0].astype(np.int)-1,data[:,1].astype(np.int)-1,data[:,2].astype(np.int)-1] = data[:,3]
-    reff[data[:,0].astype(np.int)-1,data[:,1].astype(np.int)-1,data[:,2].astype(np.int)-1] = data[:,4]
+    i, j, k = data[:, 0].astype(np.int)-1, data[:, 1].astype(np.int)-1, data[:, 2].astype(np.int)-1
+    lwc[i, j, k] = data[:, 3]
+    reff[i, j, k] = data[:, 4]
 
     dset['density'] = xr.DataArray(
-                        data=lwc,
-                        dims=['x','y','z']
+        data=lwc,
+        dims=['x', 'y', 'z']
     )
 
     dset['reff'] = xr.DataArray(
-                        data=reff,
-                        dims=['x','y','z']
+        data=reff,
+        dims=['x', 'y', 'z']
     )
 
     dset['temperature'] = xr.DataArray(
-                        data=temperature,
-                        dims=['z']
+        data=temperature,
+        dims=['z']
     )
 
-    dset.attrs['density_name'] = 'lwc'
+    dset.attrs['density_name'] = density
     dset.attrs['file_name'] = file_name
 
     return dset
 
-def to_2parameter_lwc_file(file_name, cloud_scatterer,atmosphere=None,fill_temperature=280.0):
+def to_2parameter_lwc_file(file_name, cloud_scatterer, atmosphere=None, fill_temperature=280.0):
     """
+    TODO
     Write lwc & reff to the '2 parameter lwc' file format used by i3rc MonteCarlo model and SHDOM.
     atmosphere should contain the temperature. It is interpolated to the specified z grid.
     If no atmosphere is included then a fill_temperature is used (Temperature is required
     in the file).
     """
 
-    nx,ny,nz = cloud_scatterer.density.shape
-    dx,dy = (cloud_scatterer.x[1]-cloud_scatterer.x[0]).data, (cloud_scatterer.y[1] - cloud_scatterer.y[0]).data
+    nx, ny, nz = cloud_scatterer.density.shape
+    dx, dy = (cloud_scatterer.x[1]-cloud_scatterer.x[0]).data, (cloud_scatterer.y[1] - cloud_scatterer.y[0]).data
     z = cloud_scatterer.z.data
 
     if atmosphere is not None:
@@ -70,35 +73,35 @@ def to_2parameter_lwc_file(file_name, cloud_scatterer,atmosphere=None,fill_tempe
     else:
         temperature = np.ones(z.shape)*fill_temperature
 
-    i,j,k = np.meshgrid(np.arange(1,nx+1),np.arange(1,ny+1),np.arange(1,nz+1), indexing='ij')
+    i, j, k = np.meshgrid(np.arange(1, nx+1), np.arange(1, ny+1), np.arange(1, nz+1), indexing='ij')
 
     lwc = cloud_scatterer.density.data.ravel()
     reff = cloud_scatterer.reff.data.ravel()
 
     z_string = ''
-    for a in z:
-        if a == z[-1]:
-            z_string += '{}'.format(a)
+    for z_value in z:
+        if z_value == z[-1]:
+            z_string += '{}'.format(z_value)
         else:
-            z_string += '{} '.format(a)
+            z_string += '{} '.format(z_value)
 
     t_string = ''
-    for iter,a in enumerate(temperature):
-        if iter == len(temperature) - 1:
-            t_string += '{:5.2f}'.format(a)
+    for i, temp_value in enumerate(temperature):
+        if i == len(temperature) - 1:
+            t_string += '{:5.2f}'.format(temp_value)
         else:
-            t_string +='{:5.2f} '.format(a)
+            t_string += '{:5.2f} '.format(temp_value)
 
     with open(file_name, "w") as f:
         f.write('2 parameter LWC file\n')
-        f.write(' {} {} {}\n'.format(nx,ny,nz))
-        f.write('{} {}\n'.format(dx,dy))
+        f.write(' {} {} {}\n'.format(nx, ny, nz))
+        f.write('{} {}\n'.format(dx, dy))
         f.write('{}\n'.format(z_string))
         f.write('{}\n'.format(t_string))
-        for x,y,z,l,r in zip(i.ravel(),j.ravel(),k.ravel(),lwc.ravel(),reff.ravel()):
-            f.write('{} {} {} {:5.4f} {:3.2f}\n'.format(x, y, z,l,r))
+        for x, y, z, l, r in zip(i.ravel(), j.ravel(), k.ravel(), lwc.ravel(), reff.ravel()):
+            f.write('{} {} {} {:5.4f} {:3.2f}\n'.format(x, y, z, l, r))
 
-def load_from_csv(path, density=None,origin=(0.0,0.0)):
+def load_from_csv(path, density=None, origin=(0.0,0.0)):
     """
     TODO
     """
@@ -108,16 +111,18 @@ def load_from_csv(path, density=None,origin=(0.0,0.0)):
     z = xr.DataArray(np.genfromtxt(path, max_rows=1, dtype=float, skip_header=3, delimiter=','), coords=[range(nz)], dims=['z'])
 
     dset = make_grid(dx, nx, dy, ny, z)
-    i,j,k = zip(*df.index)
+    i, j, k = zip(*df.index)
 
     for name in df.columns:
         #initialize with np.nans so that empty data is np.nan
-        variable_data = np.zeros((dset.sizes['x'],dset.sizes['y'],dset.sizes['z']))*np.nan
-        variable_data[i,j,k] = df[name]
+        variable_data = np.zeros((dset.sizes['x'], dset.sizes['y'], dset.sizes['z']))*np.nan
+        variable_data[i, j, k] = df[name]
         dset[name] = (['x', 'y', 'z'], variable_data)
 
     if density is not None:
-        assert density in dset.data_vars, "density variable: '{}' must be in the file".format(density)
+        assert density in dset.data_vars, \
+        "density variable: '{}' must be in the file".format(density)
+
         dset = dset.rename_vars({density: 'density'})
         dset.attrs['density_name'] = density
 
@@ -127,6 +132,7 @@ def load_from_csv(path, density=None,origin=(0.0,0.0)):
 
 def load_from_netcdf(path, density=None):
     """
+        TODO
     A shallow wrapper around open_dataset that sets the density_name.
     """
     dset = xr.open_dataset(path)
@@ -145,15 +151,18 @@ def resample_onto_grid(grid, data):
     """
     TODO
     """
-    if not isinstance(grid, (xr.core.coordinates.DatasetCoordinates,xr.core.coordinates.DataArrayCoordinates, xr.Dataset, xr.DataArray)):
-        raise ValueError("'grid' should be an xr.Dataset, xr.DataArray or xarray coordinates object, not '{}'".format(type(grid)))
+    if not isinstance(grid, (xr.core.coordinates.DatasetCoordinates,
+                             xr.core.coordinates.DataArrayCoordinates, xr.Dataset, xr.DataArray)):
+        raise ValueError("'grid' should be an xr.Dataset, "
+                         "xr.DataArray or xarray coordinates object, not '{}'".format(type(grid)))
     if not isinstance(data, (xr.Dataset, xr.DataArray)):
-        raise ValueError("'grid' should be an xr.Dataset, xr.DataArray, not '{}'".format(type(grid)))
+        raise ValueError("'grid' should be an xr.Dataset, "
+                         "xr.DataArray, not '{}'".format(type(grid)))
     #if coordinates are passed, then make a dataset.
     if isinstance(grid, (xr.core.coordinates.DatasetCoordinates,
-                                xr.core.coordinates.DataArrayCoordinates)):
+                         xr.core.coordinates.DataArrayCoordinates)):
         grid = xr.Dataset(
-                    coords=grid
+            coords=grid
         )
     data_copy = data.copy(deep=True)
     if 'density' in data:
@@ -164,26 +173,28 @@ def resample_onto_grid(grid, data):
     # Note that the following choice of backward and forward filling in (x,y,z) order is subjective.
     # The validity of this method relies on the assumption that microphysics don't decay towards cloud edge and instead maintain
     # a typical value. 'z' is always filled last as microphysics are expected to vary strongly in the vertical.
-    for name,var in data.data_vars.items():
+    for name, var in data.data_vars.items():
         if name != 'density':
             if ('x' in var.coords) & ('y' in var.coords) & ('z' in var.coords):
-                data_copy[name] = var.bfill(dim='x').ffill(dim='x').bfill(dim='y').ffill(dim='y').bfill(dim='z').ffill(dim='z')
+                data_copy[name] = var.bfill(dim='x').ffill(dim='x').bfill(
+                    dim='y').ffill(dim='y').bfill(dim='z').ffill(dim='z')
             elif ('x' in var.coords) & ('y' in var.coords):
                 data_copy[name] = var.bfill(dim='x').ffill(dim='x').bfill(dim='y').ffill(dim='y')
             elif ('x' in var.coords) & ('z' in var.coords):
                 data_copy[name] = var.bfill(dim='x').ffill(dim='x').bfill(dim='z').ffill(dim='z')
             elif ('y' in var.coords) & ('z' in var.coords):
                 data_copy[name] = var.bfill(dim='y').ffill(dim='y').bfill(dim='z').ffill(dim='z')
-            elif ('x' in var.coords):
+            elif 'x' in var.coords:
                 data_copy[name] = var.bfill(dim='x').ffill(dim='x')
-            elif ('y' in var.coords):
+            elif 'y' in var.coords:
                 data_copy[name] = var.bfill(dim='y').ffill(dim='y')
-            elif ('z' in var.coords):
+            elif 'z' in var.coords:
                 data_copy[name] = var.bfill(dim='z').ffill(dim='z')
 
     resampled_data = data_copy.interp_like(grid, method='linear').broadcast_like(grid)
     #for variables which weren't defined at every point in the rte_grid, perform filling.
-    filled = resampled_data.bfill(dim='x').ffill(dim='x').bfill(dim='y').ffill(dim='y').bfill(dim='z').ffill(dim='z')
+    filled = resampled_data.bfill(dim='x').ffill(dim='x').bfill(
+                dim='y').ffill(dim='y').bfill(dim='z').ffill(dim='z')
 
     #overwrite density values so missing data is filled with 0.0
     if 'density' in filled:
@@ -195,17 +206,18 @@ def resample_onto_grid(grid, data):
     filled['dely'] = grid.dely
     return filled
 
-def make_grid(delx: float, nx: int,dely: float,ny: int, z: np.ndarray) -> xr.Dataset:
+def make_grid(delx: float, nx: int, dely: float, ny: int, z: np.ndarray) -> xr.Dataset:
     """
     TODO
     """
     #checks on z to make sure its monotonic.
     z = np.asarray(z)
-    if (not np.all(np.sort(z) == z)) or (not np.all(z >=0.0)) or (np.unique(z).size != z.size) or (z.ndim != 1) or (z.size < 2):
+    if (not np.all(np.sort(z) == z)) or (not np.all(z >= 0.0)) or \
+       (np.unique(z).size != z.size) or (z.ndim != 1) or (z.size < 2):
         raise ValueError('z must be >= 0, strictly increasing, 1-D and contain at least 2 points.')
 
-    grid= xr.Dataset(
-        coords = {
+    grid = xr.Dataset(
+        coords={
             'x': np.linspace(0.0, delx*(nx-1), nx),
             'y': np.linspace(0.0, dely*(ny-1), ny),
             'z': z,
@@ -220,32 +232,36 @@ def combine_z_coordinates(scatterer_list):
     A wrapper around merge_two_z_coordinates.
     """
     if not isinstance(scatterer_list, (typing.List, typing.Tuple)):
-        raise TypeError("scatterer_list should be a Tuple or List not '{}''".format(type(scatterer_list)))
+        raise TypeError("scatterer_list should be a Tuple "
+                        "or List not '{}''".format(type(scatterer_list)))
     for item in scatterer_list:
         if not isinstance(item, (xr.Dataset, xr.DataArray)):
-            raise TypeError("Elements of 'scatterer_list' should be xr.Dataset or xr.DataArray not '{}'".format(type(item)))
+            raise TypeError("Elements of 'scatterer_list' should be "
+                            "xr.Dataset or xr.DataArray not '{}'".format(type(item)))
 
     z_coordinate_list = [scatterer.coords['z'].data for scatterer in scatterer_list]
     if len(z_coordinate_list) == 1:
         combined = z_coordinate_list[0]
     else:
-        combined = merge_two_z_coordinates(z_coordinate_list[0],z_coordinate_list[1])
+        combined = merge_two_z_coordinates(z_coordinate_list[0], z_coordinate_list[1])
         for z_coord in z_coordinate_list[2:]:
-            combined = merge_two_z_coordinates(z_coord,combined)
+            combined = merge_two_z_coordinates(z_coord, combined)
     assert np.unique(combined).size == combined.size, 'unexpected repeated elements.'
     assert np.all(np.sort(combined) == combined), 'unexpectedly not strictly increasing.'
     return combined
 
-def merge_two_z_coordinates(z1,z2):
+def merge_two_z_coordinates(z1, z2):
     """
-    TODO
+    TODO change variable names?
     """
     z1 = np.asarray(z1)
     z2 = np.asarray(z2)
 
-    if (not np.all(np.sort(z1) == z1)) or (not np.all(z1 >=0.0)) or (np.unique(z1).size != z1.size) or (z1.ndim != 1):
+    if (not np.all(np.sort(z1) == z1)) or (not np.all(z1 >= 0.0)) or \
+        (np.unique(z1).size != z1.size) or (z1.ndim != 1):
         raise ValueError('z1 must be >= 0,strictly increasing and 1-D')
-    if (not np.all(np.sort(z2) == z2)) or (not np.all(z2 >=0.0)) or (np.unique(z2).size != z2.size) or (z2.ndim != 1):
+    if (not np.all(np.sort(z2) == z2)) or (not np.all(z2 >= 0.0)) or \
+        (np.unique(z2).size != z2.size) or (z2.ndim != 1):
         raise ValueError('z2 must be >= 0,strictly increasing and 1-D')
 
     # Bottom part of the atmosphere (no grid intersection)
@@ -272,13 +288,13 @@ def merge_two_z_coordinates(z1,z2):
     z_middle = z1_middle if len(z1_middle) > len(z2_middle) else z2_middle
 
     # Check if an extra point is necessary at the bottom
-    if z_bottom.any() & len(z_middle)>2:
+    if z_bottom.any() & len(z_middle) > 2:
         extra_zlevel = 2*z_middle[0] - z_middle[1]
         if extra_zlevel > z_bottom[-1]:
             z_middle = np.append(extra_zlevel, z_middle)
 
     # Check if an extra point is necessary at the top
-    if z_top.any() & len(z_middle)>2:
+    if z_top.any() & len(z_middle) > 2:
         extra_zlevel = 2*z_middle[-1] - z_middle[-2]
         if extra_zlevel < z_top[0]:
             z_middle = np.append(z_middle, extra_zlevel)
