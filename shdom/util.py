@@ -70,7 +70,7 @@ class SensorsDict(OrderedDict):
                     for i,sensor in enumerate(instrument_data['sensor_list']):
                         if key == sensor.wavelength:
                             if instrument_data['uncertainty_model'] is None:
-                                uncertainty_data = 1000*np.ones((solver._nstokes, solver._nstokes, sensor.sizes['npixels']))
+                                uncertainty_data = np.ones((solver._nstokes, solver._nstokes, sensor.sizes['npixels']))
                                 sensor['uncertainties'] = (['nstokes', 'nstokes2', 'npixels'], uncertainty_data)
                             else:
                                 if 'uncertainties' not in sensor:

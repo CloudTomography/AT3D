@@ -283,7 +283,7 @@ class RTE(object):
         """
         This function is for verification against SHDOM.
         Must be polarized. Base grid, source, numerical parameters, surface etc
-        must match what is in the SHDOM namelist.
+        must match what is in the SHDOM namelist. TODO move to tests.
         """
         self._init_solution(make_big_arrays=False)
         #initialize some variables that are modified by the core.read_properties routine.

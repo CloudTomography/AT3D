@@ -25,6 +25,15 @@ def create_derivative_tables(unknown_scatterers):
                 if variable_name in valid_microphysics_coords.keys():
                     differentiated = table.differentiate(coord=variable_name)
 
+                elif variable_name == 'reff_phase_only':
+                    differentiated = table.differentiate(coord='reff')
+                    differentiated['extinction'][:] = np.zeros(table.extinction.shape)
+                    differentiated['ssalb'][:] = np.zeros(table.ssalb.shape)
+                elif variable_name == 'veff_phase_only':
+                    differentiated = table.differentiate(coord='veff')
+                    differentiated['extinction'][:] = np.zeros(table.extinction.shape)
+                    differentiated['ssalb'][:] = np.zeros(table.ssalb.shape)
+
                 elif variable_name == 'extinction':
                     differentiated = table.copy(data={
                         'extinction': np.ones(table.extinction.shape),
@@ -369,6 +378,7 @@ def jacobian(rte_solver, sensor, indices_for_jacobian, exact_single_scatter=True
     num_jacobian_pts = np.size(jacobian_ptrs)
     jacobian = np.empty((rte_solver._nstokes, rte_solver._num_derivatives, num_jacobian_pts, total_pix), order='F', dtype=np.float32)
     jacobian_flag = True
+
     gradient, loss, images, jacobian = shdom.core.gradient_l2(
         uncertainties=uncertainties,
         rays_per_pixel=rays_per_pixel,
