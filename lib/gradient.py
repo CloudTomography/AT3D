@@ -742,7 +742,10 @@ def make_jacobian_dataset(jacobian_list, unknown_scatterers, indices_for_jacobia
     split_jacobian = np.split(merged_jacobian, split_indices, axis=-1)[:-1] #TODO verify the [:-1]
 
     grid = list(solvers.values())[0]._grid
-    grid_index = pd.MultiIndex.from_arrays([grid.x[indices_for_jacobian[0]], grid.y[indices_for_jacobian[1]],grid.z[indices_for_jacobian[2]]], names=("x", "y","z"))
+    grid_index = pd.MultiIndex.from_arrays([grid.x.data[indices_for_jacobian[0]],
+                                            grid.y.data[indices_for_jacobian[1]],
+                                            grid.z.data[indices_for_jacobian[2]]],
+                                            names=("x", "y", "z"))
 
     derivative_names = []
     unknown_scatterer_names2  = []

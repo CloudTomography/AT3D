@@ -6,7 +6,7 @@ import numpy as np
 import xarray as xr
 from pyshdom import checks
 
-#@checks.dataset_checks(microphysics=(checks.check_positivity, 'density'))
+@checks.dataset_checks(microphysics=(checks.check_positivity, 'density'))
 def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=False):
     """
     TODO

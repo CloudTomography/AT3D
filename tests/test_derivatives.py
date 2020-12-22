@@ -4,6 +4,7 @@ import numpy as np
 import xarray as xr
 import pyshdom
 
+
 class Microphysical_Derivatives(TestCase):
     @classmethod
     def setUpClass(cls):
@@ -65,6 +66,7 @@ class Microphysical_Derivatives(TestCase):
                                                                              exact_table=False)
             optical_properties['ssalb'][:,:,:] = 1.0
             extinction = np.zeros(optical_properties.extinction.shape)
+            np.random.seed(1)
             extinction[1:-1,1:-1,1:-1] = ext + np.random.uniform(low=0.0,high=10.0,size=(11,11,11))
             #extinction[a,b,c] += step
             optical_properties['legcoef'][:,1:,:] = 0.0
