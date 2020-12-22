@@ -24,7 +24,7 @@ class Microphysical_Derivatives(TestCase):
         size_distribution_function = pyshdom.size_distribution.gamma
 
         #define sensors.
-        Sensordict = pyshdom.util.SensorsDict()
+        Sensordict = pyshdom.containers.SensorsDict()
         sensor_zenith_list = [75.0,60.0,45.6,26.1]*2 + [0.0]
         sensor_azimuth_list = [90]*4 + [-90]*4 +[0.0]
         wavelengths = [0.86,0.86,0.86,1.38,1.38,2.2,2.2,3.4,3.4]
@@ -43,7 +43,7 @@ class Microphysical_Derivatives(TestCase):
         wavelengths = Sensordict.get_unique_solvers()
 
         cloud_poly_tables = OrderedDict()
-        solvers = pyshdom.util.SolversDict()
+        solvers = pyshdom.containers.SolversDict()
 
 
         for wavelength in wavelengths:
@@ -93,7 +93,7 @@ class Microphysical_Derivatives(TestCase):
         cls.cloud_poly_tables = cloud_poly_tables
 
     def test_ssalb(self):
-        unknown_scatterers = pyshdom.util.UnknownScatterers()
+        unknown_scatterers = pyshdom.containers.UnknownScatterers()
         unknown_scatterers.add_unknown('cloud', ['ssalb'],self.cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         self.solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method, unknown_scatterers.table_data)
@@ -104,7 +104,7 @@ class Microphysical_Derivatives(TestCase):
             all([np.all(solvers[key]._dphasetab==0.0)for key in solvers])]))
 
     def test_extinction(self):
-        unknown_scatterers = pyshdom.util.UnknownScatterers()
+        unknown_scatterers = pyshdom.containers.UnknownScatterers()
         unknown_scatterers.add_unknown('cloud', ['extinction'],self.cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         solvers = self.solvers
@@ -116,7 +116,7 @@ class Microphysical_Derivatives(TestCase):
             all([np.all(solvers[key]._dphasetab==0.0)for key in solvers])]))
 
     def test_density(self):
-        unknown_scatterers = pyshdom.util.UnknownScatterers()
+        unknown_scatterers = pyshdom.containers.UnknownScatterers()
         unknown_scatterers.add_unknown('cloud', ['density'],self.cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         solvers = self.solvers
@@ -129,7 +129,7 @@ class Microphysical_Derivatives(TestCase):
                 all([np.all(solvers[key]._dphasetab==0.0)for key in solvers])]))
 
     def test_legendre(self):
-        unknown_scatterers = pyshdom.util.UnknownScatterers()
+        unknown_scatterers = pyshdom.containers.UnknownScatterers()
         unknown_scatterers.add_unknown('cloud', ['legendre_0_10'],self.cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         solvers = self.solvers
@@ -161,7 +161,7 @@ class Verify_Jacobian(TestCase):
         size_distribution_function = pyshdom.size_distribution.gamma
 
         #define sensors.
-        Sensordict = pyshdom.util.SensorsDict()
+        Sensordict = pyshdom.containers.SensorsDict()
 
         sensor = pyshdom.sensor.make_sensor_dataset(np.array([0.05]),np.array([0.05]),
                                                   np.array([0.7]),np.array([1.0]),
@@ -174,7 +174,7 @@ class Verify_Jacobian(TestCase):
         wavelengths = Sensordict.get_unique_solvers()
 
         cloud_poly_tables = OrderedDict()
-        solvers = pyshdom.util.SolversDict()
+        solvers = pyshdom.containers.SolversDict()
 
         for wavelength in wavelengths:
 
@@ -217,9 +217,9 @@ class Verify_Jacobian(TestCase):
                                 )
 
             solvers.add_solver(wavelength,solver)
-        pyshdom.util.get_measurements(solvers, Sensordict, maxiter=100, n_jobs=8, verbose=False)
+        Sensordict.get_measurements(solvers, maxiter=100, n_jobs=8, verbose=False)
 
-        unknown_scatterers = pyshdom.util.UnknownScatterers()
+        unknown_scatterers = pyshdom.containers.UnknownScatterers()
         unknown_scatterers.add_unknown('cloud', ['extinction'],cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method, unknown_scatterers.table_data)

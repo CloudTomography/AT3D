@@ -95,7 +95,7 @@ class Verify_Solver(TestCase):
 
         sensor = pyshdom.sensor.make_sensor_dataset(x2.ravel(),y2.ravel(),z2.ravel(),mu2.ravel(),np.deg2rad(phi2.ravel()),['I'],
                                                  0.672, fill_ray_variables=True)
-        Sensordict = pyshdom.util.SensorsDict()
+        Sensordict = pyshdom.containers.SensorsDict()
         Sensordict.add_sensor('Sensor0', sensor)
 
         config = pyshdom.configuration.get_config('../default_config.json')
@@ -105,17 +105,18 @@ class Verify_Solver(TestCase):
         config['num_phi_bins'] = 16
         config['solution_accuracy'] = 1e-4
 
-        solvers = pyshdom.util.SolversDict()
+        solvers = pyshdom.containers.SolversDict()
         for wavelength in wavelengths:
 
             #mie table and medium doesn't matter here as it is overwritten by property file.
             #just need it to initialize a solver.
-            mie_mono_table = pyshdom.mie.get_mono_table('Water',(wavelength,wavelength), relative_dir='../mie_tables')
+            mie_mono_table = pyshdom.mie.get_mono_table('Water',(wavelength,wavelength), max_integration_radius=41.0,
+                                                        relative_dir='../mie_tables', verbose=False)
             cloud_size_distribution = pyshdom.size_distribution.get_size_distribution_grid(
                                 mie_mono_table.radius.data,
                                 size_distribution_function=size_distribution_function,
                                 particle_density=1.0,
-                                reff=[5.0, 20.0, 50, 'linear', 'micron'],
+                                reff=[5.0, 6.0, 10, 'linear', 'micron'],
                                 alpha=[6.9, 7.1, 2, 'linear', 'unitless']
                                 )
             poly_table = pyshdom.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
@@ -175,8 +176,8 @@ class Parallelization_No_SubpixelRays(TestCase):
         size_distribution_function = pyshdom.size_distribution.gamma
 
         #define sensors.
-        Sensordict = pyshdom.util.SensorsDict()
-        Sensordict2 = pyshdom.util.SensorsDict()
+        Sensordict = pyshdom.containers.SensorsDict()
+        Sensordict2 = pyshdom.containers.SensorsDict()
         misr_list = []
         sensor_zenith_list = [75.0,60.0,45.6,26.1]*2 + [0.0]
         sensor_azimuth_list = [90]*4 + [-90]*4 +[0.0]
@@ -196,7 +197,7 @@ class Parallelization_No_SubpixelRays(TestCase):
         wavelengths = Sensordict.get_unique_solvers()
 
         cloud_poly_tables = OrderedDict()
-        solvers = pyshdom.util.SolversDict()
+        solvers = pyshdom.containers.SolversDict()
 
         for wavelength in wavelengths:
 
@@ -238,8 +239,8 @@ class Parallelization_No_SubpixelRays(TestCase):
                                             name=None
                                            )
             solvers.add_solver(wavelength,solver)
-            pyshdom.util.get_measurements(solvers, Sensordict, maxiter=100, n_jobs=8, verbose=False)
-            pyshdom.util.get_measurements(solvers, Sensordict2, maxiter=100, n_jobs=1, verbose=False)
+            Sensordict.get_measurements(solvers, maxiter=100, n_jobs=8, verbose=False)
+            Sensordict2.get_measurements(solvers, maxiter=100, n_jobs=8, verbose=False)
             #Sensordict['MISR']['sensor_list'][0].to_netcdf('data/RenderedSensorReference_nosubpixel.nc')
 
             cls.solvers = solvers
@@ -275,8 +276,8 @@ class Parallelization_SubpixelRays(TestCase):
         size_distribution_function = pyshdom.size_distribution.gamma
 
         #define sensors.
-        Sensordict = pyshdom.util.SensorsDict()
-        Sensordict2 = pyshdom.util.SensorsDict()
+        Sensordict = pyshdom.containers.SensorsDict()
+        Sensordict2 = pyshdom.containers.SensorsDict()
         misr_list = []
         sensor_zenith_list = [75.0,60.0,45.6,26.1]*2 + [0.0]
         sensor_azimuth_list = [90]*4 + [-90]*4 +[0.0]
@@ -300,7 +301,7 @@ class Parallelization_SubpixelRays(TestCase):
         wavelengths = Sensordict.get_unique_solvers()
 
         cloud_poly_tables = OrderedDict()
-        solvers = pyshdom.util.SolversDict()
+        solvers = pyshdom.containers.SolversDict()
 
         for wavelength in wavelengths:
 
@@ -342,8 +343,8 @@ class Parallelization_SubpixelRays(TestCase):
                                             name=None
                                            )
             solvers.add_solver(wavelength,solver)
-            pyshdom.util.get_measurements(solvers, Sensordict, maxiter=100, n_jobs=8, verbose=False)
-            pyshdom.util.get_measurements(solvers, Sensordict2, maxiter=100, n_jobs=1, verbose=False)
+            Sensordict.get_measurements(solvers, maxiter=100, n_jobs=8, verbose=False)
+            Sensordict2.get_measurements(solvers, maxiter=100, n_jobs=8, verbose=False)
 
             #Sensordict['MISR']['sensor_list'][0].to_netcdf('data/RenderedSensorReference_subpixelargs.nc')
             cls.solvers = solvers

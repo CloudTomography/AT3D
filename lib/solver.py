@@ -84,13 +84,13 @@ class RTE(object):
         # Link to the properties array module.
         self._pa = ShdomPropertyArrays()
 
-        # Setup numerical parameters
-        self._setup_numerical_params(numerical_params)
-        self.numerical_params = numerical_params
-
         # Setup source
         self._setup_source(source)
         self.source = source
+
+        # Setup numerical parameters
+        self._setup_numerical_params(numerical_params)
+        self.numerical_params = numerical_params
 
         # k-distribution not supported yet
         self._kdist = False
@@ -619,6 +619,13 @@ class RTE(object):
             srctype=self._srctype,
             npts=self._npts)
 
+        reshaped_ext = self._total_ext[:self._nbpts].reshape(self._nx, self._ny, self._nz)
+        cell_tau_approx = np.diff(self._pa.zlevels)*reshaped_ext[..., 1:] + \
+                                  reshaped_ext[..., :-1]
+        number_thick_cells = np.sum(cell_tau_approx >= 2.0)
+        if number_thick_cells > 0:
+            warnings.warn("Number of property grid cells with optical depth greater than 2: '{}'. "
+                    "Max cell optical depth: '{}'".format(number_thick_cells, np.max(cell_tau_approx)))
 
         if make_big_arrays:
             self._make_big_arrays()

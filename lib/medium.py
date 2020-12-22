@@ -6,7 +6,7 @@ import numpy as np
 import xarray as xr
 from pyshdom import checks
 
-@checks.dataset_checks(microphysics=(checks.check_positivity, 'density'))
+#@checks.dataset_checks(microphysics=(checks.check_positivity, 'density'))
 def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=False):
     """
     TODO
@@ -21,7 +21,7 @@ def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=Fals
     interp_names = set([name for name in poly_table.coords if name not in ('table_index', 'stokes_index')])
     microphysics_names = set([name for name in microphysics.variables.keys() if name not in 'density'])
     missing = interp_names - microphysics_names
-    if len(list(missing)) > 0:
+    if missing:
         raise KeyError("microphysics dataset is missing variables for interpolation of table onto grid.", *list(missing))
 
     interp_coords = {name:microphysics[name] for name in poly_table.coords if name not in ('table_index', 'stokes_index')}
@@ -30,6 +30,8 @@ def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=Fals
             np.any(microphysics[interp_coord] >= poly_table[interp_coord].max()):
             raise ValueError("Microphysical coordinate '{}' is not within the range of the mie table.".format(
                                                                                         interp_coord))
+
+
 
     interp_method = 'nearest' if exact_table else 'linear'
     ssalb = poly_table.ssalb.interp(interp_coords, method=interp_method)
@@ -45,17 +47,17 @@ def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=Fals
     table_index = poly_table.coords['table_index'].interp(coords=interp_coords, method='nearest').round().astype(int)
     unique_table_indices, inverse = np.unique(table_index.data, return_inverse=True)
     subset_table_index = xr.DataArray(name=table_index.name,
-                                        data = inverse.reshape(table_index.shape) + 1,
-                                        dims=table_index.dims,
-                                        coords=table_index.coords,
-                                        )
+                                      data = inverse.reshape(table_index.shape) + 1,
+                                      dims=table_index.dims,
+                                      coords=table_index.coords,
+                                      )
 
     legendre_table_stack = poly_table['legcoef'].stack(table_index=interp_coords)
     subset_legcoef = legendre_table_stack.isel({'table_index':unique_table_indices})
     subset_legcoef = xr.DataArray(name='legcoef',
-                                    data = subset_legcoef.data,
-                                    dims=['stokes_index', 'legendre_index', 'table_index'],
-                                    coords = {'stokes_index':subset_legcoef.coords['stokes_index']}
+                                  data = subset_legcoef.data,
+                                  dims=['stokes_index', 'legendre_index', 'table_index'],
+                                  coords = {'stokes_index':subset_legcoef.coords['stokes_index']}
                                     )
 
     optical_properties = xr.merge([extinction, ssalb, subset_legcoef])

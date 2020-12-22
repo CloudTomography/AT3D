@@ -80,7 +80,7 @@ initial_on_grid = pyshdom.grid.resample_onto_grid(rte_grid, initial)
 #initialize containers for solvers
 #This 'globals' that will be modified by set_state_fn during the iterations
 #of the reconstruction.
-solvers_reconstruct = pyshdom.util.SolversDict()
+solvers_reconstruct = pyshdom.containers.SolversDict()
 
 def set_state_fn(state):
     print(state.min(), state.max())
@@ -118,7 +118,7 @@ def set_state_fn(state):
                                                 )
                                 )
 
-unknown_scatterers = pyshdom.util.UnknownScatterers()
+unknown_scatterers = pyshdom.containers.UnknownScatterers()
 unknown_scatterers.add_unknown('cloud', 'extinction', cloud_poly_tables)
 unknown_scatterers.create_derivative_tables()
 
