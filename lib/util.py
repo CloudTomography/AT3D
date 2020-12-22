@@ -629,8 +629,8 @@ def to_2parameter_lwc_file(file_name, cloud_scatterer, atmosphere=None, fill_tem
             z_string += '{} '.format(z_value)
 
     t_string = ''
-    for i, temp_value in enumerate(temperature):
-        if i == len(temperature) - 1:
+    for index, temp_value in enumerate(temperature):
+        if index == len(temperature) - 1:
             t_string += '{:5.2f}'.format(temp_value)
         else:
             t_string += '{:5.2f} '.format(temp_value)
