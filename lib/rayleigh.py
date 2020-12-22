@@ -37,7 +37,6 @@ def to_grid(wavelengths, atmosphere, rte_grid):
     output: OrderedDict
         Dictionary with wavelengths as keys and corresponding Rayleigh xr.Datasets as values.
 
-
     Notes
     -----
     single scattering albedo is assumed to be 1.0.
@@ -102,7 +101,7 @@ def compute_table(wavelengths):
     References
     ----------
     .. [1] Mishchenko, Michael I., Larry D. Travis, and Andrew A. Lacis. Multiple scattering of light by particles:
-    radiative transfer and coherent backscattering. Cambridge University Press, 2006.
+        radiative transfer and coherent backscattering. Cambridge University Press, 2006.
     """
     wavelengths = np.atleast_1d(wavelengths)
     legcoefs, table_types = zip(*[pyshdom.core.rayleigh_phase_function(wvl) for wvl in wavelengths])
