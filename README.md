@@ -66,6 +66,21 @@ python setup.py install
 
 &nbsp;
 
+## Running Tests
+After successful installation, run the tests using Python's [nosetests](https://nose.readthedocs.io/en/latest/index.html) package
+and make sure they all succeed:
+```
+cd tests
+nosetests
+```
+This command will execute all files starting with *test_\*.py*.
+To execute only one specific test file, use
+```
+nosetests test_XYZ.py
+```
+
+&nbsp;
+
 ## Basic usage
 For basic usage follow the following jupyter notebook tutorials
 - notebooks/Radiance Rendering [Single Image].ipynb
