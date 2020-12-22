@@ -141,24 +141,10 @@ def load_from_netcdf(path, density=None):
 
     return dset
 
-def resample_onto_grid(grid, data):
-    """
-    TODO
-    """
-    if not isinstance(grid, (xr.core.coordinates.DatasetCoordinates,xr.core.coordinates.DataArrayCoordinates, xr.Dataset, xr.DataArray)):
-        raise ValueError("'grid' should be an xr.Dataset, xr.DataArray or xarray coordinates object, not '{}'".format(type(grid)))
-    if not isinstance(data, (xr.Dataset, xr.DataArray)):
-        raise ValueError("'grid' should be an xr.Dataset, xr.DataArray, not '{}'".format(type(grid)))
-    #if coordinates are passed, then make a dataset.
-    if isinstance(grid, (xr.core.coordinates.DatasetCoordinates,
-                                xr.core.coordinates.DataArrayCoordinates)):
-        grid = xr.Dataset(
-                    coords=grid
-        )
+def fill_data(data):
     data_copy = data.copy(deep=True)
     if 'density' in data:
         data_copy['density'] = data.density.fillna(0.0)
-
     # all variables except 'density'shouldn't be filled with zero at undefined points
     # as this can cause very different values from expected in the following linear interpolation.
     # Note that the following choice of backward and forward filling in (x,y,z) order is subjective.
@@ -180,6 +166,22 @@ def resample_onto_grid(grid, data):
                 data_copy[name] = var.bfill(dim='y').ffill(dim='y')
             elif ('z' in var.coords):
                 data_copy[name] = var.bfill(dim='z').ffill(dim='z')
+    return data_copy
+
+
+def resample_onto_grid(grid, data):
+    """
+    TODO
+    """
+    if not isinstance(grid, (xr.core.coordinates.DatasetCoordinates, xr.core.coordinates.DataArrayCoordinates, xr.Dataset, xr.DataArray)):
+        raise ValueError("'grid' should be an xr.Dataset, xr.DataArray or xarray coordinates object, not '{}'".format(type(grid)))
+    if not isinstance(data, (xr.Dataset, xr.DataArray)):
+        raise ValueError("'grid' should be an xr.Dataset, xr.DataArray, not '{}'".format(type(grid)))
+    #if coordinates are passed, then make a dataset.
+    if isinstance(grid, (xr.core.coordinates.DatasetCoordinates, xr.core.coordinates.DataArrayCoordinates)):
+        grid = xr.Dataset(coords=grid)
+
+    data_copy = fill_data(data)
 
     resampled_data = data_copy.interp_like(grid, method='linear').broadcast_like(grid)
     #for variables which weren't defined at every point in the rte_grid, perform filling.
