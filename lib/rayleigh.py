@@ -1,17 +1,12 @@
-"""
-Rayleigh scattering for temperature profile.
+"""This module contains functions to generate Rayleigh scattering properties.
+The Wigner d-function coefficients for either the Rayleigh scalar phase function
+or polarized phase matrix for molecular scattering by air. A molecular Rayleigh
+extinction profile is be computed from an input temperature profile (in Kelvin).
 
-Description taken from cloudprp.f:
-     Computes the molecular Rayleigh extinction profile EXTRAYL [/km]
-     from the temperature profile TEMP [K] at ZLEVELS [km].  Assumes
-     a linear lapse rate between levels to compute the pressure at
-     each level.  The Rayleigh extinction is proportional to air
-     density, with the coefficient RAYLCOEF in [K/(mbar km)].
-
-Parameters
-----------
-wavelengths: float or list / numpy array.
-    The wavelengths in [microns].
+Computations are done using SHDOM fortran routines. From SHDOM docstring:
+Rayleigh scattering including the wavelength depolarization factor.
+From Mishchenko's book "Multiple scattering of light by particles:
+Radiative Transfer and Coherent Backscattering", Cambridge, 2006. Thanks to Adrian Doicu.
 """
 from collections import OrderedDict
 import numpy as np
@@ -21,43 +16,52 @@ import pyshdom.core
 
 def to_grid(wavelengths, atmosphere, rte_grid):
     """
-    Interpolate atmosphere to rte_grid and compute Rayleigh optical properties profile.
+    Interpolate atmosphere to rte_grid and compute Rayleigh optical properties profile for each input wavelength.
+
+    Rayleigh optical properties include the scattering phase matrix (for polarized light),
+    the single scattering albedo, and the extinction profile. The assumption is of a linear lapse rate between
+    levels to compute the pressure at each level. The Rayleigh extinction is proportional to air density.
 
     Parameters
     ----------
-    wavelengths: list / numpy array or scalar
+    wavelengths: list of floats or numpy array or scalar
         A list/numpy array or scalar with wavelengths in [micron].
-    atmosphere: xarray.Dataset
+    atmosphere: xr.Dataset
         Dataset containing temperature [Kelvin] and pressure [mbar] variables and z coordinate [km].
-    rte_grid: xarray.Dataset
+    rte_grid: xr.Dataset
         Dataset containing at least z coordinate [km] and data_vars 'delx' [km] (resolution in x)
-        and 'dely' [km] (resolution in y direction).
+        and 'dely' [km] (resolution in y direction). Rayleigh properties will be interpolated onto this grid.
 
     Returns
     -------
     output: OrderedDict
-        Dictionary with wavelengths as keys and corresponding Rayleigh xarray.Datasets as values.
+        Dictionary with wavelengths as keys and corresponding Rayleigh xr.Datasets as values.
+
+
+    Notes
+    -----
+    single scattering albedo is assumed to be 1.0.
     """
     wavelengths = np.atleast_1d(wavelengths)
     atmosphere_on_rte_grid = atmosphere.interp({'z': rte_grid.z})
     rayleigh_poly_tables = compute_table(wavelengths).rename('legcoef')
     rayleigh_extinction = compute_extinction(
-                                    wavelengths,
-                                    atmosphere_on_rte_grid.temperature,
-                                    surface_pressure=atmosphere_on_rte_grid.pressure.data[0]
-                                    )
+        wavelengths,
+        atmosphere_on_rte_grid.temperature,
+        surface_pressure=atmosphere_on_rte_grid.pressure.data[0]
+    )
 
     rayleigh_ssalb = xr.DataArray(
-                        name='ssalb',
-                        data = np.ones(rayleigh_extinction.extinction.shape, dtype=np.float32),
-                        dims=['wavelength', 'z']
-                        )
+        name='ssalb',
+        data = np.ones(rayleigh_extinction.extinction.shape, dtype=np.float32),
+        dims=['wavelength', 'z']
+    )
 
     rayleigh_table_index = xr.DataArray(
-                        name='table_index',
-                        data = np.ones(rayleigh_extinction.extinction.shape, dtype=np.int),
-                        dims=['wavelength', 'z']
-                        )
+        name='table_index',
+        data = np.ones(rayleigh_extinction.extinction.shape, dtype=np.int),
+        dims=['wavelength', 'z']
+    )
 
     rayleigh = xr.merge([rayleigh_extinction,rayleigh_ssalb, rayleigh_table_index]).broadcast_like(rte_grid)
 
@@ -78,17 +82,27 @@ def to_grid(wavelengths, atmosphere, rte_grid):
 
 def compute_table(wavelengths):
     """
-    Retrieve the Rayleigh phase function (Legendre table).
+    Retrieve the Rayleigh Wigner d-function coefficients of the phase matrix at each specified wavelength.
 
     Parameters
     ----------
-    wavelengths: list / numpy array or scalar
+    wavelengths: list of floats or numpy array or scalar
         A list/numpy array or scalar with wavelengths in [micron].
 
     Returns
     -------
-    table: xarray.Dataset
+    table: xr.Dataset
         A dataset of Legendre coefficients for each wavelength specified.
+
+    Notes
+    -----
+    Includes the wavelength depolarization factor in accordance to [1].
+    This was implemented in SHDOM tanks to Adrian Doicu.
+
+    References
+    ----------
+    .. [1] Mishchenko, Michael I., Larry D. Travis, and Andrew A. Lacis. Multiple scattering of light by particles:
+    radiative transfer and coherent backscattering. Cambridge University Press, 2006.
     """
     wavelengths = np.atleast_1d(wavelengths)
     legcoefs, table_types = zip(*[pyshdom.core.rayleigh_phase_function(wvl) for wvl in wavelengths])
@@ -108,7 +122,7 @@ def compute_table(wavelengths):
 
 def compute_extinction(wavelengths, temperature_profile, surface_pressure=1013.0):
     """
-    Retrieve the Rayleigh extinction profile (as a function of altitude).
+    Compute the Rayleigh extinction profile (as a function of altitude).
 
     Parameters
     ----------
