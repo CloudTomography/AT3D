@@ -12,7 +12,7 @@ import pyshdom.core
 import pyshdom.gradient
 import pyshdom.medium
 import pyshdom.solver
-
+import pyshdom.grid
 
 class SensorsDict(OrderedDict):
     def __init__(self, *args, **kwargs):
@@ -567,7 +567,7 @@ def load_2parameter_lwc_file(file_name, density='lwc'):
     dx, dy = np.fromstring(header['2 parameter LWC file'][1], sep=' ').astype(np.float)
     z = np.fromstring(header['2 parameter LWC file'][2], sep=' ').astype(np.float)
     temperature = np.fromstring(header['2 parameter LWC file'][3], sep=' ').astype(np.float)
-    dset = make_grid(dx, nx, dy, ny, z)
+    dset = pyshdom.grid.make_grid(dx, nx, dy, ny, z)
 
     data = np.genfromtxt(file_name, skip_header=5)
 
@@ -653,7 +653,7 @@ def load_from_csv(path, density=None, origin=(0.0,0.0)):
     dx, dy = np.genfromtxt(path, max_rows=1, dtype=float, skip_header=2, delimiter=',')
     z = xr.DataArray(np.genfromtxt(path, max_rows=1, dtype=float, skip_header=3, delimiter=','), coords=[range(nz)], dims=['z'])
 
-    dset = make_grid(dx, nx, dy, ny, z)
+    dset = pyshdom.grid.make_grid(dx, nx, dy, ny, z)
     i, j, k = zip(*df.index)
 
     for name in df.columns:

@@ -59,7 +59,7 @@ def lognormal(radii, reff, veff=None, alpha=None, particle_density=1.0):
     #fortran subroutine requires a 'gamma' attribute to be passed.
     gamma_values = np.zeros(alpha.shape)
 
-    nd = pyshdom.core.make_multi_size_dist(
+    number_density = pyshdom.core.make_multi_size_dist(
                 distflag='L',
                 pardens=particle_density,
                 nsize=len(radii),
