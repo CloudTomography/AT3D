@@ -140,6 +140,7 @@ def _run_command(cmd):
         return ''
     else:
         # no errors, out_file.close() returns None.
+        # no errors, out_file.close() returns None.
         return output
 
 

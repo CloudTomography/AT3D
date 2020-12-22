@@ -4,12 +4,16 @@ import time
 
 import pyshdom.gradient
 
-class ObjectiveFunction(object):
+class ObjectiveFunction:
+    """
+    TODO
+    """
 
-    def __init__(self, measurements, loss_fn, additional_args = dict(), min_bounds=None, max_bounds=None):
+    def __init__(self, measurements, loss_fn, min_bounds=None, max_bounds=None):
         self.measurements = measurements
         self.loss_fn = loss_fn
         self._bounds = list(zip(np.atleast_1d(min_bounds), np.atleast_1d(max_bounds)))
+        self._loss = None
 
     def __call__(self, state):
         loss, gradient = self.loss_fn(state, self.measurements)
@@ -18,25 +22,43 @@ class ObjectiveFunction(object):
 
     @classmethod
     def LevisApproxUncorrelatedL2(cls, measurements, solvers, forward_sensors, unknown_scatterers, set_state_fn,
-                                        project_gradient_to_state,
-                                        n_jobs=1, mpi_comm=None,verbose=True,maxiter=100,init_solution=True,
-                                        exact_single_scatter=True, min_bounds=None,max_bounds=None):
+                                  project_gradient_to_state, n_jobs=1, mpi_comm=None, verbose=True,
+                                  maxiter=100, init_solution=True, exact_single_scatter=True,
+                                  min_bounds=None, max_bounds=None):
         """
-        NB The passed set_state_fn must be defined using the solvers/unknown_scatterers defined at the script level.
+        NB The passed set_state_fn must be defined using the
+        solvers/unknown_scatterers defined at the script level.
         """
         def loss_function(state, measurements):
 
             set_state_fn(state)
-            loss, gradient = pyshdom.gradient.levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown_scatterers,
-                                                        n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,
-                                                       maxiter=maxiter,init_solution=init_solution,
-                                                       exact_single_scatter=exact_single_scatter)
+            loss, gradient = pyshdom.gradient.levis_approx_uncorrelated_l2(measurements,
+                                                                         solvers,
+                                                                         forward_sensors,
+                                                                         unknown_scatterers,
+                                                                         n_jobs=n_jobs,
+                                                                         mpi_comm=mpi_comm,
+                                                                         verbose=verbose,
+                                                                         maxiter=maxiter,
+                                                                         init_solution=init_solution,
+                                                                         exact_single_scatter=exact_single_scatter)
             state_gradient = project_gradient_to_state(state, gradient)
             return loss, state_gradient
 
         return cls(measurements, loss_function, min_bounds=min_bounds, max_bounds=max_bounds)
 
-class PriorFunction(object):
+    @property
+    def loss(self):
+        return self._loss
+
+    @property
+    def bounds(self):
+        return self._bounds
+
+class PriorFunction:
+    """
+    TODO
+    """
     def __init__(self, prior_fn, scale=1.0):
         self._prior_fn = prior_fn
         self._loss = None
@@ -49,6 +71,9 @@ class PriorFunction(object):
 
     @classmethod
     def mahalanobis(cls, mean=0, cov=None, cov_inverse=None, scale=1.0e-4):
+        """
+        TODO
+        """
         cov_inverse = np.linalg.inv(cov) if cov is not None else cov_inverse
         def mahalanobis_loss_fn(state):
             gradient = np.matmul(cov_inverse, state-mean)
@@ -64,7 +89,7 @@ class PriorFunction(object):
     def scale(self):
         return self._scale
 
-class Optimizer(object):
+class Optimizer:
     """
     Optmizer wrapps the scipy optimization methods.
     Notes
@@ -86,8 +111,9 @@ class Optimizer(object):
         self._prior_fn = np.atleast_1d(prior_fn) if prior_fn is not None else None
         self._callback_fn = np.atleast_1d(callback_fn)
         self._callback = None if callback_fn is None else self.callback
+        self._iteration = None
 
-    def callback(self, state):
+    def callback(self, state): #TODO check whether the callback function below should call state.
         """
         The callback function invokes the callbacks defined by the writer (if any).
         Additionally it keeps track of the iteration number.
@@ -120,11 +146,11 @@ class Optimizer(object):
             'callback': self._callback
         }
         if self.method not in ['CG', 'Newton-CG']:
-            if (len(self._objective_fn._bounds) == 1 )& (self._objective_fn._bounds[0] == (None,None)):
+            if (len(self._objective_fn.bounds) == 1 ) & (self._objective_fn.bounds[0] == (None, None)):
                 args['bounds'] = list(zip(np.repeat(np.atleast_1d(None), len(initial_state)),
-                                        np.repeat(np.atleast_1d(None), len(initial_state))))
-            elif len(self._objective_fn._bounds) == len(initial_state):
-                args['bounds'] = self._objective_fn._bounds
+                                          np.repeat(np.atleast_1d(None), len(initial_state))))
+            elif len(self._objective_fn.bounds) == len(initial_state):
+                args['bounds'] = self._objective_fn.bounds
             else:
                 print('No bounds used.')
         result = scipy.optimize.minimize(**args)
@@ -149,7 +175,7 @@ class Optimizer(object):
         return self._options
 
 
-class CallbackFn(object):
+class CallbackFn:
     def __init__(self, callback_fn, ckpt_period=-1):
         self._ckpt_period = ckpt_period
         self._ckpt_time = time.time()

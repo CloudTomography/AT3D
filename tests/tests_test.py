@@ -40,12 +40,12 @@ def make_test_cloud():
     return scatterer, atmosphere
 
 class Load_from_csv_test(TestCase):
-    def test_load_from_csv(self, path= '../synthetic_cloud_fields/jpl_les/rico32x37x26.txt'):
-        scatterer = pyshdom.grid.load_from_csv(path, density='lwc', origin=(0.0,0.0))
+    def test_load_from_csv(self, path= '../data/synthetic_cloud_fields/jpl_les/rico32x37x26.txt'):
+        scatterer = pyshdom.util.load_from_csv(path, density='lwc', origin=(0.0,0.0))
 
 class Microphysics_load_from_csv_test(TestCase):
     def setUp(self):
-        scatterer = pyshdom.grid.load_from_csv('../synthetic_cloud_fields/jpl_les/rico32x37x26.txt', density='lwc', origin=(0.0,0.0))
+        scatterer = pyshdom.util.load_from_csv('../data/synthetic_cloud_fields/jpl_les/rico32x37x26.txt', density='lwc', origin=(0.0,0.0))
         x = scatterer.x.data
         y = scatterer.y.data
         z = scatterer.z.data
@@ -62,24 +62,24 @@ class Microphysics_load_from_csv_test(TestCase):
 class Save_2parameter_lwc(TestCase):
     def test_save_2parameter_lwc_atmos(self, path='test_2paramlwc_atmos.lwc'):
         scatterer, atmosphere = make_test_cloud()
-        pyshdom.grid.to_2parameter_lwc_file(path, scatterer, atmosphere=atmosphere)
+        pyshdom.util.to_2parameter_lwc_file(path, scatterer, atmosphere=atmosphere)
         os.remove(path)
     def test_save_2parameter_lwc_filltemp(self, path='test_2paramlwc_filltemp.lwc'):
         scatterer, atmosphere = make_test_cloud()
-        pyshdom.grid.to_2parameter_lwc_file(path, scatterer)
+        pyshdom.util.to_2parameter_lwc_file(path, scatterer)
         os.remove(path)
 
 class Load_from_parameter_lwc_file(TestCase):
     def setUp(self):
         np.random.seed(1)
         scatterer, atmosphere = make_test_cloud()
-        pyshdom.grid.to_2parameter_lwc_file('test_2paramlwc_atmos.lwc', scatterer, atmosphere=atmosphere)
-        pyshdom.grid.to_2parameter_lwc_file('test_2paramlwc_filltemp.lwc', scatterer)
+        pyshdom.util.to_2parameter_lwc_file('test_2paramlwc_atmos.lwc', scatterer, atmosphere=atmosphere)
+        pyshdom.util.to_2parameter_lwc_file('test_2paramlwc_filltemp.lwc', scatterer)
     def test_load_2parameter_atmos(self):
-        self.scatterer_atmos = pyshdom.grid.load_2parameter_lwc_file('test_2paramlwc_atmos.lwc',origin=(0.0,0.0))
+        self.scatterer_atmos = pyshdom.util.load_2parameter_lwc_file('test_2paramlwc_atmos.lwc')
         os.remove('test_2paramlwc_atmos.lwc')
     def test_load_2parameter_filltemp(self):
-        self.scatterer = pyshdom.grid.load_2parameter_lwc_file('test_2paramlwc_filltemp.lwc',origin=(0.0,0.0))
+        self.scatterer = pyshdom.util.load_2parameter_lwc_file('test_2paramlwc_filltemp.lwc')
         os.remove('test_2paramlwc_filltemp.lwc')
 
 class Microphysics_2parameter_lwc(TestCase):
@@ -91,11 +91,11 @@ class Microphysics_2parameter_lwc(TestCase):
 
         self.scatterer_original['temperature'] = self.atmosphere.interp({'z':self.scatterer_original.z}).temperature
 
-        pyshdom.grid.to_2parameter_lwc_file('test_2paramlwc_atmos.lwc', scatterer, atmosphere=atmosphere)
-        pyshdom.grid.to_2parameter_lwc_file('test_2paramlwc_filltemp.lwc', scatterer)
+        pyshdom.util.to_2parameter_lwc_file('test_2paramlwc_atmos.lwc', scatterer, atmosphere=atmosphere)
+        pyshdom.util.to_2parameter_lwc_file('test_2paramlwc_filltemp.lwc', scatterer)
 
-        self.scatterer_atmos = pyshdom.grid.load_2parameter_lwc_file('test_2paramlwc_atmos.lwc',origin=(0.1,0.1))
-        self.scatterer = pyshdom.grid.load_2parameter_lwc_file('test_2paramlwc_filltemp.lwc',origin=(0.1,0.1))
+        self.scatterer_atmos = pyshdom.util.load_2parameter_lwc_file('test_2paramlwc_atmos.lwc')
+        self.scatterer = pyshdom.util.load_2parameter_lwc_file('test_2paramlwc_filltemp.lwc')
 
     def test_load_2parameter_atmos_lwc(self):
         self.assertAlmostEqual(self.scatterer_atmos.density.data.mean(), self.scatterer_original.density.data.mean(),places=6)
@@ -208,8 +208,7 @@ class VerifySolver(TestCase):
     def setUpClass(cls):
         #shdom_polarized = xr.open_dataset('data/shdomout_rico32x36x26w672_polarized.nc')
 
-        cloud_scatterer = pyshdom.grid.load_2parameter_lwc_file('data/rico32x36x26.txt',
-                                                   density='lwc',origin=(0.0,0.0))
+        cloud_scatterer = pyshdom.util.load_2parameter_lwc_file('data/rico32x36x26.txt', density='lwc')
 
         rte_grid = pyshdom.grid.make_grid(cloud_scatterer.x.data[1] -cloud_scatterer.x.data[0],cloud_scatterer.x.data.size,
                                    cloud_scatterer.y.data[1] -cloud_scatterer.y.data[0],cloud_scatterer.y.data.size,

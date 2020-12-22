@@ -6,6 +6,7 @@ from collections import OrderedDict
 import netCDF4 as nc
 import xarray as xr
 from joblib import Parallel, delayed
+import pandas as pd
 
 import pyshdom.core
 import pyshdom.gradient
@@ -555,6 +556,139 @@ def cell_average_comparison(reference, other, variable_name):
     cell_average_other[np.where(other_vol > 0.0)] = other_val[np.where(other_vol > 0.0)] /other_vol[np.where(other_vol > 0.0)]
     return cell_average_ref, cell_average_other
 
+def load_2parameter_lwc_file(file_name, density='lwc'):
+    """
+    TODO
+    Function that loads a scatterer from the '2 parameter lwc file' format used by
+    SHDOM and i3rc monte carlo model.
+    """
+    header = pd.read_csv(file_name, nrows=4)
+    nx, ny, nz = np.fromstring(header['2 parameter LWC file'][0], sep=' ').astype(np.int)
+    dx, dy = np.fromstring(header['2 parameter LWC file'][1], sep=' ').astype(np.float)
+    z = np.fromstring(header['2 parameter LWC file'][2], sep=' ').astype(np.float)
+    temperature = np.fromstring(header['2 parameter LWC file'][3], sep=' ').astype(np.float)
+    dset = make_grid(dx, nx, dy, ny, z)
+
+    data = np.genfromtxt(file_name, skip_header=5)
+
+    lwc = np.zeros((nx, ny, nz))*np.nan
+    reff = np.zeros((nx, ny, nz))*np.nan
+
+    i, j, k = data[:, 0].astype(np.int)-1, data[:, 1].astype(np.int)-1, data[:, 2].astype(np.int)-1
+    lwc[i, j, k] = data[:, 3]
+    reff[i, j, k] = data[:, 4]
+
+    dset['density'] = xr.DataArray(
+        data=lwc,
+        dims=['x', 'y', 'z']
+    )
+
+    dset['reff'] = xr.DataArray(
+        data=reff,
+        dims=['x', 'y', 'z']
+    )
+
+    dset['temperature'] = xr.DataArray(
+        data=temperature,
+        dims=['z']
+    )
+
+    dset.attrs['density_name'] = density
+    dset.attrs['file_name'] = file_name
+
+    return dset
+
+def to_2parameter_lwc_file(file_name, cloud_scatterer, atmosphere=None, fill_temperature=280.0):
+    """
+    TODO
+    Write lwc & reff to the '2 parameter lwc' file format used by i3rc MonteCarlo model and SHDOM.
+    atmosphere should contain the temperature. It is interpolated to the specified z grid.
+    If no atmosphere is included then a fill_temperature is used (Temperature is required
+    in the file).
+    """
+
+    nx, ny, nz = cloud_scatterer.density.shape
+    dx, dy = (cloud_scatterer.x[1]-cloud_scatterer.x[0]).data, (cloud_scatterer.y[1] - cloud_scatterer.y[0]).data
+    z = cloud_scatterer.z.data
+
+    if atmosphere is not None:
+        temperature = atmosphere.interp({'z': cloud_scatterer.z}).temperature.data
+    else:
+        temperature = np.ones(z.shape)*fill_temperature
+
+    i, j, k = np.meshgrid(np.arange(1, nx+1), np.arange(1, ny+1), np.arange(1, nz+1), indexing='ij')
+
+    lwc = cloud_scatterer.density.data.ravel()
+    reff = cloud_scatterer.reff.data.ravel()
+
+    z_string = ''
+    for z_value in z:
+        if z_value == z[-1]:
+            z_string += '{}'.format(z_value)
+        else:
+            z_string += '{} '.format(z_value)
+
+    t_string = ''
+    for i, temp_value in enumerate(temperature):
+        if i == len(temperature) - 1:
+            t_string += '{:5.2f}'.format(temp_value)
+        else:
+            t_string += '{:5.2f} '.format(temp_value)
+
+    with open(file_name, "w") as f:
+        f.write('2 parameter LWC file\n')
+        f.write(' {} {} {}\n'.format(nx, ny, nz))
+        f.write('{} {}\n'.format(dx, dy))
+        f.write('{}\n'.format(z_string))
+        f.write('{}\n'.format(t_string))
+        for x, y, z, l, r in zip(i.ravel(), j.ravel(), k.ravel(), lwc.ravel(), reff.ravel()):
+            f.write('{} {} {} {:5.4f} {:3.2f}\n'.format(x, y, z, l, r))
+
+def load_from_csv(path, density=None, origin=(0.0,0.0)):
+    """
+    TODO
+    """
+    df = pd.read_csv(path, comment='#', skiprows=4, index_col=['x', 'y', 'z'])
+    nx, ny, nz = np.genfromtxt(path, max_rows=1, dtype=int, delimiter=',')
+    dx, dy = np.genfromtxt(path, max_rows=1, dtype=float, skip_header=2, delimiter=',')
+    z = xr.DataArray(np.genfromtxt(path, max_rows=1, dtype=float, skip_header=3, delimiter=','), coords=[range(nz)], dims=['z'])
+
+    dset = make_grid(dx, nx, dy, ny, z)
+    i, j, k = zip(*df.index)
+
+    for name in df.columns:
+        #initialize with np.nans so that empty data is np.nan
+        variable_data = np.zeros((dset.sizes['x'], dset.sizes['y'], dset.sizes['z']))*np.nan
+        variable_data[i, j, k] = df[name]
+        dset[name] = (['x', 'y', 'z'], variable_data)
+
+    if density is not None:
+        assert density in dset.data_vars, \
+        "density variable: '{}' must be in the file".format(density)
+
+        dset = dset.rename_vars({density: 'density'})
+        dset.attrs['density_name'] = density
+
+    dset.attrs['file_name'] = path
+
+    return dset
+
+def load_from_netcdf(path, density=None):
+    """
+        TODO
+    A shallow wrapper around open_dataset that sets the density_name.
+    """
+    dset = xr.open_dataset(path)
+
+    if density is not None:
+        if density not in dset.data_vars:
+            raise ValueError("density variable: '{}' must be in the file".format(density))
+        dset = dset.rename_vars({density: 'density'})
+        dset.attrs['density_name'] = density
+
+    dset.attrs['file_name'] = path
+
+    return dset
 
 
 def load_forward_model(file_name):
