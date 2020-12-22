@@ -1,4 +1,4 @@
-import shdom
+import pyshdom
 import numpy as np
 import os
 import sys
@@ -6,7 +6,7 @@ os.chdir('/Users/jesserl2/Documents/Code/aviad_pyshdom_dev/pyshdom_dev/')
 
 file_name = sys.argv[-1]
 #load the cloud.
-cloud_scatterer = pyshdom.grid.load_from_csv('./synthetic_cloud_fields/jpl_les/rico32x37x26.txt',
+cloud_scatterer = pyshdom.util.load_from_csv('./synthetic_cloud_fields/jpl_les/rico32x37x26.txt',
                                            density='lwc',origin=(0.0,0.0))
 #load atmosphere
 #atmosphere = xr.open_dataset('./ancillary_data/AFGL_summer_mid_lat.nc')
@@ -30,7 +30,7 @@ cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.reff.dims,
                                        np.full_like(cloud_scatterer_on_rte_grid.reff.data, fill_value=0.1))
 
 #define sensors.
-sensors_dict = pyshdom.util.SensorsDict()
+sensors_dict = pyshdom.containers.SensorsDict()
 
 sensor_zenith_list =  [75.0,60.0,45.6,26.1]*2 + [0.0]
 sensor_azimuth_list = [90]*4 + [-90]*4 +[0.0]
@@ -54,10 +54,10 @@ for wavelength in (1.65, 2.2, 3.7):
 
 wavelengths = sensors_dict.get_unique_solvers()
 min_stokes = sensors_dict.get_minimum_stokes()
-solvers = pyshdom.util.SolversDict()
+solvers = pyshdom.containers.SolversDict()
 
 #rayleigh optical properties if desired.
-rayleigh_scatterer_list = pyshdom.rayleigh.to_grid(wavelengths,atmosphere,rte_grid)
+# rayleigh_scatterer_list = pyshdom.rayleigh.to_grid(wavelengths,atmosphere,rte_grid)
 
 for wavelength in wavelengths:
     #optical properties from mie calculations.
@@ -87,8 +87,7 @@ for wavelength in wavelengths:
 #import mpi4py.MPI as MPI
 #mpi_comm = MPI.COMM_WORLD
 #print('I am {} of {}'.format(mpi_comm.Get_rank(), mpi_comm.Get_size()))
-
-pyshdom.util.get_measurements(solvers, sensors_dict, n_jobs=4)
+sensors_dict.get_measurements(solvers, n_jobs=4)
 
 #if mpi_comm.Get_rank() == 0:
 pyshdom.util.save_forward_model(file_name, sensors_dict, solvers)

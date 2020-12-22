@@ -8,6 +8,7 @@ import pandas as pd
 
 import pyshdom.core
 import pyshdom.util
+import pyshdom.parallel
 
 def create_derivative_tables(unknown_scatterers):
     """
@@ -574,54 +575,54 @@ def grad_l2_old(rte_solver, sensor, exact_single_scatter=True,
         return gradient, loss, integrated_rays
 
 
-def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gradient_fun=grad_l2,
-                     mpi_comm=None, n_jobs=1, **kwargs):
-    """
-    TODO
-    """
-    #organize **kwargs safely.
-    grad_kwargs = {}
-    grad_params = inspect.signature(gradient_fun).parameters
-    for name,value in kwargs.items():
-        if name in grad_params.keys():
-            if grad_params[name].kind in (grad_params[name].POSITIONAL_OR_KEYWORD, grad_params[name].KEYWORD_ONLY,
-                    grad_params[name].VAR_KEYWORD):
-                grad_kwargs[name] = value
-            else:
-                warnings.warn("kwarg '{}' passed to pyshdom.gradient.parallel_gradient is unused by \
-                                gradient_fun '{}''".format(name, gradient_fun.__name__))
-        else:
-            warnings.warn("kwarg '{}' passed to pyshdom.gradient.parallel_gradient is unused by \
-                            gradient_fun '{}''".format(name, gradient_fun.__name__))
-
-    if mpi_comm is not None:
-        raise NotImplementedError
-
-    else:
-        if n_jobs == 1 or n_jobs >= forward_sensors.npixels:
-            out = [gradient_fun(solvers[key],rte_sensors[key], **grad_kwargs) for key in solvers]
-            keys = list(solvers.keys())
-        else:
-            #decide on the division of n_jobs among solvers based on total number of rays.
-            keys, ray_start_end, pixel_start_end = pyshdom.util.subdivide_raytrace_jobs(rte_sensors, n_jobs)
-
-            out = Parallel(n_jobs=n_jobs, backend='threading')(
-                delayed(gradient_fun)(solvers[key],rte_sensors[key].sel(nrays=slice(ray_start,ray_end),
-                                        npixels=slice(pix_start, pix_end)),**grad_kwargs)
-                                for key, (ray_start,ray_end),(pix_start,pix_end) in zip(keys, ray_start_end, pixel_start_end))
-
-        gradient = np.stack([i[0] for i in out],axis=-1)
-        loss = np.array([i[1] for i in out])
-        forward_model_output = [i[2] for i in out]
-        #modify forward sensors in place to contain updated forward model estimates.
-        forward_sensors.add_measurements_inverse(sensor_mappings, forward_model_output, keys)
-
-    #special treatment of jacobian out.
-    if gradient_fun == pyshdom.gradient.jacobian:
-        jacobian_list = [i[-1] for i in out]
-        return loss, gradient, jacobian_list
-    else:
-        return loss, gradient
+# def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gradient_fun=grad_l2,
+#                      mpi_comm=None, n_jobs=1, **kwargs):
+#     """
+#     TODO
+#     """
+#     #organize **kwargs safely.
+#     grad_kwargs = {}
+#     grad_params = inspect.signature(gradient_fun).parameters
+#     for name,value in kwargs.items():
+#         if name in grad_params.keys():
+#             if grad_params[name].kind in (grad_params[name].POSITIONAL_OR_KEYWORD, grad_params[name].KEYWORD_ONLY,
+#                     grad_params[name].VAR_KEYWORD):
+#                 grad_kwargs[name] = value
+#             else:
+#                 warnings.warn("kwarg '{}' passed to pyshdom.gradient.parallel_gradient is unused by \
+#                                 gradient_fun '{}''".format(name, gradient_fun.__name__))
+#         else:
+#             warnings.warn("kwarg '{}' passed to pyshdom.gradient.parallel_gradient is unused by \
+#                             gradient_fun '{}''".format(name, gradient_fun.__name__))
+#
+#     if mpi_comm is not None:
+#         raise NotImplementedError
+#
+#     else:
+#         if n_jobs == 1 or n_jobs >= forward_sensors.npixels:
+#             out = [gradient_fun(solvers[key],rte_sensors[key], **grad_kwargs) for key in solvers]
+#             keys = list(solvers.keys())
+#         else:
+#             #decide on the division of n_jobs among solvers based on total number of rays.
+#             keys, ray_start_end, pixel_start_end = pyshdom.util.subdivide_raytrace_jobs(rte_sensors, n_jobs)
+#
+#             out = Parallel(n_jobs=n_jobs, backend='threading')(
+#                 delayed(gradient_fun)(solvers[key],rte_sensors[key].sel(nrays=slice(ray_start,ray_end),
+#                                         npixels=slice(pix_start, pix_end)),**grad_kwargs)
+#                                 for key, (ray_start,ray_end),(pix_start,pix_end) in zip(keys, ray_start_end, pixel_start_end))
+#
+#         gradient = np.stack([i[0] for i in out],axis=-1)
+#         loss = np.array([i[1] for i in out])
+#         forward_model_output = [i[2] for i in out]
+#         #modify forward sensors in place to contain updated forward model estimates.
+#         forward_sensors.add_measurements_inverse(sensor_mappings, forward_model_output, keys)
+#
+#     #special treatment of jacobian out.
+#     if gradient_fun == pyshdom.gradient.jacobian:
+#         jacobian_list = [i[-1] for i in out]
+#         return loss, gradient, jacobian_list
+#     else:
+#         return loss, gradient
 
 def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatterers, indices_for_jacobian, n_jobs=1,mpi_comm=None,verbose=False,
                             maxiter=100, init_solution=True, setup_grid=True,
@@ -645,7 +646,7 @@ def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatte
                                                 unknown_scatterers.table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
     #prepare the sensors for the fortran subroutine for calculating gradient.
     rte_sensors, sensor_mapping = forward_sensors.sort_sensors(solvers, measurements)
-    loss, gradient, jacobian = parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors,
+    loss, gradient, jacobian = pyshdom.parallel.parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors,
                         gradient_fun=pyshdom.gradient.jacobian,
                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter,indices_for_jacobian=indices_for_jacobian)
 
@@ -680,12 +681,12 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
         solvers.add_direct_beam_derivatives()
 
     solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method,
-                                                unknown_scatterers.table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
+                                                  unknown_scatterers.table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
 
     #prepare the sensors for the fortran subroutine for calculating gradient.
     rte_sensors, sensor_mapping = forward_sensors.sort_sensors(solvers, measurements)
 
-    loss, gradient = parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=grad_l2,
+    loss, gradient = pyshdom.parallel.parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=grad_l2,
                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter)
 
     #uncorrelated l2.
@@ -741,7 +742,10 @@ def make_jacobian_dataset(jacobian_list, unknown_scatterers, indices_for_jacobia
     split_jacobian = np.split(merged_jacobian, split_indices, axis=-1)[:-1] #TODO verify the [:-1]
 
     grid = list(solvers.values())[0]._grid
-    grid_index = pd.MultiIndex.from_arrays([grid.x[indices_for_jacobian[0]], grid.y[indices_for_jacobian[1]],grid.z[indices_for_jacobian[2]]], names=("x", "y","z"))
+    grid_index = pd.MultiIndex.from_arrays([grid.x.data[indices_for_jacobian[0]],
+                                            grid.y.data[indices_for_jacobian[1]],
+                                            grid.z.data[indices_for_jacobian[2]]],
+                                            names=("x", "y", "z"))
 
     derivative_names = []
     unknown_scatterer_names2  = []

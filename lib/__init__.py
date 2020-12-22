@@ -42,3 +42,5 @@ import pyshdom.space_carve
 import pyshdom.util
 import pyshdom.error
 import pyshdom.callback
+import pyshdom.containers
+import pyshdom.parallel
