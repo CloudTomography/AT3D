@@ -2,7 +2,7 @@ from unittest import TestCase
 import os
 import numpy as np
 import xarray as xr
-import shdom
+import pyshdom
 
 def make_test_cloud():
     """
@@ -39,12 +39,12 @@ def make_test_cloud():
     return scatterer, atmosphere
 
 class Load_from_csv_test(TestCase):
-    def test_load_from_csv(self, path= '../synthetic_cloud_fields/jpl_les/rico32x37x26.txt'):
-        scatterer = shdom.grid.load_from_csv(path, density='lwc', origin=(0.0,0.0))
+    def test_load_from_csv(self, path= '../data/synthetic_cloud_fields/jpl_les/rico32x37x26.txt'):
+        scatterer = pyshdom.util.load_from_csv(path, density='lwc', origin=(0.0,0.0))
 
 class Microphysics_load_from_csv_test(TestCase):
     def setUp(self):
-        self.droplets = shdom.grid.load_from_csv('../synthetic_cloud_fields/jpl_les/rico32x37x26.txt', density='lwc', origin=(0.0,0.0))
+        self.droplets = pyshdom.util.load_from_csv('../data/synthetic_cloud_fields/jpl_les/rico32x37x26.txt', density='lwc', origin=(0.0,0.0))
         self.droplets['veff'] = (self.droplets.reff.dims, np.full_like(self.droplets.reff.data, fill_value=0.1))
     def test_load_from_csv_lwc(self):
         self.assertAlmostEqual(self.droplets.density.data[self.droplets.density.data>0].mean(), 0.265432, places=6)
@@ -56,13 +56,13 @@ class Microphysics_load_from_csv_test(TestCase):
 
 class Test_resample_onto_grid(TestCase):
     def setUp(self):
-        scatterer = shdom.grid.load_from_csv('../synthetic_cloud_fields/jpl_les/rico32x37x26.txt', density='lwc', origin=(0.0,0.0))
+        scatterer = pyshdom.util.load_from_csv('../data/synthetic_cloud_fields/jpl_les/rico32x37x26.txt', density='lwc', origin=(0.0,0.0))
         scatterer['veff'] = (scatterer.reff.dims, np.full_like(scatterer.reff.data, fill_value=0.1))
         x = scatterer.x.data
         y = scatterer.y.data
         z = scatterer.z.data
-        rte_grid = shdom.grid.make_grid(x[1]-x[0], x.size,y[1]-y[0], y.size, z)
-        self.droplets = shdom.grid.resample_onto_grid(scatterer, scatterer)
+        rte_grid = pyshdom.grid.make_grid(x[1]-x[0], x.size,y[1]-y[0], y.size, z)
+        self.droplets = pyshdom.grid.resample_onto_grid(scatterer, scatterer)
     def test_resampled_lwc(self):
         # TODO when updating xarray from version 0.15.1 to 0.16.0 the precision inside interp_like is changed which leads to
         # small positive values (1e-18) where they were equal 0 before --> the density test below fails since more values are >0 now
@@ -77,24 +77,24 @@ class Test_resample_onto_grid(TestCase):
 class Save_2parameter_lwc(TestCase):
     def test_save_2parameter_lwc_atmos(self, path='test_2paramlwc_atmos.lwc'):
         scatterer, atmosphere = make_test_cloud()
-        shdom.grid.to_2parameter_lwc_file(path, scatterer, atmosphere=atmosphere)
+        pyshdom.util.to_2parameter_lwc_file(path, scatterer, atmosphere=atmosphere)
         os.remove(path)
     def test_save_2parameter_lwc_filltemp(self, path='test_2paramlwc_filltemp.lwc'):
         scatterer, atmosphere = make_test_cloud()
-        shdom.grid.to_2parameter_lwc_file(path, scatterer)
+        pyshdom.util.to_2parameter_lwc_file(path, scatterer)
         os.remove(path)
 
 class Load_from_parameter_lwc_file(TestCase):
     def setUp(self):
         np.random.seed(1)
         scatterer, atmosphere = make_test_cloud()
-        shdom.grid.to_2parameter_lwc_file('test_2paramlwc_atmos.lwc', scatterer, atmosphere=atmosphere)
-        shdom.grid.to_2parameter_lwc_file('test_2paramlwc_filltemp.lwc', scatterer)
+        pyshdom.util.to_2parameter_lwc_file('test_2paramlwc_atmos.lwc', scatterer, atmosphere=atmosphere)
+        pyshdom.util.to_2parameter_lwc_file('test_2paramlwc_filltemp.lwc', scatterer)
     def test_load_2parameter_atmos(self):
-        self.scatterer_atmos = shdom.grid.load_2parameter_lwc_file('test_2paramlwc_atmos.lwc',origin=(0.0,0.0))
+        self.scatterer_atmos = pyshdom.util.load_2parameter_lwc_file('test_2paramlwc_atmos.lwc')
         os.remove('test_2paramlwc_atmos.lwc')
     def test_load_2parameter_filltemp(self):
-        self.scatterer = shdom.grid.load_2parameter_lwc_file('test_2paramlwc_filltemp.lwc',origin=(0.0,0.0))
+        self.scatterer = pyshdom.util.load_2parameter_lwc_file('test_2paramlwc_filltemp.lwc')
         os.remove('test_2paramlwc_filltemp.lwc')
 
 class Microphysics_2parameter_lwc(TestCase):
@@ -106,11 +106,11 @@ class Microphysics_2parameter_lwc(TestCase):
 
         self.scatterer_original['temperature'] = self.atmosphere.interp({'z':self.scatterer_original.z}).temperature
 
-        shdom.grid.to_2parameter_lwc_file('test_2paramlwc_atmos.lwc', scatterer, atmosphere=atmosphere)
-        shdom.grid.to_2parameter_lwc_file('test_2paramlwc_filltemp.lwc', scatterer)
+        pyshdom.util.to_2parameter_lwc_file('test_2paramlwc_atmos.lwc', scatterer, atmosphere=atmosphere)
+        pyshdom.util.to_2parameter_lwc_file('test_2paramlwc_filltemp.lwc', scatterer)
 
-        self.scatterer_atmos = shdom.grid.load_2parameter_lwc_file('test_2paramlwc_atmos.lwc',origin=(0.1,0.1))
-        self.scatterer = shdom.grid.load_2parameter_lwc_file('test_2paramlwc_filltemp.lwc',origin=(0.1,0.1))
+        self.scatterer_atmos = pyshdom.util.load_2parameter_lwc_file('test_2paramlwc_atmos.lwc')
+        self.scatterer = pyshdom.util.load_2parameter_lwc_file('test_2paramlwc_filltemp.lwc')
 
     def test_load_2parameter_atmos_lwc(self):
         self.assertAlmostEqual(self.scatterer_atmos.density.data.mean(), self.scatterer_original.density.data.mean(),places=6)
@@ -138,12 +138,12 @@ class Merge_two_z_coordinates(TestCase):
         z2 = np.sort(np.random.random(size=np.random.randint(1,high=1000))*np.random.randint(1,high=10))
         assert np.unique(z1).size == z1.size
         assert np.unique(z2).size == z2.size
-        combine = shdom.grid.merge_two_z_coordinates(z1,z2)
+        combine = pyshdom.grid.merge_two_z_coordinates(z1,z2)
         self.z1 = z1
         self.z2 = z2
         self.combine = combine
     def test_equivalent(self):
-        self.assertTrue(np.all(shdom.grid.merge_two_z_coordinates(self.z1,self.z2)==shdom.grid.merge_two_z_coordinates(self.z2,self.z1)))
+        self.assertTrue(np.all(pyshdom.grid.merge_two_z_coordinates(self.z1,self.z2)==pyshdom.grid.merge_two_z_coordinates(self.z2,self.z1)))
     def test_combine_grid_min(self):
         self.assertEqual(min(self.z1.min(), self.z2.min()), self.combine.min())
     def test_combine_grid_max(self):
@@ -173,9 +173,9 @@ class Combine_z_coordinates(TestCase):
                             }
                 )
             self.zlist.append(dset)
-        self.combine = shdom.grid.combine_z_coordinates(self.zlist)
+        self.combine = pyshdom.grid.combine_z_coordinates(self.zlist)
     def test_combine(self):
-         combined = shdom.grid.combine_z_coordinates(self.zlist)
+         combined = pyshdom.grid.combine_z_coordinates(self.zlist)
     #same tests should apply for Combine_z_coordinates as Merge_two_z_coordinates.
     def test_combine_grid_unique(self):
         self.assertEqual(np.unique(self.combine).size,self.combine.size)
@@ -194,20 +194,20 @@ class Resample_onto_grid(TestCase):
         cloud, atmosphere = make_test_cloud()
         self.cloud = cloud
         self.atmosphere = atmosphere
-        self.rte_grid = shdom.grid.make_grid(2.5/29,30, 1.6/27 ,28,np.linspace(0.0,4.6,19))
+        self.rte_grid = pyshdom.grid.make_grid(2.5/29,30, 1.6/27 ,28,np.linspace(0.0,4.6,19))
     def test_resample_3d_onto_grid(self):
-        shdom.grid.resample_onto_grid(self.rte_grid, self.cloud)
+        pyshdom.grid.resample_onto_grid(self.rte_grid, self.cloud)
     def test_resample_1d_onto_grid(self):
-        shdom.grid.resample_onto_grid(self.rte_grid, self.atmosphere)
+        pyshdom.grid.resample_onto_grid(self.rte_grid, self.atmosphere)
 
 class Resample_onto_grid_values(TestCase):
     def setUp(self):
         cloud, atmosphere = make_test_cloud()
         self.cloud = cloud
         self.atmosphere = atmosphere
-        self.rte_grid = shdom.grid.make_grid(2.5/29,30, 1.6/27 ,28,np.linspace(0.0,4.6,19))
-        self.grid_1d = shdom.grid.resample_onto_grid(self.rte_grid, atmosphere)
-        self.grid_3d = shdom.grid.resample_onto_grid(self.rte_grid, cloud)
+        self.rte_grid = pyshdom.grid.make_grid(2.5/29,30, 1.6/27 ,28,np.linspace(0.0,4.6,19))
+        self.grid_1d = pyshdom.grid.resample_onto_grid(self.rte_grid, atmosphere)
+        self.grid_3d = pyshdom.grid.resample_onto_grid(self.rte_grid, cloud)
 
     def test_resample_3d_onto_grid_valid_density(self):
         self.assertTrue(np.bitwise_not(np.all(np.isnan(self.grid_3d.density.data))))
