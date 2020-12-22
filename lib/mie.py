@@ -1,18 +1,15 @@
-#from shdom import core
 import os
-
 import xarray as xr
 import numpy as np
 import pandas as pd
 
-import shdom.core
+import pyshdom.core
 
 def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
                    max_integration_radius=65.0, wavelength_averaging=False,
                    wavelength_resolution=0.001, refractive_index=None,
                    relative_dir=None, verbose=True):
     """
-    TODO
     Mie monodisperse scattering for spherical particles.
     This function will search a given directory to load the requested mie table or will compute it.
     The table is returned as an xarray Dataset.
@@ -80,18 +77,18 @@ def _compute_table(particle_type, wavelength_band,
         avgflag = 'A'
         deltawave = wavelength_resolution
 
-    wavelencen = shdom.core.get_center_wavelen(
+    wavelencen = pyshdom.core.get_center_wavelen(
         wavelen1=wavelen1,
         wavelen2=wavelen2
-        )
+    )
 
     #set particle type properties
-    if particle_type == 'Water':
-        rindex = shdom.core.get_refract_index(
+    if (particle_type == 'Water'):
+        rindex = pyshdom.core.get_refract_index(
             partype=particle_type,
             wavelen1=wavelen1,
             wavelen2=wavelen2
-            )
+        )
         partype = 'W'
 
     elif particle_type == 'Aerosol':
@@ -118,13 +115,13 @@ def _compute_table(particle_type, wavelength_band,
     maxleg = int(np.round(2.0 * (xmax + 4.0 * xmax ** 0.3334 + 2.0)))
 
     # Set radius integration parameters
-    nsize = shdom.core.get_nsize(
+    nsize = pyshdom.core.get_nsize(
         sretab=minimum_effective_radius,
         maxradius=max_integration_radius,
         wavelen=wavelencen
     )
 
-    radii = shdom.core.get_sizes(
+    radii = pyshdom.core.get_sizes(
         sretab=minimum_effective_radius,
         maxradius=max_integration_radius,
         wavelen=wavelencen,
@@ -132,7 +129,7 @@ def _compute_table(particle_type, wavelength_band,
     )
     #compute mie properties
     extinct, scatter, nleg, legcoef, table_type = \
-        shdom.core.compute_mie_all_sizes(
+        pyshdom.core.compute_mie_all_sizes(
             nsize=nsize,
             maxleg=maxleg,
             wavelen1=wavelen1,
@@ -249,15 +246,15 @@ def get_poly_table(size_distribution, mie_mono_table):
     TODO
     Calculates mie scattering table for a polydisperse size distribution.
     """
-    nd = size_distribution['number_density'].values.reshape((len(size_distribution['radius'])), -1)
+    number_density = size_distribution['number_density'].values.reshape((len(size_distribution['radius'])), -1)
     #TODO
     #add interpolation onto radius
     assert np.all(size_distribution.coords['radius'] == mie_mono_table.coords['radius']), \
         'radii should be consistent between size distribution and mie_mono_table'
     extinct, ssalb, nleg, legcoef = \
-        shdom.core.get_poly_table(
-            nd=nd,
-            ndist=nd.shape[-1],
+        pyshdom.core.get_poly_table(
+            nd=number_density,
+            ndist=number_density.shape[-1],
             nsize=mie_mono_table.coords['radius'].size,
             maxleg=mie_mono_table.attrs['maximum_legendre'],
             nleg1=mie_mono_table['nleg'],

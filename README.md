@@ -54,14 +54,19 @@ conda create -n pyshdom python=3
 source activate pyshdom
 ```
 
-Install required packages
+Install [xarray](http://xarray.pydata.org/) its dependencies 
+```
+conda install -c conda-forge xarray dask netCDF4 bottleneck
+```
+
+Install other required packages
 ```
 pip install -r requirements.txt
 ```
 
-Install pyshdom distribution with (either install or develop flag)
+Install pyshdom distribution. This should be run from within the folder containing setup.py.
 ```
-python setup.py install
+pip install .
 ```
 
 &nbsp;

@@ -2,7 +2,7 @@ import xarray as xr
 import numpy as np
 from collections import OrderedDict
 
-import shdom.core
+import pyshdom.core
 
 #TODO Add normalization options for size distributions.
 
@@ -28,7 +28,7 @@ def gamma(radii, reff, veff=None, alpha=None, particle_density=1.0):
     #fortran subroutine requires a 'gamma' variable to be passed.
     gamma_values = np.zeros(alpha.shape)
 
-    number_density = shdom.core.make_multi_size_dist(
+    number_density = pyshdom.core.make_multi_size_dist(
                 distflag='G',
                 pardens=particle_density,
                 nsize=len(radii),
@@ -59,7 +59,7 @@ def lognormal(radii, reff, veff=None, alpha=None, particle_density=1.0):
     #fortran subroutine requires a 'gamma' attribute to be passed.
     gamma_values = np.zeros(alpha.shape)
 
-    number_density = shdom.core.make_multi_size_dist(
+    nd = pyshdom.core.make_multi_size_dist(
                 distflag='L',
                 pardens=particle_density,
                 nsize=len(radii),

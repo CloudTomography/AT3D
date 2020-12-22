@@ -1,4 +1,3 @@
-import shdom
 import numpy as np
 
 def check_positivity(dataset,*names):

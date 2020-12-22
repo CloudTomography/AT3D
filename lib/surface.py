@@ -1,10 +1,10 @@
 """
 TODO module docstring
 """
-
 import xarray as xr
 import numpy as np
-import shdom.core
+
+import pyshdom.core
 
 def lambertian(albedo, ground_temperature=298.15, delx=None, dely=None):
     """
@@ -221,15 +221,15 @@ def _make_surface_dataset(surface_type, ground_temperature, delx, dely, **kwargs
                                                               for val in kwargs.values()]
 
     parms_in = np.stack(list_of_params, axis=0)
-    nsfcpar, sfcparms, gndtemp, gndalbedo = shdom.core.prep_surface(maxsfcpts=maxsfcpts,
-                                                                    maxsfcpars=maxsfcpars,
-                                                                    sfctype=sfctype,
-                                                                    nxsfc=nxsfc,
-                                                                    nysfc=nysfc,
-                                                                    delxsfc=delxsfc,
-                                                                    delysfc=delysfc,
-                                                                    parms_in=parms_in,
-                                                                    grid_coords=grid_coords)
+    nsfcpar, sfcparms, gndtemp, gndalbedo = pyshdom.core.prep_surface(maxsfcpts=maxsfcpts,
+                                                                      maxsfcpars=maxsfcpars,
+                                                                      sfctype=sfctype,
+                                                                      nxsfc=nxsfc,
+                                                                      nysfc=nysfc,
+                                                                      delxsfc=delxsfc,
+                                                                      delysfc=delysfc,
+                                                                      parms_in=parms_in,
+                                                                      grid_coords=grid_coords)
     return xr.Dataset(
         data_vars={
             'name': surface_type,

@@ -1,12 +1,8 @@
-"""
-TODO module docstring
-"""
-
-import time
-import numpy as np
 import scipy.optimize
+import numpy as np
+import time
 
-import shdom.gradient
+import pyshdom.gradient
 
 class ObjectiveFunction:
     """
@@ -36,7 +32,7 @@ class ObjectiveFunction:
         def loss_function(state, measurements):
 
             set_state_fn(state)
-            loss, gradient = shdom.gradient.levis_approx_uncorrelated_l2(measurements,
+            loss, gradient = pyshdom.gradient.levis_approx_uncorrelated_l2(measurements,
                                                                          solvers,
                                                                          forward_sensors,
                                                                          unknown_scatterers,

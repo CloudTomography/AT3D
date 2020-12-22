@@ -4,7 +4,6 @@ TODO module docstring
 
 import itertools
 import inspect
-
 import xarray as xr
 import numpy as np
 
@@ -395,7 +394,7 @@ def _parse_sub_pixel_ray_args(sub_pixel_ray_args):
     except TypeError as err:
         raise TypeError("sub_pixel_ray_args 'method' must be a"
                         "callable object not '{}' of type '{}'".format(
-                            sub_pixel_ray_args['method'], 
+                            sub_pixel_ray_args['method'],
                             type(sub_pixel_ray_args['method']))) from err
     subpixel_ray_kwargs_x = {}
     subpixel_ray_kwargs_y = {}

@@ -13,7 +13,6 @@ assume certain behaviour which is described in their docstrings. If users desire
 different behaviour they should write their own functions and add them to this module.
 """
 import typing
-import pandas as pd
 import numpy as np
 import xarray as xr
 

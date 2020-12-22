@@ -1,16 +1,18 @@
 """
 TODO module docstring
 """
-
-
 import xarray as xr
 import numpy as np
-import shdom.solver
-import shdom.core
+
+import pyshdom.core
+import pyshdom.checks
+import pyshdom.solver
+import pyshdom.util
+import pyshdom.grid
 
 class SpaceCarver:
 
-    @shdom.checks.dataset_checks(grid=shdom.checks.check_grid)
+    @pyshdom.checks.dataset_checks(grid=pyshdom.checks.check_grid)
     def __init__(self, grid):
 
         self._grid = grid
@@ -18,7 +20,7 @@ class SpaceCarver:
 
     def _setup_grid(self, grid, ipflag, bcflag):
         """
-        Set the base grid and related grid structures for SHDOM.
+        Set the base grid and related grid structures for pyshdom.
 
         Parameters
         ----------
@@ -34,7 +36,7 @@ class SpaceCarver:
         self._ipflag = ipflag
         self._bcflag = bcflag
 
-        self._pa = shdom.solver.ShdomPropertyArrays()
+        self._pa = pyshdom.solver.ShdomPropertyArrays()
 
         # Set shdom property array
         self._pa.npx = grid.dims['x']
@@ -73,7 +75,7 @@ class SpaceCarver:
         self._nbcells = (self._nz - 1) * (self._nx + ibits(self._bcflag, 0, 1) - ibits(self._bcflag, 2, 1)) * \
                 (self._ny + ibits(self._bcflag, 1, 1) - ibits(self._bcflag, 3, 1))
 
-        self._xgrid, self._ygrid, self._zgrid = shdom.core.new_grids(
+        self._xgrid, self._ygrid, self._zgrid = pyshdom.core.new_grids(
             bcflag=self._bcflag,
             gridtype=self._gridtype,
             npx=self._pa.npx,
@@ -89,7 +91,7 @@ class SpaceCarver:
         )
 
         self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
-        self._treeptr, self._cellflags = shdom.core.init_cell_structure(
+        self._treeptr, self._cellflags = pyshdom.core.init_cell_structure(
             maxig=self._nbpts,
             maxic=1.1*self._nbpts,
             bcflag=self._bcflag,
@@ -114,7 +116,7 @@ class SpaceCarver:
             sensor_list = [sensor_masks]
         elif isinstance(sensor_masks, type([])):
             sensor_list = sensor_masks
-        elif isinstance(sensor_masks, shdom.organization.SensorsDict):
+        elif isinstance(sensor_masks, pyshdom.util.SensorsDict):
             sensor_list = []
             for instrument in sensor_masks:
                 sensor_list.extend(sensor_masks[instrument]['sensor_list'])
@@ -133,7 +135,7 @@ class SpaceCarver:
             assert camx.ndim == camy.ndim == camz.ndim == cammu.ndim == camphi.ndim == 1
             total_pix = camphi.size
 
-            carved_volume = shdom.core.space_carve(
+            carved_volume = pyshdom.core.space_carve(
                 nx=self._nx,
                 ny=self._ny,
                 nz=self._nz,
@@ -189,7 +191,7 @@ class SpaceCarver:
             sensor_list = [sensors]
         elif isinstance(sensors, type([])):
             sensor_list = sensors
-        elif isinstance(sensors, shdom.organization.SensorsDict):
+        elif isinstance(sensors, pyshdom.util.SensorsDict):
             sensor_list = []
             for instrument in sensors:
                 sensor_list.extend(sensors[instrument]['sensor_list'])
@@ -199,7 +201,7 @@ class SpaceCarver:
         weights.drop_vars([name for name in weights.variables
                            if name not in ('x', 'y', 'z', 'density')])
 
-        resampled_weights = shdom.grid.resample_onto_grid(self._grid, weights).density.data.ravel()
+        resampled_weights = pyshdom.grid.resample_onto_grid(self._grid, weights).density.data.ravel()
 
         for sensor in sensor_list:
             camx = sensor['ray_x'].data
@@ -219,7 +221,7 @@ class SpaceCarver:
                 matrix_ptrs = np.zeros((matrix_size, total_pix), dtype=np.int)+1
                 matrix = np.zeros((matrix_size, total_pix))
 
-            path, matrix, matrix_ptrs = shdom.core.project(
+            path, matrix, matrix_ptrs = pyshdom.core.project(
                 nx=self._nx,
                 ny=self._ny,
                 nz=self._nz,
