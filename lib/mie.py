@@ -13,9 +13,9 @@ For polarized output, the six unique elements of the phase matrix are represente
 import os
 import xarray as xr
 import numpy as np
-import pandas as pd
 
 import pyshdom.core
+import pyshdom.checks
 
 def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
                    max_integration_radius=65.0, wavelength_averaging=False,
@@ -110,7 +110,7 @@ def _compute_table(particle_type, wavelength_band,
         False - scattering properties of the central wavelength.
     wavelength_resolution: float
         The distance between two wavelength samples in the band. Used only if wavelength_averaging is True.
-    refractive_index: complex number or path to refractive index table (CSV)
+    refractive_index: complex
         The refractive index should have a negative imaginary part. ri = n - ik
     verbose: bool
         True for progress prints from the fortran computations.
@@ -125,7 +125,7 @@ def _compute_table(particle_type, wavelength_band,
     -----
     Currently supports only 'Water' and 'Aerosol' particles ('Ice' is not yet implemented).
     """
-    #wavelength band
+    # wavelength band
     wavelen1, wavelen2 = wavelength_band
     if wavelen1 > wavelen2:
         raise ValueError('wavelen1 must be <= wavelen2')
@@ -142,39 +142,34 @@ def _compute_table(particle_type, wavelength_band,
         wavelen2=wavelen2
     )
 
-    #set particle type properties
+    # set particle type properties
     if (particle_type == 'Water'):
-        rindex = pyshdom.core.get_refract_index(
+        partype = 'W'
+        refractive_index = pyshdom.core.get_refract_index(
             partype=particle_type,
             wavelen1=wavelen1,
             wavelen2=wavelen2
         )
-        partype = 'W'
+        refractive_index_source = 'src/polarized/indexwatice.f'
 
-    elif particle_type == 'Aerosol':
-        # TODO : debug aerosol particle tpye
+    elif (particle_type == 'Aerosol'):
         partype = 'A'
-        assert refractive_index is not None, "Refractive index is not specified. \
-        This could be a complex number or string path to csv (a function of wavelength)"
-        if isinstance(refractive_index, str):
-            rindex_df = pd.read_csv('../ancillary_data/dust_volz_1972.ri', comment='#', sep=' ',
-                                    names=['wavelength', 'n', 'k'], index_col='wavelength')
-            refractive_index = xr.Dataset.from_dataframe(rindex_df).interp(
-                {'wavelength': wavelencen})
-            rindex = np.complex(refractive_index['n'], - refractive_index['k'])
-        else:
-            rindex = refractive_index
+        if refractive_index is None:
+            raise AttributeError('A refractive index should be supplied for Aerosol particles')
+        if refractive_index.imag > 0.0:
+            raise AttributeError('The refractive index should have a negative imaginary part. ri = n - ik')
+        refractive_index_source = 'user_input'
     else:
         raise AttributeError('Particle type not implemented')
 
-    #set integration parameters
+    # set integration parameters
     if avgflag == 'A':
         xmax = 2 * np.pi * max_integration_radius / wavelen1
     else:
         xmax = 2 * np.pi * max_integration_radius / wavelencen
     maxleg = int(np.round(2.0 * (xmax + 4.0 * xmax ** 0.3334 + 2.0)))
 
-    # Set radius integration parameters
+    # set radius integration parameters
     nsize = pyshdom.core.get_nsize(
         sretab=minimum_effective_radius,
         maxradius=max_integration_radius,
@@ -197,7 +192,7 @@ def _compute_table(particle_type, wavelength_band,
             deltawave=deltawave,
             wavelencen=wavelencen,
             radii=radii,
-            rindex=rindex,
+            rindex=refractive_index,
             avgflag=avgflag,
             partype=partype,
             verbose=verbose
@@ -216,8 +211,8 @@ def _compute_table(particle_type, wavelength_band,
             },
         attrs={
             'particle_type': particle_type,
-            'refractive_index': (rindex.real, rindex.imag),
-            'refractive_index_source': str(refractive_index),
+            'refractive_index': (refractive_index.real, refractive_index.imag),
+            'refractive_index_source': refractive_index_source,
             'table_type': table_type.decode(),
             'units': ['Radius [micron]', 'Wavelength [micron]'],
             'wavelength_band': wavelength_band,
@@ -270,32 +265,42 @@ def _load_table(relative_dir, particle_type, wavelength_band,
     if os.path.exists(relative_dir):
         file_list = os.listdir(relative_dir)
 
-        list_of_input = [particle_type, str(refractive_index), wavelength_band,
+        list_of_input = [particle_type, wavelength_band,
                          minimum_effective_radius, max_integration_radius,
-                         str(wavelength_averaging), wavelength_resolution,
-                        ]
-        names = ['particle_type', 'refractive_index_source', 'wavelength_band',
+                         str(wavelength_averaging), wavelength_resolution]
+        names = ['particle_type', 'wavelength_band',
                  'minimum_effective_radius', 'maximum_integration_radius',
-                 'wavelength_averaging', 'wavelength_resolution',
-                ]
+                 'wavelength_averaging', 'wavelength_resolution']
+
+        if refractive_index is not None:
+            list_of_input.append((refractive_index.real, refractive_index.imag))
+            names.append('refractive_index')
 
         for file in file_list:
             try:
                 if file.endswith('.nc'):
                     with xr.open_dataset(os.path.join(relative_dir, file)) as dataset:
-                        #open_dataset reads data lazily.
+                        # open_dataset reads data lazily.
+                        if ('extinction' not in dataset.data_vars) or ('scatter' not in dataset.data_vars) or \
+                                ('nleg' not in dataset.data_vars) or ('legendre' not in dataset.data_vars) or \
+                                ('radius' not in dataset.coords) or ('stokes_index' not in dataset.coords):
+                            continue
                         test = True
-
                         for name, attr in zip(names, list_of_input):
-                            attr_file = dataset.attrs[name]
+                            try:
+                                attr_file = dataset.attrs[name]
+                            except KeyError:
+                                test = False
+                                break
 
                             if isinstance(attr, tuple):
-                                temp = np.all(attr == attr_file)
+                                temp = np.allclose(attr, attr_file)
                             else:
                                 temp = attr == attr_file
 
                             if not temp:
                                 test = False
+                                break
                         if test:
                             table = file
             except IOError:
@@ -337,10 +342,7 @@ def get_poly_table(size_distribution, mie_mono_table):
     The radius in size_distribution is interpolated onto the mie_mono_table radii grid. This is to avoid interpolation
     of the Mie table coefficients.
     """
-    assert mie_mono_table.radius.min() >= size_distribution.radius.min(), \
-        'Value out of range: minimum radius in mie_mono_table is smaller than size_distribution'
-    assert mie_mono_table.radius.max() <= size_distribution.radius.max(), \
-        'Value out of range: maximum radius in mie_mono_table is larger than size_distribution'
+    pyshdom.checks.check_range(mie_mono_table, ['radius', size_distribution.radius.min(), size_distribution.radius.max()])
 
     if (size_distribution.radius.size != mie_mono_table.radius.size) or \
             np.any(size_distribution.radius.data != mie_mono_table.radius.data):
@@ -363,7 +365,7 @@ def get_poly_table(size_distribution, mie_mono_table):
 
     grid_shape = size_distribution['number_density'].shape[1:]
 
-    #all coords except radius
+    # all coords except radius
     coords = {name:coord for name, coord in size_distribution.coords.items()
               if name not in ('radius', 'stokes_index')}
     microphysics_names = list(coords.keys())
