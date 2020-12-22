@@ -4,7 +4,7 @@ build/
 dist/
 mie_tables/
 shdom.egg-info/
-shdom/__pycache__/
+pyshdom/__pycache__/
 shdom/*.so
 venv/
 src/core.pyf

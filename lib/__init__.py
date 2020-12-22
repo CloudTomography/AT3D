@@ -25,20 +25,20 @@ distribution functions (BRDF) for the surface are implemented, and more may be a
 SHDOM may be run on a single processor or on multiple processors (e.g. an SMP machine or a
 cluster) using the Message Passing Interface (MPI).
 """
-import shdom.rayleigh
-import shdom.medium
-import shdom.mie
-import shdom.size_distribution
-import shdom.surface
-import shdom.source
-import shdom.configuration
-import shdom.solver
-import shdom.sensor
-import shdom.grid
-import shdom.checks
-import shdom.gradient
-import shdom.optimize
-import shdom.space_carve
-import shdom.util
-import shdom.error
-import shdom.callback
+import pyshdom.rayleigh
+import pyshdom.medium
+import pyshdom.mie
+import pyshdom.size_distribution
+import pyshdom.surface
+import pyshdom.source
+import pyshdom.configuration
+import pyshdom.solver
+import pyshdom.sensor
+import pyshdom.grid
+import pyshdom.checks
+import pyshdom.gradient
+import pyshdom.optimize
+import pyshdom.space_carve
+import pyshdom.util
+import pyshdom.error
+import pyshdom.callback

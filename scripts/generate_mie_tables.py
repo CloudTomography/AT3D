@@ -10,7 +10,7 @@ For information about the command line flags see:
 For example usage see the README.md
 """
 
-import os, shdom, argparse
+import os, pyshdom, argparse
 import numpy as np
 
 
@@ -113,7 +113,7 @@ def get_file_paths(wavelength, args):
     if not os.path.exists(args.poly_dir):
         os.makedirs(args.poly_dir)   
          
-    file_name = args.mie_base_name.replace('<wavelength>', '{}'.format(shdom.int_round(wavelength)))
+    file_name = args.mie_base_name.replace('<wavelength>', '{}'.format(pyshdom.int_round(wavelength)))
     if args.polarized:
         file_name += 'pol'
     mono_path = os.path.join(args.mono_dir, file_name)
@@ -136,7 +136,7 @@ def compute_mie_table(wavelength, bandwidth, args):
     """
     mono_path, poly_path = get_file_paths(wavelength, args)
 
-    mie_mono = shdom.MieMonodisperse()
+    mie_mono = pyshdom.MieMonodisperse()
     if os.path.exists(mono_path):
         mie_mono.read_table(mono_path)
     else:
@@ -154,11 +154,11 @@ def compute_mie_table(wavelength, bandwidth, args):
         mie_mono.compute_table()
         mie_mono.write_table(mono_path)
         
-    size_dist = shdom.SizeDistribution(type='gamma')
+    size_dist = pyshdom.SizeDistribution(type='gamma')
     size_dist.set_parameters(reff=np.linspace(args.start_reff, args.end_reff, args.num_reff),
                              veff=np.linspace(args.start_veff, args.end_veff, args.num_veff))
     size_dist.compute_nd(radii=mie_mono.radii, particle_density=mie_mono.pardens)
-    mie_poly = shdom.MiePolydisperse(mie_mono, size_dist)
+    mie_poly = pyshdom.MiePolydisperse(mie_mono, size_dist)
     mie_poly.compute_table()
     mie_poly.write_table(poly_path)
 

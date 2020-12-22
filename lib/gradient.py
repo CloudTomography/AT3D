@@ -1,11 +1,13 @@
 import numpy as np
 import xarray as xr
 from collections import OrderedDict
-import shdom
 from joblib import Parallel, delayed
 import inspect
 import copy
 import pandas as pd
+
+import pyshdom.core
+import pyshdom.util
 
 def create_derivative_tables(unknown_scatterers):
     """
@@ -70,113 +72,15 @@ def create_derivative_tables(unknown_scatterers):
         partial_derivative_tables[key] = partial_derivative_dict
     return partial_derivative_tables
 
-# def get_derivatives(solvers, all_derivative_tables):
-#     """
-#     TODO
-#     Calculates partial derivatives on the rte_grid.
-#     The solvers are modified in place to contain the partial_derivatives
-#
-#     This requires density to be defined in scatterer.
-#     """
-#     #TODO more detailed checks that derivative tables match solver scatterers.
-#     #At the moment it is assumed that they are defined consistently.
-#     for key, rte_solver in solvers.items():
-#
-#         rte_solver._precompute_phase()
-#         solver_derivative_table = all_derivative_tables[key]
-#         num_derivatives = sum([len(scatterer_derivative_table.values()) for name,scatterer_derivative_table in \
-#                               solver_derivative_table.items()
-#                               ])
-#         rte_solver._num_derivatives = np.array(num_derivatives, dtype=np.int32)
-#         unknown_scatterer_indices = []
-#
-#         dext = np.zeros(shape=[rte_solver._nbpts, num_derivatives], dtype=np.float32)
-#         dalb = np.zeros(shape=[rte_solver._nbpts, num_derivatives], dtype=np.float32)
-#         diphase = np.zeros(shape=[rte_solver._nbpts, num_derivatives], dtype=np.int32)
-#
-#         #one loop through to find max_legendre and unkonwn_scatterer_indices
-#         max_legendre = []
-#         i = 0
-#         for name,scatterer_derivative_table in solver_derivative_table.items():
-#             scatterer = rte_solver.medium[name]
-#             for variable_derivative_table in scatterer_derivative_table.values():
-#                 derivative_on_grid = shdom.medium.table_to_grid(scatterer,variable_derivative_table, inverse_mode=True)
-#                 max_legendre.append(derivative_on_grid.sizes['legendre_index'])
-#                 unknown_scatterer_indices.append(i+1)
-#             i += 1
-#         max_legendre = max(max_legendre)
-#         rte_solver._unknown_scatterer_indices = np.array(unknown_scatterer_indices).astype(np.int32)
-#
-#         #second loop to assign everything else.
-#         padded_legcoefs = []
-#         count = 0
-#         for name,scatterer_derivative_table in solver_derivative_table.items():
-#             scatterer = rte_solver.medium[name]
-#             for variable_derivative_table in scatterer_derivative_table.values():
-#                 derivative_on_grid = shdom.medium.table_to_grid(scatterer,variable_derivative_table, inverse_mode=True)
-#
-#                 dext[:, count] = derivative_on_grid.extinction.data.ravel()
-#                 dalb[:, count] = derivative_on_grid.ssalb.data.ravel()
-#                 diphase[:, count] = derivative_on_grid.table_index.data.ravel() + diphase.max()
-#
-#                 padded_legcoefs.append(derivative_on_grid.legcoef.pad(
-#                     {'legendre_index': (0, max_legendre - derivative_on_grid.legcoef.sizes['legendre_index'])},
-#                     constant_values=0.0
-#                 ))
-#
-#                 count += 1
-#
-#         #COPIED FROM LINE 427 OF solver.py
-#         #In regions which are not covered by any optical scatterer they have an iphasep of 0.
-#         #In original SHDOM these would be pointed to the rayleigh phase function (which is always included
-#         #in the legendre table even if there is no rayleigh extinction.)
-#         #Here, instead we set them to whatever the first phase function is.
-#         #An arbitrary valid choice can be made as the contribution from these grid points is zero.
-#         diphase[np.where(diphase == 0)] = 1
-#
-#         # Concatenate all legendre tables into one table
-#         legendre_table = xr.concat(padded_legcoefs, dim='table_index')
-#         dnumphase = legendre_table.sizes['table_index']
-#         dleg = legendre_table.data
-#         #TODO make sure the shaping of dleg and consistent with legenp/._legen. (._nleg and numphase)
-#         #For a single scatterer/variable dnumphase == numphase, but this is not always the case.
-#
-#         # zero the first term of the first component of the phase function
-#         # gradient. Pre-scale the legendre moments by 1/(2*l+1) which
-#         # is done in the forward problem in TRILIN_INTERP_PROP
-#         scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0,rte_solver._nleg+1)]))
-#         dleg[0,0,:] = 0.0
-#         dleg = dleg[:rte_solver._nstleg] / scaling_factor
-#
-#         dphasetab = shdom.core.precompute_phase_check_grad(
-#                                                      negcheck=False,
-#                                                      nstphase=rte_solver._nstphase,
-#                                                      nstleg=rte_solver._nstleg,
-#                                                      nscatangle=rte_solver._nscatangle,
-#                                                      nstokes=rte_solver._nstokes,
-#                                                      dnumphase=dnumphase,
-#                                                      ml=rte_solver._ml,
-#                                                      nlm=rte_solver._nlm,
-#                                                      nleg=rte_solver._nleg,
-#                                                      dleg=dleg,
-#                                                      deltam=rte_solver._deltam
-#                                                      )
-#
-#         rte_solver._dphasetab, rte_solver._dext, rte_solver._dalb, rte_solver._diphase, rte_solver._dleg, rte_solver._dnumphase = \
-#         dphasetab, dext, dalb, diphase, dleg, dnumphase
-#
-#     return solvers
-
-
 def grad_l2(rte_solver, sensor, exact_single_scatter=True):
     """
     The core l2 gradient method.
 
     Parameters
     ----------
-    rte_solver: shdom.RteSolver
+    rte_solver: pyshdom.RteSolver
         A solver with all the associated parameters and the solution to the RTE
-    projection: shdom.Projection
+    projection: pyshdom.Projection
         A projection model which specified the position and direction of each and every pixel
     pixels: np.array(shape=(projection.npix), dtype=np.float32)
         The acquired pixels driving the error and optimization.
@@ -214,7 +118,7 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True):
     jacobian_ptr = np.zeros(num_jacobian_pts)
     jacobian_flag=False
 
-    gradient, loss, images, jacobian = shdom.core.gradient_l2(
+    gradient, loss, images, jacobian = pyshdom.core.gradient_l2(
         uncertainties=uncertainties,
         rays_per_pixel=rays_per_pixel,
         ray_weights=ray_weights,
@@ -338,9 +242,9 @@ def jacobian(rte_solver, sensor, indices_for_jacobian, exact_single_scatter=True
 
     Parameters
     ----------
-    rte_solver: shdom.RteSolver
+    rte_solver: pyshdom.RteSolver
         A solver with all the associated parameters and the solution to the RTE
-    projection: shdom.Projection
+    projection: pyshdom.Projection
         A projection model which specified the position and direction of each and every pixel
     pixels: np.array(shape=(projection.npix), dtype=np.float32)
         The acquired pixels driving the error and optimization.
@@ -379,7 +283,7 @@ def jacobian(rte_solver, sensor, indices_for_jacobian, exact_single_scatter=True
     jacobian = np.empty((rte_solver._nstokes, rte_solver._num_derivatives, num_jacobian_pts, total_pix), order='F', dtype=np.float32)
     jacobian_flag = True
 
-    gradient, loss, images, jacobian = shdom.core.gradient_l2(
+    gradient, loss, images, jacobian = pyshdom.core.gradient_l2(
         uncertainties=uncertainties,
         rays_per_pixel=rays_per_pixel,
         ray_weights=ray_weights,
@@ -504,9 +408,9 @@ def grad_l2_old(rte_solver, sensor, exact_single_scatter=True,
 
     Parameters
     ----------
-    rte_solver: shdom.RteSolver
+    rte_solver: pyshdom.RteSolver
         A solver with all the associated parameters and the solution to the RTE
-    projection: shdom.Projection
+    projection: pyshdom.Projection
         A projection model which specified the position and direction of each and every pixel
     pixels: np.array(shape=(projection.npix), dtype=np.float32)
         The acquired pixels driving the error and optimization.
@@ -548,7 +452,7 @@ def grad_l2_old(rte_solver, sensor, exact_single_scatter=True,
         jacobian = np.empty((rte_solver._nstokes,rte_solver._num_derivatives,1),order='F',dtype=np.float32)
         jacobian_ptr = np.empty((2,1),order='F',dtype=np.int32)
 
-    gradient, loss, images, jacobian, jacobian_ptr, counter = shdom.core.gradient_l2_old(
+    gradient, loss, images, jacobian, jacobian_ptr, counter = pyshdom.core.gradient_l2_old(
         uncertainties=uncertainties,
         #rays_per_pixel=rays_per_pixel,
         #ray_weights=ray_weights,
@@ -684,10 +588,10 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
                     grad_params[name].VAR_KEYWORD):
                 grad_kwargs[name] = value
             else:
-                warnings.warn("kwarg '{}' passed to shdom.gradient.parallel_gradient is unused by \
+                warnings.warn("kwarg '{}' passed to pyshdom.gradient.parallel_gradient is unused by \
                                 gradient_fun '{}''".format(name, gradient_fun.__name__))
         else:
-            warnings.warn("kwarg '{}' passed to shdom.gradient.parallel_gradient is unused by \
+            warnings.warn("kwarg '{}' passed to pyshdom.gradient.parallel_gradient is unused by \
                             gradient_fun '{}''".format(name, gradient_fun.__name__))
 
     if mpi_comm is not None:
@@ -699,10 +603,10 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
             keys = list(solvers.keys())
         else:
             #decide on the division of n_jobs among solvers based on total number of rays.
-            keys, ray_start_end, pixel_start_end = shdom.util.subdivide_raytrace_jobs(rte_sensors, n_jobs)
+            keys, ray_start_end, pixel_start_end = pyshdom.util.subdivide_raytrace_jobs(rte_sensors, n_jobs)
 
             out = Parallel(n_jobs=n_jobs, backend='threading')(
-                delayed(gradient_fun, check_pickle=False)(solvers[key],rte_sensors[key].sel(nrays=slice(ray_start,ray_end),
+                delayed(gradient_fun)(solvers[key],rte_sensors[key].sel(nrays=slice(ray_start,ray_end),
                                         npixels=slice(pix_start, pix_end)),**grad_kwargs)
                                 for key, (ray_start,ray_end),(pix_start,pix_end) in zip(keys, ray_start_end, pixel_start_end))
 
@@ -713,7 +617,7 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
         forward_sensors.add_measurements_inverse(sensor_mappings, forward_model_output, keys)
 
     #special treatment of jacobian out.
-    if gradient_fun == shdom.gradient.jacobian:
+    if gradient_fun == pyshdom.gradient.jacobian:
         jacobian_list = [i[-1] for i in out]
         return loss, gradient, jacobian_list
     else:
@@ -742,7 +646,7 @@ def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatte
     #prepare the sensors for the fortran subroutine for calculating gradient.
     rte_sensors, sensor_mapping = forward_sensors.sort_sensors(solvers, measurements)
     loss, gradient, jacobian = parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors,
-                        gradient_fun=shdom.gradient.jacobian,
+                        gradient_fun=pyshdom.gradient.jacobian,
                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter,indices_for_jacobian=indices_for_jacobian)
 
     #uncorrelated l2.
@@ -861,73 +765,3 @@ def make_jacobian_dataset(jacobian_list, unknown_scatterers, indices_for_jacobia
                     }
     )
     return jacobian_dataset
-
-# def gradient_one_solver(rte_solver, sensor, n_jobs, sensor_mapping, forward_sensors, gradient_fun, exact_single_scatter=True,
-#                         **kwargs):
-#     """
-#     TODO
-#     """
-#     if n_jobs == 1:
-#         out = [gradient_fun(rte_solver, sensor)]
-#     else:
-#         #split by rays
-#         split = np.array_split(np.arange(sensor.sizes['nrays']),n_jobs)
-#         start_end = [(i.min(),i.max()) for i in split]
-#         #adjust start and end indices so that rays are grouped by pixel.
-#         index_diffs = sensor.pixel_index.diff(dim='nrays')
-#         transitions = np.where(index_diffs.data==1)[0] + 1
-#         updated_start_end = []
-#         updated_start_end.append((0, transitions[np.abs(transitions - start_end[0][1]).argmin()]))
-#         for i in range(1,len(start_end)):
-#             new_start = updated_start_end[i-1][1]
-#             if i < len(start_end) - 1:
-#                 new_end = transitions[np.abs(transitions - start_end[i][1]).argmin()]
-#             else:
-#                 new_end = start_end[i][1] + 1
-#             updated_start_end.append((new_start, new_end))
-#
-#         pixel_start_end = []
-#         pixel_inds = np.cumsum(np.concatenate([np.array([0]), sensor.rays_per_pixel.data])).astype(np.int)
-#         for start,end in updated_start_end:
-#             a = np.where(pixel_inds == start)[0][0]
-#             b=np.where(pixel_inds == end)[0][0]
-#             pixel_start_end.append((a,b))
-#         out = Parallel(n_jobs=n_jobs, backend="threading")(delayed(gradient_fun, check_pickle=False)(rte_solver,sensor.sel(nrays=slice(start,end),
-#         npixels=slice(pix_start, pix_end)),exact_single_scatter=exact_single_scatter, **kwargs)
-#          for (start,end),(pix_start,pix_end) in zip(updated_start_end,pixel_start_end))
-#
-#     #DOESN"T suppport CORRELATED ERRORS.
-#     loss = np.sum(np.array([i[1] for i in out]))
-#     gradient = np.sum(np.stack([i[0] for i in out],axis=-1),axis=-1)
-#
-#     #Modify the forward_sensors in-place to include the latest observations.
-#     var_list_nray = [str(name) for name in out[0][2].data_vars if str(name) not in ('rays_per_image', 'stokes',
-#                                                                                    'rays_per_pixel', 'uncertainties',
-#                                                                                    'measurement_data','stokes_weights',
-#                                                                                    'I','Q','U','V')]
-#     var_list_npixel = [str(name) for name in out[0][2].data_vars if str(name) in ('rays_per_pixel', 'uncertainties',
-#                                                                                    'measurement_data','stokes_weights',
-#                                                                                    'I','Q','U','V')]
-#     merged = {}
-#     for var in var_list_nray:
-#         concatenated= xr.concat([data[2][var] for data in out], dim='nrays')
-#         merged[var] = concatenated
-#     merged2 = {}
-#     for var in var_list_npixel:
-#         concatenated= xr.concat([data[2][var] for data in out], dim='npixels')
-#         merged2[var] = concatenated
-#     merged.update(merged2)
-#     merged['stokes'] = out[0][2].stokes
-#     merged['rays_per_image'] = out[0][2].rays_per_image
-#     integrated_rays = xr.Dataset(merged)
-#
-#     rendered_rays = shdom.sensor.split_sensor_pixels(integrated_rays)
-#     for i,rendered_ray in enumerate(rendered_rays):
-#         mapping = sensor_mapping[i]
-#         forward_sensor = forward_sensors[mapping[0]]['sensor_list'][mapping[1]]
-#         for stokes in forward_sensor.stokes_index:
-#             if rendered_ray['stokes'].sel({'stokes_index':stokes}):
-#                 #modification in-place.
-#                 forward_sensor[str(stokes.data)] = rendered_ray[str(stokes.data)]
-#
-#     return gradient, loss
