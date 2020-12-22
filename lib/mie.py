@@ -366,19 +366,20 @@ def get_poly_table(size_distribution, mie_mono_table):
     #all coords except radius
     coords = {name:coord for name, coord in size_distribution.coords.items()
               if name not in ('radius', 'stokes_index')}
+    microphysics_names = list(coords.keys())
     coord_lengths = [np.arange(coord.size) for name, coord in coords.items()]
     legen_index = np.meshgrid(*coord_lengths, indexing='ij')
 
     #TODO: Does this need + 1 here?
     table_index = np.ravel_multi_index(legen_index, dims=[coord.size for coord in coord_lengths])
-    coords['table_index'] = (list(size_distribution.dims.keys())[1:], table_index)
+    coords['table_index'] = (microphysics_names, table_index)
     coords['stokes_index'] = mie_mono_table.coords['stokes_index']
 
     poly_table = xr.Dataset(
         data_vars={
-            'extinction': (list(size_distribution.dims.keys())[1:], extinct.reshape(grid_shape)),
-            'ssalb': (list(size_distribution.dims.keys())[1:], ssalb.reshape(grid_shape)),
-            'legcoef': (['stokes_index', 'legendre_index'] + list(size_distribution.dims.keys())[1:],
+            'extinction': (microphysics_names, extinct.reshape(grid_shape)),
+            'ssalb': (microphysics_names, ssalb.reshape(grid_shape)),
+            'legcoef': (['stokes_index', 'legendre_index'] + microphysics_names,
                         legcoef.reshape(legcoef.shape[:2] + grid_shape)),},
         coords=coords
     )

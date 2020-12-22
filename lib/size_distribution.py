@@ -136,7 +136,7 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
         data_vars={
             'number_density': (list(coord_dict.keys()), number_density),
         },
-        coords=dict(coord_dict),
+        coords=coord_dict,
         attrs={'size_distribution_inputs': size_distribution_list,
                'distribution_type': size_distribution_function.__name__,
               },
