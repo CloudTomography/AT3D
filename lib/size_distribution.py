@@ -1,7 +1,6 @@
+from collections import OrderedDict
 import xarray as xr
 import numpy as np
-from collections import OrderedDict
-
 import pyshdom.core
 
 #TODO Add normalization options for size distributions.
