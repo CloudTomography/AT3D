@@ -8,9 +8,33 @@ import pyshdom.core
 
 def gamma(radii, reff, veff=None, alpha=None, particle_density=1.0):
     """
-    TODO
+    Generate a Gamma size distribution.
+    Provide either effective variance `veff` or shape parameter `alpha`.
 
-    Takes
+    Parameters
+    ----------
+    radii: scalar, list/numpy array
+        Radii of precomputed Mie tables in `radius units`.
+    reff: scalar, list/numpy array
+        Effective radius for which to compute the size distribution.
+    veff: scalar, list/numpy array
+        Effective variance of the size distribution in `radius units`.
+        The larger this parameter, the broader the size distribution.
+    alpha: scalar, list/numpy array
+        Shape parameter.
+    particle_density: float
+        Particle density in [g/m^3]. Default 1 g/m^3 for Water.
+
+    Returns
+    -------
+    number_density: ndarray
+        Number density of the shape (len(radii), len(reff)).
+
+    Notes
+    -----
+    Given effective variance `veff`, the shape parameter `alpha` is computed according to:
+    alpha = 1.0 / veff - 3.0
+
     """
     reff = np.atleast_1d(reff)
     if veff is not None:
@@ -39,9 +63,36 @@ def gamma(radii, reff, veff=None, alpha=None, particle_density=1.0):
                 ndist=reff.size)
     return number_density
 
+
 def lognormal(radii, reff, veff=None, alpha=None, particle_density=1.0):
     """
-    TODO
+    Generate a Log-noraml size distribution.
+    Provide either effective variance `veff` or shape parameter `alpha`.
+
+    Parameters
+    ----------
+    radii: scalar, list/numpy array
+        Radii of precomputed Mie tables.
+    reff: scalar, list/numpy array
+        Effective radius for which to compute the size distribution.
+    veff: scalar, list/numpy array
+        Effective variance of the size distribution.
+        The larger this parameter, the broader the size distribution.
+    alpha: scalar, list/numpy array
+        Log-normal standard deviation.
+    particle_density: float
+        Particle density in [g/m^3]. Default 1 g/m^3 for Water.
+
+    Returns
+    -------
+    number_density: ndarray
+        Number density of the shape (len(radii), len(reff)).
+
+    Notes
+    -----
+    Given effective variance `veff`, the shape parameter `alpha` is computed according to:
+    alpha = sqrt(log(veff + 1)
+
     """
     reff = np.atleast_1d(reff)
     if veff is not None:
