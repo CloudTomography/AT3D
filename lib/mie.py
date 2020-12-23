@@ -42,8 +42,10 @@ def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
         False - scattering properties of the central wavelength.
     wavelength_resolution: float
         The distance between two wavelength samples in the band. Used only if wavelength_averaging is True.
-    refractive_index: complex number or path to refractive index table (CSV)
-        The refractive index should have a negative imaginary part. ri = n - ik
+    refractive_index: complex number or None
+        For 'Water' the refractive index is ignored and loaded from a table in src/polarized/indexwatice.
+        For 'Aerosol' the refractive index should have a negative imaginary part. ri = n - ik
+        For water with costume refractive index use 'Aerosol' particle type.
     relative_dir: string
         The path to a directory which contains saved mie_table netcdf files. If there is a file with
         'mie_table' in the name that matches the input parameters this file is loaded.
@@ -68,6 +70,7 @@ def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
         URL:http://dx.doi.org/10.1016/j.jqsrt.2012.12.009.
     """
     table_attempt = None
+    refractive_index = None if particle_type == 'Water' else refractive_index
     if relative_dir is not None:
         table_attempt = _load_table(relative_dir, particle_type, wavelength_band,
                                     minimum_effective_radius, max_integration_radius,
@@ -110,8 +113,10 @@ def _compute_table(particle_type, wavelength_band,
         False - scattering properties of the central wavelength.
     wavelength_resolution: float
         The distance between two wavelength samples in the band. Used only if wavelength_averaging is True.
-    refractive_index: complex
-        The refractive index should have a negative imaginary part. ri = n - ik
+    refractive_index: complex number or None
+        For 'Water' the refractive index is ignored and loaded from a table in src/polarized/indexwatice.
+        For 'Aerosol' the refractive index should have a negative imaginary part. ri = n - ik
+        For water with costume refractive index use 'Aerosol' particle type.
     verbose: bool
         True for progress prints from the fortran computations.
 
@@ -253,8 +258,10 @@ def _load_table(relative_dir, particle_type, wavelength_band,
         False - scattering properties of the central wavelength.
     wavelength_resolution: float
         The distance between two wavelength samples in the band. Used only if wavelength_averaging is True.
-    refractive_index: complex number or path to refractive index table (CSV)
-        The refractive index should have a negative imaginary part. ri = n - ik
+    refractive_index: complex number or None
+        For 'Water' the refractive index is ignored and loaded from a table in src/polarized/indexwatice.
+        For 'Aerosol' the refractive index should have a negative imaginary part. ri = n - ik
+        For water with costume refractive index use 'Aerosol' particle type.
 
     Returns
     -------

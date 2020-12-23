@@ -35,11 +35,15 @@ class Mie_tables(TestCase):
         cls.poly_table = pyshdom.mie.get_poly_table(size_distribution, cls.mie_water_table)
 
     def test_load_table(self):
-        loaded_mie_table = pyshdom.mie.get_mono_table('Water', (0.6, 0.6),
-                                                       minimum_effective_radius=4.0,
-                                                       max_integration_radius=45.0,
-                                                       wavelength_averaging=False,
-                                                       relative_dir=self.relative_dir)
+        loaded_mie_table = pyshdom.mie._load_table(relative_dir=self.relative_dir,
+                                                   particle_type='Water',
+                                                   wavelength_band=(0.6, 0.6),
+                                                   minimum_effective_radius=4.0,
+                                                   max_integration_radius=45.0,
+                                                   wavelength_averaging=False,
+                                                   wavelength_resolution=0.001,
+                                                   refractive_index=None)
+        self.assertIsNotNone(loaded_mie_table)
         self.assertTrue(np.allclose(self.mie_water_table.extinction.data, loaded_mie_table.extinction.data))
         self.assertTrue(np.allclose(self.mie_water_table.scatter.data, loaded_mie_table.scatter.data))
         self.assertTrue(np.allclose(self.mie_water_table.nleg.data, loaded_mie_table.nleg.data))
