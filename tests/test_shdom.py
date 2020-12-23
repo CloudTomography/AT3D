@@ -320,14 +320,15 @@ class Parallelization_No_SubpixelRays(TestCase):
                                             num_stokes=1,
                                             name=None
                                            )
-            solvers.add_solver(wavelength,solver)
-            Sensordict.get_measurements(solvers, maxiter=100, n_jobs=8, verbose=False)
-            Sensordict2.get_measurements(solvers, maxiter=100, n_jobs=1, verbose=False)
-            #Sensordict['MISR']['sensor_list'][0].to_netcdf('data/RenderedSensorReference_nosubpixel.nc')
+            solvers.add_solver(wavelength, solver)
 
-            cls.solvers = solvers
-            cls.Sensordict = Sensordict
-            cls.Sensordict2 = Sensordict2
+        Sensordict.get_measurements(solvers, maxiter=100, n_jobs=8, verbose=False)
+        Sensordict2.get_measurements(solvers, maxiter=100, n_jobs=1, verbose=False)
+        #Sensordict['MISR']['sensor_list'][0].to_netcdf('data/RenderedSensorReference_nosubpixel.nc')
+
+        cls.solvers = solvers
+        cls.Sensordict = Sensordict
+        cls.Sensordict2 = Sensordict2
 
     def test_radiance(self):
         self.assertTrue(all([np.allclose(self.Sensordict2['MISR']['sensor_list'][i].I, self.Sensordict['MISR']['sensor_list'][i].I) for i in range(9)]))
@@ -426,13 +427,14 @@ class Parallelization_SubpixelRays(TestCase):
                                             name=None
                                            )
             solvers.add_solver(wavelength,solver)
-            Sensordict.get_measurements(solvers, maxiter=100, n_jobs=8, verbose=False)
-            Sensordict2.get_measurements(solvers, maxiter=100, n_jobs=1, verbose=False)
 
-            #Sensordict['MISR']['sensor_list'][0].to_netcdf('data/RenderedSensorReference_subpixelargs.nc')
-            cls.solvers = solvers
-            cls.Sensordict = Sensordict
-            cls.Sensordict2 = Sensordict2
+        Sensordict.get_measurements(solvers, maxiter=100, n_jobs=8, verbose=False)
+        Sensordict2.get_measurements(solvers, maxiter=100, n_jobs=1, verbose=True)
+
+        #Sensordict['MISR']['sensor_list'][0].to_netcdf('data/RenderedSensorReference_subpixelargs.nc')
+        cls.solvers = solvers
+        cls.Sensordict = Sensordict
+        cls.Sensordict2 = Sensordict2
 
     def test_subpixel_args(self):
         self.assertTrue(all([np.allclose(self.Sensordict2['MISR']['sensor_list'][i].I, self.Sensordict['MISR']['sensor_list'][i].I) for i in range(9)]))

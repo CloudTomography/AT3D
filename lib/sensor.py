@@ -1,5 +1,23 @@
-"""
-TODO module docstring
+"""This module contains functions for creating 'sensor' datasets that contain
+the geometric information necessary to render/calculate observables
+(e.g. Stokes Vector) given an RTE solution from a solver.RTE object.
+
+A generic method, `make_sensor_dataset` is first defined as well as two specific
+geometric projections: `orthographic_projection` and `perspective_projection`.
+
+A sensor dataset contains both 'pixel' and 'ray' variables.
+Each pixel has a single pointing direction and position which define the line of
+sight. For each pixel, there is a single 'observable' quantity; the Stokes Vector
+at a specified wavelength. A pixel may also have a non-zero field of view.
+As such, the field of view of each pixel is described by a set of ray variables.
+Each pixel may have several rays, each of which has its own pointing direction,
+position and weight. The observables are calculated at the specified ray geometries
+and then a weighted sum is performed over the rays to calculate the pixel level
+observable quantity.
+As the rays are the variables that are actually passed to the solver.RTE object for
+rendering, a sensor MUST have ray variables. However, there is no generic method
+for generating sub-pixel ray geometry, as it depends on the assumed sensor geometry.
+Users should add their own generating functions for specialized sensors.
 """
 
 import itertools
@@ -9,7 +27,46 @@ import numpy as np
 
 def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength, fill_ray_variables=False):
     """
-    TODO
+    A generic method to generate an xr.Dataset which specifies the measurement
+    geometry of a sensor.
+
+    The position (`x`, `y`, `z`) and angle (`mu`, `phi`) of each pixel in the sensor is
+    specified along with the components of the Stokes Vector to be simulated at each pixel
+    and the monochromatic wavelength of the measurements. `x`, `y`, `z`, `mu`, `phi`
+    should all be 1D and have the same length.
+
+    Parameters
+    ----------
+    x, y, z : array_like of floats
+        The spatial positions of the sensor's pixels.
+    mu : array_like of floats
+        The cosine of zenith angle pointing TOWARDS the sensor's pixels.
+    phi : array_like of floats
+        The azimuthal angle angle (in degrees) pointing TOWARDS the sensor's pixels.
+    stokes : list of strings
+        The Stokes components that will be calculated for the sensor at each pixel.
+        Valid values ('I', 'Q', 'U', 'V')
+    wavelength : float
+        monochromatic wavelength that the `stokes` observables will be calculated at.
+    fill_ray_variables : {'False', 'True'}, optional
+        If True, then 'ray' variables are created corresponding to the specified
+        pixel variables. If this function is being used in isolation without a geometric projection
+        (e.g. `orthographic_projection`, `perspective_projection`) to generate subpixel
+        rays then `fill_ray_variables` should be set to 'True'.
+
+    Returns
+    -------
+    dataset : xr.Dataset
+        A dataset containing the sensor pixel geometries, wavelength and
+        Stokes observables. May also contain ray variables.
+
+    Raises
+    ------
+    ValueError
+        If `x`, `y`, `z`,`mu`, `phi` are not the same shape (and 1D) or if
+        any `mu` = 0.0 (directly horizontal radiances are not allowed by SHDOM) or
+        if the specified pixel altitudes `z` are less than or equal to zero.
+        Or if the stokes components are not valid.
     """
     x, y, z, mu, phi, wavelength, stokes = np.asarray(x), np.asarray(y), np.asarray(z), \
                                            np.asarray(mu), np.asarray(phi), np.asarray(wavelength),\
@@ -47,8 +104,32 @@ def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength, fill_ray_variables
     return dataset
 
 def stochastic(npixels, nrays, seed=None):
-    """
-    TODO
+    """Generates random position perturbations and weights for sub-pixel rays.
+
+    Random numbers are drawn from a uniform distribution in the range (-1.0,1.0]
+    with shape=(`npixels`, `nrays`).
+
+    Parameters
+    ----------
+    npixels : int
+        The number of pixels for which sub-pixel rays should be generated.
+    nrays : int
+        The number of sub-pixel rays to generate per pixel.
+    seed : {'None', int}
+        The random seed to use to generate
+
+    Returns
+    -------
+    position_perturbations : np.ndarray
+        Has shape=(`npixels`)
+
+    Notes
+    -----
+    These random numbers are designed to be position perturbations in pixel
+    coordinates in the IMAGE PLANE of a sensor though this function could be
+    used for other purposes.
+
+
     """
     if seed is not None:
         np.random.seed(seed)
