@@ -1,6 +1,8 @@
 """
 Utility functions
 """
+import typing
+
 import numpy as np
 from collections import OrderedDict
 import netCDF4 as nc
@@ -32,6 +34,171 @@ def set_pyshdom_path():
     import os
     from pathlib import Path
     os.chdir(str(Path(pyshdom.__path__[0]).parent))
+
+def get_phase_function(legcoef, angles, phase_elements='All'):
+    """Calculates phase function from legendre tables.
+
+    If a multi-dimensional table is passed then phase functions for all
+    microphysical dimensions (including individual radii if available)
+    will be sampled at the specified `angles`.
+
+    Parameters
+    ----------
+    legcoef : xr.DataArray
+        Contains the legendre/Wigner coefficients for the phase function.
+        should be produced by mie.get_mie_mono or  mie.get_poly_table or
+        in the same format.
+    angles : array_like of floats
+        scattering angles to sample the phase function at in degrees.
+        should be a 1D array_like
+    phase_elements : str, list/tuple of strings
+        valid values are from P11, P22, P33, P44, P12, P34, or All.
+
+    Returns
+    -------
+    phase_array : xr.DataArray
+        Contains the phase function at the sampled `angles` for each of the provided
+        legendre/Wigner series, for the specified `phase_elements`
+
+    Raises
+    ------
+    ValueError
+        If `phase_elements` is not composed of valid strings
+    TypeError
+        If `phase_elements` is not of type ``str``, ``tuple`` or ``list``.
+
+    See Also
+    --------
+    mie.get_poly_table
+    mie.get_mono_table
+
+    Example
+    -------
+    >>> legcoef = mie_mono_table.legendre[:,:,50:55]
+    #select 5 radii from the mie_mono_table.
+
+    >>> phase_array = get_phase_function(legcoef,
+                                         np.linspace(0.0,180.0,361),
+                                         phase_elements='All')
+    >>> phase_array
+    <xarray.DataArray 'phase_function' (phase_elements: 6, scattering_angle: 361, radius: 5)>
+    array([[[ 5.06317383e-03,  6.17436739e-03,  7.50618055e-03,
+              9.09753796e-03,  1.09932469e-02],
+            [ 5.06292842e-03,  6.17406424e-03,  7.50580709e-03,
+              9.09707788e-03,  1.09926835e-02],
+            [ 5.06219361e-03,  6.17315574e-03,  7.50468718e-03,
+              9.09570046e-03,  1.09909941e-02],
+            ...,
+            [ 2.58962740e-03,  3.01506580e-03,  3.48956930e-03,
+              4.01409063e-03,  4.58831480e-03],
+            [ 2.58983485e-03,  3.01530003e-03,  3.48983146e-03,
+              4.01438121e-03,  4.58863331e-03],
+            [ 2.58990400e-03,  3.01537826e-03,  3.48991877e-03,
+              4.01447807e-03,  4.58873948e-03]],
+
+           [[ 5.06317383e-03,  6.17436739e-03,  7.50618055e-03,
+              9.09753796e-03,  1.09932479e-02],
+            [ 5.06292889e-03,  6.17406424e-03,  7.50580709e-03,
+              9.09707882e-03,  1.09926844e-02],
+            [ 5.06219361e-03,  6.17315574e-03,  7.50468718e-03,
+              9.09570139e-03,  1.09909950e-02],
+    ...
+            [-4.16639125e-07, -4.87358477e-07, -5.66944379e-07,
+             -6.55818667e-07, -7.54250607e-07],
+            [-1.04164208e-07, -1.21844508e-07, -1.41741438e-07,
+             -1.63960422e-07, -1.88568734e-07],
+            [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,
+              0.00000000e+00,  0.00000000e+00]],
+
+           [[ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,
+              0.00000000e+00,  0.00000000e+00],
+            [ 4.72140493e-10,  6.52067178e-10,  8.93253749e-10,
+              1.21347665e-09,  1.63433822e-09],
+            [ 1.88840676e-09,  2.60805422e-09,  3.57272101e-09,
+              4.85350737e-09,  6.53681553e-09],
+            ...,
+            [ 1.69794856e-09,  2.33928010e-09,  3.19921267e-09,
+              4.34327951e-09,  5.85340043e-09],
+            [ 4.24516838e-10,  5.84860882e-10,  7.99858901e-10,
+              1.08589548e-09,  1.46345203e-09],
+            [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,
+              0.00000000e+00,  0.00000000e+00]]], dtype=float32)
+    Coordinates:
+      * phase_elements    (phase_elements) <U3 'P11' 'P22' 'P33' 'P44' 'P12' 'P34'
+      * scattering_angle  (scattering_angle) float64 0.0 0.5 1.0 ... 179.5 180.0
+      * radius            (radius) float32 0.1186 0.1224 0.1263 0.1303 0.1343
+    """
+    pelem_dict = {'P11': 1, 'P22': 2, 'P33': 3, 'P44': 4, 'P12': 5, 'P34': 6}
+    if phase_elements == 'All':
+        phase_elements = list(pelem_dict.keys())
+    elif isinstance(phase_elements, (typing.List, typing.Tuple)):
+        for element in phase_elements:
+            if element not in pelem_dict:
+                raise ValueError("Invalid value for phase_elements '{}' "
+                                 "Valid values are '{}'".format(element, pelem_dict.keys()))
+    elif phase_elements in pelem_dict:
+        phase_elements = [phase_elements]
+    else:
+        raise TypeError("phase_elements argument should be either 'All' or a list/tuple of strings"
+                        "from {}".format(pelem_dict.keys()))
+
+    coord_sizes = {name:legcoef[name].size for name in legcoef.coords
+                   if name not in ('stokes_index', 'legendre_index', 'table_index')}
+
+    coord_arrays = [np.arange(size) for size in coord_sizes.values()]
+    coord_indices = np.meshgrid(*coord_arrays, indexing='ij')
+    flattened_coord_indices = [coord.ravel() for coord in coord_indices]
+
+    phase_functions_full = []
+
+    loop_max = 1
+    if flattened_coord_indices:
+        loop_max = flattened_coord_indices[0].shape[0]
+
+    for i in range(loop_max):
+        index = tuple([slice(0, legcoef.stokes_index.size),
+                       slice(0, legcoef.legendre_index.size)] +
+                      [coord[i] for coord, size in zip(flattened_coord_indices, coord_sizes.values())
+                       if size > 1])
+        single_legcoef = legcoef.data[index]
+
+        phase_functions = []
+        for phase_element in phase_elements:
+            pelem = pelem_dict[phase_element]
+
+            phase = pyshdom.core.transform_leg_to_phase(
+                maxleg=legcoef.legendre_index.size - 1,
+                nphasepol=6,
+                legcoef=single_legcoef,
+                pelem=pelem,
+                nleg=legcoef.legendre_index.size - 1,
+                nangle=len(angles),
+                angle=angles
+            )
+            phase_functions.append(phase)
+        phase_functions_full.append(np.stack(phase_functions, axis=0))
+
+    small_coord_sizes = {name:size for name, size in coord_sizes.items() if size > 1}
+    coords = {
+        'phase_elements': np.array(phase_elements),
+        'scattering_angle': angles
+        }
+    for name in coord_sizes:
+        coords[name] = legcoef.coords[name]
+
+    phase_functions_full = np.stack(phase_functions_full, axis=-1).reshape([len(phase_elements),
+                                                                            len(angles),
+                                                                            ]+list(small_coord_sizes.values()))
+
+    phase_array = xr.DataArray(
+        name='phase_function',
+        dims=['phase_elements', 'scattering_angle'] + list(small_coord_sizes.keys()),
+        data=phase_functions_full,
+        coords=coords
+    )
+    return phase_array
+
+
 
 def planck_function(temperature, wavelength, c=2.99792458e8,h=6.62606876e-34,k=1.3806503e-23):
     """
