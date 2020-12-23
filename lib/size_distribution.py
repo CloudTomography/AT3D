@@ -125,72 +125,115 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
                                particle_density=1.0, radius_units='micron',
                                **size_distribution_parameters):
     """
-    TODO
-    A generic interface to get number density of a size distribution
+    A generic interface to get number density (in cm^-3) of a size distribution
     on a grid of size distribution parameters.
 
-    Each size_distribution_parameter should contain:
-       coord_min: float
-           The minimum value for that coordinate.
-       coord_max: float
-           The maximum value for that coordinate.
-       n: integer
-           The number of points sampling this dimension.
-       spacing: string
-           The type of spacing. Either 'logarithmic' or 'linear'.
-       units: string
-           The units of the microphysical dimension.
+    Parameters
+    ----------
+    radii: list/numpy array
+        Radii of precomputed Mie tables in `radius units`
+    size_distribution_function: callable
+        Predefined function that computes size distribution.
+        Implemented options here are `gamma` (default) and `lognormal`.
+    particle_density: float
+        Particle density in [g/m^3]. Default 1 g/m^3 for Water.
+    radius_units: string
+        Unit of radii, default [microns].
+    size_distribution_parameters: dict
+        Each size_distribution_parameter dictionary should contain the following keys:
+           'coord_min': float
+               The minimum value for that coordinate.
+           'coord_max': float
+               The maximum value for that coordinate.
+           'npoints': integer
+               The number of points sampling this dimension.
+           'spacing': string
+               The type of spacing. Either 'logarithmic' or 'linear'.
+           'units': string
+               The units of the microphysical dimension.
+
+    Returns
+    -------
+    size_dist_grid: xarray.Dataset
+        Dataset containing `number_density` in [cm^-3].
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> radii = np.arange(100)
+    >>> size_dist_grid = pyshdom.size_distribution.get_size_distribution_grid(
+                                    radii,
+                                    size_distribution_function=pyshdom.size_distribution.gamma,
+                                    particle_density=1.0,
+                                    radius_units='micron',
+                                    reff=[4.0, 25.0, 25, 'logarithmic', 'micron'],
+                                    veff=[0.09, 0.1, 1, 2, 'linear', 'unitless']
+                                    )
+    >>> size_dist_grid
+        Dimensions:         (radius: 100, reff: 25, veff: 2)
+        Coordinates:
+          * radius          (radius) int64 0 1 2 3 4 5 6 7 8 ... 92 93 94 95 96 97 98 99
+          * reff            (reff) float64 4.0 4.317 4.66 5.03 ... 21.46 23.16 25.0
+          * veff            (veff) float64 0.09 0.11
+        Data variables:
+            number_density  (radius, reff, veff) float32 0.0 0.0 ... 1.483e-10 3.284e-09
+        Attributes:
+            reff_coord_min:     4.0
+            reff_coord_max:     25.0
+            reff_npoints:       25
+            reff_spacing:       logarithmic
+            reff_units:         micron
+            veff_coord_min:     0.09
+            veff_coord_max:     0.11
+            veff_npoints:       2
+            veff_spacing:       linear
+            veff_units:         unitless
+            distribution_type:  gamma
+            radius_units:       radius units [micron]
+
     """
     coord_list = []
     name_list = []
-    size_distribution_list = []
-
     for name, parameter in size_distribution_parameters.items():
-        if len(parameter) == 5:
-            coord_min, coord_max, n, spacing, units = parameter
-        elif len(parameter) == 4:
-            coord_min, coord_max, n, spacing = parameter
-            units = 'Not specified'
-        if spacing == 'logarithmic':
-            coord = np.logspace(np.log10(coord_min), np.log10(coord_max), n)
-        elif spacing == 'linear':
-            coord = np.linspace(coord_min, coord_max, n)
+        if parameter['spacing'] == 'logarithmic':
+            coord = np.logspace(np.log10(parameter['coord_min']), np.log10(parameter['coord_max']), parameter['npoints'])
+        elif parameter['spacing'] == 'linear':
+            coord = np.linspace(parameter['coord_min'], parameter['coord_max'], parameter['npoints'])
         else:
             raise NotImplementedError
         coord_list.append(coord)
-        size_distribution_list.append(name + ' [{}, {}, {}, {}, {}]'.format(coord_min,
-                                                                            coord_max,
-                                                                            n,
-                                                                            spacing,
-                                                                            units))
         name_list.append(name)
 
     meshgrid = np.meshgrid(*coord_list, indexing='ij')
     parameter_dict = OrderedDict()
     coord_dict = OrderedDict()
     coord_dict['radius'] = radii
-    size_distribution_list.append('radius units [{}]'.format(radius_units))
     for name, grid, coord in zip(name_list, meshgrid, coord_list):
-
         parameter_dict[name] = grid.ravel()
         coord_dict[name] = coord
 
     grid_shape = [len(coord) for name, coord in coord_dict.items()]
 
-    number_density_raveled = size_distribution_function(radii, **parameter_dict,
-                                                        particle_density=particle_density)
+    number_density_raveled = size_distribution_function(
+        radii,
+        **parameter_dict,
+        particle_density=particle_density
+    )
     #TODO this can fail silently in some cases (produce nans), add checks.
     number_density = number_density_raveled.reshape(grid_shape)
 
+    # create "flat" attrs dictionary to enable saving to netCDF
+    size_dist_attrs = OrderedDict()
+    for name, parameter in size_distribution_parameters.items():
+        for _name, _param in parameter.items():
+            size_dist_attrs[f"{name}_{_name}"] = _param
+    size_dist_attrs['distribution_type'] = size_distribution_function.__name__
+    size_dist_attrs['radius_units'] = 'radius units [{}]'.format(radius_units)
+
     size_dist_grid = xr.Dataset(
-        data_vars={
-            'number_density': (list(coord_dict.keys()), number_density),
-        },
+        data_vars={'number_density': (list(coord_dict.keys()), number_density)},
         coords=coord_dict,
-        attrs={'size_distribution_inputs': size_distribution_list,
-               'distribution_type': size_distribution_function.__name__,
-              },
-                  #TODO add coordmin/max/n and spacing for full traceability.
+        attrs=size_dist_attrs
     )
     return size_dist_grid
 
