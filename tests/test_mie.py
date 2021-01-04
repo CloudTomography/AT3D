@@ -29,8 +29,10 @@ class Mie_tables(TestCase):
             cls.mie_water_table.radius,
             size_distribution_function=pyshdom.size_distribution.gamma,
             particle_density=1.0,
-            reff=[4.0, 25.0, 25, 'logarithmic', 'micron'],
-            veff=[0.09, 0.11, 2, 'linear', 'unitless']
+            reff={'coord_min':4.0, 'coord_max': 25.0, 'npoints': 25,
+            'spacing': 'logarithmic', 'units': 'micron'},
+            veff={'coord_min':0.09, 'coord_max': 0.11, 'npoints': 2,
+            'spacing': 'linear', 'units': 'unitless'}
         )
         cls.poly_table = pyshdom.mie.get_poly_table(size_distribution, cls.mie_water_table)
 

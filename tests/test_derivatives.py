@@ -58,8 +58,10 @@ class Microphysical_Derivatives(TestCase):
             cloud_size_distribution = pyshdom.size_distribution.get_size_distribution_grid(
                                                                     mie_mono_table.radius.data,
                                 size_distribution_function=size_distribution_function,particle_density=1.0,
-                                reff=[0.2,1.0,10,'logarithmic','micron'],
-                                veff=[0.09,0.11,12,'linear','unitless'],
+                                reff={'coord_min':0.2, 'coord_max': 1.0, 'npoints': 10,
+                                'spacing': 'logarithmic', 'units': 'micron'},
+                                veff={'coord_min':0.09, 'coord_max': 0.11, 'npoints': 12,
+                                'spacing': 'linear', 'units': 'unitless'}
                                 )
             poly_table = pyshdom.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
             optical_properties = pyshdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table,
@@ -189,8 +191,10 @@ class Verify_Jacobian(TestCase):
             cloud_size_distribution = pyshdom.size_distribution.get_size_distribution_grid(
                                                                     mie_mono_table.radius.data,
                                 size_distribution_function=size_distribution_function,particle_density=1.0,
-                                reff=[9.0,11.0,100,'logarithmic','micron'],
-                                veff=[0.09,0.11,12,'linear','unitless'],
+                                reff={'coord_min':9.0, 'coord_max': 11.0, 'npoints': 100,
+                                'spacing': 'logarithmic', 'units': 'micron'},
+                                veff={'coord_min':0.09, 'coord_max': 0.11, 'npoints': 12,
+                                'spacing': 'linear', 'units': 'unitless'}
                                 )
             poly_table = pyshdom.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
             optical_properties = pyshdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table,
