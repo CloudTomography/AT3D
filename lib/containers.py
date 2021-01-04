@@ -55,6 +55,7 @@ class SensorsDict(OrderedDict):
             forward_instrument = OrderedDict()
             forward_instrument['sensor_list'] = [single_sensor.copy(deep=True) for
                                                  single_sensor in instrument['sensor_list']]
+            forward_instrument['uncertainty_model'] = instrument['uncertainty_model']
             forward_sensors[key] = forward_instrument
 
         return forward_sensors
