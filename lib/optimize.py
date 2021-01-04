@@ -8,7 +8,6 @@ class ObjectiveFunction:
     """
     TODO
     """
-
     def __init__(self, measurements, loss_fn, min_bounds=None, max_bounds=None):
         self.measurements = measurements
         self.loss_fn = loss_fn
@@ -16,8 +15,9 @@ class ObjectiveFunction:
         self._loss = None
 
     def __call__(self, state):
+
         loss, gradient = self.loss_fn(state, self.measurements)
-        self.loss = loss
+        self._loss = loss
         return loss, gradient
 
     @classmethod
@@ -76,8 +76,8 @@ class PriorFunction:
         """
         cov_inverse = np.linalg.inv(cov) if cov is not None else cov_inverse
         def mahalanobis_loss_fn(state):
-            gradient = np.matmul(cov_inverse, state-mean)
-            loss = np.matmul(state-mean, gradient)
+            gradient = np.matmul(state-mean, cov_inverse)
+            loss = np.matmul(gradient, state-mean)
             return np.array(loss), 2*np.array(gradient).ravel()
         return cls(prior_fn=mahalanobis_loss_fn, scale=scale)
 
@@ -112,6 +112,7 @@ class Optimizer:
         self._callback_fn = np.atleast_1d(callback_fn)
         self._callback = None if callback_fn is None else self.callback
         self._iteration = None
+        self._state = None
 
     def callback(self, state): #TODO check whether the callback function below should call state.
         """
@@ -126,13 +127,21 @@ class Optimizer:
         The callback function invokes the callbacks defined by the writer (if any).
         Additionally it keeps track of the iteration number.
         """
+        self._state = state
         loss, gradient = self._objective_fn(state)
         if self._prior_fn is not None:
-            p_loss, p_gradient = np.array([prior(state) for prior in self._prior_fn]).sum(axis=0)
-            loss, gradient = loss + p_loss, gradient + p_gradient
+            p_loss = []
+            p_gradient = []
+            for prior in self._prior_fn:
+                ploss, pgrad = prior(state)
+                p_loss.append(ploss)
+                p_gradient.append(pgrad)
+            loss += np.stack(p_loss, axis=0).sum(axis=0)
+            gradient += np.stack(p_gradient, axis=0).sum(axis=0)
+
         return loss, gradient
 
-    def minimize(self, initial_state, iteration_step=0):
+    def minimize(self, initial_state, iteration_step=0, **kwargs):
         """
         Local minimization with respect to the parameters defined.
         """
@@ -145,6 +154,7 @@ class Optimizer:
             'options': self._options,
             'callback': self._callback
         }
+        args.update(kwargs)
         if self.method not in ['CG', 'Newton-CG']:
             if (len(self._objective_fn.bounds) == 1 ) & (self._objective_fn.bounds[0] == (None, None)):
                 args['bounds'] = list(zip(np.repeat(np.atleast_1d(None), len(initial_state)),
