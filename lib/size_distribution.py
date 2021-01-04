@@ -166,8 +166,8 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
                                     size_distribution_function=pyshdom.size_distribution.gamma,
                                     particle_density=1.0,
                                     radius_units='micron',
-                                    reff=[4.0, 25.0, 25, 'logarithmic', 'micron'],
-                                    veff=[0.09, 0.1, 1, 2, 'linear', 'unitless']
+                                    reff={'coord_min':4.0,'coord_max':25.0,'npoints':25,'spacing':'logarithmic','units':'micron'},
+                                    veff={'coord_min':0.09,'coord_max':0.11,'npoints':2,'spacing':'linear','units':'unitless'},
                                     )
     >>> size_dist_grid
         Dimensions:         (radius: 100, reff: 25, veff: 2)
