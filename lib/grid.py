@@ -15,6 +15,7 @@ different behaviour they should write their own functions and add them to this m
 import typing
 import numpy as np
 import xarray as xr
+import pyshdom.checks
 
 def make_grid(delx: float, nx: int, dely: float, ny: int, z: np.ndarray) -> xr.Dataset:
     """
@@ -108,10 +109,10 @@ def resample_onto_grid(grid, data):
     """
     if not isinstance(grid, (xr.core.coordinates.DatasetCoordinates,
                              xr.core.coordinates.DataArrayCoordinates, xr.Dataset, xr.DataArray)):
-        raise ValueError("'grid' should be an xr.Dataset, "
+        raise TypeError("'grid' should be an xr.Dataset, "
                          "xr.DataArray or xarray coordinates object, not '{}'".format(type(grid)))
     if not isinstance(data, (xr.Dataset, xr.DataArray)):
-        raise ValueError("'grid' should be an xr.Dataset, "
+        raise TypeError("'grid' should be an xr.Dataset, "
                          "xr.DataArray, not '{}'".format(type(grid)))
     #if coordinates are passed, then make a dataset.
     if isinstance(grid, (xr.core.coordinates.DatasetCoordinates,
@@ -119,6 +120,8 @@ def resample_onto_grid(grid, data):
         grid = xr.Dataset(
             coords=grid
         )
+    pyshdom.checks.check_grid(grid)
+
     data_copy = data.copy(deep=True)
     if 'density' in data:
         data_copy['density'] = data.density.fillna(0.0)

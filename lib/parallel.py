@@ -2,6 +2,7 @@
 TODO
 """
 import inspect
+import warnings
 import numpy as np
 from collections import OrderedDict
 from joblib import Parallel, delayed

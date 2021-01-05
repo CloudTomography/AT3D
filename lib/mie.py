@@ -349,7 +349,7 @@ def get_poly_table(size_distribution, mie_mono_table):
     The radius in size_distribution is interpolated onto the mie_mono_table radii grid. This is to avoid interpolation
     of the Mie table coefficients.
     """
-    pyshdom.checks.check_range(mie_mono_table, ['radius', size_distribution.radius.min(), size_distribution.radius.max()])
+    pyshdom.checks.check_range(mie_mono_table, radius=(size_distribution.radius.min(), size_distribution.radius.max()))
 
     if (size_distribution.radius.size != mie_mono_table.radius.size) or \
             np.any(size_distribution.radius.data != mie_mono_table.radius.data):

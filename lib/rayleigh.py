@@ -13,6 +13,7 @@ import numpy as np
 import xarray as xr
 
 import pyshdom.core
+import pyshdom.checks
 
 def to_grid(wavelengths, atmosphere, rte_grid):
     """
@@ -41,6 +42,7 @@ def to_grid(wavelengths, atmosphere, rte_grid):
     -----
     single scattering albedo is assumed to be 1.0.
     """
+    pyshdom.checks.check_grid(rte_grid)
     wavelengths = np.atleast_1d(wavelengths)
     atmosphere_on_rte_grid = atmosphere.interp({'z': rte_grid.z})
     rayleigh_poly_tables = compute_table(wavelengths).rename('legcoef')

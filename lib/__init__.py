@@ -40,7 +40,8 @@ import pyshdom.gradient
 import pyshdom.optimize
 import pyshdom.space_carve
 import pyshdom.util
-import pyshdom.error
+import pyshdom.uncertainties
 import pyshdom.callback
 import pyshdom.containers
 import pyshdom.parallel
+import pyshdom.exceptions

@@ -5,11 +5,11 @@ TODO module docstring
 import xarray as xr
 import numpy as np
 
-def solar(solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
+def solar(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
     """
     TODO
     """
-    if not (-1.0 <= solarmu ) & (solarmu < 0.0):
+    if not (-1.0 <= solarmu) & (solarmu < 0.0):
         raise ValueError("solarmu must be in the range -1.0 <= solarmu < 0.0 not '{}'. "
                          "The SHDOM convention for solar direction is that it points"
                          "in the direction of the propagation of radiance.".format(solarmu))
@@ -17,6 +17,7 @@ def solar(solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
     return xr.Dataset(
         data_vars={
             'name': 'solar_source',
+            'wavelength': wavelength,
             'solarflux': solarflux,
             'solarmu': solarmu,
             'solaraz': np.deg2rad(solar_azimuth),
@@ -35,7 +36,7 @@ def solar(solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
 #output units of radiance.
 #thermal or combined source is not yet supported for gradient calculations.
 
-def thermal(skyrad=0.0, units='radiance'):
+def thermal(wavelength, skyrad=0.0, units='radiance'):
     """
     TODO
     """
@@ -47,6 +48,7 @@ def thermal(skyrad=0.0, units='radiance'):
     return xr.Dataset(
         data_vars={
             'name': 'solar_source',
+            'wavelength': wavelength,
             'solarflux': 0.0,
             'solarmu': np.nan,
             'solaraz': np.nan,
@@ -57,11 +59,11 @@ def thermal(skyrad=0.0, units='radiance'):
         }
     )
 
-def combined(solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
+def combined(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
     """
     TODO
     """
-    if not (-1.0 <= solarmu ) & (solarmu < 0.0):
+    if not (-1.0 <= solarmu) & (solarmu < 0.0):
         raise ValueError("solarmu must be in the range -1.0 <= solarmu < 0.0 not '{}'. "
                          "The SHDOM convention for solar direction is that it points"
                          "in the direction of the propagation of radiance.".format(solarmu))
@@ -69,6 +71,7 @@ def combined(solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
     return xr.Dataset(
         data_vars={
             'name': 'solar_source',
+            'wavelength': wavelength,
             'solarflux': solarflux,
             'solarmu': solarmu,
             'solaraz': np.deg2rad(solar_azimuth),

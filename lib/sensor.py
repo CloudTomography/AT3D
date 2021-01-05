@@ -115,7 +115,7 @@ def stochastic(npixels, nrays, seed=None):
         The number of pixels for which sub-pixel rays should be generated.
     nrays : int
         The number of sub-pixel rays to generate per pixel.
-    seed : {'None', int}
+    seed : {None, int}
         The random seed to use to generate
 
     Returns

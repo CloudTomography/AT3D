@@ -84,7 +84,7 @@ class Microphysical_Derivatives(TestCase):
             solver = pyshdom.solver.RTE(
                             numerical_params=config,
                             medium={'cloud': optical_properties},
-                            source=pyshdom.source.solar(-1*np.cos(np.deg2rad(60.0)), 0.0, solarflux=1.0),
+                            source=pyshdom.source.solar(wavelength,-1*np.cos(np.deg2rad(60.0)), 0.0, solarflux=1.0),
                             surface=pyshdom.surface.ocean_unpolarized(surface_wind_speed=10.0, pigmentation=0.0),
                             num_stokes=1,
                             name=None
@@ -216,7 +216,7 @@ class Verify_Jacobian(TestCase):
             solver = pyshdom.solver.RTE(
                                 numerical_params=config,
                                 medium={'cloud': optical_properties},
-                                source=pyshdom.source.solar(-1,0.0,solarflux=1.0),
+                                source=pyshdom.source.solar(wavelength,-1,0.0,solarflux=1.0),
                                 surface=pyshdom.surface.lambertian(albedo=0.0),
                                 num_stokes=1,
                                 name=None

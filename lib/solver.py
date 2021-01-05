@@ -3,13 +3,14 @@ import xarray as xr
 import numpy as np
 import warnings
 import copy
+import typing
 from collections import OrderedDict
 
 import pyshdom.core
 import pyshdom.util
 import pyshdom.checks
 
-class RTE(object):
+class RTE:
     """
     Radiative Trasnfer solver object.
     This object contains the interface to SHDOM internal structures and methods.
@@ -35,45 +36,20 @@ class RTE(object):
     -----
     k-distribution not supported.
     """
-    @pyshdom.checks.dataset_checks(medium=[(pyshdom.checks.check_range,[('ssalb',0.0,1.0)]),(pyshdom.checks.check_positivity,'extinction'),
-                    (pyshdom.checks.check_hasdim, [('extinction', ['x', 'y', 'z']), ('ssalb', ['x', 'y', 'z']),
-                    ('table_index', ['x', 'y', 'z'])]),
-                    pyshdom.checks.check_legendre_rte, pyshdom.checks.check_grid])
     def __init__(self, numerical_params, medium, source, surface, num_stokes=1, name=None,
-                atmosphere=None):
+                 atmosphere=None):
 
         # Check number of stokes and setup type of solver
-        if num_stokes not in (1,3,4):
+        if num_stokes not in (1, 3, 4):
             raise ValueError("num_stokes should be {1, 3, 4} not '{}'".format(num_stokes))
         self._type = 'Radiance' if num_stokes == 1 else 'Polarization'
         self._nstokes = num_stokes
         self._nstleg = 1 if num_stokes == 1 else 6
 
-        if isinstance(medium, OrderedDict):
-            self.medium = medium
-        else:
-            mediumdict= OrderedDict()
-            if isinstance(medium, dict):
-                for key,val in medium.items():
-                    mediumdict[key] = val
-            else:
-                try:
-                    iter(medium)
-                except TypeError:
-                    raise TypeError("Medium input must be an OrderedDict, dict, or an iterable")
-                for i,val in enumerate(medium):
-                    mediumdict['scatterer_{:03d}'.format(i)] = val
-            self.medium = mediumdict
+        # Setup source
+        self.source = self._setup_source(source)
 
-        # Check that all optical scatterers have the same wavelength
-        wavelengths = [scatterer.attrs['wavelength_center'] for scatterer in self.medium.values() if \
-                       scatterer.attrs['wavelength_center'] is not None]
-        assert len(wavelengths) > 0, 'At least one scatterer has to have a wavelength defined'
-        assert np.allclose(wavelengths[0], wavelengths), 'scatterers have different wavelengths {}'.format(wavelengths)
-        self.wavelength = wavelengths[0]
-
-        # For legacy purposes
-        self._wavelen = pyshdom.util.float_round(self.wavelength)
+        self.medium, self._grid = self._setup_medium(medium)
 
         # Setup a name for the solver
         self._name = '{} {:1.3f} micron'.format(self._type, self.wavelength) if name is None else name
@@ -84,13 +60,8 @@ class RTE(object):
         # Link to the properties array module.
         self._pa = ShdomPropertyArrays()
 
-        # Setup source
-        self._setup_source(source)
-        self.source = source
-
         # Setup numerical parameters
-        self._setup_numerical_params(numerical_params)
-        self.numerical_params = numerical_params
+        self.numerical_params = self._setup_numerical_params(numerical_params)
 
         # k-distribution not supported yet
         self._kdist = False
@@ -103,30 +74,91 @@ class RTE(object):
         # No iterations have taken place
         self._iters = 0
 
-        #check that all scatterers are on the same grid
-        failed_list = []
-        for i,gridded in enumerate(self.medium.values()):
-            if np.all(gridded.coords['x'] != list(self.medium.values())[0].coords['x']) | \
-                np.all(gridded.coords['y'] != list(self.medium.values())[0].coords['y']) | \
-                np.all(gridded.coords['z'] != list(self.medium.values())[0].coords['z']):
-                failed_list.append(i)
-        if len(failed_list) > 0:
-            raise ValueError("mediums do not have consistent grids with the first medium", *failed_list)
-
-        self._grid = xr.Dataset({'x': list(self.medium.values())[0].coords['x'],
-                                 'y': list(self.medium.values())[0].coords['y'],
-                                 'z': list(self.medium.values())[0].coords['z'],
-                                 'delx': list(self.medium.values())[0].delx,
-                                 'dely': list(self.medium.values())[0].dely})
         self._setup_grid(self._grid)
 
         # Setup surface
-        self._setup_surface(surface)
-        self.surface = surface
+        self.surface = self._setup_surface(surface)
 
         # atmosphere includes temperature for thermal radiation
-        self._setup_atmosphere(atmosphere)
-        self.atmosphere = atmosphere
+        self.atmosphere = self._setup_atmosphere(atmosphere)
+
+        self._prepare_optical_properties()
+
+    def _setup_medium(self, medium):
+
+        if isinstance(medium, OrderedDict):
+            medium_dict = medium
+        elif isinstance(medium, typing.Dict):
+            medium_dict = OrderedDict(medium)
+        elif isinstance(medium, typing.Iterable):
+            medium_dict = OrderedDict()
+            for i, val in enumerate(medium):
+                medium_dict['scatterer_{:03d}'.format(i)] = val
+        elif isinstance(medium, xr.Dataset):
+            medium_dict = OrderedDict({'scatterer_{:03d}'.format(0): medium})
+        else:
+            raise TypeError("'medium' argument to RTE must be an OrderedDict, dict or iterable"
+            "of xr.Dataset or an xr.Dataset")
+
+        for name, dataset in medium_dict.items():
+            if not isinstance(dataset, xr.Dataset):
+                raise TypeError("scatterer '{}' in `medium` is not an xr.Dataset".format(name))
+            try:
+                pyshdom.checks.check_range(dataset, ssalb=(0.0,1.0))
+            except (KeyError, pyshdom.exceptions.OutOfRangeError) as err:
+                raise type(err)(str(err).replace('"',"") + " for scatterer '{}' in `medium`.".format(name)).with_traceback(sys.exc_info()[2])
+            try:
+                pyshdom.checks.check_positivity(dataset, 'extinction')
+            except (KeyError, pyshdom.exceptions.NegativeValueError) as err:
+                raise type(err)(str(err).replace('"',"") + " for scatterer '{}' in `medium`.".format(name)).with_traceback(sys.exc_info()[2])
+            for var_name in ('extinction', 'ssalb', 'table_index'):
+                try:
+                    pyshdom.checks.check_hasdim(dataset, **{var_name: ('x', 'y', 'z')})
+                except (KeyError, pyshdom.exceptions.MissingDimensionError) as err:
+                    raise type(err)(str(err).replace('"',"") + " for scatterer '{}' in `medium`.".format(name)).with_traceback(sys.exc_info()[2])
+            try:
+                pyshdom.checks.check_legendre(dataset)
+            except (KeyError, pyshdom.exceptions.MissingDimensionError,
+                    pyshdom.exceptions.LegendreTableError) as err:
+                raise type(err)(str(err).replace('"',"") + " for scatterer '{}' in `medium`.".format(name)).with_traceback(sys.exc_info()[2])
+            try:
+                pyshdom.checks.check_grid(dataset)
+            except (KeyError, pyshdom.exceptions.MissingDimensionError,
+                    pyshdom.exceptions.GridError) as err:
+                raise type(err)(str(err).replace('"',"") + " for scatterer '{}' in `medium`.".format(name)).with_traceback(sys.exc_info()[2])
+
+        #check that all scatterers are on the same grid
+        first_scatterer = list(medium_dict.values())[0]
+        failed_list = []
+        for name, gridded in medium_dict.items():
+            if np.all(gridded.coords['x'] != first_scatterer.coords['x']) | \
+                np.all(gridded.coords['y'] != first_scatterer.coords['y']) | \
+                np.all(gridded.coords['z'] != first_scatterer.coords['z']) |\
+                (gridded.delx != first_scatterer.delx) | \
+                (gridded.dely != first_scatterer.dely):
+                failed_list.append(name)
+        if failed_list:
+            raise pyshdom.exceptions.GridError("Scatterers in `medium` do not all have consistent grids.", *failed_list)
+
+        grid = xr.Dataset({'x': first_scatterer.coords['x'],
+                                 'y': first_scatterer.coords['y'],
+                                 'z': first_scatterer.coords['z'],
+                                 'delx': first_scatterer.delx,
+                                 'dely': first_scatterer.dely})
+
+        scatterer_wavelengths = [scatterer.attrs['wavelength_center'] for scatterer in medium_dict.values() if \
+                       'wavelength_center' in scatterer.attrs]
+
+        if scatterer_wavelengths:
+            if not np.allclose(scatterer_wavelengths, self.wavelength):
+                ValueError("Scatterers in medium have different wavelengths. An error has likely occurred "
+                "in the calculation of mie properties. To override this exception make sure that "
+                "optical_properties.attrs['wavelength_center'] either doesn't exist or are all identical.")
+        else:
+            warnings.warn("No wavelength specified in optical properties. Make sure that the wavelength used is"
+            "consistent with {}".format(self.wavelength), category=RuntimeWarning)
+
+        return medium_dict, grid
 
     def _setup_atmosphere(self, atmosphere):
         """TODO
@@ -135,81 +167,67 @@ class RTE(object):
         So this function does all of the checking.
         """
         if atmosphere is None:
-            self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32)
             if self._srctype in ('T', 'B'):
-                warnings.warn('temperature was not specifed despite using thermal source.',category=RuntimeWarning)
+                raise ValueError("Temperature was not specified in `atmosphere` despite using thermal source.")
+            self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32) + 273.0
         elif isinstance(atmosphere, xr.Dataset):
-            try:
-                pyshdom.checks.check_grid(atmosphere)
-            except ValueError as err:
-                raise ValueError("atmosphere grid error.", *err.args)
+            pyshdom.checks.check_grid(atmosphere)
+            if not (np.all(atmosphere.x == self._grid.x) & np.all(atmosphere.y == self._grid.y) & \
+                np.all(atmosphere.z == self._grid.z)):
+                warnings.warn("`atmosphere` does not have a consistent grid with medium. "
+                "`atmosphere` is being resampled.")
+                atmosphere = pyshdom.grid.resample_onto_grid(self._grid, atmosphere)
 
-            if np.all(atmosphere.x == self._grid.x) & np.all(atmosphere.y == self._grid.y) & \
-                np.all(atmosphere.z==self._grid.z):
+            if 'temperature' in atmosphere.data_vars:
+                pyshdom.checks.check_positivity(atmosphere, 'temperature')
+                if np.any(atmosphere.temperature >= 350.0) or np.any(atmosphere.temperature <= 150.0):
+                    warnings.warn("Temperatures in `atmosphere` are out of Earth's range.")
 
-                if 'temperature' in atmosphere.data_vars:
-                    try:
-                        pyshdom.checks.check_positivity(atmosphere, 'temperature')
-                        self._pa.tempp = atmosphere.temperature.data.ravel().astype(np.float32)
-                    except ValueError:
-                        raise ValueError("'temperature' in atmosphere dataset is negative")
+            if 'gas_absorption' in atmosphere.data_vars:
+                pyshdom.checks.check_positivity(atmosphere, 'gas_absorption')
+                pyshdom.checks.check_hasdim(atmosphere, gas_absorption=['z'])
 
-                else:
-                    warnings.warn("'temperature' not found in atmosphere dataset.",category=RuntimeWarning)
-                    self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32)
-                    if self._srctype in ('T', 'B'):
-                        warnings.warn('temperature was not specifed in atmosphere file despite using thermal source.', category=RuntimeWarning)
-
-                if 'gas_absorption' in atmosphere.data_vars:
-                    try:
-                        pyshdom.checks.check_positivity(atmosphere, 'gas_absorption')
-                    except ValueError:
-                        raise ValueError("'gas_absorption' in atmosphere dataset is negative.")
-                    try:
-                        pyshdom.checks.check_hasdim(atmosphere, ('gas_absorption',['z']))
-                    except KeyError:
-                        raise KeyError(("'gas_absorption' in atmosphere dataset is missing expected dimension 'z'."))
-                    #check if gases collapse to 1D.
-                    test = True
-                    if ('x' in atmosphere.gas_absorption.dims) & ('y' in atmosphere.gas_absorption.dims):
-                        for x in atmosphere.x:
-                            for y in atmosphere.y:
-                                test_temp = np.allclose(atmosphere.gas_absorption.isel(x=0,y=0).data, atmosphere.gas_absorption.sel(x=x,y=y))
-                                if not test_temp:
-                                    test = False
-                        gas_1d = atmosphere.gas_absorption.isel(x=0,y=0).data
-                    elif ('x' in atmosphere.gas_absorption.dims):
-                        for x in atmosphere.x:
-                            test_temp = np.allclose(atmosphere.gas_absorption.isel(x=0).data, atmosphere.gas_absorption.sel(x=x))
-                            if not test_temp:
-                                test = False
-                        gas_1d = atmosphere.gas_absorption.isel(x=0).data
-                    elif ('y' in atmosphere.gas_absorption.dims):
+                test = True
+                if ('x' in atmosphere.gas_absorption.dims) & ('y' in atmosphere.gas_absorption.dims):
+                    for x in atmosphere.x:
                         for y in atmosphere.y:
-                            test_temp = np.allclose(atmosphere.gas_absorption.isel(y=0).data, atmosphere.gas_absorption.sel(y=y))
+                            test_temp = np.allclose(atmosphere.gas_absorption.isel(x=0,y=0).data, atmosphere.gas_absorption.sel(x=x,y=y))
                             if not test_temp:
                                 test = False
-                        gas_1d = atmosphere.gas_absorption.isel(y=0).data
-                    elif atmosphere.gas_absorption.dims == tuple('z'):
-                        gas_1d = atmosphere.gas_absorption.data
-                    if test:
-                        self._pa.nzckd = atmosphere.sizes['z']
-                        self._pa.zckd = atmosphere.z.data
-                        self._pa.gasabs = gas_1d
-                    else:
-                        raise ValueError("'2D/3D gas absorption in atmosphere file is not currently supported'")
-                warnings.warn("No gas absorption found in atmosphere file. Variable name should be 'gas_absorption'.",
-                                category=RuntimeWarning)
-            else:
-                raise ValueError('atmosphere does not have a consistent grid with medium')
+                    gas_1d = atmosphere.gas_absorption.isel(x=0,y=0).data
+                elif ('x' in atmosphere.gas_absorption.dims):
+                    for x in atmosphere.x:
+                        test_temp = np.allclose(atmosphere.gas_absorption.isel(x=0).data, atmosphere.gas_absorption.sel(x=x))
+                        if not test_temp:
+                            test = False
+                    gas_1d = atmosphere.gas_absorption.isel(x=0).data
+                elif ('y' in atmosphere.gas_absorption.dims):
+                    for y in atmosphere.y:
+                        test_temp = np.allclose(atmosphere.gas_absorption.isel(y=0).data, atmosphere.gas_absorption.sel(y=y))
+                        if not test_temp:
+                            test = False
+                    gas_1d = atmosphere.gas_absorption.isel(y=0).data
+                elif atmosphere.gas_absorption.dims == tuple('z'):
+                    gas_1d = atmosphere.gas_absorption.data
+                if test:
+                    self._pa.nzckd = atmosphere.sizes['z']
+                    self._pa.zckd = atmosphere.z.data
+                    self._pa.gasabs = gas_1d
+                else:
+                    raise ValueError("Explicit '2D/3D gas absorption in `atmosphere` is not currently supported."
+                                     " Please add it to `medium`.")
+            warnings.warn("No gas absorption found in atmosphere file. Variable name should be 'gas_absorption'.",
+                            category=RuntimeWarning)
         else:
-            raise TypeError("Atmosphere should be an xr.Dataset")
+            raise TypeError("`atmosphere` should be an xr.Dataset")
+        self.atmosphere = atmosphere
 
     def _setup_source(self, source):
         """
         TODO
         """
         # Source parameters
+        self.wavelength = source.wavelength.data
         self._srctype = source.srctype.data
         self._solarflux = source.solarflux.data
         self._solarmu = source.solarmu.data
@@ -217,12 +235,12 @@ class RTE(object):
         self._skyrad = source.skyrad.data
         self._units = source.units.data
         self._waveno = source.wavenumber.data
+        return source
 
     def _setup_surface(self, surface):
         """
         TODO
         """
-
         # Surface parameters
         self._maxsfcpars = surface.maxsfcpars.data
         self._sfctype = str(surface.sfctype.data)
@@ -249,6 +267,13 @@ class RTE(object):
         else:
             self._maxbcrad = int((2 + self._nmu * self._nphi0max / 2) * self._maxnbc)
 
+        if (self._gndalbedo < 0.0) or (self._gndalbedo > 1.0):
+            raise ValueError("Ground albedo must be 0 to 1.")
+        if (self._gndtemp <= 150.0) or (self._gndtemp >= 350.0):
+            warnings.warn("Ground temperature out of Earth range.")
+
+        return surface
+
     def _setup_numerical_params(self, numerical_params):
         """
         Set the numerical parameters of the SHDOM forward solver.
@@ -272,15 +297,32 @@ class RTE(object):
         self._solacc = numerical_params.solution_accuracy.data
         self._highorderrad = numerical_params.high_order_radiance.data
 
+        if self._nphi < self._nmu:
+            warnings.warn("Usually want NPHI > NMU")
+
+        flux = 0.0
+        if self._srctype in ('T', 'B'):
+            flux = np.pi*pyshdom.util.planck_function(self._gndtemp, self.wavelength)
+        if self._srctype != 'T':
+            flux += self._solarflux
+        if (self._splitacc > 0.0) & ((self._splitacc < 0.001*flux) | (self._splitacc > 0.1*flux)):
+            warnings.warn("Splitting accuracy parameter is not a fraction but scales with fluxes.")
+        if (self._shacc > 0.0) & (self._shacc> 0.03*flux):
+            warnings.warn("spherical_harmonics_accuracy is not a fraction but scales with fluxes.")
+
+
+
         # Setup horizontal boundary conditions
         # TODO: check that BC is strictly open or periodic
         self._ipflag = numerical_params.ip_flag.data
 
         self._bcflag = 0
-        if (numerical_params.x_boundary_condition == 'open') & (self._ipflag in (0,2,4,6)):
+        if (numerical_params.x_boundary_condition == 'open') & (self._ipflag in (0, 2, 4, 6)):
             self._bcflag += 1
-        if (numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0,1,4,5)):
+        if (numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0, 1, 4, 5)):
             self._bcflag += 2
+
+        return numerical_params
 
     def import_grid(self, other_solver):
         #If the same base grid is used and other memory parameters.
@@ -293,6 +335,7 @@ class RTE(object):
             other_solver._cellflags, other_solver._nbcells
         else:
             raise ValueError('Base grids and numerical parameters must match to import a split grid from another solver.')
+
 
     def _setup_grid(self, grid):
         """
@@ -316,13 +359,9 @@ class RTE(object):
         self._pa.xstart = grid.x[0]
         self._pa.ystart = grid.y[0]
 
-        # TODO: check constant dx and dy
-
-        #self._pa.delx = grid.x[1] - grid.x[0]
-        self._pa.delx = grid.delx
-        #self._pa.dely = grid.y[1] - grid.y[0]
-        self._pa.dely = grid.dely
-        self._pa.zlevels = grid.z
+        self._pa.delx = grid.delx.data
+        self._pa.dely = grid.dely.data
+        self._pa.zlevels = grid.z.data
 
         # Initialize shdom internal grid sizes to property array grid
         self._nx = self._pa.npx
@@ -445,7 +484,7 @@ class RTE(object):
         self._maxnbc = int(self._maxig * 3 / self._nz)
 
 
-    def _init_solution(self, make_big_arrays=True):
+    def _prepare_optical_properties(self):
         """
         TODO: improve this
         Initilize the solution (I, J fields) from the direct transmission and a simple layered model.
@@ -475,6 +514,9 @@ class RTE(object):
         legendre_table = xr.concat(padded_legcoefs, dim='table_index')
 
         self._pa.numphase = legendre_table.sizes['table_index']
+
+        if np.any(self._pa.iphasep < 1) or np.any(self._pa.iphasep > self._pa.numphase):
+            raise pyshdom.exceptions.OutOfRangeError("Phase function indices are out of bounds.")
 
         # Determine the number of legendre coefficient for a given angular resolution
         #Note this is corrected to self._ml rather than self._mm based on original SHDOM and
@@ -531,7 +573,7 @@ class RTE(object):
             deltam=self._deltam,
             units=self._units,
             waveno=self._waveno,
-            wavelen=self._wavelen,
+            wavelen=self.wavelength,
             gridpos=self._gridpos,
             nleg=self._nleg,
             maxig=self._maxig,
@@ -542,20 +584,25 @@ class RTE(object):
             npts=self._npts)
 
         reshaped_ext = self._total_ext[:self._nbpts].reshape(self._nx, self._ny, self._nz)
-        cell_tau_approx = np.diff(self._pa.zlevels)*reshaped_ext[..., 1:] + \
-                                  reshaped_ext[..., :-1]
+        cell_averaged_extinct = (reshaped_ext[1:, 1:, 1:] + reshaped_ext[1:, 1:, :-1] +
+            reshaped_ext[1:, :-1, 1:] + reshaped_ext[1:, :-1, :-1] + reshaped_ext[:-1, 1:, 1:] +\
+            reshaped_ext[:-1, 1:, :-1] + reshaped_ext[:-1, :-1, 1:] + reshaped_ext[:-1, :-1, :-1])/8.0
+        cell_volume = (np.diff(self._pa.zlevels)*self._pa.delx.data*self._pa.dely.data)**(1/3)
+        cell_tau_approx = cell_volume[np.newaxis, np.newaxis,:]*cell_averaged_extinct
         number_thick_cells = np.sum(cell_tau_approx >= 2.0)
-        # if number_thick_cells > 0:
-        #     warnings.warn("Number of property grid cells with optical depth greater than 2: '{}'. "
-        #             "Max cell optical depth: '{}'".format(number_thick_cells, np.max(cell_tau_approx)))
 
-        if make_big_arrays:
-            self._make_big_arrays()
+        if number_thick_cells > 0:
+            warnings.warn("Number of property grid cells with optical depth greater than 2: '{}'. "
+                    "Max cell optical depth: '{}'".format(number_thick_cells, np.max(cell_tau_approx)))
+
+        if ((not self._deltam) & (self._srctype != 'T') & (self._maxasym > 0.5)):
+            warnings.warn("Delta-M should be use for solar radiative transfer problems with highly "
+            "peaked phase functions.")
 
     def _release_big_arrays(self):
 
         self._source = None
-        self._radiance=None
+        self._radiance = None
         self._delsource = None
         self._work = None
         self._work1 = None
@@ -565,7 +612,10 @@ class RTE(object):
         self._dirflux = None
         self._bcrad = None
 
-    def _make_big_arrays(self):
+    def _init_solution(self, update_optical_properties=False):
+
+        if update_optical_properties:
+            self._prepare_optical_properties()
 
         # Restart solution criteria
         self._oldnpts = 0
@@ -727,7 +777,7 @@ class RTE(object):
                 gasabs=self._pa.gasabs
             )
 
-    def solve(self, maxiter, init_solution=True, setup_grid=True,verbose=True):
+    def solve(self, maxiter, init_solution=True, setup_grid=True, update_optical_properties=False, verbose=True):
         """
         Main solver routine. This routine is comprised of two parts:
           1. Initialization, optional
@@ -749,7 +799,7 @@ class RTE(object):
         if setup_grid:
             self._setup_grid(self._grid)
         if init_solution:
-            self._init_solution()
+            self._init_solution(update_optical_properties=update_optical_properties)
 
         # Part 2: Solution itertaions
         self._sfcgridparms, self._solcrit, \
@@ -867,7 +917,7 @@ class RTE(object):
                 sfcgridparms=self._sfcgridparms,
                 units=self._units,
                 waveno=self._waveno,
-                wavelen=self._wavelen,
+                wavelen=self.wavelength,#self._wavelen,
                 accelflag=self._accelflag,
                 solacc=self._solacc,
                 maxiter=maxiter,
@@ -968,7 +1018,7 @@ class RTE(object):
             gndalbedo=self._gndalbedo,
             skyrad=self._skyrad,
             waveno=self._waveno,
-            wavelen=self._wavelen,
+            wavelen=self.wavelength,#self._wavelen,
             mu=self._mu,
             phi=self._phi.reshape(self._nmu, -1),
             wtdo=self._wtdo.reshape(self._nmu, -1),

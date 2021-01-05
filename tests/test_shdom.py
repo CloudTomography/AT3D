@@ -65,7 +65,7 @@ def solve_prop(solver, filename='data/rico32x36x26w672.prp'):
     Must be polarized. Base grid, source, numerical parameters, surface etc
     must match what is in the SHDOM namelist. TODO move to tests.
     """
-    solver._init_solution(make_big_arrays=False)
+    solver._prepare_optical_properties()#_init_solution(make_big_arrays=False)
     #initialize some variables that are modified by the pyshdom.core.read_properties routine.
     nleg = 800
     maxleg = 10000
@@ -123,7 +123,7 @@ def solve_prop(solver, filename='data/rico32x36x26w672.prp'):
         deltam=solver._deltam,
         units=solver._units,
         waveno=solver._waveno,
-        wavelen=solver._wavelen,
+        wavelen=solver.wavelength,
         gridpos=solver._gridpos,
         nleg=solver._nleg,
         maxig=solver._maxig,
@@ -133,9 +133,9 @@ def solve_prop(solver, filename='data/rico32x36x26w672.prp'):
         srctype=solver._srctype,
         npts=solver._npts)
     #finally initialize the radiance/source fields based on the optical properties.
-    solver._make_big_arrays()
+    solver._init_solution()
     #solve without redoing init_solution which would undo all the work we did.
-    solver.solve(maxiter=100, init_solution=False)
+    solver.solve(maxiter=100, init_solution=False, verbose=False)
 
 
 class Verify_Solver(TestCase):
@@ -208,7 +208,7 @@ class Verify_Solver(TestCase):
             solvers.add_solver(wavelength, pyshdom.solver.RTE(
                                             numerical_params=config,
                                             medium={'cloud': cloud_optical_scatterer},
-                                            source=pyshdom.source.solar(-0.5, 0.0, solarflux=1.0),
+                                            source=pyshdom.source.solar(wavelength,-0.5, 0.0, solarflux=1.0),
                                             surface=pyshdom.surface.lambertian(albedo=0.05),
                                             num_stokes=3,
                                             name=None,
@@ -318,7 +318,7 @@ class Parallelization_No_SubpixelRays(TestCase):
             config['solution_accuracy'] = 1e-4
             solver = pyshdom.solver.RTE(numerical_params=config,
                                             medium={'cloud': optical_properties},
-                                           source=pyshdom.source.solar(-1*np.cos(np.deg2rad(60.0)),0.0,solarflux=1.0),
+                                           source=pyshdom.source.solar(wavelength, -1*np.cos(np.deg2rad(60.0)),0.0,solarflux=1.0),
                                            surface=pyshdom.surface.ocean_unpolarized(surface_wind_speed=10.0,
                                                                                   pigmentation=0.0),
                                             num_stokes=1,
@@ -426,7 +426,7 @@ class Parallelization_SubpixelRays(TestCase):
             config['solution_accuracy'] = 1e-4
             solver = pyshdom.solver.RTE(numerical_params=config,
                                             medium={'cloud': optical_properties},
-                                           source=pyshdom.source.solar(-1*np.cos(np.deg2rad(60.0)),0.0,solarflux=1.0),
+                                           source=pyshdom.source.solar(wavelength, -1*np.cos(np.deg2rad(60.0)),0.0,solarflux=1.0),
                                            surface=pyshdom.surface.ocean_unpolarized(surface_wind_speed=10.0,
                                                                                   pigmentation=0.0),
                                             num_stokes=1,
@@ -435,7 +435,7 @@ class Parallelization_SubpixelRays(TestCase):
             solvers.add_solver(wavelength,solver)
 
         Sensordict.get_measurements(solvers, maxiter=100, n_jobs=8, verbose=False)
-        Sensordict2.get_measurements(solvers, maxiter=100, n_jobs=1, verbose=True)
+        Sensordict2.get_measurements(solvers, maxiter=100, n_jobs=1, verbose=False)
 
         #Sensordict['MISR']['sensor_list'][0].to_netcdf('data/RenderedSensorReference_subpixelargs.nc')
         cls.solvers = solvers
@@ -461,7 +461,7 @@ class Verify_Lambertian_Surfaces(TestCase):
         #                                                 pigmentation = np.zeros((50,1)), ground_temperature=288.0,delx=0.02,dely=0.04)
         solver = pyshdom.solver.RTE(numerical_params=config,
                                         medium={'rayleigh': rayleigh[0.85]},
-                                       source=pyshdom.source.solar(-0.707, 0.0, solarflux=1.0),
+                                       source=pyshdom.source.solar(0.85, -0.707, 0.0, solarflux=1.0),
                                        surface=variable_lambertian,
                                         num_stokes=1,
                                         name=None,
@@ -502,7 +502,7 @@ class Verify_Ocean_Unpolarized_Surfaces(TestCase):
         solver = pyshdom.solver.RTE(
                                 numerical_params=config,
                                 medium={'rayleigh': rayleigh[0.85]},
-                                source=pyshdom.source.solar(-0.707, 0.0, solarflux=1.0),
+                                source=pyshdom.source.solar(0.85,-0.707, 0.0, solarflux=1.0),
                                 surface=variable_ocean,
                                 num_stokes=1,
                                 name=None,
@@ -541,7 +541,7 @@ class Verify_RPV_Surfaces(TestCase):
         surface = pyshdom.surface.RPV_unpolarized(rho0,k,theta, ground_temperature=288.0, delx=0.02,dely=0.02)
         solver = pyshdom.solver.RTE(numerical_params=config,
                                                 medium={'rayleigh': rayleigh[0.85]},
-                                               source=pyshdom.source.solar(-0.707, 0.0, solarflux=1.0),
+                                               source=pyshdom.source.solar(0.85,-0.707, 0.0, solarflux=1.0),
                                                surface=surface,
                                                 num_stokes=1,
                                                 name=None,
@@ -580,7 +580,7 @@ class Verify_WaveFresnel_Surfaces(TestCase):
                                             ground_temperature=288.0, delx=0.02,dely=0.02)
         solver = pyshdom.solver.RTE(numerical_params=config,
                                                 medium={'rayleigh': rayleigh[0.85]},
-                                               source=pyshdom.source.solar(-0.707, 0.0, solarflux=1.0),
+                                               source=pyshdom.source.solar(0.85, -0.707, 0.0, solarflux=1.0),
                                                surface=surface,
                                                 num_stokes=3,
                                                 name=None,
@@ -628,7 +628,7 @@ class Verify_Diner_Surfaces(TestCase):
         solver = pyshdom.solver.RTE(
                     numerical_params=config,
                     medium={'rayleigh': rayleigh[0.85]},
-                    source=pyshdom.source.solar(-0.707, 0.0, solarflux=1.0),
+                    source=pyshdom.source.solar(0.85, -0.707, 0.0, solarflux=1.0),
                     surface=surface,
                     num_stokes=3,
                     name=None,

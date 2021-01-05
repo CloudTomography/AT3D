@@ -1,108 +1,96 @@
 import numpy as np
+import pyshdom.exceptions
+import typing
 
-def check_positivity(dataset,*names):
+def check_exists(dataset, *names):
+    """TODO"""
+    for name in names:
+        try:
+            dataset[name]
+        except KeyError as err:
+            raise type(err)(str("Expected variable with name '{}' in dataset".format(name)))
+
+def check_positivity(dataset, *names, precision=7):
     """
     TODO
     """
     check_exists(dataset, *names)
-    fail_list = []
     for name in names:
         variable = dataset[name]
         if not np.all(variable.data >= 0.0):
-            fail_list.append(name)
-    if len(fail_list) > 0:
-        raise ValueError("variables must be >= 0.0", *fail_list)
+            dataset[name][:] = np.round(variable, decimals=precision)
+            if not np.all(variable.data >= 0.0):
+                raise pyshdom.exceptions.NegativeValueError("Negative values found in '{}'".format(name))
 
-def check_hasdim(dataset, *argchecks):
-    name_list = [a for a,b in argchecks]
-    check_exists(dataset, *name_list)
-    fail_list = []
-    for (name,dim_names) in argchecks:
+def check_range(dataset, **checkkwargs):
+    """
+    TODO
+    """
+    check_exists(dataset, *checkkwargs)
+    for name, (low, high) in checkkwargs.items():
+        data = dataset[name]
+        if not np.all((low <= data) & (data <= high)):
+            raise pyshdom.exceptions.OutOfRangeError(
+                "Values outside of range '[{}, {}]' found in variable '{}'".format(
+                low, high, name)
+            )
+
+def check_hasdim(dataset, **checkkwargs):
+    """
+    TODO
+    """
+    check_exists(dataset, *checkkwargs)
+    for name, dim_names in checkkwargs.items():
+        if not isinstance(dim_names, typing.Iterable):
+            dim_names = [dim_names]
         for dim_name in dim_names:
             if dim_name not in dataset[name].dims:
-                fail_list.append((name, dim_name))
-    if len(fail_list) > 0:
-        raise KeyError('Variables do not have the expected dimensions', *fail_list)
-
-def check_exists(dataset, *names):
-    fail_list = []
-    for name in names:
-        try:
-            variable = dataset[name]
-        except KeyError:
-            fail_list.append(name)
-    if len(fail_list) > 0:
-        raise ValueError("variables were expected in dataset", *fail_list)
+                raise pyshdom.exceptions.MissingDimensionError(
+                    "Expected '{}' to have dimension '{}'".format(
+                    name, dim_name
+                ))
 
 def check_grid(dataset):
     """
     TODO
     """
-    check_exists(dataset, 'x', 'y', 'z')
+    pyshdom.checks.check_exists(dataset, 'x', 'y', 'z', 'delx', 'dely')
+    for dimension, deldim in zip(('x', 'y'), ('delx', 'dely')):
 
-    #check grid is 3D
-    # fail_list = []
-    # if len(dataset.x) == 1:
-    #     fail_list.append('x')
-    # if len(dataset.y) == 1:
-    #     fail_list.append('y')
-    # if len(fail_list) > 0:
-    #     raise ValueError("Grid coordinates with size of 1 are not currently supported.", *fail_list)
+        if dataset[dimension][0] != 0.0:
+            raise pyshdom.exceptions.GridError("Grid dimension '{}' should start from 0.0".format(dimension))
 
-    #check equispacing of horizontal grid 'x','y'
-    x = dataset.x.diff('x')
-    y = dataset.y.diff('y')
+        if dataset[dimension].size > 1:
+            diffx = dataset[dimension].diff(dimension).data
+            if not (np.allclose(diffx, diffx[0], atol=1e-6)):
+                raise pyshdom.exceptions.GridError("Grid dimension '{}' is not equispaced.".format(dimension))
+            if not (np.allclose(diffx[0], dataset[deldim])):
+                raise pyshdom.exceptions.GridError("'{a}' is not consistent with '{b}'. "
+                                                   "'{a}' should be set based on '{b}', see grid.make_grid for details.".format(
+                                                       a=deldim, b=dimension))
+            if not np.all(diffx > 0.0):
+                raise pyshdom.exceptions.GridError("Grid dimension '{}' is not strictly increasing.".format(dimension))
 
-    fail_list = []
-    if len(x) > 1:
-        if not np.allclose(x,x[0],atol=1e-6):
-            fail_list.append('x')
-    if len(y) > 1:
-        if not np.allclose(y,y[0], atol=1e-6):
-            fail_list.append('y')
-    if len(fail_list) > 0:
-        raise ValueError("Grid coordinates must be equispaced for the RTE solver.", *fail_list)
-    check_positivity(dataset,'z')
+        if dataset[deldim] <= 0.0:
+            raise pyshdom.exceptions.GridError("Grid dimension '{}' is not strictly increasing.".format(dimension))
 
-def check_legendre_poly_table(dataset):
+    if not np.all(dataset.z >= 0.0) & np.all(dataset.z.diff('z') > 0.0) & (dataset.z.size >= 2):
+        raise pyshdom.exceptions.GridError("Grid dimension 'z' should be positive, strictly increasing and "
+                                           "have 2 or more elements.")
+
+def check_legendre(dataset):
     """TODO"""
-    check_exists(dataset, ['legcoef', 'table_index', 'extinction', 'ssalb'])
-    check_hasdim(dataset, ('legcoef', ['stokes_index', 'legendre_index']))
-
-    if not np.all(dataset.table_index.data.ravel()== np.arange(1,dataset.extinction.size+1).astype(np.int)):
-        raise ValueError("'table_index' must act as a multi_index for microphysical dims")
+    check_exists(dataset, 'legcoef', 'table_index', 'extinction', 'ssalb')
+    check_hasdim(dataset, legcoef=['stokes_index', 'legendre_index'])
 
     if dataset['legcoef'].sizes['stokes_index'] != 6:
-        raise ValueError("'stokes_index' dimension of 'legcoef' must have 6 components.")
-
+        raise pyshdom.exceptions.LegendreTableError("'stokes_index' dimension of 'legcoef' must have 6 components.")
     legendre_table = dataset['legcoef']
-    if not np.allclose(legendre_table[0,0], 1.0):
-        raise ValueError("0th Legendre Coefficients must be normalized to 1.0")
-
-def check_legendre_rte(dataset):
-    """TODO"""
-    check_exists(dataset, ['legcoef', 'table_index', 'extinction', 'ssalb'])
-    check_hasdim(dataset, ('legcoef', ['stokes_index', 'legendre_index']))
-
-    if dataset['legcoef'].sizes['stokes_index'] != 6:
-        raise ValueError("'stokes_index' dimension of 'legcoef' must have 6 components.")
-
-    legendre_table = dataset['legcoef']
-    if not np.allclose(legendre_table[0,0], 1.0):
-        raise ValueError("0th Legendre Coefficients must be normalized to 1.0")
-
-def check_range(dataset, *argchecks):
-    """TODO"""
-    name_list = [a for a,b,c in argchecks]
-    check_exists(dataset, *name_list)
-    fail_list = []
-    for (name,low,high) in argchecks:
-        data = dataset[name]
-        if not np.all((low <=data) & (data<= high)):
-            fail_list.append((name, low, high))
-
-    if len(fail_list) > 0:
-        raise ValueError('Variables not in required ranges', *fail_list)
+    if not np.allclose(legendre_table[0, 0], 1.0, atol=1e-7):
+        raise pyshdom.exceptions.LegendreTableError("0th Legendre/Wigner Coefficients must be normalized to 1.0")
+    if not np.all(( legendre_table[0, 1]/3.0 >= -1.0) & (legendre_table[0, 1]/3.0 <= 1.0)):
+        raise pyshdom.exceptions.LegendreTableError("Asymmetry Parameter (1st Legendre coefficient divided by 3)"
+                                                   "is not in the range [-1.0, 1.0]")
 
 def dataset_checks(**argchecks):
     """
