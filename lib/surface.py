@@ -14,7 +14,7 @@ def lambertian(albedo, ground_temperature=298.15, delx=None, dely=None):
     albedo = np.atleast_2d(albedo)
 
     if (albedo.size == 1) & (ground_temperature.size == 1):
-        return xr.Dataset(
+        dataset = xr.Dataset(
             data_vars={
                 'name': 'fixed_lambertian_surface',
                 'sfctype':'FL',
@@ -29,15 +29,15 @@ def lambertian(albedo, ground_temperature=298.15, delx=None, dely=None):
                 'sfcparms': [],
             }
             )
-    elif (ground_temperature.size == 1):
+    elif ground_temperature.size == 1:
         ground_temperature = np.full_like(albedo, fill_value=ground_temperature[0, 0])
         if dely is None or delx is None:
             raise ValueError('dely and delx must be defined for variable surface parameters.')
-        return _make_surface_dataset('variable_lambertian', ground_temperature,
-                                     delx, dely, albedo=albedo)
+        dataset = _make_surface_dataset('variable_lambertian', ground_temperature,
+                                        delx, dely, albedo=albedo)
     else:
         raise ValueError('ground temperature must have a compatible shape.')
-
+    return dataset
 
 def wave_fresnel(real_refractive_index, imaginary_refractive_index, surface_wind_speed,
                  ground_temperature=298.15, delx=None, dely=None):

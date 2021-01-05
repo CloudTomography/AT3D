@@ -41,7 +41,7 @@ def check_hasdim(dataset, **checkkwargs):
     """
     check_exists(dataset, *checkkwargs)
     for name, dim_names in checkkwargs.items():
-        if not isinstance(dim_names, typing.Iterable):
+        if not isinstance(dim_names, (typing.Dict, typing.List, typing.Tuple)):
             dim_names = [dim_names]
         for dim_name in dim_names:
             if dim_name not in dataset[name].dims:
@@ -80,9 +80,8 @@ def check_grid(dataset):
 
 def check_legendre(dataset):
     """TODO"""
-    check_exists(dataset, 'legcoef', 'table_index', 'extinction', 'ssalb')
+    #check_exists(dataset, 'legcoef', 'table_index', 'extinction', 'ssalb')
     check_hasdim(dataset, legcoef=['stokes_index', 'legendre_index'])
-
     if dataset['legcoef'].sizes['stokes_index'] != 6:
         raise pyshdom.exceptions.LegendreTableError("'stokes_index' dimension of 'legcoef' must have 6 components.")
     legendre_table = dataset['legcoef']
@@ -91,6 +90,31 @@ def check_legendre(dataset):
     if not np.all(( legendre_table[0, 1]/3.0 >= -1.0) & (legendre_table[0, 1]/3.0 <= 1.0)):
         raise pyshdom.exceptions.LegendreTableError("Asymmetry Parameter (1st Legendre coefficient divided by 3)"
                                                    "is not in the range [-1.0, 1.0]")
+
+def check_sensor(dataset):
+    """TODO"""
+    check_hasdim(dataset, ray_mu='nrays', ray_phi='nrays', ray_x='nrays',
+                 ray_y='nrays', ray_z='nrays', cam_mu='npixels', cam_phi='npixels',
+                 cam_x='npixels', cam_y='npixels', cam_z='npixels', pixel_index='nrays',
+                 ray_weight='nrays')
+    check_positivity(dataset, 'cam_z', 'ray_z')
+    check_positivity(dataset, 'wavelength')
+
+    if (np.any(dataset.cam_mu) == 0.0) or np.any(dataset.ray_mu == 0.0):
+        raise ValueError("Values of `mu` (cam_mu or ray_mu) cannot be 0.0")
+    check_exists(dataset, 'stokes_index')
+    for i in dataset.stokes_index:
+        if i not in ('I', 'Q', 'U', 'V'):
+            raise ValueError("Invalid Stokes components '{}' found in sensor dataset."
+            " Valid values are 'I', 'Q', 'U', 'V'.".format(i))
+    check_hasdim(dataset, stokes='stokes_index')
+    if dataset.stokes.dtype != np.bool:
+        raise TypeError("'stokes' variable in sensor dataset should be of boolean type.")
+    if dataset.use_subpixel_rays.dtype != np.bool:
+        raise TypeError("'use_subpixel_rays' variable in sensor dataset should be of boolean type.")
+    if dataset.use_subpixel_rays.size != 1:
+        raise ValueError("'use_subpixel_rays' variable should have a single value shape=(1,).")
+
 
 def dataset_checks(**argchecks):
     """

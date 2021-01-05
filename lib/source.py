@@ -50,8 +50,8 @@ def thermal(wavelength, skyrad=0.0, units='radiance'):
             'name': 'solar_source',
             'wavelength': wavelength,
             'solarflux': 0.0,
-            'solarmu': np.nan,
-            'solaraz': np.nan,
+            'solarmu': 1.0,
+            'solaraz': 0.0,
             'srctype': 'T',
             'units': units_flag,
             'wavenumber': [10000, 10001], #only used for CKD

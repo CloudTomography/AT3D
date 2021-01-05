@@ -16,6 +16,7 @@ import pyshdom.core
 import pyshdom.gradient
 import pyshdom.medium
 import pyshdom.parallel
+import pyshdom.checks
 
 class SensorsDict(OrderedDict):
     """
@@ -27,6 +28,7 @@ class SensorsDict(OrderedDict):
         """
         if not key in self:
             self._add_instrument(key)
+        pyshdom.checks.check_sensor(value)
         self[key]['sensor_list'].append(value)
 
     def _add_instrument(self, key):
@@ -65,6 +67,11 @@ class SensorsDict(OrderedDict):
         """
         TODO
         """
+        if not isinstance(solvers, SolversDict):
+            raise TypeError("`solvers` should be of type '{}' not '{}'".format(SolversDict, type(solvers)))
+        if not isinstance(destructive, np.bool):
+            raise TypeError("`destructive` should be a boolean.")
+
         rte_sensors, sensor_mappings = self.sort_sensors(solvers)
 
         if mpi_comm is not None:
@@ -117,6 +124,13 @@ class SensorsDict(OrderedDict):
         """
         TODO check that measurements matches self.
         """
+        if not isinstance(solvers, SolversDict):
+            raise TypeError("`solvers` should be of type '{}' not '{}'".format(SolversDict, type(solvers)))
+        if measurements is not None:
+            if not isinstance(measurements, SensorsDict):
+                raise TypeError("`measurements` should be of type '{}' not '{}'".format(SensorsDict, type(measurements)))
+
+
         rte_sensors = OrderedDict()
         sensor_mappings = OrderedDict()
 
@@ -424,8 +438,8 @@ class SolversDict(OrderedDict):
         """
         TODO
         """
-        #TODO check that value is a valid solver and whether or not
-        #the key already exists.
+        if not isinstance(value, pyshdom.solver.RTE):
+            raise TypeError("solver should be of type '{}'".format(pyshdom.solver.RTE))
         self[key] = value
 
     def parallel_solve(self, n_jobs=1, mpi_comm=None, maxiter=100,
@@ -458,14 +472,8 @@ class SolversDict(OrderedDict):
         Solver is modified in-place.
         TODO
         """
-        #Only use the first solver under the assumption that all of them have the same
-        #base grid.
-        rte_solver = list(self.values())[0]
-        rte_solver._direct_beam_derivative()
-
         for solver in self.values():
-            solver._direct_derivative_path = rte_solver._direct_derivative_path
-            solver._direct_derivative_ptr = rte_solver._direct_derivative_ptr
+            solver._direct_beam_derivative()
 
     def add_microphysical_partial_derivatives(self, table_to_grid_method, table_data):
         """

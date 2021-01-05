@@ -1,9 +1,11 @@
 import sys
-import xarray as xr
-import numpy as np
 import warnings
 import copy
 import typing
+
+import xarray as xr
+import numpy as np
+
 from collections import OrderedDict
 
 import pyshdom.core
@@ -41,7 +43,7 @@ class RTE:
 
         # Check number of stokes and setup type of solver
         if num_stokes not in (1, 3, 4):
-            raise ValueError("num_stokes should be {1, 3, 4} not '{}'".format(num_stokes))
+            raise ValueError("num_stokes should be in (1, 3, 4) not '{}'".format(num_stokes))
         self._type = 'Radiance' if num_stokes == 1 else 'Polarization'
         self._nstokes = num_stokes
         self._nstleg = 1 if num_stokes == 1 else 6
@@ -84,13 +86,16 @@ class RTE:
 
         self._prepare_optical_properties()
 
+        self._shterms = None
+        self._netfluxdiv = None
+
     def _setup_medium(self, medium):
 
         if isinstance(medium, OrderedDict):
             medium_dict = medium
         elif isinstance(medium, typing.Dict):
             medium_dict = OrderedDict(medium)
-        elif isinstance(medium, typing.Iterable):
+        elif isinstance(medium, (typing.Tuple, typing.List)):
             medium_dict = OrderedDict()
             for i, val in enumerate(medium):
                 medium_dict['scatterer_{:03d}'.format(i)] = val
@@ -98,34 +103,44 @@ class RTE:
             medium_dict = OrderedDict({'scatterer_{:03d}'.format(0): medium})
         else:
             raise TypeError("'medium' argument to RTE must be an OrderedDict, dict or iterable"
-            "of xr.Dataset or an xr.Dataset")
+                            "of xr.Dataset or an xr.Dataset")
 
         for name, dataset in medium_dict.items():
             if not isinstance(dataset, xr.Dataset):
                 raise TypeError("scatterer '{}' in `medium` is not an xr.Dataset".format(name))
             try:
-                pyshdom.checks.check_range(dataset, ssalb=(0.0,1.0))
+                pyshdom.checks.check_range(dataset, ssalb=(0.0, 1.0))
             except (KeyError, pyshdom.exceptions.OutOfRangeError) as err:
-                raise type(err)(str(err).replace('"',"") + " for scatterer '{}' in `medium`.".format(name)).with_traceback(sys.exc_info()[2])
+                raise type(err)(str(err).replace('"', "") + \
+                " for scatterer '{}' in `medium`.".format(
+                    name)).with_traceback(sys.exc_info()[2])
             try:
                 pyshdom.checks.check_positivity(dataset, 'extinction')
             except (KeyError, pyshdom.exceptions.NegativeValueError) as err:
-                raise type(err)(str(err).replace('"',"") + " for scatterer '{}' in `medium`.".format(name)).with_traceback(sys.exc_info()[2])
+                raise type(err)(str(err).replace('"', "") + \
+                " for scatterer '{}' in `medium`.".format(
+                    name)).with_traceback(sys.exc_info()[2])
             for var_name in ('extinction', 'ssalb', 'table_index'):
                 try:
                     pyshdom.checks.check_hasdim(dataset, **{var_name: ('x', 'y', 'z')})
                 except (KeyError, pyshdom.exceptions.MissingDimensionError) as err:
-                    raise type(err)(str(err).replace('"',"") + " for scatterer '{}' in `medium`.".format(name)).with_traceback(sys.exc_info()[2])
+                    raise type(err)(str(err).replace('"', "") + \
+                    " for scatterer '{}' in `medium`.".format(
+                        name)).with_traceback(sys.exc_info()[2])
             try:
                 pyshdom.checks.check_legendre(dataset)
             except (KeyError, pyshdom.exceptions.MissingDimensionError,
                     pyshdom.exceptions.LegendreTableError) as err:
-                raise type(err)(str(err).replace('"',"") + " for scatterer '{}' in `medium`.".format(name)).with_traceback(sys.exc_info()[2])
+                raise type(err)(str(err).replace('"', "") + \
+                " for scatterer '{}' in `medium`.".format(
+                    name)).with_traceback(sys.exc_info()[2])
             try:
                 pyshdom.checks.check_grid(dataset)
             except (KeyError, pyshdom.exceptions.MissingDimensionError,
                     pyshdom.exceptions.GridError) as err:
-                raise type(err)(str(err).replace('"',"") + " for scatterer '{}' in `medium`.".format(name)).with_traceback(sys.exc_info()[2])
+                raise type(err)(str(err).replace('"', "") + \
+                " for scatterer '{}' in `medium`.".format(
+                    name)).with_traceback(sys.exc_info()[2])
 
         #check that all scatterers are on the same grid
         first_scatterer = list(medium_dict.values())[0]
@@ -138,25 +153,32 @@ class RTE:
                 (gridded.dely != first_scatterer.dely):
                 failed_list.append(name)
         if failed_list:
-            raise pyshdom.exceptions.GridError("Scatterers in `medium` do not all have consistent grids.", *failed_list)
+            raise pyshdom.exceptions.GridError("Scatterers in `medium` do "
+                                               "not all have consistent grids.",
+                                               *failed_list)
 
         grid = xr.Dataset({'x': first_scatterer.coords['x'],
-                                 'y': first_scatterer.coords['y'],
-                                 'z': first_scatterer.coords['z'],
-                                 'delx': first_scatterer.delx,
-                                 'dely': first_scatterer.dely})
+                           'y': first_scatterer.coords['y'],
+                           'z': first_scatterer.coords['z'],
+                           'delx': first_scatterer.delx,
+                           'dely': first_scatterer.dely})
 
-        scatterer_wavelengths = [scatterer.attrs['wavelength_center'] for scatterer in medium_dict.values() if \
-                       'wavelength_center' in scatterer.attrs]
+        scatterer_wavelengths = [scatterer.attrs['wavelength_center']
+                                 for scatterer in medium_dict.values() if
+                                 'wavelength_center' in scatterer.attrs]
 
         if scatterer_wavelengths:
             if not np.allclose(scatterer_wavelengths, self.wavelength):
-                ValueError("Scatterers in medium have different wavelengths. An error has likely occurred "
-                "in the calculation of mie properties. To override this exception make sure that "
-                "optical_properties.attrs['wavelength_center'] either doesn't exist or are all identical.")
+                ValueError("Scatterers in medium have different wavelengths."
+                           " An error has likely occurred in the calculation of mie properties."
+                           "To override this exception make sure that "
+                           "optical_properties.attrs['wavelength_center'] "
+                           "either doesn't exist or are all identical.")
         else:
-            warnings.warn("No wavelength specified in optical properties. Make sure that the wavelength used is"
-            "consistent with {}".format(self.wavelength), category=RuntimeWarning)
+            warnings.warn("No wavelength specified in optical properties. "
+                          "Make sure that the wavelength used is"
+                          "consistent with {}".format(self.wavelength),
+                          category=RuntimeWarning)
 
         return medium_dict, grid
 
@@ -168,20 +190,22 @@ class RTE:
         """
         if atmosphere is None:
             if self._srctype in ('T', 'B'):
-                raise ValueError("Temperature was not specified in `atmosphere` despite using thermal source.")
+                raise ValueError("Temperature was not specified in "
+                                 "`atmosphere` despite using thermal source.")
             self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32) + 273.0
         elif isinstance(atmosphere, xr.Dataset):
             pyshdom.checks.check_grid(atmosphere)
-            if not (np.all(atmosphere.x == self._grid.x) & np.all(atmosphere.y == self._grid.y) & \
-                np.all(atmosphere.z == self._grid.z)):
+            if not np.all(atmosphere.x == self._grid.x) & np.all(atmosphere.y == self._grid.y) & \
+                np.all(atmosphere.z == self._grid.z):
                 warnings.warn("`atmosphere` does not have a consistent grid with medium. "
-                "`atmosphere` is being resampled.")
+                              "`atmosphere` is being resampled.")
                 atmosphere = pyshdom.grid.resample_onto_grid(self._grid, atmosphere)
 
             if 'temperature' in atmosphere.data_vars:
                 pyshdom.checks.check_positivity(atmosphere, 'temperature')
-                if np.any(atmosphere.temperature >= 350.0) or np.any(atmosphere.temperature <= 150.0):
-                    warnings.warn("Temperatures in `atmosphere` are out of Earth's range.")
+                if np.any(atmosphere.temperature >= 350.0) or \
+                   np.any(atmosphere.temperature <= 150.0):
+                    warnings.warn("Temperatures in `atmosphere` are out of Earth's range [150.0, 350.0].")
 
             if 'gas_absorption' in atmosphere.data_vars:
                 pyshdom.checks.check_positivity(atmosphere, 'gas_absorption')
@@ -214,19 +238,25 @@ class RTE:
                     self._pa.zckd = atmosphere.z.data
                     self._pa.gasabs = gas_1d
                 else:
-                    raise ValueError("Explicit '2D/3D gas absorption in `atmosphere` is not currently supported."
+                    raise ValueError("Explicit '2D/3D gas absorption in "
+                                     "`atmosphere` is not currently supported."
                                      " Please add it to `medium`.")
-            warnings.warn("No gas absorption found in atmosphere file. Variable name should be 'gas_absorption'.",
-                            category=RuntimeWarning)
+            warnings.warn("No gas absorption found in atmosphere file. "
+                          "Variable name should be 'gas_absorption'.",
+                          category=RuntimeWarning)
         else:
             raise TypeError("`atmosphere` should be an xr.Dataset")
-        self.atmosphere = atmosphere
+        return atmosphere
 
     def _setup_source(self, source):
         """
         TODO
         """
         # Source parameters
+        pyshdom.checks.check_positivity(source, 'wavelength', 'solarflux',
+                                        'skyrad')
+        pyshdom.checks.check_range(source, solarmu=(-1.0, 0.0 + 1e-8))
+        pyshdom.checks.check_range(source, solaraz=(-np.pi, np.pi))
         self.wavelength = source.wavelength.data
         self._srctype = source.srctype.data
         self._solarflux = source.solarflux.data
@@ -235,6 +265,13 @@ class RTE:
         self._skyrad = source.skyrad.data
         self._units = source.units.data
         self._waveno = source.wavenumber.data
+
+        if self._srctype not in ('T', 'S', 'B'):
+            raise ValueError("Invalid source type '{}'. Make sure to choose "
+                             "a source from source.py".format(self._srctype))
+        if self._units not in ('R', 'T'):
+            raise ValueError("Invalid units '{}'. Make sure to choose "
+                             "a source from source.py".format(self._units))
         return source
 
     def _setup_surface(self, surface):
@@ -242,6 +279,12 @@ class RTE:
         TODO
         """
         # Surface parameters
+        pyshdom.checks.check_range(surface, gndalbedo=(0.0, 1.0))
+        pyshdom.checks.check_positivity(
+            surface, 'gndtemp', 'delxsfc', 'delysfc', 'maxsfcpars',
+            'nsfcpar', 'nxsfc', 'nxsfc'
+        )
+
         self._maxsfcpars = surface.maxsfcpars.data
         self._sfctype = str(surface.sfctype.data)
         self._gndalbedo = surface.gndalbedo.data
@@ -252,25 +295,36 @@ class RTE:
         self._delysfc = surface.delysfc.data
         self._nsfcpar = surface.nsfcpar.data
         self._sfcparms = surface.sfcparms.data
-        self._sfcgridparms = np.zeros((self._nsfcpar,self._maxnbc), dtype=np.float32,order='F')
+        self._sfcgridparms = np.zeros((self._nsfcpar,
+                                       self._maxnbc),
+                                      dtype=np.float32,
+                                      order='F')
 
-        if (self._nxsfc > 1) & (self._delxsfc * (self._nxsfc + 1) < self._grid.x[-1] - self._grid.x[0]):
+        if self._sfctype not in ('FL', 'VL', 'VW', 'VD', 'VO', 'VR'):
+            raise ValueError("surface type '{}' not recognized. "
+                             "Make sure to choose a supported surface from"
+                             " surface.py".format(self._sfctype))
+
+        if (self._nxsfc > 1) & \
+            (self._delxsfc * (self._nxsfc + 1) < self._grid.x[-1] - self._grid.x[0]):
             warnings.warn('Specified surface does not span RTE grid in the x direction.')
-        if (self._nysfc > 1) & (self._delysfc * (self._nysfc + 1) < self._grid.y[-1] - self._grid.y[0]):
+        if (self._nysfc > 1) & \
+            (self._delysfc * (self._nysfc + 1) < self._grid.y[-1] - self._grid.y[0]):
             warnings.warn('Specified surface does not span RTE grid in the y direction.')
 
         if (self._sfctype[-1] in ('R', 'O')) and (self._nstokes > 1):
-            raise ValueError("surface brdf '{}' is only supported for unpolarized radiative transfer (num_stokes=1)".format(surface.name.data))
+            raise ValueError("surface brdf '{}' is only"
+                             " supported for unpolarized radiative"
+                             " transfer (num_stokes=1)".format(surface.name.data))
 
         if self._sfctype.endswith('L'):
             self._maxbcrad = 2 * self._maxnbc
         else:
             self._maxbcrad = int((2 + self._nmu * self._nphi0max / 2) * self._maxnbc)
 
-        if (self._gndalbedo < 0.0) or (self._gndalbedo > 1.0):
-            raise ValueError("Ground albedo must be 0 to 1.")
         if (self._gndtemp <= 150.0) or (self._gndtemp >= 350.0):
-            warnings.warn("Ground temperature out of Earth range.")
+            warnings.warn("Ground temperature '{}' out of Earth range. "
+                          "[150.0, 350.0]".format(self._gndtemp))
 
         return surface
 
@@ -297,8 +351,13 @@ class RTE:
         self._solacc = numerical_params.solution_accuracy.data
         self._highorderrad = numerical_params.high_order_radiance.data
 
+        if self._deltam.dtype != np.bool:
+            raise TypeError("numerical_params.deltam should be of boolean type.")
+        if self._highorderrad.dtype != np.bool:
+            raise TypeError("numerical_params.high_order_radiance should be of boolean type.")
+
         if self._nphi < self._nmu:
-            warnings.warn("Usually want NPHI > NMU")
+            warnings.warn("Usually want NPHI > NMU. NMU={}, NPHI={}".format(self._nmu, self._nphi))
 
         flux = 0.0
         if self._srctype in ('T', 'B'):
@@ -306,15 +365,20 @@ class RTE:
         if self._srctype != 'T':
             flux += self._solarflux
         if (self._splitacc > 0.0) & ((self._splitacc < 0.001*flux) | (self._splitacc > 0.1*flux)):
-            warnings.warn("Splitting accuracy parameter is not a fraction but scales with fluxes.")
-        if (self._shacc > 0.0) & (self._shacc> 0.03*flux):
-            warnings.warn("spherical_harmonics_accuracy is not a fraction but scales with fluxes.")
+            warnings.warn("Splitting accuracy parameter is not a fraction but scales with fluxes."
+                          " splitacc/nominal flux = {}".format(self._splitacc/flux))
+        if (self._shacc > 0.0) & (self._shacc > 0.03*flux):
+            warnings.warn("spherical_harmonics_accuracy is not a fraction but scales with fluxes."
+                          " SHACC/nominal flux = {}".format(self._shacc/flux))
 
+        for boundary in ('x_boundary_condition', 'y_boundary_condition'):
+            if numerical_params[boundary] not in ('open', 'periodic'):
+                raise ValueError("{} should be either ('open', 'periodic')".format(boundary))
 
-
-        # Setup horizontal boundary conditions
-        # TODO: check that BC is strictly open or periodic
         self._ipflag = numerical_params.ip_flag.data
+        if self._ipflag not in np.arange(8):
+            raise ValueError("numerical_params.ip_flag should be an integer "
+                             "in (0, 1, 2, 3, 4, 5, 6, 7, 8) not '{}'".format(self._ipflag))
 
         self._bcflag = 0
         if (numerical_params.x_boundary_condition == 'open') & (self._ipflag in (0, 2, 4, 6)):
@@ -327,15 +391,18 @@ class RTE:
     def import_grid(self, other_solver):
         #If the same base grid is used and other memory parameters.
         #Then we should be able to import a SPLIT grid to initialize on.
-        if self._grid.equals(other_solver._grid) & self.numerical_params.equals(other_solver.numerical_params) & \
-         (self._nstokes == other_solver._nstokes):
-            self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
-            self._treeptr, self._cellflags, self._nbcells = other_solver._npts, other_solver._ncells,\
-            other_solver._gridpos, other_solver._gridptr, other_solver._neighptr, other_solver._treeptr, \
-            other_solver._cellflags, other_solver._nbcells
-        else:
-            raise ValueError('Base grids and numerical parameters must match to import a split grid from another solver.')
+        if self._grid.equals(other_solver._grid) & \
+           self.numerical_params.equals(other_solver.numerical_params) & \
+           (self._nstokes == other_solver._nstokes):
 
+            self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
+            self._treeptr, self._cellflags, self._nbcells = other_solver._npts, \
+            other_solver._ncells,other_solver._gridpos, other_solver._gridptr, \
+            other_solver._neighptr, other_solver._treeptr, other_solver._cellflags,\
+            other_solver._nbcells
+        else:
+            raise ValueError("Base grids and numerical parameters must "
+                             "match to import a split grid from another solver.")
 
     def _setup_grid(self, grid):
         """
@@ -371,8 +438,10 @@ class RTE:
         self._maxnz = grid.dims['z']
 
         # Set the full domain grid sizes (variables end in t)
-        self._nxt, self._nyt, self._npxt, self._npyt = self._nx, self._ny, self._pa.npx, self._pa.npy
-        self._nx, self._ny, self._nz = max(1, self._nx), max(1, self._ny), max(2, self._nz)
+        self._nxt, self._nyt, self._npxt, self._npyt = \
+            self._nx, self._ny, self._pa.npx, self._pa.npy
+        self._nx, self._ny, self._nz = \
+            max(1, self._nx), max(1, self._ny), max(2, self._nz)
 
         # gridtype = 'P': Z levels taken from property file
         self._gridtype = 'P'
@@ -387,8 +456,9 @@ class RTE:
 
         # Calculate the number of base grid cells depending on the BCFLAG
         self._nbcells = (self._nz - 1) * (self._nx + ibits(self._bcflag, 0, 1) - \
-                                          ibits(self._bcflag, 2, 1)) * (
-                                    self._ny + ibits(self._bcflag, 1, 1) - ibits(self._bcflag, 3, 1))
+                                          ibits(self._bcflag, 2, 1)) * \
+                                (self._ny + ibits(self._bcflag, 1, 1) - \
+                                ibits(self._bcflag, 3, 1))
 
         self._xgrid, self._ygrid, self._zgrid = pyshdom.core.new_grids(
             bcflag=self._bcflag,
@@ -487,7 +557,7 @@ class RTE:
     def _prepare_optical_properties(self):
         """
         TODO: improve this
-        Initilize the solution (I, J fields) from the direct transmission and a simple layered model.
+        Initialize the solution (I, J fields) from the direct transmission and a simple layered model.
         Many arrays are initialized including the dirflux (the direct solar transmission).
         """
 
@@ -508,9 +578,14 @@ class RTE:
         self._pa.iphasep[np.where(self._pa.iphasep == 0)] = 1
 
         # Concatenate all scatterer tables into one table
-        max_legendre = max([scatterer.sizes['legendre_index'] for scatterer in self.medium.values()])
-        padded_legcoefs = [scatterer.legcoef.pad({'legendre_index': (0, max_legendre - scatterer.legcoef.sizes['legendre_index'])},
-                                                    constant_values=0.0) for scatterer in self.medium.values()]
+        max_legendre = max([scatterer.sizes['legendre_index'] for
+                            scatterer in self.medium.values()])
+        padded_legcoefs = [scatterer.legcoef.pad(
+            {'legendre_index':
+             (0, max_legendre - scatterer.legcoef.sizes['legendre_index'])
+             }, constant_values=0.0)
+                           for scatterer in self.medium.values()]
+
         legendre_table = xr.concat(padded_legcoefs, dim='table_index')
 
         self._pa.numphase = legendre_table.sizes['table_index']
@@ -529,12 +604,16 @@ class RTE:
         # Check if legendre table needs padding
 
         if self._nleg > legendre_table.sizes['legendre_index']:
-            legendre_table = legendre_table.pad({'legendre_index': (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])},
-                               constant_values=0.0)
+            legendre_table = legendre_table.pad(
+                {'legendre_index':
+                 (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])
+                }, constant_values=0.0
+            )
 
         # Check if scalar or vector RTE
         if self._nstokes == 1:
-            self._pa.legenp = legendre_table.isel(stokes_index=0).data.ravel(order='F').astype(np.float32)
+            self._pa.legenp = legendre_table.isel(
+                stokes_index=0).data.ravel(order='F').astype(np.float32)
         else:
             self._pa.legenp = legendre_table.data.ravel(order='F').astype(np.float32)
 
@@ -542,7 +621,8 @@ class RTE:
         self._maxpgl = self._maxpg * legendre_table.sizes['legendre_index']
 
         if legendre_table.sizes['table_index'] > 0:
-            self._maxigl = legendre_table.sizes['table_index'] * (legendre_table.sizes['legendre_index'] + 1)
+            self._maxigl = legendre_table.sizes['table_index'] * \
+            (legendre_table.sizes['legendre_index'] + 1)
         else:
             self._maxigl = self._maxig * (legendre_table.sizes['legendre_index'] + 1)
 
@@ -550,8 +630,9 @@ class RTE:
         self._nstphase = min(self._nstleg, 2)
 
         # Transfer property arrays into internal grid structures
-        self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
-        self._total_ext, self._extmin, self._scatmin, self._albmax = pyshdom.core.transfer_pa_to_grid(
+        self._temp, self._planck, self._extinct, self._albedo, self._legen, \
+        self._iphase, self._total_ext, self._extmin, self._scatmin,         \
+        self._albmax = pyshdom.core.transfer_pa_to_grid(
             nstleg=self._nstleg,
             npart=self._npart,
             extinctp=self._pa.extinctp,
@@ -584,20 +665,24 @@ class RTE:
             npts=self._npts)
 
         reshaped_ext = self._total_ext[:self._nbpts].reshape(self._nx, self._ny, self._nz)
-        cell_averaged_extinct = (reshaped_ext[1:, 1:, 1:] + reshaped_ext[1:, 1:, :-1] +
-            reshaped_ext[1:, :-1, 1:] + reshaped_ext[1:, :-1, :-1] + reshaped_ext[:-1, 1:, 1:] +\
-            reshaped_ext[:-1, 1:, :-1] + reshaped_ext[:-1, :-1, 1:] + reshaped_ext[:-1, :-1, :-1])/8.0
+        cell_averaged_extinct = (reshaped_ext[1:, 1:, 1:] + reshaped_ext[1:, 1:, :-1] +   \
+                                 reshaped_ext[1:, :-1, 1:] + reshaped_ext[1:, :-1, :-1] + \
+                                 reshaped_ext[:-1, 1:, 1:] + reshaped_ext[:-1, 1:, :-1] + \
+                                 reshaped_ext[:-1, :-1, 1:] + reshaped_ext[:-1, :-1, :-1])/8.0
         cell_volume = (np.diff(self._pa.zlevels)*self._pa.delx.data*self._pa.dely.data)**(1/3)
-        cell_tau_approx = cell_volume[np.newaxis, np.newaxis,:]*cell_averaged_extinct
+        cell_tau_approx = cell_volume[np.newaxis, np.newaxis, :]*cell_averaged_extinct
         number_thick_cells = np.sum(cell_tau_approx >= 2.0)
 
         if number_thick_cells > 0:
             warnings.warn("Number of property grid cells with optical depth greater than 2: '{}'. "
-                    "Max cell optical depth: '{}'".format(number_thick_cells, np.max(cell_tau_approx)))
+                          "Max cell optical depth: '{}'".format(
+                              number_thick_cells, np.max(cell_tau_approx)
+                              )
+                         )
 
-        if ((not self._deltam) & (self._srctype != 'T') & (self._maxasym > 0.5)):
+        if (not self._deltam) & (self._srctype != 'T') & (self._maxasym > 0.5):
             warnings.warn("Delta-M should be use for solar radiative transfer problems with highly "
-            "peaked phase functions.")
+                          "peaked phase functions.")
 
     def _release_big_arrays(self):
 
@@ -628,13 +713,16 @@ class RTE:
             self._release_big_arrays()
 
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, \
-        self._sfcgridparms, self._ntoppts, self._nbotpts, self._bcptr, self._rshptr, self._shptr, self._oshptr, \
-        self._source, self._delsource, self._radiance, self._fluxes, self._dirflux, self._ylmsun, self._uniformzlev, \
-        self._pa.extdirp, self._bcrad, self._cx, self._cy, self._cz, self._cxinv, self._cyinv, self._czinv, \
-        self._ipdirect, self._di, self._dj, self._dk, self._epss, self._epsz, self._xdomain, self._ydomain, \
-        self._delxd, self._delyd, self._deljdot, self._deljold, self._deljnew, self._jnorm, self._fftflag, \
-        self._cmu1, self._cmu2, self._wtmu, self._cphi1, self._cphi2, self._wphisave, self._work, self._work1, \
-        self._work2, self._uniform_sfc_brdf, self._sfc_brdf_do = pyshdom.core.init_solution(
+        self._sfcgridparms, self._ntoppts, self._nbotpts, self._bcptr, \
+        self._rshptr, self._shptr, self._oshptr, self._source, self._delsource, \
+        self._radiance, self._fluxes, self._dirflux, self._ylmsun, self._uniformzlev, \
+        self._pa.extdirp, self._bcrad, self._cx, self._cy, self._cz, self._cxinv, \
+        self._cyinv, self._czinv, self._ipdirect, self._di, self._dj, self._dk, \
+        self._epss, self._epsz, self._xdomain, self._ydomain, self._delxd, \
+        self._delyd, self._deljdot, self._deljold, self._deljnew, self._jnorm, \
+        self._fftflag, self._cmu1, self._cmu2, self._wtmu, self._cphi1, \
+        self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
+        self._uniform_sfc_brdf, self._sfc_brdf_do = pyshdom.core.init_solution(
             nstleg=self._nstleg,
             nstokes=self._nstokes,
             nx=self._nx,
@@ -741,8 +829,9 @@ class RTE:
         """
         Compute the direct transmission from the solar beam.
         """
-        self._dirflux, self._pa.extdirp, self._cx, self._cy, self._cz, self._cxinv, self._cyinv, self._czinv, \
-        self._di, self._dj, self._dk, self._ipdirect, self._delxd, self._delyd, self._xdomain, self._ydomain, \
+        self._dirflux, self._pa.extdirp, self._cx, self._cy, self._cz, \
+        self._cxinv, self._cyinv, self._czinv, self._di, self._dj, self._dk, \
+        self._ipdirect, self._delxd, self._delyd, self._xdomain, self._ydomain, \
         self._epss, self._epsz, self._uniformzlev = \
             pyshdom.core.make_direct(
                 nstleg=self._nstleg,
@@ -795,6 +884,15 @@ class RTE:
         verbose: boolean
             True will output solution iteration information into stdout.
         """
+        if not isinstance(verbose, np.bool):
+            raise TypeError("`verbose` should be a boolean.")
+        if not isinstance(init_solution, np.bool):
+            raise TypeError("`init_solution` should be a boolean.")
+        if not isinstance(setup_grid, np.bool):
+            raise TypeError("`setup_grid` should be a boolean.")
+        if not isinstance(update_optical_properties, np.bool):
+            raise TypeError("`update_optical_properties` should be a boolean.")
+
         # Part 1: Initialize solution (from a layered model)
         if setup_grid:
             self._setup_grid(self._grid)
@@ -802,175 +900,190 @@ class RTE:
             self._init_solution(update_optical_properties=update_optical_properties)
 
         # Part 2: Solution itertaions
-        self._sfcgridparms, self._solcrit, \
-            self._iters, self._temp, self._planck, self._extinct, self._albedo, self._legen, self._iphase, \
-            self._ntoppts, self._nbotpts, self._bcptr, self._bcrad, self._npts, self._gridpos, self._ncells, self._gridptr, \
-            self._neighptr, self._treeptr, self._cellflags, self._rshptr, self._shptr, self._oshptr, self._source, \
-            self._delsource, self._radiance, self._fluxes, self._dirflux, self._uniformzlev, self._pa.extdirp, \
-            self._oldnpts, self._total_ext, self._deljdot, self._deljold, self._deljnew, self._jnorm, \
-            self._work, self._work1, self._work2  = pyshdom.core.solution_iterations(
-                uniform_sfc_brdf=self._uniform_sfc_brdf,
-                sfc_brdf_do=self._sfc_brdf_do,
-                work=self._work,
-                work1=self._work1,
-                work2=self._work2,
-                bcrad=self._bcrad,
-                fluxes=self._fluxes,
-                nang=self._nang,
-                nphi0=self._nphi0,
-                maxnbc=self._maxnbc,
-                ntoppts=self._ntoppts,
-                nbotpts=self._nbotpts,
-                uniformzlev=self._uniformzlev,
-                extmin=self._extmin,
-                scatmin=self._scatmin,
-                cx=self._cx,
-                cy=self._cy,
-                cz=self._cz,
-                cxinv=self._cxinv,
-                cyinv=self._cyinv,
-                czinv=self._czinv,
-                ipdirect=self._ipdirect,
-                di=self._di,
-                dj=self._dj,
-                dk=self._dk,
-                nphi0max=self._nphi0max,
-                epss=self._epss,
-                epsz=self._epsz,
-                xdomain=self._xdomain,
-                ydomain=self._ydomain,
-                delxd=self._delxd,
-                delyd=self._delyd,
-                albmax=self._albmax,
-                deljdot=self._deljdot,
-                deljold=self._deljold,
-                deljnew=self._deljnew,
-                jnorm=self._jnorm,
-                fftflag=self._fftflag,
-                cmu1=self._cmu1,
-                cmu2=self._cmu2,
-                wtmu=self._wtmu,
-                cphi1=self._cphi1,
-                cphi2=self._cphi2,
-                wphisave=self._wphisave,
-                nbpts=self._nbpts,
-                npart=self._npart,
-                extinct=self._extinct,
-                albedo=self._albedo,
-                legen=self._legen,
-                total_ext=self._total_ext,
-                extinctp=self._pa.extinctp,
-                albedop=self._pa.albedop,
-                planck=self._planck,
-                iphase=self._iphase,
-                iphasep=self._pa.iphasep,
-                nstokes=self._nstokes,
-                nstleg=self._nstleg,
-                npx=self._pa.npx,
-                npy=self._pa.npy,
-                npz=self._pa.npz,
-                delx=self._pa.delx,
-                dely=self._pa.dely,
-                xstart=self._pa.xstart,
-                ystart=self._pa.ystart,
-                zlevels=self._pa.zlevels,
-                tempp=self._pa.tempp,
-                legenp=self._pa.legenp,
-                extdirp=self._pa.extdirp,
-                nzckd=self._pa.nzckd,
-                zckd=self._pa.zckd,
-                gasabs=self._pa.gasabs,
-                solcrit=self._solcrit,
-                nx=self._nx,
-                ny=self._ny,
-                nx1=self._nx1,
-                ny1=self._ny1,
-                nz=self._nz,
-                ml=self._ml,
-                mm=self._mm,
-                ncs=self._ncs,
-                nlm=self._nlm,
-                nmu=self._nmu,
-                nphi=self._nphi,
-                numphase=self._pa.numphase,
-                mu=self._mu,
-                phi=self._phi,
-                wtdo=self._wtdo,
-                bcflag=self._bcflag,
-                ipflag=self._ipflag,
-                deltam=self._deltam,
-                srctype=self._srctype,
-                highorderrad=self._highorderrad,
-                solarflux=self._solarflux,
-                solarmu=self._solarmu,
-                solaraz=self._solaraz,
-                skyrad=self._skyrad,
-                sfctype=self._sfctype,
-                gndtemp=self._gndtemp,
-                gndalbedo=self._gndalbedo,
-                nxsfc=self._nxsfc,
-                nysfc=self._nysfc,
-                delxsfc=self._delxsfc,
-                delysfc=self._delysfc,
-                nsfcpar=self._nsfcpar,
-                sfcparms=self._sfcparms,
-                sfcgridparms=self._sfcgridparms,
-                units=self._units,
-                waveno=self._waveno,
-                wavelen=self.wavelength,#self._wavelen,
-                accelflag=self._accelflag,
-                solacc=self._solacc,
-                maxiter=maxiter,
-                splitacc=self._splitacc,
-                shacc=self._shacc,
-                xgrid=self._xgrid,
-                ygrid=self._ygrid,
-                zgrid=self._zgrid,
-                temp=self._temp,
-                maxbcrad=self._maxbcrad,
-                bcptr=self._bcptr,
-                npts=self._npts,
-                gridpos=self._gridpos,
-                ncells=self._ncells,
-                gridptr=self._gridptr,
-                neighptr=self._neighptr,
-                treeptr=self._treeptr,
-                cellflags=self._cellflags,
-                rshptr=self._rshptr,
-                shptr=self._shptr,
-                oshptr=self._oshptr,
-                source=self._source,
-                delsource=self._delsource,
-                radiance=self._radiance,
-                dirflux=self._dirflux,
-                nleg=self._nleg,
-                maxiv=self._maxiv,
-                maxic=self._maxic,
-                maxig=self._maxig,
-                maxido=self._maxido,
-                verbose=verbose,
-                oldnpts=self._oldnpts,
-                ylmsun=self._ylmsun,
-                runname=self._name
-            )
+        self._sfcgridparms, self._solcrit, self._iters, self._temp, self._planck, \
+        self._extinct, self._albedo, self._legen, self._iphase, self._ntoppts, \
+        self._nbotpts, self._bcptr, self._bcrad, self._npts, self._gridpos, \
+        self._ncells, self._gridptr, self._neighptr, self._treeptr, self._cellflags, \
+        self._rshptr, self._shptr, self._oshptr, self._source, self._delsource, \
+        self._radiance, self._fluxes, self._dirflux, self._uniformzlev, \
+        self._pa.extdirp, self._oldnpts, self._total_ext, self._deljdot, \
+        self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
+        self._work2 = pyshdom.core.solution_iterations(
+            uniform_sfc_brdf=self._uniform_sfc_brdf,
+            sfc_brdf_do=self._sfc_brdf_do,
+            work=self._work,
+            work1=self._work1,
+            work2=self._work2,
+            bcrad=self._bcrad,
+            fluxes=self._fluxes,
+            nang=self._nang,
+            nphi0=self._nphi0,
+            maxnbc=self._maxnbc,
+            ntoppts=self._ntoppts,
+            nbotpts=self._nbotpts,
+            uniformzlev=self._uniformzlev,
+            extmin=self._extmin,
+            scatmin=self._scatmin,
+            cx=self._cx,
+            cy=self._cy,
+            cz=self._cz,
+            cxinv=self._cxinv,
+            cyinv=self._cyinv,
+            czinv=self._czinv,
+            ipdirect=self._ipdirect,
+            di=self._di,
+            dj=self._dj,
+            dk=self._dk,
+            nphi0max=self._nphi0max,
+            epss=self._epss,
+            epsz=self._epsz,
+            xdomain=self._xdomain,
+            ydomain=self._ydomain,
+            delxd=self._delxd,
+            delyd=self._delyd,
+            albmax=self._albmax,
+            deljdot=self._deljdot,
+            deljold=self._deljold,
+            deljnew=self._deljnew,
+            jnorm=self._jnorm,
+            fftflag=self._fftflag,
+            cmu1=self._cmu1,
+            cmu2=self._cmu2,
+            wtmu=self._wtmu,
+            cphi1=self._cphi1,
+            cphi2=self._cphi2,
+            wphisave=self._wphisave,
+            nbpts=self._nbpts,
+            npart=self._npart,
+            extinct=self._extinct,
+            albedo=self._albedo,
+            legen=self._legen,
+            total_ext=self._total_ext,
+            extinctp=self._pa.extinctp,
+            albedop=self._pa.albedop,
+            planck=self._planck,
+            iphase=self._iphase,
+            iphasep=self._pa.iphasep,
+            nstokes=self._nstokes,
+            nstleg=self._nstleg,
+            npx=self._pa.npx,
+            npy=self._pa.npy,
+            npz=self._pa.npz,
+            delx=self._pa.delx,
+            dely=self._pa.dely,
+            xstart=self._pa.xstart,
+            ystart=self._pa.ystart,
+            zlevels=self._pa.zlevels,
+            tempp=self._pa.tempp,
+            legenp=self._pa.legenp,
+            extdirp=self._pa.extdirp,
+            nzckd=self._pa.nzckd,
+            zckd=self._pa.zckd,
+            gasabs=self._pa.gasabs,
+            solcrit=self._solcrit,
+            nx=self._nx,
+            ny=self._ny,
+            nx1=self._nx1,
+            ny1=self._ny1,
+            nz=self._nz,
+            ml=self._ml,
+            mm=self._mm,
+            ncs=self._ncs,
+            nlm=self._nlm,
+            nmu=self._nmu,
+            nphi=self._nphi,
+            numphase=self._pa.numphase,
+            mu=self._mu,
+            phi=self._phi,
+            wtdo=self._wtdo,
+            bcflag=self._bcflag,
+            ipflag=self._ipflag,
+            deltam=self._deltam,
+            srctype=self._srctype,
+            highorderrad=self._highorderrad,
+            solarflux=self._solarflux,
+            solarmu=self._solarmu,
+            solaraz=self._solaraz,
+            skyrad=self._skyrad,
+            sfctype=self._sfctype,
+            gndtemp=self._gndtemp,
+            gndalbedo=self._gndalbedo,
+            nxsfc=self._nxsfc,
+            nysfc=self._nysfc,
+            delxsfc=self._delxsfc,
+            delysfc=self._delysfc,
+            nsfcpar=self._nsfcpar,
+            sfcparms=self._sfcparms,
+            sfcgridparms=self._sfcgridparms,
+            units=self._units,
+            waveno=self._waveno,
+            wavelen=self.wavelength,
+            accelflag=self._accelflag,
+            solacc=self._solacc,
+            maxiter=maxiter,
+            splitacc=self._splitacc,
+            shacc=self._shacc,
+            xgrid=self._xgrid,
+            ygrid=self._ygrid,
+            zgrid=self._zgrid,
+            temp=self._temp,
+            maxbcrad=self._maxbcrad,
+            bcptr=self._bcptr,
+            npts=self._npts,
+            gridpos=self._gridpos,
+            ncells=self._ncells,
+            gridptr=self._gridptr,
+            neighptr=self._neighptr,
+            treeptr=self._treeptr,
+            cellflags=self._cellflags,
+            rshptr=self._rshptr,
+            shptr=self._shptr,
+            oshptr=self._oshptr,
+            source=self._source,
+            delsource=self._delsource,
+            radiance=self._radiance,
+            dirflux=self._dirflux,
+            nleg=self._nleg,
+            maxiv=self._maxiv,
+            maxic=self._maxic,
+            maxig=self._maxig,
+            maxido=self._maxido,
+            verbose=verbose,
+            oldnpts=self._oldnpts,
+            ylmsun=self._ylmsun,
+            runname=self._name
+        )
     def integrate_to_sensor(self, sensor):
         """
         TODO
         Integrates the source function along rays with geometry specified in sensor.
         """
+        if not isinstance(sensor, xr.Dataset):
+            raise TypeError("`sensor` should be an xr.Dataset not "
+                            "of type '{}''".format(type(sensor)))
+        pyshdom.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
+                                    ray_x='nrays', ray_y='nrays', ray_z='nrays',
+                                    stokes='stokes_index')
+
+        if 'nimage' in sensor.stokes.dims:
+            stokes_averaged = sensor.stokes.any('nimage')
+        else:
+            stokes_averaged = sensor.stokes
+        if stokes_averaged.sum('stokes_index') > self._nstokes:
+            raise ValueError("'{}' Stokes are required by sensor but RTE "
+                             "only has nstokes={}".format(stokes_averaged.data,
+                                                          self._nstokes)
+                            )
+
         camx = sensor['ray_x'].data
         camy = sensor['ray_y'].data
         camz = sensor['ray_z'].data
         cammu = sensor['ray_mu'].data
         camphi = sensor['ray_phi'].data
-        #TODO
-        #Some checks on the dimensions: this kind of thing.
-        assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
         total_pix = sensor.sizes['nrays']
+
         self.check_solved()
         self._precompute_phase()
-
-        #TODO Raise warning if observables are not included.
 
         output = pyshdom.core.render(
             nstphase=self._nstphase,
@@ -1018,7 +1131,7 @@ class RTE:
             gndalbedo=self._gndalbedo,
             skyrad=self._skyrad,
             waveno=self._waveno,
-            wavelen=self.wavelength,#self._wavelen,
+            wavelen=self.wavelength,
             mu=self._mu,
             phi=self._phi.reshape(self._nmu, -1),
             wtdo=self._wtdo.reshape(self._nmu, -1),
@@ -1048,14 +1161,14 @@ class RTE:
             }
         )
         if self._nstokes > 1:
-            sensor['Q']= xr.DataArray(
+            sensor['Q'] = xr.DataArray(
                 data=output[1],
                 dims='nrays',
                 attrs={
                     'long_name': 'Stokes Parameter for Linear Polarization (Q)'
                 }
             )
-            sensor['U']= xr.DataArray(
+            sensor['U'] = xr.DataArray(
                 data=output[2],
                 dims='nrays',
                 attrs={
@@ -1063,11 +1176,11 @@ class RTE:
                 }
             )
         if self._nstokes == 4:
-            sensor['V']= xr.DataArray(
+            sensor['V'] = xr.DataArray(
                 data=output[3],
                 dims='nrays',
                 attrs={
-                    'long_name': 'Stokes Paramaeter for Circular Polarization (V)'
+                    'long_name': 'Stokes Parameter for Circular Polarization (V)'
                 }
             )
 
@@ -1075,52 +1188,52 @@ class RTE:
 
     def optical_path(self, sensor, deltam_scaled_path=False):
 
+
+        if not isinstance(sensor, xr.Dataset):
+            raise TypeError("`sensor` should be an xr.Dataset "
+                            "not of type '{}''".format(type(sensor)))
+        pyshdom.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
+                                    ray_x='nrays', ray_y='nrays', ray_z='nrays')
+
         camx = sensor['ray_x'].data
         camy = sensor['ray_y'].data
         camz = sensor['ray_z'].data
         cammu = sensor['ray_mu'].data
         camphi = sensor['ray_phi'].data
-        #TODO
-        #Some checks on the dimensions: this kind of thing.
-        assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
         total_pix = sensor.sizes['nrays']
 
-        if not hasattr(self, '_extinct'):
-            self._init_solution(make_big_arrays=False)
-
-        #optical_depth = np.full(self._npts, 999)
         optical_path = pyshdom.core.optical_depth(
-                nx=self._nx,
-                ny=self._ny,
-                nz=self._nz,
-                npts=self._npts,
-                ncells=self._ncells,
-                gridptr=self._gridptr,
-                neighptr=self._neighptr,
-                treeptr=self._treeptr,
-                cellflags=self._cellflags,
-                bcflag=self._bcflag,
-                ipflag=self._ipflag,
-                xgrid=self._xgrid,
-                ygrid=self._ygrid,
-                zgrid=self._zgrid,
-                gridpos=self._gridpos,
-                camx=camx,
-                camy=camy,
-                camz=camz,
-                cammu=cammu,
-                camphi=camphi,
-                npix=total_pix,
-                extinct=self._extinct[:self._npts],
-                albedo=self._albedo[:self._npts],
-                iphase=self._iphase[:self._npts],
-                legen=self._legen,
-                npart=self._npart,
-                nstleg=self._nstleg,
-                deltam=self._deltam,
-                deltampath=deltam_scaled_path,
-                nleg=self._nleg,
-                ml=self._ml
+            nx=self._nx,
+            ny=self._ny,
+            nz=self._nz,
+            npts=self._npts,
+            ncells=self._ncells,
+            gridptr=self._gridptr,
+            neighptr=self._neighptr,
+            treeptr=self._treeptr,
+            cellflags=self._cellflags,
+            bcflag=self._bcflag,
+            ipflag=self._ipflag,
+            xgrid=self._xgrid,
+            ygrid=self._ygrid,
+            zgrid=self._zgrid,
+            gridpos=self._gridpos,
+            camx=camx,
+            camy=camy,
+            camz=camz,
+            cammu=cammu,
+            camphi=camphi,
+            npix=total_pix,
+            extinct=self._extinct[:self._npts],
+            albedo=self._albedo[:self._npts],
+            iphase=self._iphase[:self._npts],
+            legen=self._legen,
+            npart=self._npart,
+            nstleg=self._nstleg,
+            deltam=self._deltam,
+            deltampath=deltam_scaled_path,
+            nleg=self._nleg,
+            ml=self._ml
             )
         if deltam_scaled_path:
             sensor['optical_path_deltam'] = (['nrays'], optical_path)
@@ -1130,18 +1243,18 @@ class RTE:
 
     def min_optical_path(self, sensor, deltam_scaled_path=False, do_all=False):
 
+        if not isinstance(sensor, xr.Dataset):
+            raise TypeError("`sensor` should be an xr.Dataset "
+                            " not of type '{}''".format(type(sensor)))
+        pyshdom.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
+                                    ray_x='nrays', ray_y='nrays', ray_z='nrays')
+
         camx = sensor['ray_x'].data
         camy = sensor['ray_y'].data
         camz = sensor['ray_z'].data
         cammu = sensor['ray_mu'].data
         camphi = sensor['ray_phi'].data
-        #TODO
-        #Some checks on the dimensions: this kind of thing.
-        assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
         total_pix = sensor.sizes['nrays']
-
-        if not hasattr(self, '_extinct'):
-            self._init_solution(make_big_arrays=False)
 
         if hasattr(self, '_solcrit'):
             raise ValueError('This function currently requires to be run before RTE.solve()')
@@ -1151,72 +1264,67 @@ class RTE:
         else:
             paths_size = 1
         optical_path = pyshdom.core.min_optical_depth(
-                nx=self._nx,
-                ny=self._ny,
-                nz=self._nz,
-                npts=self._npts,
-                ncells=self._ncells,
-                gridptr=self._gridptr,
-                neighptr=self._neighptr,
-                treeptr=self._treeptr,
-                cellflags=self._cellflags,
-                bcflag=self._bcflag,
-                ipflag=self._ipflag,
-                xgrid=self._xgrid,
-                ygrid=self._ygrid,
-                zgrid=self._zgrid,
-                gridpos=self._gridpos,
-                camx=camx,
-                camy=camy,
-                camz=camz,
-                cammu=cammu,
-                camphi=camphi,
-                npix=total_pix,
-                extinct=self._extinct[:self._npts],
-                albedo=self._albedo[:self._npts],
-                iphase=self._iphase[:self._npts],
-                legen=self._legen,
-                npart=self._npart,
-                nstleg=self._nstleg,
-                deltam=self._deltam,
-                deltampath=deltam_scaled_path,
-                paths_size=paths_size,
-                nleg=self._nleg,
-                ml=self._ml
+            nx=self._nx,
+            ny=self._ny,
+            nz=self._nz,
+            npts=self._npts,
+            ncells=self._ncells,
+            gridptr=self._gridptr,
+            neighptr=self._neighptr,
+            treeptr=self._treeptr,
+            cellflags=self._cellflags,
+            bcflag=self._bcflag,
+            ipflag=self._ipflag,
+            xgrid=self._xgrid,
+            ygrid=self._ygrid,
+            zgrid=self._zgrid,
+            gridpos=self._gridpos,
+            camx=camx,
+            camy=camy,
+            camz=camz,
+            cammu=cammu,
+            camphi=camphi,
+            npix=total_pix,
+            extinct=self._extinct[:self._npts],
+            albedo=self._albedo[:self._npts],
+            iphase=self._iphase[:self._npts],
+            legen=self._legen,
+            npart=self._npart,
+            nstleg=self._nstleg,
+            deltam=self._deltam,
+            deltampath=deltam_scaled_path,
+            paths_size=paths_size,
+            nleg=self._nleg,
+            ml=self._ml
             )
         name = 'min_optical_path'
         if deltam_scaled_path:
             name = name + '_deltam'
         if do_all:
             optical_path_dataset = xr.Dataset(
-                        data_vars = {
-                        name:(['x','y','z','npixels'],
-                            optical_path[:self._nbpts,:].reshape(
-                            self._nx,self._ny,self._nz, -1)
-                            ),
-                        },
-                        coords = {'x': self._grid.x,
-                                'y': self._grid.y,
-                                'z': self._grid.z,
-                                },
+                data_vars={
+                    name:(['x', 'y', 'z', 'npixels'],
+                          optical_path[:self._nbpts, :].reshape(
+                              self._nx, self._ny, self._nz, -1)
+                         )},
+                coords={'x': self._grid.x,
+                        'y': self._grid.y,
+                        'z': self._grid.z,
+                       },
             )
         else:
             optical_path_dataset = xr.Dataset(
-                        data_vars = {
-                        name:(['x','y','z'],
-                            optical_path[:self._nbpts,0].reshape(
-                            self._nx,self._ny,self._nz)
-                            ),
+                data_vars={
+                    name:(['x', 'y', 'z'],
+                          optical_path[:self._nbpts, 0].reshape(
+                              self._nx, self._ny, self._nz)
+                         )},
+                coords={'x': self._grid.x,
+                        'y': self._grid.y,
+                        'z': self._grid.z,
                         },
-                        coords = {'x': self._grid.x,
-                                'y': self._grid.y,
-                                'z': self._grid.z,
-                                },
             )
-
         return optical_path_dataset
-
-
 
     def check_solved(self):
         """
@@ -1240,50 +1348,53 @@ class RTE:
         """
 
         self.check_solved()
-        if not hasattr(self, '_shterms'):
+        if self._shterms is not None:
 
             if self._highorderrad:
                 nshout = 5
             else:
                 nshout = 4
 
-            shterms = pyshdom.core.compute_sh(nshout=nshout,nstokes=self._nstokes,
-                               npts=self._npts,
-                               srctype=self._srctype,
-                               solarmu = self._solarmu,
-                               solaraz=self._solaraz,
-                               dirflux=self._dirflux[:self._npts],
-                               rshptr=self._rshptr[:self._npts+1],
-                               ml=self._ml,
-                               mm=self._mm,
-                               radiance=self._radiance,
-                                )
+            shterms = pyshdom.core.compute_sh(nshout=nshout,
+                                              nstokes=self._nstokes,
+                                              npts=self._npts,
+                                              srctype=self._srctype,
+                                              solarmu=self._solarmu,
+                                              solaraz=self._solaraz,
+                                              dirflux=self._dirflux[:self._npts],
+                                              rshptr=self._rshptr[:self._npts+1],
+                                              ml=self._ml,
+                                              mm=self._mm,
+                                              radiance=self._radiance,
+                                             )
             self._shterms = shterms
 
         sh_out_dataset = xr.Dataset(
-                            data_vars = {
-                            'mean_intensity': (['x','y','z'], self._shterms[0,:self._nbpts].reshape(
-                                            self._nx, self._ny, self._nz)),
-                            'Fx': (['x','y','z'], self._shterms[1,:self._nbpts].reshape(
-                                            self._nx, self._ny, self._nz)),
-                            'Fy': (['x','y','z'], self._shterms[2,:self._nbpts].reshape(
-                                            self._nx, self._ny, self._nz)),
-                            'Fz': (['x','y','z'], self._shterms[3,:self._nbpts].reshape(
-                                            self._nx, self._ny, self._nz)),
-                            },
-                coords = {'x': self._grid.x,
-                          'y': self._grid.y,
-                          'z': self._grid.z,
-                         },
-                attrs = {
+            data_vars={
+                'mean_intensity': (['x', 'y', 'z'], self._shterms[0, :self._nbpts].reshape(
+                    self._nx, self._ny, self._nz)),
+                'Fx': (['x', 'y', 'z'], self._shterms[1, :self._nbpts].reshape(
+                    self._nx, self._ny, self._nz)),
+                'Fy': (['x', 'y', 'z'], self._shterms[2, :self._nbpts].reshape(
+                    self._nx, self._ny, self._nz)),
+                'Fz': (['x', 'y', 'z'], self._shterms[3, :self._nbpts].reshape(
+                    self._nx, self._ny, self._nz)),
+                },
+            coords={'x': self._grid.x,
+                    'y': self._grid.y,
+                    'z': self._grid.z,
+                   },
+            attrs={
                 'long_names':{'Fx': 'Net Flux in x direction',
                               'Fy': 'Net Flux in y direction',
                               'Fz': 'Net Flux in z direction'},
                 }
         )
         if self._highorderrad & (self._shterms.shape[0] == 5):
-            sh_out_dataset['rms_higher_rad'] = (['x','y','z'],
-                self._shterms[-1,:self._nbpts].reshape(self._nx, self._ny, self._nz)/(np.sqrt(np.pi*4.0*self._nlm)))
+            sh_out_dataset['rms_higher_rad'] = (['x', 'y', 'z'],
+                                                self._shterms[-1, :self._nbpts].reshape(
+                                                    self._nx, self._ny, self._nz)/ \
+                                                    (np.sqrt(np.pi*4.0*self._nlm)))
         return sh_out_dataset
 
     @property
@@ -1294,24 +1405,24 @@ class RTE:
         """
         self.check_solved()
         fluxes = xr.Dataset(
-                        data_vars = {
-                            'flux_down': (['x','y','z'], self._fluxes[0,:self._nbpts].reshape(
-                                                        self._nx, self._ny, self._nz)),
-                            'flux_up': (['x','y','z'], self._fluxes[1,:self._nbpts].reshape(
-                                                        self._nx, self._ny, self._nz)),
-                            'flux_direct': (['x','y','z'], self._dirflux[:self._nbpts].reshape(
-                                                    self._nx, self._ny, self._nz)),
-                            },
-                coords = {'x': self._grid.x,
-                          'y': self._grid.y,
-                          'z': self._grid.z,
-                         },
-                attrs={
-                    'long_names': {'flux_down': 'Downwelling Hemispherical Flux',
-                                   'flux_up': 'Upwelling Hemispherical Flux',
-                                  'flux_direct': 'Downwelling Direct Solar Beam Flux (On Horizontal Surface)'},
-                    'units': 'Same units as input flux.'
-                }
+            data_vars={
+                'flux_down': (['x', 'y', 'z'], self._fluxes[0, :self._nbpts].reshape(
+                    self._nx, self._ny, self._nz)),
+                'flux_up': (['x', 'y', 'z'], self._fluxes[1, :self._nbpts].reshape(
+                    self._nx, self._ny, self._nz)),
+                'flux_direct': (['x', 'y', 'z'], self._dirflux[:self._nbpts].reshape(
+                    self._nx, self._ny, self._nz)),
+                },
+            coords={'x': self._grid.x,
+                    'y': self._grid.y,
+                    'z': self._grid.z,
+                   },
+            attrs={
+                'long_names': {'flux_down': 'Downwelling Hemispherical Flux',
+                               'flux_up': 'Upwelling Hemispherical Flux',
+                               'flux_direct': 'Downwelling Direct Solar Beam Flux (On Horizontal Surface)'},
+                'units': 'Same units as input flux.'
+            }
             )
         return fluxes
 
@@ -1322,33 +1433,35 @@ class RTE:
         net flux divergence from SHDOM in a dataset but only on the tidy base grid.
         """
         self.check_solved()
-        if not hasattr(self, '_netfluxdiv'):
-            netfluxdiv = pyshdom.core.compute_netfluxdiv(nstokes=self._nstokes,
-                                           npts=self._npts,
-                                           rshptr=self._rshptr[:self._npts+1],
-                                          srctype=self._srctype,
-                                           solarmu=self._solarmu,
-                                           extinct=self._extinct[:self._npts],
-                                          albedo=self._albedo[:self._npts],
-                                           planck=self._planck[:self._npts],
-                                           dirflux=self._dirflux[:self._npts],
-                                          radiance=self._radiance,
-                                          npart=self._npart)
+        if self._netfluxdiv is not None:
+            netfluxdiv = pyshdom.core.compute_netfluxdiv(
+                nstokes=self._nstokes,
+                npts=self._npts,
+                rshptr=self._rshptr[:self._npts+1],
+                srctype=self._srctype,
+                solarmu=self._solarmu,
+                extinct=self._extinct[:self._npts],
+                albedo=self._albedo[:self._npts],
+                planck=self._planck[:self._npts],
+                dirflux=self._dirflux[:self._npts],
+                radiance=self._radiance,
+                npart=self._npart
+                )
             self._netfluxdiv = netfluxdiv
 
-        netfluxdiv_datset = xr.Dataset(
-                        data_vars = {
-                            'net_flux_div':(['x','y','z'],self._netfluxdiv[:self._nbpts].reshape(
-                                        self._nx, self._ny, self._nz))
-                            },
-                coords = {'x': self._grid.x,
-                          'y': self._grid.y,
-                          'z': self._grid.z,
-                         },
-                attrs={
-                    'long_names': {'net_flux_div': 'Net Flux Divergence'},
-                    'units': ''
-                }
+        netfluxdiv_dataset = xr.Dataset(
+            data_vars={
+                'net_flux_div':(['x', 'y', 'z'], self._netfluxdiv[:self._nbpts].reshape(
+                    self._nx, self._ny, self._nz))
+                },
+            coords={'x': self._grid.x,
+                    'y': self._grid.y,
+                    'z': self._grid.z,
+                   },
+            attrs={
+                'long_names': {'net_flux_div': 'Net Flux Divergence'},
+                'units': ''
+            }
             )
         return netfluxdiv_dataset
 
@@ -1405,8 +1518,8 @@ class RTE:
 
         self._precompute_phase()
         #solver_derivative_table = #all_derivative_tables[key]
-        num_derivatives = sum([len(scatterer_derivative_table.values()) for name,scatterer_derivative_table in \
-                              table_data.items()
+        num_derivatives = sum([len(scatterer_derivative_table.values()) for
+                               name, scatterer_derivative_table in table_data.items()
                               ])
         self._num_derivatives = np.array(num_derivatives, dtype=np.int32)
         unknown_scatterer_indices = []
@@ -1418,10 +1531,10 @@ class RTE:
         #one loop through to find max_legendre and unkonwn_scatterer_indices
         max_legendre = []
         i = 0
-        for name,scatterer_derivative_table in table_data.items():
+        for name, scatterer_derivative_table in table_data.items():
             scatterer = self.medium[name]
             for variable_derivative_table in scatterer_derivative_table.values():
-                derivative_on_grid = table_to_grid_method(scatterer, variable_derivative_table)#, inverse_mode=True)
+                derivative_on_grid = table_to_grid_method(scatterer, variable_derivative_table)
                 max_legendre.append(derivative_on_grid.sizes['legendre_index'])
                 unknown_scatterer_indices.append(i+1)
             i += 1
@@ -1431,7 +1544,7 @@ class RTE:
         #second loop to assign everything else.
         padded_legcoefs = []
         count = 0
-        for name,scatterer_derivative_table in table_data.items():
+        for name, scatterer_derivative_table in table_data.items():
             scatterer = self.medium[name]
             for variable_derivative_table in scatterer_derivative_table.values():
                 derivative_on_grid = table_to_grid_method(scatterer, variable_derivative_table)
@@ -1465,23 +1578,23 @@ class RTE:
         # zero the first term of the first component of the phase function
         # gradient. Pre-scale the legendre moments by 1/(2*l+1) which
         # is done in the forward problem in TRILIN_INTERP_PROP
-        scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0,self._nleg+1)]))
-        dleg[0,0,:] = 0.0
+        scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0, self._nleg+1)]))
+        dleg[0, 0, :] = 0.0
         dleg = dleg[:self._nstleg] / scaling_factor
 
         dphasetab = pyshdom.core.precompute_phase_check_grad(
-                                                     negcheck=False,
-                                                     nstphase=self._nstphase,
-                                                     nstleg=self._nstleg,
-                                                     nscatangle=self._nscatangle,
-                                                     nstokes=self._nstokes,
-                                                     dnumphase=dnumphase,
-                                                     ml=self._ml,
-                                                     nlm=self._nlm,
-                                                     nleg=self._nleg,
-                                                     dleg=dleg,
-                                                     deltam=self._deltam
-                                                     )
+            negcheck=False,
+            nstphase=self._nstphase,
+            nstleg=self._nstleg,
+            nscatangle=self._nscatangle,
+            nstokes=self._nstokes,
+            dnumphase=dnumphase,
+            ml=self._ml,
+            nlm=self._nlm,
+            nleg=self._nleg,
+            dleg=dleg,
+            deltam=self._deltam
+        )
 
         self._dphasetab, self._dext, self._dalb, self._diphase, self._dleg, self._dnumphase = \
         dphasetab, dext, dalb, diphase, dleg, dnumphase
