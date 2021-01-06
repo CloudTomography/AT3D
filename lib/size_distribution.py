@@ -1,9 +1,26 @@
+"""
+This module contains functions to define particle size distributions
+and to sample these distributions at radii for a grid/Look-up-Table of
+size distribution parameters.
+
+In pyshdom, the mapping of microphysical properties to optical properties is
+done using a look-up-table approach. Bulk optical properties used in the
+radiative transfer solver are determined by integrating over single scattering
+properties (calculated from mie.py or other methods) using assumed distributions
+of particle properties.
+The parameterization of the size distributions used, and the spacing and range of the
+distribution (microphysical) parameters are specified here.
+Two size distributions are currently supported (`gamma` and `lognormal`), but
+`get_size_distribution_grid` can produce look-up-tables of size distributions
+based on arbitrary distribution parameterizations (e.g. bins, or multi-modes),
+all that is required is to add a callable similar to `gamma`/`lognormal` that
+generates the weight of the distribution at a set range of radii given the
+input parameters.
+"""
 from collections import OrderedDict
 import xarray as xr
 import numpy as np
 import pyshdom.core
-
-#TODO Add normalization options for size distributions.
 
 def gamma(radii, reff, veff=None, alpha=None, particle_density=1.0):
     """
@@ -166,8 +183,12 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
                                     size_distribution_function=pyshdom.size_distribution.gamma,
                                     particle_density=1.0,
                                     radius_units='micron',
-                                    reff={'coord_min':4.0,'coord_max':25.0,'npoints':25,'spacing':'logarithmic','units':'micron'},
-                                    veff={'coord_min':0.09,'coord_max':0.11,'npoints':2,'spacing':'linear','units':'unitless'},
+                                    reff={'coord_min':4.0,'coord_max':25.0,
+                                          'npoints':25,'spacing':'logarithmic',
+                                          'units':'micron'},
+                                    veff={'coord_min':0.09,'coord_max':0.11,
+                                          'npoints':2,'spacing':'linear',
+                                          'units':'unitless'},
                                     )
     >>> size_dist_grid
         Dimensions:         (radius: 100, reff: 25, veff: 2)
@@ -196,9 +217,13 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
     name_list = []
     for name, parameter in size_distribution_parameters.items():
         if parameter['spacing'] == 'logarithmic':
-            coord = np.logspace(np.log10(parameter['coord_min']), np.log10(parameter['coord_max']), parameter['npoints'])
+            coord = np.logspace(np.log10(parameter['coord_min']),
+                                np.log10(parameter['coord_max']),
+                                parameter['npoints'])
         elif parameter['spacing'] == 'linear':
-            coord = np.linspace(parameter['coord_min'], parameter['coord_max'], parameter['npoints'])
+            coord = np.linspace(parameter['coord_min'],
+                                parameter['coord_max'],
+                                parameter['npoints'])
         else:
             raise NotImplementedError
         coord_list.append(coord)

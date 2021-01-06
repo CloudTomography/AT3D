@@ -64,7 +64,7 @@ def lambertian(albedo, ground_temperature=298.15, delx=None, dely=None):
         If the `albedo` is not in [0, 1].
         If `albedo` and `ground_temperature` don't have matching shapes.
     """
-    if albedo > 1.0 or albedo < 0.0:
+    if np.any(albedo > 1.0) or np.any(albedo < 0.0):
         raise ValueError("surface albedo should be in [0, 1] not '{}'".format(albedo))
 
     ground_temperature = np.atleast_2d(ground_temperature)

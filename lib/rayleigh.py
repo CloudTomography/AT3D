@@ -17,11 +17,13 @@ import pyshdom.checks
 
 def to_grid(wavelengths, atmosphere, rte_grid):
     """
-    Interpolate atmosphere to rte_grid and compute Rayleigh optical properties profile for each input wavelength.
+    Interpolate atmosphere to rte_grid and compute Rayleigh optical properties profile
+    for each input wavelength.
 
     Rayleigh optical properties include the scattering phase matrix (for polarized light),
-    the single scattering albedo, and the extinction profile. The assumption is of a linear lapse rate between
-    levels to compute the pressure at each level. The Rayleigh extinction is proportional to air density.
+    the single scattering albedo, and the extinction profile. The assumption is of a
+    linear lapse rate between levels to compute the pressure at each level.
+    The Rayleigh extinction is proportional to air density.
 
     Parameters
     ----------
@@ -31,7 +33,8 @@ def to_grid(wavelengths, atmosphere, rte_grid):
         Dataset containing temperature [Kelvin] and pressure [mbar] variables and z coordinate [km].
     rte_grid: xr.Dataset
         Dataset containing at least z coordinate [km] and data_vars 'delx' [km] (resolution in x)
-        and 'dely' [km] (resolution in y direction). Rayleigh properties will be interpolated onto this grid.
+        and 'dely' [km] (resolution in y direction). Rayleigh properties will be interpolated
+        onto this grid.
 
     Returns
     -------
@@ -149,7 +152,8 @@ def compute_extinction(wavelengths, temperature_profile, surface_pressure=1013.0
     References
     ----------
     .. [1] Bodhaine, B. A., Wood, N. B., Dutton, E. G., & Slusser, J. R. (1999).
-        On Rayleigh Optical Depth Calculations, Journal of Atmospheric and Oceanic Technology, 16(11), 1854-1861.
+        On Rayleigh Optical Depth Calculations, Journal of Atmospheric and Oceanic Technology,
+        16(11), 1854-1861.
         URL: https://journals.ametsoc.org/view/journals/atot/16/11/1520-0426_1999_016_1854_orodc_2_0_co_2.xml.
     """
 

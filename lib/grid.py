@@ -84,7 +84,7 @@ def resample_onto_grid(grid, data):
 
     Parameters
     ----------
-    grid : xr.Dataset / xr.DataArray / xr Coordinates
+    grid : xr.Dataset / xr.DataArray
         This contains the coordinates named 'x', 'y', 'z' that data will be
         interpolated onto. It also needs the 'delx' and 'dely' variables that
         correspond to the equispacing of 'x' and 'y'. This input should be
@@ -102,24 +102,16 @@ def resample_onto_grid(grid, data):
 
     Raises
     ------
-    ValueError
+    TypeError
         Will be raised if inputs are of the wrong type.
     AssertionError
         If there are (unexpected) np.nan in `filled` before returning.
+    exceptions.GridError
+        If `grid` is not a valid SHDOM grid. See checks.check_grid.
     """
-    if not isinstance(grid, (xr.core.coordinates.DatasetCoordinates,
-                             xr.core.coordinates.DataArrayCoordinates, xr.Dataset, xr.DataArray)):
+    if not isinstance(grid, (xr.Dataset, xr.DataArray)):
         raise TypeError("'grid' should be an xr.Dataset, "
-                         "xr.DataArray or xarray coordinates object, not '{}'".format(type(grid)))
-    if not isinstance(data, (xr.Dataset, xr.DataArray)):
-        raise TypeError("'grid' should be an xr.Dataset, "
-                         "xr.DataArray, not '{}'".format(type(grid)))
-    #if coordinates are passed, then make a dataset.
-    if isinstance(grid, (xr.core.coordinates.DatasetCoordinates,
-                         xr.core.coordinates.DataArrayCoordinates)):
-        grid = xr.Dataset(
-            coords=grid
-        )
+                         "xr.DataArray  object, not '{}'".format(type(grid)))
     pyshdom.checks.check_grid(grid)
 
     data_copy = data.copy(deep=True)
@@ -264,67 +256,3 @@ def merge_two_z_coordinates(z1, z2):
     assert np.all(np.sort(combined) == combined), 'unexpectedly not strictly increasing.'
 
     return combined
-
-
-#
-# def find_horizontal_union(scatterer_list):
-#     """
-#     TODO
-#     """
-#     x_mins = []
-#     x_maxs = []
-#     y_mins = []
-#     y_maxs = []
-#     for scatterer in scatterer_list:
-#         try: #TODO INCORRECT need to test for existence of different coords.
-#             x_mins.append(scatterer.coords['x'].data.min())
-#             y_mins.append(scatterer.coords['y'].data.min())
-#             x_maxs.append(scatterer.coords['x'].data.max())
-#             y_maxs.append(scatterer.coords['y'].data.max())
-#         except:
-#             continue
-#
-#     assert len(x_mins) > 0, 'At least one scatterer must have an x dimension'
-#     assert len(y_mins) > 0, 'At least one scatterer must have a y dimension'
-#
-#     return min(x_mins), max(x_maxs), min(y_mins),max(y_maxs)
-
-# def find_max_horizontal_resolution(scatterer_list):
-#     """
-#     TODO
-#     """
-#     dx_mins = []
-#     dy_mins = []
-#     for scatterer in scatterer_list:
-#         try: #TODO INCORRECT need to test for existence of different coords.
-#             dx_mins.append(scatterer.coords['x'].diff(dim='x').data.min())
-#             dy_mins.append(scatterer.coords['y'].diff(dim='y').data.min())
-#         except:
-#             continue
-#
-#     assert len(dx_mins) > 0, 'At least one scatterer must have an x dimension'
-#     assert len(dy_mins) > 0, 'At least one scatterer must have a y dimension'
-#
-#     return min(dx_mins), min(dy_mins)
-
-# def merge_scatterer_grids(scatterer_list):
-#     """
-#     A function that produces the grid addition behaviour
-#     of scatterer merging from the 'pre-refactoring' shdom.
-#     TODO
-#     """
-#     assert len(scatterer_list) > 1,'need more than 1 scatterer to combine.'
-#
-#     xmin,xmax,ymin,ymax = find_horizontal_union(scatterer_list)
-#     dx,dy = find_max_horizontal_resolution(scatterer_list)
-#
-#     #defined so that linspace includes xmax as the last point.
-#     #supports unevenly spaced x,y in input data.
-#     nx = int(1+(xmax-xmin)/dx)
-#     ny = int(1+(ymax-ymin)/dy)
-#
-#     z = combine_z_coordinates(scatterer_list)
-#     grid = make_grid(xmin,xmax,nx,ymin,ymax,ny,z)
-#     merged_scatterers = [resample_onto_grid(grid,scatterer) for scatterer in scatterer_list]
-#
-#     return merged_scatterers

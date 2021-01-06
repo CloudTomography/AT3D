@@ -12,9 +12,9 @@ import pyshdom.grid
 
 class SpaceCarver:
 
-    @pyshdom.checks.dataset_checks(grid=pyshdom.checks.check_grid)
+    #@pyshdom.checks.dataset_checks(grid=pyshdom.checks.check_grid)
     def __init__(self, grid):
-
+        pyshdom.checks.check_grid(grid)
         self._grid = grid
         self._setup_grid(self._grid, ipflag=0, bcflag=3) #changing these could result in failure of ray_tracing.
 

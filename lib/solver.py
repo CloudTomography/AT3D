@@ -270,7 +270,12 @@ class RTE:
         # Source parameters
         pyshdom.checks.check_positivity(source, 'wavelength', 'solarflux',
                                         'skyrad')
-        pyshdom.checks.check_range(source, solarmu=(-1.0, 0.0 - 1e-8))
+        solarmu = source.solarmu.data
+        if not (-1.0 <= solarmu) & (solarmu < 0.0):
+            raise ValueError("solarmu must be in the range -1.0 <= solarmu < 0.0 not '{}'. "
+                             "The SHDOM convention for solar direction is that it points"
+                             "in the direction of the propagation of radiance.".format(solarmu))
+                             
         pyshdom.checks.check_range(source, solaraz=(-np.pi, np.pi))
         self.wavelength = source.wavelength.data
         self._srctype = source.srctype.data

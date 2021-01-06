@@ -19,7 +19,6 @@ rendering, a sensor MUST have ray variables. However, there is no generic method
 for generating sub-pixel ray geometry, as it depends on the assumed sensor geometry.
 Users should add their own generating functions for specialized sensors.
 """
-
 import itertools
 import inspect
 import xarray as xr
