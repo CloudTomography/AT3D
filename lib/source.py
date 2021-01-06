@@ -50,7 +50,7 @@ def thermal(wavelength, skyrad=0.0, units='radiance'):
             'name': 'solar_source',
             'wavelength': wavelength,
             'solarflux': 0.0,
-            'solarmu': 1.0,
+            'solarmu': -0.5,
             'solaraz': 0.0,
             'srctype': 'T',
             'units': units_flag,

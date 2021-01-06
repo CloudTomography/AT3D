@@ -487,7 +487,6 @@ class Verify_Lambertian_Surfaces(TestCase):
     def test_radiance(self):
         self.assertTrue(np.allclose(self.radiances[:,-1], self.integrated_rays.I.data, atol=9e-6))
 
-
 class Verify_Ocean_Unpolarized_Surfaces(TestCase):
     @classmethod
     def setUpClass(cls):
@@ -660,3 +659,218 @@ class Verify_Diner_Surfaces(TestCase):
 
     def test_U(self):
         self.assertTrue(np.allclose(self.radiances[:,4], self.integrated_rays.U.data, atol=9e-6))
+
+class Verify_ZeroGasAbsorption(TestCase):
+    @classmethod
+    def setUpClass(cls):
+
+        sensor, rayleigh, config = get_basic_state_for_surface()
+        variable_lambertian = pyshdom.surface.lambertian(albedo=np.linspace(0.0,0.3- (0.3-0.0)/50.0,50)[:,np.newaxis],
+                                                       ground_temperature=288.0,delx=0.02,dely=0.04)
+        atmosphere = xr.Dataset(
+            data_vars={
+            'gas_absorption': (['x', 'y', 'z'], np.zeros((rayleigh[0.85].x.size, rayleigh[0.85].y.size,
+                                                        rayleigh[0.85].z.size)))
+            },
+            coords={
+            'x': rayleigh[0.85].x,
+            'y': rayleigh[0.85].y,
+            'z': rayleigh[0.85].z
+            }
+        )
+        atmosphere['delx'] = rayleigh[0.85].delx
+        atmosphere['dely'] = rayleigh[0.85].dely
+        solver = pyshdom.solver.RTE(numerical_params=config,
+                                        medium={'rayleigh': rayleigh[0.85]},
+                                       source=pyshdom.source.solar(0.85, -0.707, 0.0, solarflux=1.0),
+                                       surface=variable_lambertian,
+                                        num_stokes=1,
+                                        name=None,
+                                        atmosphere=atmosphere)
+
+        solver.solve(maxiter=100, verbose=False)
+        integrated_rays = solver.integrate_to_sensor(sensor)
+
+        cls.integrated_rays = integrated_rays
+        cls.solver = solver
+        cls.fluxes = parse_shdom_output('data/brdf_L1f.out', comment='!')
+        cls.radiances = parse_shdom_output('data/brdf_L1r.out', comment='!')
+
+    def test_flux_direct(self):
+        self.assertTrue(np.allclose(self.fluxes[:,4],self.solver.fluxes.flux_direct[:,0,0].data, atol=4e-6))
+
+    def test_flux_down(self):
+        self.assertTrue(np.allclose(self.fluxes[:,3],self.solver.fluxes.flux_down[:,0,0].data, atol=4e-6))
+
+    def test_flux_up(self):
+        self.assertTrue(np.allclose(self.fluxes[:,2],self.solver.fluxes.flux_up[:,0,0].data, atol=4e-6))
+
+    def test_radiance(self):
+        self.assertTrue(np.allclose(self.radiances[:,-1], self.integrated_rays.I.data, atol=9e-6))
+
+class Verify_NonuniformGasAbsorption(TestCase):
+    @classmethod
+    def setUpClass(cls):
+
+        sensor, rayleigh, config = get_basic_state_for_surface()
+
+        x = np.linspace(0,1.0-1.0/50,50)
+        y = np.zeros(50)
+        z = np.ones(50)*30.0
+        mu = np.array([1.0]*50)
+        phi = np.array([0.0]*50)
+
+        sensor = pyshdom.sensor.make_sensor_dataset(x.ravel(),y.ravel(),z.ravel(),mu.ravel(),np.deg2rad(phi.ravel()),['I'],
+                                                 0.85, fill_ray_variables=True)
+
+        lambertian = pyshdom.surface.lambertian(albedo=0.04)
+        atmosphere = xr.Dataset(
+            data_vars={
+            'gas_absorption': (['x', 'y', 'z'], np.ones((rayleigh[0.85].x.size, rayleigh[0.85].y.size,
+                                                        rayleigh[0.85].z.size))*
+                                                        np.linspace(0.0, 1e-2,rayleigh[0.85].x.size)[:, np.newaxis, np.newaxis])
+            },
+            coords={
+            'x': rayleigh[0.85].x,
+            'y': rayleigh[0.85].y,
+            'z': rayleigh[0.85].z
+            }
+        )
+        rayleigh[0.85]['extinction'] *= 0.0
+        atmosphere['delx'] = rayleigh[0.85].delx
+        atmosphere['dely'] = rayleigh[0.85].dely
+        solver = pyshdom.solver.RTE(numerical_params=config,
+                                        medium={'rayleigh': rayleigh[0.85]},
+                                       source=pyshdom.source.solar(0.85, -1.0, 0.0, solarflux=1.0),
+                                       surface=lambertian,
+                                        num_stokes=1,
+                                        name=None,
+                                        atmosphere=atmosphere)
+
+        solver.solve(maxiter=100, verbose=False)
+        integrated_rays = solver.integrate_to_sensor(sensor)
+
+        tau = np.linspace(0.0, 1e-2, rayleigh[0.85].x.size)*30.0
+
+        rad = 1.0*np.exp(-tau)*0.04/np.pi * np.exp(-tau)
+        cls.tau = tau
+        cls.integrated_rays = integrated_rays
+        cls.solver = solver
+        cls.rad = rad
+
+    def test_radiance(self):
+        self.assertTrue(np.allclose(self.rad, self.integrated_rays.I.data, atol=9e-6))
+
+class Verify_Thermal(TestCase):
+    @classmethod
+    def setUpClass(cls):
+
+        config = pyshdom.configuration.get_config('../default_config.json')
+        config['split_accuracy'] = 0.0
+        config['spherical_harmonics_accuracy'] = 0.0
+        config['num_mu_bins'] = 16
+        config['num_phi_bins'] = 32
+        config['solution_accuracy'] = 1e-5
+        config['x_boundary_condition'] = 'periodic'
+        config['y_boundary_condition'] = 'periodic'
+        config['ip_flag'] = 3
+
+        rte_grid = pyshdom.grid.make_grid(0.02, 50, 0.02, 1,
+                                   np.array([0,3.0,6.0,9.0,12.0,15.0,18.0,21.0,24.0,27.0,30.0]))
+
+        atmosphere = xr.Dataset(
+            data_vars = {
+                'temperature': ('z', np.array([288.0,269.0,249.0,230.0,217.0,217.0,217.0,218.0,221.0,224.0,227.0])),
+                'pressure': ('z', np.ones(rte_grid.z.size)*0.0)
+                            },
+            coords = {'z': rte_grid.z.data}
+        )
+        wavelengths = np.atleast_1d(11.0)
+        rayleigh = pyshdom.rayleigh.to_grid(wavelengths,atmosphere , rte_grid)
+
+        x = np.linspace(0,1.0-1.0/50,50)
+        y = np.zeros(50)
+        z = np.ones(50)*30.0
+        mu = np.array([1.0]*50)
+        phi = np.array([0.0]*50)
+
+        sensor = pyshdom.sensor.make_sensor_dataset(x.ravel(),y.ravel(),z.ravel(),mu.ravel(),np.deg2rad(phi.ravel()),['I'],
+                                                 11.0, fill_ray_variables=True)
+
+        lambertian = pyshdom.surface.lambertian(albedo=0.04, ground_temperature=300.0)
+
+        solver = pyshdom.solver.RTE(numerical_params=config,
+                                        medium={'rayleigh': rayleigh[11.0]},
+                                       source=pyshdom.source.thermal(11.0),
+                                       surface=lambertian,
+                                        num_stokes=1,
+                                        name=None,
+                                        atmosphere=rayleigh[11.0])
+
+        solver.solve(maxiter=100, verbose=False)
+        integrated_rays = solver.integrate_to_sensor(sensor)
+
+        rad = (1.0 - 0.04)*pyshdom.util.planck_function(300.0, 11.0)
+        cls.integrated_rays = integrated_rays
+        cls.solver = solver
+        cls.rad = rad
+
+    def test_radiance(self):
+        self.assertTrue(np.allclose(self.rad, self.integrated_rays.I.data, atol=3e-4))
+
+class Verify_Combined(TestCase):
+    @classmethod
+    def setUpClass(cls):
+
+        config = pyshdom.configuration.get_config('../default_config.json')
+        config['split_accuracy'] = 0.0
+        config['spherical_harmonics_accuracy'] = 0.0
+        config['num_mu_bins'] = 16
+        config['num_phi_bins'] = 32
+        config['solution_accuracy'] = 1e-5
+        config['x_boundary_condition'] = 'periodic'
+        config['y_boundary_condition'] = 'periodic'
+        config['ip_flag'] = 3
+
+        rte_grid = pyshdom.grid.make_grid(0.02, 50, 0.02, 1,
+                                   np.array([0,3.0,6.0,9.0,12.0,15.0,18.0,21.0,24.0,27.0,30.0]))
+
+        atmosphere = xr.Dataset(
+            data_vars = {
+                'temperature': ('z', np.array([288.0,269.0,249.0,230.0,217.0,217.0,217.0,218.0,221.0,224.0,227.0])),
+                'pressure': ('z', np.ones(rte_grid.z.size)*0.0)
+                            },
+            coords = {'z': rte_grid.z.data}
+        )
+        wavelengths = np.atleast_1d(11.0)
+        rayleigh = pyshdom.rayleigh.to_grid(wavelengths,atmosphere , rte_grid)
+
+        x = np.linspace(0,1.0-1.0/50,50)
+        y = np.zeros(50)
+        z = np.ones(50)*30.0
+        mu = np.array([1.0]*50)
+        phi = np.array([0.0]*50)
+
+        sensor = pyshdom.sensor.make_sensor_dataset(x.ravel(),y.ravel(),z.ravel(),mu.ravel(),np.deg2rad(phi.ravel()),['I'],
+                                                 11.0, fill_ray_variables=True)
+
+        lambertian = pyshdom.surface.lambertian(albedo=0.04, ground_temperature=300.0)
+
+        solver = pyshdom.solver.RTE(numerical_params=config,
+                                        medium={'rayleigh': rayleigh[11.0]},
+                                       source=pyshdom.source.combined(11.0, -1.0, 0.0, solarflux=1.0),
+                                       surface=lambertian,
+                                        num_stokes=1,
+                                        name=None,
+                                        atmosphere=rayleigh[11.0])
+
+        solver.solve(maxiter=100, verbose=False)
+        integrated_rays = solver.integrate_to_sensor(sensor)
+
+        rad = (1.0 - 0.04)*pyshdom.util.planck_function(300.0, 11.0) + 0.04/np.pi
+        cls.integrated_rays = integrated_rays
+        cls.solver = solver
+        cls.rad = rad
+
+    def test_radiance(self):
+        self.assertTrue(np.allclose(self.rad, self.integrated_rays.I.data, atol=3e-4))

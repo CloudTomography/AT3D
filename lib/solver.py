@@ -62,9 +62,6 @@ class RTE:
         # Link to the properties array module.
         self._pa = ShdomPropertyArrays()
 
-        # Setup numerical parameters
-        self.numerical_params = self._setup_numerical_params(numerical_params)
-
         # k-distribution not supported yet
         self._kdist = False
         self._ng = 1
@@ -76,6 +73,9 @@ class RTE:
         # No iterations have taken place
         self._iters = 0
 
+        # Setup numerical parameters
+        self.numerical_params = self._setup_numerical_params(numerical_params)
+
         self._setup_grid(self._grid)
 
         # Setup surface
@@ -83,6 +83,19 @@ class RTE:
 
         # atmosphere includes temperature for thermal radiation
         self.atmosphere = self._setup_atmosphere(atmosphere)
+
+        #this warning can only be done after both surface and numerical params.
+        flux = 0.0
+        if self._srctype in ('T', 'B'):
+            flux = np.pi*pyshdom.util.planck_function(self._gndtemp, self.wavelength)
+        if self._srctype != 'T':
+            flux += self._solarflux
+        if (self._splitacc > 0.0) & ((self._splitacc < 0.001*flux) | (self._splitacc > 0.1*flux)):
+            warnings.warn("Splitting accuracy parameter is not a fraction but scales with fluxes."
+                          " splitacc/nominal flux = {}".format(self._splitacc/flux))
+        if (self._shacc > 0.0) & (self._shacc > 0.03*flux):
+            warnings.warn("spherical_harmonics_accuracy is not a fraction but scales with fluxes."
+                          " SHACC/nominal flux = {}".format(self._shacc/flux))
 
         self._prepare_optical_properties()
 
@@ -188,64 +201,66 @@ class RTE:
         it cannot be treated via the @dataset_pyshdom.checks.
         So this function does all of the checking.
         """
+        self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32) + 273.0
         if atmosphere is None:
             if self._srctype in ('T', 'B'):
-                raise ValueError("Temperature was not specified in "
-                                 "`atmosphere` despite using thermal source.")
-            self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32) + 273.0
+                raise KeyError("'temperature' variable was not specified in "
+                               "`atmosphere` despite using thermal source.")
         elif isinstance(atmosphere, xr.Dataset):
+            #atmosphere should be on the rte_grid.
             pyshdom.checks.check_grid(atmosphere)
             if not np.all(atmosphere.x == self._grid.x) & np.all(atmosphere.y == self._grid.y) & \
                 np.all(atmosphere.z == self._grid.z):
-                warnings.warn("`atmosphere` does not have a consistent grid with medium. "
-                              "`atmosphere` is being resampled.")
-                atmosphere = pyshdom.grid.resample_onto_grid(self._grid, atmosphere)
+                raise pyshdom.exceptions.GridError("`atmosphere` does not have a "
+                                                   "consistent grid with medium.")
 
             if 'temperature' in atmosphere.data_vars:
                 pyshdom.checks.check_positivity(atmosphere, 'temperature')
+                pyshdom.checks.check_hasdim(atmosphere, temperature=['x', 'y', 'z'])
                 if np.any(atmosphere.temperature >= 350.0) or \
                    np.any(atmosphere.temperature <= 150.0):
-                    warnings.warn("Temperatures in `atmosphere` are out of Earth's range [150.0, 350.0].")
+                    warnings.warn("Temperatures in `atmosphere` are out of "
+                                  "Earth's range [150.0, 350.0].")
+                self._pa.tempp[:] = atmosphere.temperature.data.ravel()
+            elif self._srctype in ('T', 'B'):
+                raise KeyError("'temperature' variable was not specified in "
+                               "`atmosphere` despite using thermal source.")
 
             if 'gas_absorption' in atmosphere.data_vars:
                 pyshdom.checks.check_positivity(atmosphere, 'gas_absorption')
-                pyshdom.checks.check_hasdim(atmosphere, gas_absorption=['z'])
-
-                test = True
-                if ('x' in atmosphere.gas_absorption.dims) & ('y' in atmosphere.gas_absorption.dims):
-                    for x in atmosphere.x:
-                        for y in atmosphere.y:
-                            test_temp = np.allclose(atmosphere.gas_absorption.isel(x=0,y=0).data, atmosphere.gas_absorption.sel(x=x,y=y))
-                            if not test_temp:
-                                test = False
-                    gas_1d = atmosphere.gas_absorption.isel(x=0,y=0).data
-                elif ('x' in atmosphere.gas_absorption.dims):
-                    for x in atmosphere.x:
-                        test_temp = np.allclose(atmosphere.gas_absorption.isel(x=0).data, atmosphere.gas_absorption.sel(x=x))
-                        if not test_temp:
-                            test = False
-                    gas_1d = atmosphere.gas_absorption.isel(x=0).data
-                elif ('y' in atmosphere.gas_absorption.dims):
-                    for y in atmosphere.y:
-                        test_temp = np.allclose(atmosphere.gas_absorption.isel(y=0).data, atmosphere.gas_absorption.sel(y=y))
-                        if not test_temp:
-                            test = False
-                    gas_1d = atmosphere.gas_absorption.isel(y=0).data
-                elif atmosphere.gas_absorption.dims == tuple('z'):
-                    gas_1d = atmosphere.gas_absorption.data
-                if test:
+                pyshdom.checks.check_hasdim(atmosphere, gas_absorption=['x', 'y', 'z'])
+                if np.all(atmosphere.gas_absorption[0, 0] == atmosphere.gas_absorption):
                     self._pa.nzckd = atmosphere.sizes['z']
                     self._pa.zckd = atmosphere.z.data
-                    self._pa.gasabs = gas_1d
+                    self._pa.gasabs = atmosphere.gas_absorption[0, 0].data
                 else:
-                    raise ValueError("Explicit '2D/3D gas absorption in "
-                                     "`atmosphere` is not currently supported."
-                                     " Please add it to `medium`.")
-            warnings.warn("No gas absorption found in atmosphere file. "
-                          "Variable name should be 'gas_absorption'.",
-                          category=RuntimeWarning)
+                    warnings.warn("'gas_absorption' does not collapse to 1D so is being added "
+                                  "to `medium`.")
+                    if 'gas_absorption' in self.medium:
+                        KeyError("'gas_absorption' key was already in `medium`.")
+                    else:
+                        gas_absorption_scatterer = xr.Dataset(
+                            data_vars={
+                                'extinction': (['x', 'y', 'z'], atmosphere.gas_absorption.data),
+                                'ssalb': (['x', 'y', 'z'],
+                                           np.zeros(atmosphere.gas_absorption.shape)),
+                                'table_index': (['x', 'y', 'z'],
+                                                np.zeros(atmosphere.gas_absorption.shape)),
+                                'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+                                            np.zeros((6, 0, 0)))
+                            },
+                            coords={
+                                'x': atmosphere.x,
+                                'y': atmosphere.y,
+                                'z': atmosphere.z,
+                            }
+                        )
+                        self.medium['gas_absorption'] = gas_absorption_scatterer
+            else:
+                warnings.warn("No gas absorption found in `atmosphere` dataset."
+                              " Name should be 'gas_absorption'.")
         else:
-            raise TypeError("`atmosphere` should be an xr.Dataset")
+            raise TypeError("`atmosphere` should be an xr.Dataset or None")
         return atmosphere
 
     def _setup_source(self, source):
@@ -255,7 +270,7 @@ class RTE:
         # Source parameters
         pyshdom.checks.check_positivity(source, 'wavelength', 'solarflux',
                                         'skyrad')
-        pyshdom.checks.check_range(source, solarmu=(-1.0, 0.0 + 1e-8))
+        pyshdom.checks.check_range(source, solarmu=(-1.0, 0.0 - 1e-8))
         pyshdom.checks.check_range(source, solaraz=(-np.pi, np.pi))
         self.wavelength = source.wavelength.data
         self._srctype = source.srctype.data
@@ -358,18 +373,6 @@ class RTE:
 
         if self._nphi < self._nmu:
             warnings.warn("Usually want NPHI > NMU. NMU={}, NPHI={}".format(self._nmu, self._nphi))
-
-        flux = 0.0
-        if self._srctype in ('T', 'B'):
-            flux = np.pi*pyshdom.util.planck_function(self._gndtemp, self.wavelength)
-        if self._srctype != 'T':
-            flux += self._solarflux
-        if (self._splitacc > 0.0) & ((self._splitacc < 0.001*flux) | (self._splitacc > 0.1*flux)):
-            warnings.warn("Splitting accuracy parameter is not a fraction but scales with fluxes."
-                          " splitacc/nominal flux = {}".format(self._splitacc/flux))
-        if (self._shacc > 0.0) & (self._shacc > 0.03*flux):
-            warnings.warn("spherical_harmonics_accuracy is not a fraction but scales with fluxes."
-                          " SHACC/nominal flux = {}".format(self._shacc/flux))
 
         for boundary in ('x_boundary_condition', 'y_boundary_condition'):
             if numerical_params[boundary] not in ('open', 'periodic'):
