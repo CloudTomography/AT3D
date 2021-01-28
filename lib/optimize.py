@@ -47,6 +47,34 @@ class ObjectiveFunction:
 
         return cls(measurements, loss_function, min_bounds=min_bounds, max_bounds=max_bounds)
 
+    @classmethod
+    def GammaCorrectionL2(cls, measurements, solvers, forward_sensors, unknown_scatterers, set_state_fn,
+                                  project_gradient_to_state, gamma_correction, n_jobs=1, mpi_comm=None, verbose=True,
+                                  maxiter=100, init_solution=True, exact_single_scatter=True,
+                                  min_bounds=None, max_bounds=None):
+        """
+        NB The passed set_state_fn must be defined using the
+        solvers/unknown_scatterers defined at the script level.
+        """
+        def loss_function(state, measurements):
+
+            set_state_fn(state)
+            loss, gradient = pyshdom.gradient.gamma_correction_l2(measurements,
+                                                                 solvers,
+                                                                 forward_sensors,
+                                                                 unknown_scatterers,
+                                                                 gamma_correction,
+                                                                 n_jobs=n_jobs,
+                                                                 mpi_comm=mpi_comm,
+                                                                 verbose=verbose,
+                                                                 maxiter=maxiter,
+                                                                 init_solution=init_solution,
+                                                                 exact_single_scatter=exact_single_scatter)
+            state_gradient = project_gradient_to_state(state, gradient)
+            return loss, state_gradient
+
+        return cls(measurements, loss_function, min_bounds=min_bounds, max_bounds=max_bounds)
+
     @property
     def loss(self):
         return self._loss

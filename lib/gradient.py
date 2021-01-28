@@ -36,7 +36,12 @@ def create_derivative_tables(unknown_scatterers):
                     differentiated = table.differentiate(coord='veff')
                     differentiated['extinction'][:] = np.zeros(table.extinction.shape)
                     differentiated['ssalb'][:] = np.zeros(table.ssalb.shape)
-
+                elif variable_name == 'reff_no_ext':
+                    differentiated = table.differentiate(coord='reff')
+                    differentiated['extinction'][:] = np.zeros(table.extinction.shape)
+                elif variable_name == 'veff_no_ext':
+                    differentiated = table.differentiate(coord='veff')
+                    differentiated['extinction'][:] = np.zeros(table.extinction.shape)
                 elif variable_name == 'extinction':
                     differentiated = table.copy(data={
                         'extinction': np.ones(table.extinction.shape),
@@ -73,7 +78,8 @@ def create_derivative_tables(unknown_scatterers):
         partial_derivative_tables[key] = partial_derivative_dict
     return partial_derivative_tables
 
-def grad_l2(rte_solver, sensor, exact_single_scatter=True):
+def grad_l2(rte_solver, sensor, exact_single_scatter=True, gradientflag='L',
+            gradientparams=np.zeros(1), numgradientparams=1):
     """
     The core l2 gradient method.
 
@@ -219,7 +225,10 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True):
         jacobian=jacobian,
         jacobianptr=jacobian_ptr,
         num_jacobian_pts=num_jacobian_pts,
-        makejacobian=jacobian_flag
+        makejacobian=jacobian_flag,
+        gradientflag=gradientflag,
+        gradientparams=gradientparams,
+        numgradientparams=numgradientparams
     )
 
     integrated_rays = sensor.copy(deep=True)
@@ -237,7 +246,8 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True):
 
     return gradient, loss, integrated_rays
 
-def jacobian(rte_solver, sensor, indices_for_jacobian, exact_single_scatter=True):
+def jacobian(rte_solver, sensor, indices_for_jacobian, exact_single_scatter=True,
+             gradientflag='L', gradientparams=np.zeros(1), numgradientparams=1):
     """
     The core l2 gradient method.
 
@@ -384,7 +394,10 @@ def jacobian(rte_solver, sensor, indices_for_jacobian, exact_single_scatter=True
         jacobian=jacobian,
         jacobianptr=jacobian_ptrs,
         num_jacobian_pts=num_jacobian_pts,
-        makejacobian=jacobian_flag
+        makejacobian=jacobian_flag,
+        gradientflag=gradientflag,
+        gradientparams=gradientparams,
+        numgradientparams=numgradientparams
     )
 
     integrated_rays = sensor.copy(deep=True)
@@ -696,6 +709,45 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
     #turn gradient into a gridded dataset for use in project_gradient_to_state
     gradient_dataset = make_gradient_dataset(gradient, unknown_scatterers, solvers)
 
+    return np.array(loss), gradient_dataset
+
+
+
+def gamma_correction_l2(measurements, solvers, forward_sensors, unknown_scatterers,
+                        gamma_correction, n_jobs=1, mpi_comm=None,verbose=False,
+                        maxiter=100, init_solution=True, exact_single_scatter=True,
+                        setup_grid=True):
+    """TODO"""
+    #note this division of solving and 'raytracing' is not optimal for distributed memory parallelization
+    #where tasks take varying amounts of time.
+    for solver in solvers.values():
+        if solver._srctype != 'S':
+            raise NotImplementedError('Only Solar Source is supported for gradient calculations.')
+
+    solvers.parallel_solve(n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,maxiter=maxiter,
+                            init_solution=init_solution, setup_grid=setup_grid)
+
+    #These are called after the solution because they require at least _init_solution to be run.
+    if not hasattr(list(solvers.values())[0], '_direct_derivative_path'):
+        #only needs to be called once.
+        solvers.add_direct_beam_derivatives()
+
+    solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method,
+                                                  unknown_scatterers.table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
+
+    #prepare the sensors for the fortran subroutine for calculating gradient.
+    rte_sensors, sensor_mapping = forward_sensors.sort_sensors(solvers, measurements)
+    gradientparams = gamma_correction()
+    loss, gradient = pyshdom.parallel.parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=grad_l2,
+                     mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter,
+                     gradientflag='G', gradientparams=gradientparams, numgradientparams=len(gradientparams))
+
+    #uncorrelated l2.
+    loss = np.sum(loss)/ forward_sensors.nmeasurements
+    gradient = np.sum(gradient, axis=-1)/ forward_sensors.nmeasurements
+
+    #turn gradient into a gridded dataset for use in project_gradient_to_state
+    gradient_dataset = make_gradient_dataset(gradient, unknown_scatterers, solvers)
     return np.array(loss), gradient_dataset
 
 

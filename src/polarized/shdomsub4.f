@@ -617,7 +617,8 @@ C          ENDIF
      .           UNIFORMZLEV, DPATH, DPTR, EXACT_SINGLE_SCATTER,
      .           UNCERTAINTIES, JACOBIAN,MAKEJACOBIAN,
      .           JACOBIANPTR, NUM_JACOBIAN_PTS, RAYS_PER_PIXEL,
-     .           RAY_WEIGHTS, STOKES_WEIGHTS)
+     .           RAY_WEIGHTS, STOKES_WEIGHTS, GRADIENTFLAG,
+     .           GRADIENTPARAMS, NUMGRADIENTPARAMS)
 Cf2py threadsafe
       IMPLICIT NONE
       LOGICAL EXACT_SINGLE_SCATTER
@@ -631,6 +632,12 @@ Cf2py intent(in) :: NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS, NBPTS, NB
       REAL    EXTDIRP(*)
       DOUBLE PRECISION UNIFORMZLEV
 Cf2py intent(in) :: DELX, DELY, XSTART, YSTART NPX, NPY, NPZ, ZLEVELS, EXTDIRP, UNIFORMZLEV
+      CHARACTER GRADIENTFLAG*1
+Cf2py intent(in) :: GRADIENTFLAG
+      INTEGER NUMGRADIENTPARAMS
+Cf2py intent(in) :: NUMGRADIENTPARAMS
+      REAL GRADIENTPARAMS(NUMGRADIENTPARAMS)
+Cf2py intent(in) :: GRADIENTPARAMS
       INTEGER ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
 Cf2py intent(in) :: ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
       INTEGER  DNUMPHASE
@@ -776,7 +783,6 @@ C             Extrapolate ray to domain top if above
             WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
             STOP
           ENDIF
-
 C         Integrate the extinction and source function along this ray
 C         to calculate the Stokes radiance vector for this pixel
           TRANSMIT = 1.0D0 ; VISRAD = 0.0D0; RAYGRAD = 0.0D0
@@ -798,7 +804,8 @@ C         to calculate the Stokes radiance vector for this pixel
      .             DIPHASE, DLEG, NBPTS, DNUMPHASE, SOLARFLUX, NPX,
      .             NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
-     .             EXACT_SINGLE_SCATTER)
+     .             EXACT_SINGLE_SCATTER, GRADIENTFLAG, GRADIENTPARAMS,
+     .             NUMGRADIENTPARAMS)
   900     CONTINUE
 
 
@@ -900,7 +907,8 @@ C            ENDDO
      .             DALB, DIPHASE, DLEG, NBPTS, DNUMPHASE, SOLARFLUX,
      .             NPX, NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
-     .             EXACT_SINGLE_SCATTER)
+     .             EXACT_SINGLE_SCATTER, GRADIENTFLAG, GRADIENTPARAMS,
+     .             NUMGRADIENTPARAMS)
 
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
@@ -938,6 +946,9 @@ C     5=-Z,6=+Z).
       REAL    TOTAL_EXT(*), YLMSUN(NSTLEG,*)
       REAL    PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
       REAL    DPHASETAB(NSTPHASE,DNUMPHASE,NSCATANGLE)
+      CHARACTER GRADIENTFLAG*1
+      REAL    GRADIENTPARAMS(NUMGRADIENTPARAMS)
+      INTEGER NUMGRADIENTPARAMS
       DOUBLE PRECISION MU2, PHI2, X0,Y0,Z0, XE,YE,ZE
       DOUBLE PRECISION TRANSMIT, RADOUT(NSTOKES)
       CHARACTER SRCTYPE*1, SFCTYPE*2
@@ -1252,12 +1263,10 @@ C                 Linear extinction, linear source*extinction, to second order
             SRC(:) = ( 0.5*(SRCEXT0(:)+SRCEXT1(:))
      .           + 0.08333333333*(EXT0*SRCEXT1(:)-EXT1*SRCEXT0(:))*DELS
      .                *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
-
             IF (.NOT. OUTOFDOMAIN) THEN
               SRCGRAD = ( 0.5*(GRAD0+GRAD1)
      .          + 0.08333333333*(EXT0*GRAD1-EXT1*GRAD0)*DELS
      .           *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
-
                IF (EXACT_SINGLE_SCATTER) THEN
                  SRCSINGSCAT = ( 0.5*(SINGSCAT0+SINGSCAT1)
      .            + 0.08333333333*(EXT0*SINGSCAT1-EXT1*SINGSCAT0)*DELS
@@ -1277,8 +1286,16 @@ C                 Linear extinction, linear source*extinction, to second order
           IF (.NOT. OUTOFDOMAIN) THEN
             DO KK = 1, 8
               GRIDPOINT = GRIDPTR(KK,BCELL)
-              RAYGRAD(:,GRIDPOINT,:) = RAYGRAD(:,GRIDPOINT,:) +
+              IF (GRADIENTFLAG .EQ. 'L') THEN
+                RAYGRAD(:,GRIDPOINT,:) = RAYGRAD(:,GRIDPOINT,:) +
      .                     TRANSMIT*SRCGRAD(:,KK,:)*ABSCELL
+              ELSEIF (GRADIENTFLAG .EQ. 'G') THEN
+                RAYGRAD(:,GRIDPOINT,:) = RAYGRAD(:,GRIDPOINT,:) +
+     .            (TRANSMIT**(1.0/GRADIENTPARAMS(1)))*SRCGRAD(:,KK,:)*
+     .            ABSCELL*((-1*LOG(TRANSMIT))**GRADIENTPARAMS(2))
+     .            *GRADIENTPARAMS(3)
+              ENDIF
+C             empirical correction instead of TRANSMIT*SRCGRAD(:, KK,:)*ABSCELL
 C             Add gradient component due to the direct solar beam propogation
               IF (EXACT_SINGLE_SCATTER) THEN
                 II = 1

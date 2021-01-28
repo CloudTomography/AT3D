@@ -1,5 +1,6 @@
 """
-TODO module docstring
+This module contains the space carving routines and geometric projection
+that can be used to initialize cloud masking.
 """
 import xarray as xr
 import numpy as np
@@ -11,21 +12,35 @@ import pyshdom.util
 import pyshdom.grid
 
 class SpaceCarver:
-
-    #@pyshdom.checks.dataset_checks(grid=pyshdom.checks.check_grid)
+    """
+    An object that sets up an SHDOM grid structure through which
+    rays can be traced to perform space carving and ray integration
+    operations.
+    """
     def __init__(self, grid):
+
         pyshdom.checks.check_grid(grid)
         self._grid = grid
-        self._setup_grid(self._grid, ipflag=0, bcflag=3) #changing these could result in failure of ray_tracing.
+        #different values are untested: changing these could result in failure of ray_tracing.
+        self._setup_grid(self._grid, ipflag=0, bcflag=3)
 
     def _setup_grid(self, grid, ipflag, bcflag):
         """
-        Set the base grid and related grid structures for pyshdom.
+        Set the base grid and define the SHDOM grid structures
+        for ray tracing.
 
         Parameters
         ----------
-        grid: xarray
-            The grid containing x, y, z coordinates
+        grid : xr.Dataset
+            Dataset containing x, y, z coordinates. must be a valid
+            SHDOM grid.
+        ipflag : int
+            This flag sets the dimensionality of the radiative transfer 1D/2D/3D etc.
+            0=3D. see default_config.json and shdom.txt for definition.
+        bcflag : int
+            This flag sets the horizontal boundary conditions as either periodic
+            or open. 3=open in both dimensions.
+            see default_config.json and shdom.txt for definition.
         """
 
         def ibits(val, bit, ret_val):
@@ -110,13 +125,13 @@ class SpaceCarver:
 
     def carve(self, sensor_masks, agreement=None, linear_mode=False):
         """
-        TODO
+        Performs a space carving operation on
         """
         if isinstance(sensor_masks, xr.Dataset):
             sensor_list = [sensor_masks]
         elif isinstance(sensor_masks, type([])):
             sensor_list = sensor_masks
-        elif isinstance(sensor_masks, pyshdom.util.SensorsDict):
+        elif isinstance(sensor_masks, pyshdom.containers.SensorsDict):
             sensor_list = []
             for instrument in sensor_masks:
                 sensor_list.extend(sensor_masks[instrument]['sensor_list'])
@@ -167,7 +182,7 @@ class SpaceCarver:
                         data_vars={
                             'cloudy_counts': (['nsensors', 'x', 'y', 'z'], volume[:, 0]),
                             'total_counts': (['nsensors', 'x', 'y', 'z'], np.sum(volume[:, :2], axis=1)),
-                            'weights':(['nsensors', 'x', 'y', 'z'], volume[: 2]),
+                            'weights':(['nsensors', 'x', 'y', 'z'], volume[:, 2]),
                         },
                         coords={'x':self._grid.x,
                                 'y':self._grid.y,
@@ -191,18 +206,15 @@ class SpaceCarver:
             sensor_list = [sensors]
         elif isinstance(sensors, type([])):
             sensor_list = sensors
-        elif isinstance(sensors, pyshdom.util.SensorsDict):
+        elif isinstance(sensors, pyshdom.containers.SensorsDict):
             sensor_list = []
             for instrument in sensors:
                 sensor_list.extend(sensors[instrument]['sensor_list'])
         weights = weights.copy(deep=True)
-        if 'weights' in weights.data_vars:
-            weights.weights.name = 'density'
-        weights.drop_vars([name for name in weights.variables
+        weights = weights.drop_vars([name for name in weights.variables
                            if name not in ('x', 'y', 'z', 'density')])
 
         resampled_weights = pyshdom.grid.resample_onto_grid(self._grid, weights).density.data.ravel()
-
         for sensor in sensor_list:
             camx = sensor['ray_x'].data
             camy = sensor['ray_y'].data

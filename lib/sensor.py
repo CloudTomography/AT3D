@@ -442,7 +442,7 @@ def perspective_projection(wavelength, fov, x_resolution, y_resolution,
 
     # Here x_c, y_c, z_c coordinates on the image plane before transformation to the requaired observation angle
     focal = 1.0 / np.tan(np.deg2rad(fov) / 2.0) # focal (normalized) length when the sensor size is 2 e.g. r in [-1,1).
-    fov_x = np.rad2deg( *np.arctan(R[0]/focal))
+    fov_x = np.rad2deg(2*np.arctan(R[0]/focal))
     fov_y = np.rad2deg(2*np.arctan(R[1]/focal))
 
     k = np.array([[focal, 0, 0],

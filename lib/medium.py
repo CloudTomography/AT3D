@@ -1,38 +1,84 @@
 """
-TODO: description
+This module contains functions to map microphysical variables to
+optical properties. In the original SHDOM, these procedures would be performed
+by the `propgen` program.
+Currently only a Look-Up-Table approach is supported defined by `table_to_grid`
+which uses linear interpolation and nearest interpolation for phase functions.
+This method is also used to map partial derivatives of optical properties
+from the Look-Up-Table onto the SHDOM grid.
 """
-
 import numpy as np
 import xarray as xr
 import pyshdom.checks
 
 def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=False):
     """
-    TODO
-    Interpolates the poly table onto the microphysics grid.
+    Calculates optical properties from microphysical properties using a Look-Up-Table.
 
-    #TODO add checks that poly_table spans the microphysics. If only a single value
-    is in the poly_table (from the size distribution) then nans fill optical properties
-    silently as linear interpolation fails.
+    Optical properties are calculated on the 3D grid defined in `microphysics`
+    using microphysical parameters defined in `microphysics` and a Look-Up-Table to
+    map between microphysical variables and optical variables in `poly_table`
+    using linear interpolation.
+
+    Parameters
+    ----------
+    microphysics : xr.Dataset
+        Should contain the microphysical parameters on a valid grid.
+        See grid.py for details. The microphysical parameters should match
+        those in `poly_table`.
+    poly_table : xr.Dataset
+        Should contain extinction efficiency, single scatter albedo and phase
+        functions as a function microphysical parameters (e.g. effective radius).
+    exact_table : bool
+        Sets the interpolation method for the calculation of extinction and ssalb.
+        linear if False, and nearest if True.
+    inverse_mode : bool
+        A flag for whether optical properties or their derivatives with respect
+        to microphysical properties are being calculated.
+        The only difference is that extinction_efficiency passed instead of
+        extinction.
+
+    Returns
+    -------
+    optical_properties : xr.Dataset
+        A dataset containing optical properties defined on an SHDOM grid
+        ready to be used as input to solver.RTE.
+
+    Notes
+    -----
+    The linear interpolation of extinction and single scatter albedo and
+    nearest neighbor interpolation of phase functions used here differs
+    from SHDOM's propgen program, which uses a different interpolation scheme
+    and creates new phase functions if a specified accuracy is not met.
+    This is not implemented as the Look-Up-Table approach implemented here
+    is simple to apply to the inverse problem without the need to recompute
+    any mie properties. To ensure high accuracy, the spacing of the table
+    should be fine, see size_distribution.py.
     """
     pyshdom.checks.check_positivity(microphysics, 'density')
     pyshdom.checks.check_grid(microphysics)
     if not inverse_mode:
         pyshdom.checks.check_legendre(poly_table)
 
-    interp_names = set([name for name in poly_table.coords if name not in ('table_index', 'stokes_index')])
-    microphysics_names = set([name for name in microphysics.variables.keys() if name not in 'density'])
+    interp_names = set([name for name in poly_table.coords
+                        if name not in ('table_index', 'stokes_index')])
+    microphysics_names = set([name for name in microphysics.variables.keys()
+                              if name not in 'density'])
     missing = interp_names - microphysics_names
     if missing:
-        raise KeyError("microphysics dataset is missing variables for interpolation of table onto grid.", *list(missing))
-
-    interp_coords = {name:microphysics[name] for name in poly_table.coords if name not in ('table_index', 'stokes_index')}
+        raise KeyError(
+            "microphysics dataset is missing variables "
+            "for interpolation of table onto grid.", *list(missing)
+            )
+    interp_coords = {name:microphysics[name] for name in poly_table.coords
+                     if name not in ('table_index', 'stokes_index')}
     for interp_coord in interp_coords:
         if np.any(microphysics[interp_coord] <= poly_table[interp_coord].min()) or \
             np.any(microphysics[interp_coord] >= poly_table[interp_coord].max()):
-            raise ValueError("Microphysical coordinate '{}' is not within the range of the mie table.".format(
-                                                                                        interp_coord))
-
+            raise ValueError(
+                "Microphysical coordinate '{}' is not"
+                " within the range of the mie table.".format(interp_coord)
+                )
     interp_method = 'nearest' if exact_table else 'linear'
     ssalb = poly_table.ssalb.interp(interp_coords, method=interp_method)
     assert not np.any(np.isnan(ssalb.data)), 'Unexpected NaN in ssalb'
@@ -44,7 +90,9 @@ def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=Fals
         extinction = extinction_efficiency
     assert not np.any(np.isnan(extinction.data)), 'Unexpected NaN in extinction'
     extinction.name = 'extinction'
-    table_index = poly_table.coords['table_index'].interp(coords=interp_coords, method='nearest').round().astype(int)
+    table_index = poly_table.coords['table_index'].interp(
+        coords=interp_coords, method='nearest'
+        ).round().astype(int)
     unique_table_indices, inverse = np.unique(table_index.data, return_inverse=True)
     subset_table_index = xr.DataArray(name=table_index.name,
                                       data=inverse.reshape(table_index.shape) + 1,
@@ -58,7 +106,7 @@ def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=Fals
                                   data=subset_legcoef.data,
                                   dims=['stokes_index', 'legendre_index', 'table_index'],
                                   coords={'stokes_index':subset_legcoef.coords['stokes_index']}
-                                )
+                                 )
 
     optical_properties = xr.merge([extinction, ssalb, subset_legcoef])
     optical_properties['density'] = microphysics.density
@@ -75,15 +123,3 @@ def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=Fals
     optical_properties['dely'] = microphysics.dely
 
     return optical_properties
-
-
-# def get_bounding_box(medium):
-#     bounding_box = xr.DataArray(
-#         data=[medium.x[0].data, medium.y[0].data, medium.z[0].data,
-#               medium.x[-1].data, medium.y[-1].data, medium.z[-1].data],
-#         coords={'bb_index': ['xmin', 'ymin', 'zmin', 'xmax', 'ymax', 'zmax']},
-#         dims='bb_index',
-#         attrs={'type': '3D bounding box'}
-#     )
-#     # TODO add units from the grid to the bounding box if exists
-#     return bounding_box

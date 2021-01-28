@@ -130,6 +130,8 @@ class SensorsDict(OrderedDict):
             if not isinstance(measurements, SensorsDict):
                 raise TypeError("`measurements` should be of type '{}' not '{}'".format(SensorsDict, type(measurements)))
 
+        #TODO decide on behavior when there are no sensors matching a solver's
+        #keys. At the moment this gives an awful uninformative exception.
 
         rte_sensors = OrderedDict()
         sensor_mappings = OrderedDict()

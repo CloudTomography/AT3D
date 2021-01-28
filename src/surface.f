@@ -3,6 +3,10 @@
      .                     SFCTYPE, NXSFC, NYSFC, DELXSFC, DELYSFC,
      .                     NSFCPAR, SFCPARMS, GNDTEMP, GNDALBEDO,
      .                     GRID_COORDS, PARMS_IN)
+C    MODIFIED FROM READ_SURFACE (shdomsub2.f) by Jesse Loveridge. This
+C    function now prepares the surface properties based on arrays passed
+C    from python rather than read from file.
+
 C       Reads the surface properties from the file into the surface arrays.
 C     There are currently six surface types (Lambertian, Wave-Fresnel,
 C     Ocean, RPV, and Diner polarized RPV), though it is simple to add more.

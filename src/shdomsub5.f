@@ -956,7 +956,7 @@ C		Compute the gradient field in direction  (MU2,PHI2)
               ENDIF
               IF (LINEAR) THEN
                 VOLUME(3,GRIDPTR(K,ICELL)) =
-     .              VOLUME(3,GRIDPTR(K,ICELL)) + WEIGHT*(SO*F(K))
+     .              VOLUME(3,GRIDPTR(K,ICELL)) + WEIGHT/(F(K)*SO)
               ELSE
                 VOLUME(3,GRIDPTR(K,ICELL)) =
      .              VOLUME(3,GRIDPTR(K,ICELL)) + WEIGHT

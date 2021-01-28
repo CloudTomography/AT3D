@@ -267,7 +267,7 @@ def check_sensor(dataset):
     check_positivity(dataset, 'cam_z', 'ray_z')
     check_positivity(dataset, 'wavelength')
     check_range(dataset, cam_mu=(-1.0, 1.0), ray_mu=(-1.0, 1.0))
-    check_range(dataset, ray_phi=(-np.pi, np.pi), cam_phi=(-np.pi, np.pi))
+    #check_range(dataset, ray_phi=(-np.pi, np.pi), cam_phi=(-np.pi, np.pi))
 
     if (np.any(dataset.cam_mu) == 0.0) or np.any(dataset.ray_mu == 0.0):
         raise ValueError("Values of `mu` (cam_mu or ray_mu) cannot be 0.0")
