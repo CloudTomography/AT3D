@@ -112,7 +112,7 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
     else:
         return loss, gradient
 
-def subdivide_raytrace_jobs(rte_sensors, n_jobs):
+def subdivide_raytrace_jobs(rte_sensors, n_jobs, job_factor=1):
     """
     Subdivides a sensor for parallelized processing.
 
@@ -136,13 +136,13 @@ def subdivide_raytrace_jobs(rte_sensors, n_jobs):
         ray_count += merged_sensor.sizes['nrays']
         render_jobs[key] = merged_sensor.sizes['nrays']
     for key, render_job in render_jobs.items():
-        render_jobs[key] = max(np.ceil(render_job/ray_count * n_jobs).astype(np.int), 1)
+        render_jobs[key] = max(np.ceil(render_job/ray_count * n_jobs * job_factor).astype(np.int), 1)
     #find the ray indices to split each sensor at.
     keys = []
     pixel_start_end = []
     ray_start_end = []
     for key, merged_sensor in rte_sensors.items():
-        split = np.array_split(np.arange(merged_sensor.sizes['nrays']), render_jobs[key])
+        split = np.array_split(np.arange(merged_sensor.sizes['nrays'] + 1), render_jobs[key])
         start_end = [(i.min(), i.max()) for i in split]
         #adjust start and end indices so that rays are grouped by their parent pixel.
         index_diffs = np.append(
@@ -151,31 +151,21 @@ def subdivide_raytrace_jobs(rte_sensors, n_jobs):
             ) #add last end pixel.
         ends = np.where(index_diffs == 1)[0] + 1
         updated_start_end = []
-
-        if len(start_end) == 1:
-            #if there is only one worker then we need to add 1 to the end
-            #to make sure the last pixel is inlcuded.
-            updated_start_end.append((0, ends[np.abs(ends - start_end[0][1]).argmin()] + 1))
-        else:
-            updated_start_end.append((0, ends[np.abs(ends - start_end[0][1]).argmin()]))
-
-        #loop through remaining workers if more than 1.
-        for i in range(1, len(start_end)):
-            new_start = updated_start_end[i-1][1]
-            if i < len(start_end) - 1:
-                new_end = ends[np.abs(ends - start_end[i][1]).argmin()]
-            else: #if this is the last worker then add 1.
-                new_end = start_end[i][1] + 1
-            updated_start_end.append((new_start, new_end))
-
+        new_start = 0
+        for i, (start, end) in enumerate(start_end):
+            updated_start_end.append((new_start, ends[np.abs(ends-end).argmin()]))
+            new_start = updated_start_end[i][1]
         ray_start_end.extend(updated_start_end)
+
         pixel_inds = np.cumsum(np.concatenate(
-            [np.array([0]), merged_sensor.rays_per_pixel.data]
-            )).astype(np.int)
-        for start, end in updated_start_end:
+            [np.array([0]), merged_sensor.rays_per_pixel.data])).astype(np.int)
+        for i, (start, end) in enumerate(updated_start_end):
             final_start = np.where(pixel_inds == start)[0][0]
             final_end = np.where(pixel_inds == end)[0][0]
             pixel_start_end.append((final_start, final_end))
             keys.append(key)
+
+        assert ray_start_end[-1][1] == merged_sensor.nrays.size, "Unexpectedly, number of rays after parallelization is not equivalent to original"
+        assert pixel_start_end[-1][1] == merged_sensor.npixels.size, "Unexpectedly, number of pixels after parallelization is not equivalent to original"
 
     return keys, ray_start_end, pixel_start_end

@@ -237,6 +237,100 @@ class Verify_Solver(TestCase):
     def test_U(self):
         self.assertTrue(np.allclose(self.integrated_rays.U.data, self.radiances[:,4].data, atol=7e-5))
 
+class Parallelization_Subdivide_Rays(TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        reff = 10.0
+        ext = 20.0
+        rte_grid = pyshdom.grid.make_grid(0.05,16,
+                                   0.05,14,
+                                   np.linspace(0.1,0.7,15))
+
+        rte_grid['density'] = (['x','y','z'], np.ones((rte_grid.x.size, rte_grid.y.size, rte_grid.z.size)))
+        rte_grid['reff'] = (['x','y','z'], np.zeros((rte_grid.x.size, rte_grid.y.size, rte_grid.z.size))+np.linspace(5.0,10.0,rte_grid.z.size))
+        rte_grid['veff'] = (['x','y','z'] ,np.zeros((rte_grid.x.size, rte_grid.y.size, rte_grid.z.size))+0.1)
+
+        #resample the cloud onto the rte_grid
+        cloud_scatterer_on_rte_grid = pyshdom.grid.resample_onto_grid(rte_grid, rte_grid)
+
+        Sensordict = pyshdom.containers.SensorsDict()
+        misr_list = []
+        sensor_zenith_list = [75.0,60.0,45.6,26.1]*2 + [0.0]
+        sensor_azimuth_list = [90]*4 + [-90]*4 +[0.0]
+        wavelengths = [3.4]
+        for zenith,azimuth in zip(sensor_zenith_list,sensor_azimuth_list):
+            Sensordict.add_sensor('MISR',
+                            pyshdom.sensor.orthographic_projection(wavelengths[0], cloud_scatterer_on_rte_grid,
+                                                                   0.04,0.04, azimuth, zenith,
+                                                     altitude='TOA', stokes=['I'])
+                                 )
+        wavelengths = [0.8]
+        for wavelength in wavelengths:
+            Sensordict.add_sensor('MISR',
+                            pyshdom.sensor.orthographic_projection(wavelength, cloud_scatterer_on_rte_grid,
+                                                                   0.04,0.04, 0.0,0.0,
+                                                     altitude='TOA', stokes=['I'],
+                                                                  sub_pixel_ray_args={
+                                                                      'method':pyshdom.sensor.gaussian,
+                                                                      'degree': 2
+                                                                  }))
+            Sensordict.add_sensor('MISR',
+                            pyshdom.sensor.orthographic_projection(wavelength, cloud_scatterer_on_rte_grid,
+                                                                   0.04,0.04, 2,2.0,
+                                                     altitude='TOA', stokes=['I'],
+                                                                  sub_pixel_ray_args={
+                                                                      'method':pyshdom.sensor.gaussian,
+                                                                      'degree': 3
+                                                                  }))
+            Sensordict.add_sensor('MISR',
+                            pyshdom.sensor.orthographic_projection(wavelength, cloud_scatterer_on_rte_grid,
+                                                                   0.04,0.04, 50,50.0,
+                                                     altitude='TOA', stokes=['I'],
+                                                                  sub_pixel_ray_args={
+                                                                      'method':pyshdom.sensor.gaussian,
+                                                                      'degree': 3
+                                                                  }))
+        wavelengths = [1.6]
+        for wavelength in wavelengths:
+            Sensordict.add_sensor('MISR',
+                            pyshdom.sensor.orthographic_projection(wavelength, cloud_scatterer_on_rte_grid,
+                                                                   0.04,0.04, 0.0,0.0,
+                                                     altitude='TOA', stokes=['I'],
+                                                                  sub_pixel_ray_args={
+                                                                      'method':pyshdom.sensor.gaussian,
+                                                                      'degree': 2
+                                                                  }))
+        wavelengths = [2.0]
+        for wavelength in wavelengths:
+            Sensordict.add_sensor('MISR',
+                            pyshdom.sensor.orthographic_projection(wavelength, cloud_scatterer_on_rte_grid,
+                                                                   0.04,0.04, 0.0,0.0,
+                                                     altitude='TOA', stokes=['I']))
+        solvers = pyshdom.containers.SolversDict({3.4: None, 0.8: None, 1.6:None, 2.0:None})
+        rte_sensors, sensor_mapping = Sensordict.sort_sensors(solvers)
+        keys, ray_start_end, pixel_start_end = pyshdom.parallel.subdivide_raytrace_jobs(rte_sensors, 4)
+        cls.ray_start_end = ray_start_end
+        cls.pixel_start_end = pixel_start_end
+
+    def test_rays(self):
+        self.assertEqual(self.ray_start_end, [(0, 3429),
+                                             (3429, 6859),
+                                             (0, 4244),
+                                             (4244, 8483),
+                                             (8483, 12722),
+                                             (0, 1292),
+                                             (0, 323)])
+
+    def test_pixels(self):
+        self.assertEqual(self.pixel_start_end, [(0, 3429),
+                                                 (3429, 6859),
+                                                 (0, 651),
+                                                 (651, 1122),
+                                                 (1122, 1593),
+                                                 (0, 323),
+                                                 (0, 323)])
 
 class Parallelization_No_SubpixelRays(TestCase):
     @classmethod
