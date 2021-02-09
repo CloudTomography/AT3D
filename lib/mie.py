@@ -200,7 +200,7 @@ def _compute_table(particle_type, wavelength_band,
         nsize=nsize
     )
     #compute mie properties
-    extinct, scatter, nleg, legcoef, table_type = \
+    extinct, scatter, nleg, legcoef = \
         pyshdom.core.compute_mie_all_sizes(
             nsize=nsize,
             maxleg=maxleg,
@@ -230,7 +230,6 @@ def _compute_table(particle_type, wavelength_band,
             'particle_type': particle_type,
             'refractive_index': (refractive_index.real, refractive_index.imag),
             'refractive_index_source': refractive_index_source,
-            'table_type': table_type.decode(),
             'units': ['Radius [micron]', 'Wavelength [micron]'],
             'wavelength_band': wavelength_band,
             'wavelength_center': wavelencen,
