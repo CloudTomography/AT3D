@@ -58,7 +58,7 @@ def create_derivative_tables(unknown_scatterers):
                     leg_index = int(variable_name[len('legendre_X_'):])
                     stokes_index = int(variable_name[len('legendre_')])
                     legcoef = np.zeros(table.legcoef.shape)
-                    legcoef[stokes_index,leg_index,...] = 1.0
+                    legcoef[stokes_index, leg_index,...] = 1.0
                     differentiated = table.copy(data={
                         'extinction': np.zeros(table.extinction.shape),
                         'legcoef': legcoef,
@@ -131,6 +131,7 @@ def grad_l2(rte_solver, sensor, exact_single_scatter=True, gradientflag='L',
         ray_weights=ray_weights,
         stokes_weights=stokes_weights,
         exact_single_scatter=exact_single_scatter,
+        diphaseind=rte_solver._diphaseind,
         nstphase=rte_solver._nstphase,
         dpath=rte_solver._direct_derivative_path,
         dptr=rte_solver._direct_derivative_ptr,
@@ -300,6 +301,7 @@ def jacobian(rte_solver, sensor, indices_for_jacobian, exact_single_scatter=True
         ray_weights=ray_weights,
         stokes_weights=stokes_weights,
         exact_single_scatter=exact_single_scatter,
+        diphaseind=rte_solver._diphaseind,
         nstphase=rte_solver._nstphase,
         dpath=rte_solver._direct_derivative_path,
         dptr=rte_solver._direct_derivative_ptr,
@@ -650,10 +652,7 @@ def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatte
     solvers.parallel_solve(n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,maxiter=maxiter,
                             init_solution=init_solution, setup_grid=setup_grid)
 
-    #These are called after the solution because they require at least _init_solution to be run.
-    if not hasattr(list(solvers.values())[0], '_direct_derivative_path'):
-        #only needs to be called once.
-        solvers.add_direct_beam_derivatives()
+    solvers.add_direct_beam_derivatives()
 
     solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method,
                                                 unknown_scatterers.table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
@@ -688,10 +687,7 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
     solvers.parallel_solve(n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,maxiter=maxiter,
                             init_solution=init_solution, setup_grid=setup_grid)
 
-    #These are called after the solution because they require at least _init_solution to be run.
-    if not hasattr(list(solvers.values())[0], '_direct_derivative_path'):
-        #only needs to be called once.
-        solvers.add_direct_beam_derivatives()
+    solvers.add_direct_beam_derivatives()
 
     solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method,
                                                   unknown_scatterers.table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
@@ -727,10 +723,7 @@ def gamma_correction_l2(measurements, solvers, forward_sensors, unknown_scattere
     solvers.parallel_solve(n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,maxiter=maxiter,
                             init_solution=init_solution, setup_grid=setup_grid)
 
-    #These are called after the solution because they require at least _init_solution to be run.
-    if not hasattr(list(solvers.values())[0], '_direct_derivative_path'):
-        #only needs to be called once.
-        solvers.add_direct_beam_derivatives()
+    solvers.add_direct_beam_derivatives()
 
     solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method,
                                                   unknown_scatterers.table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.

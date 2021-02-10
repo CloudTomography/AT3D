@@ -275,7 +275,7 @@ class RTE:
             raise ValueError("solarmu must be in the range -1.0 <= solarmu < 0.0 not '{}'. "
                              "The SHDOM convention for solar direction is that it points"
                              "in the direction of the propagation of radiance.".format(solarmu))
-                             
+
         pyshdom.checks.check_range(source, solaraz=(-np.pi, np.pi))
         self.wavelength = source.wavelength.data
         self._srctype = source.srctype.data
@@ -1604,8 +1604,61 @@ class RTE:
             deltam=self._deltam
         )
 
-        self._dphasetab, self._dext, self._dalb, self._diphase, self._dleg, self._dnumphase = \
-        dphasetab, dext, dalb, diphase, dleg, dnumphase
+        if self._deltam:
+            deriv_ind = self._unknown_scatterer_indices - 1
+            albs = self._pa.albedop[:, deriv_ind]
+            exts = self._pa.extinctp[:, deriv_ind]
+            legs = self._pa.legenp.reshape((self._nstleg, self._nleg+1, self._pa.numphase), order='F')/scaling_factor
+
+            f = legs[0, self._ml, self._pa.iphasep[:, deriv_ind]-1]
+            df = dleg[0, self._ml, diphase-1]
+            self._dext = dext*(1.0 - albs*f) - df*albs*exts - dalb*f*exts
+            self._dalb = dalb*(1.0 - f)/((1.0 - f*albs)**2) + \
+                df*(albs - 1.0)*albs/((1.0 - f*albs)**2)
+
+            #find legen table that matches the dleg table.
+            table_ind = []
+            for i, ind in enumerate(deriv_ind):
+                for j in range(1, dleg.shape[-1]+1): #+1 to match iphase/diphase
+                    test = self._pa.iphasep[np.where(diphase[:, i] == j), ind]
+                    if test.shape[1] > 0:
+                        table_ind.append(np.unique(test))
+            table_inds = np.array(table_ind)[:, 0] - 1 #-1 back to python 0-indexing.
+            table_legs = legs[:, :, table_inds]
+            table_f = table_legs[0, self._ml]
+            table_df = dleg[0, self._ml]
+
+            self._dleg = dleg/(1.0 - table_f)
+            self._dleg[0:min(4, self._nstleg)] += table_df*(table_legs[0:min(4, self._nstleg)] - 1.0)/((1.0 -table_f)**2)
+            if self._nstleg > 1:
+                self._dleg[4:] += table_df*table_legs[4:]/((1.0 - table_f)**2)
+            self._dphasetab = dphasetab/(1.0 - table_f[:, np.newaxis])
+        else:
+            self._dext = dext
+            self._dleg = dleg
+            self._dalb = dalb
+            self._dphasetab = dphasetab
+
+        self._dnumphase, self._diphase = dnumphase, diphase
+
+        self._diphaseind = pyshdom.core.prepare_diphaseind(
+            gridpos=self._gridpos[:, :self._npts],
+            npx=self._pa.npx,
+            npy=self._pa.npy,
+            npz=self._pa.npz,
+            npts=self._npts,
+            nbpts=self._nbpts,
+            numphase=self._pa.numphase,
+            delx=self._pa.delx,
+            dely=self._pa.dely,
+            xstart=self._pa.xstart,
+            ystart=self._pa.ystart,
+            zlevels=self._pa.zlevels,
+            extinctp=self._pa.extinctp,
+            albedop=self._pa.albedop,
+            npart=self._npart,
+            numder=self._num_derivatives
+        )
 
 
 class ShdomPropertyArrays(object):

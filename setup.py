@@ -122,7 +122,8 @@ F2PY_CORE_API = [
     'check_property_input',
     'nearest_binary',
     'cell_average',
-    'ylmall_wrap'
+    'ylmall_wrap',
+    'prepare_diphaseind',
 ]
 
 def _run_command(cmd):
