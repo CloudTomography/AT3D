@@ -45,3 +45,5 @@ import pyshdom.callback
 import pyshdom.containers
 import pyshdom.parallel
 import pyshdom.exceptions
+import pyshdom.regularization
+import pyshdom.generate
