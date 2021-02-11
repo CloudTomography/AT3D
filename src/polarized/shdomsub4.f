@@ -1145,6 +1145,7 @@ C        ELSE
      .            DNUMPHASE, DEXT, DALB, DIPHASE, DLEG, NBPTS, BCELL,
      .            DSINGSCAT, SINGSCAT8, OSINGSCAT8, DIPHASEIND)
         ENDIF
+
 C         Interpolate the source and extinction to the current point
         CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XE, YE, ZE, FC)
         SRCEXT1 = FC(1)*SRCEXT8(:,1) + FC(2)*SRCEXT8(:,2) +
@@ -1162,7 +1163,7 @@ C         Interpolate the source and extinction to the current point
      .                 BTEST(INT(CELLFLAGS(ICELL)),1))
         IF (.NOT. OUTOFDOMAIN) THEN
           GRAD1 = 0.0
-          CALL GET_INTERP_KERNEL(BCELL,GRIDPTR,GRIDPOS,XI,YI,ZI,FB)
+          CALL GET_INTERP_KERNEL(BCELL,GRIDPTR,GRIDPOS,XE,YE,ZE,FB)
           DO N=1,8
             SINGSCAT1(:,N) = FC(N)*SINGSCAT8(:,N)
             SINGSCAT1(1,N) = MAX(0.0, SINGSCAT1(1,N))
@@ -1175,7 +1176,6 @@ C            GRAD1(:,N,:) = FB(N)*GRAD8(:,N,:)
         ELSE
           GRAD1 = 0.0
         ENDIF
-
 C           This cell is independent pixel if IP mode or open boundary
 C             conditions and ray is leaving domain (i.e. not entering)
         IPINX = BTEST(INT(CELLFLAGS(ICELL)),0) .AND.
@@ -1281,7 +1281,7 @@ C                 Linear extinction, linear source*extinction, to second order
                  SRCSINGSCAT = ( 0.5*(SINGSCAT0+SINGSCAT1)
      .            + 0.08333333333*(EXT0*SINGSCAT1-EXT1*SINGSCAT0)*DELS
      .                    *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
-                ENDIF
+               ENDIF
             ENDIF
 
           ELSE
@@ -1291,7 +1291,6 @@ C                 Linear extinction, linear source*extinction, to second order
             SRCGRAD = 0.0
             SRCSINGSCAT = 0.0
           ENDIF
-
           RADOUT(:) = RADOUT(:) + TRANSMIT*SRC(:)*ABSCELL
 
           IF (.NOT. OUTOFDOMAIN) THEN

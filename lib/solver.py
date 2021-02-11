@@ -1356,7 +1356,7 @@ class RTE:
         """
 
         self.check_solved()
-        if self._shterms is not None:
+        if self._shterms is None:
 
             if self._highorderrad:
                 nshout = 5
@@ -1441,7 +1441,7 @@ class RTE:
         net flux divergence from SHDOM in a dataset but only on the tidy base grid.
         """
         self.check_solved()
-        if self._netfluxdiv is not None:
+        if self._netfluxdiv is None:
             netfluxdiv = pyshdom.core.compute_netfluxdiv(
                 nstokes=self._nstokes,
                 npts=self._npts,
