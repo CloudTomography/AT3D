@@ -1299,13 +1299,8 @@ C                 Linear extinction, linear source*extinction, to second order
               IF (GRADIENTFLAG .EQ. 'L') THEN
                 RAYGRAD(:,GRIDPOINT,:) = RAYGRAD(:,GRIDPOINT,:) +
      .                     TRANSMIT*SRCGRAD(:,KK,:)*ABSCELL
-              ELSEIF (GRADIENTFLAG .EQ. 'G') THEN
-                RAYGRAD(:,GRIDPOINT,:) = RAYGRAD(:,GRIDPOINT,:) +
-     .            (TRANSMIT**(1.0/GRADIENTPARAMS(1)))*SRCGRAD(:,KK,:)*
-     .            ABSCELL*((-1*LOG(TRANSMIT))**GRADIENTPARAMS(2))
-     .            *GRADIENTPARAMS(3)
               ENDIF
-C             empirical correction instead of TRANSMIT*SRCGRAD(:, KK,:)*ABSCELL
+
 C             Add gradient component due to the direct solar beam propogation
               IF (EXACT_SINGLE_SCATTER) THEN
                 II = 1

@@ -463,7 +463,7 @@ Cf2py intent(in, out) :: OLDNPTS
       INTEGER WORK1(*)
       REAL    WORK(*), WORK2(*)
 Cf2py intent(in, out) :: WORK, WORK1, WORK2
-Cf2py intent(out) :: ITER
+Cf2py intent(in, out) :: ITER
       LOGICAL UNIFORM_SFC_BRDF
       REAL    SFC_BRDF_DO(NSTOKES,NMU/2,NPHI0MAX,NSTOKES,NMU/2,NPHI0MAX)
 Cf2py intent(in) :: UNIFORM_SFC_BRDF, SFC_BRDF_DO
@@ -491,7 +491,7 @@ C         (ADAPTRANGE).  The currect splitting accuracy is computed from
 C         a geometric average of the solution criterion (AVGSOLCRIT).
 C         The SPLIT_GRID routine is called and the splitting criterion returned
 C         as long as SPLITTESTING is true.
-      ITER = 0
+C      ITER = 0
 
       IF (MAXITER .LE. ITER) RETURN
 

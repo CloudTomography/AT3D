@@ -717,6 +717,8 @@ class RTE:
 
         #Release big arrays if they exist before a call to pyshdom.core.init_solution
         #to prevent doubling the memory image when it is not necessary.
+        #This is necessary because the big arrays are formed in Fortran rather than
+        #formed in python and modified in place by init_solution.
         if hasattr(self, '_radiance'):
             self._release_big_arrays()
 
@@ -917,6 +919,7 @@ class RTE:
         self._pa.extdirp, self._oldnpts, self._total_ext, self._deljdot, \
         self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
         self._work2 = pyshdom.core.solution_iterations(
+            iter=self._iters,
             uniform_sfc_brdf=self._uniform_sfc_brdf,
             sfc_brdf_do=self._sfc_brdf_do,
             work=self._work,
@@ -1338,16 +1341,17 @@ class RTE:
         """
         TODO
         """
-        if (not hasattr(self, '_solcrit')):
+        if not hasattr(self, '_solcrit'):
             raise ValueError('Please run RTE.solve() first.')
-            return False
-        else:
-            if self._solcrit >= self._solacc:
-                raise ValueError('Please run RTE.solve() first.')
-                return False
-            else:
-                return True
 
+        if self._solcrit >= self._solacc:
+            warnings.warn(
+                "Solution has not converged to the "
+                "specified accuracy log10(SOLCRIT): {:3f} > log10(SOLUTION_ACCURACY): {:3f}. "
+                "Calculated quantities will not be accurate.".format(
+                    np.log10(self._solcrit), np.log10(self._solacc)
+                    )
+            )
     @property
     def sh_out(self):
         """

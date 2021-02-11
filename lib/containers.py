@@ -1,9 +1,26 @@
-"""This module defines containers for groups of RTE solvers and sensors
-and scattering tables to streamline retrievals or  the generation of
+"""
+This module defines containers for groups of RTE solvers and sensors
+and scattering tables to streamline retrievals or the generation of
 synthetic measurements in scripts.
 
-These objects have many methods for rearranging the datasets created
+The three objects defined here are `SensorsDict`, `SolversDict` and
+`UnknownScatterers` and they are all wrappers around OrderedDict. Data
+are not stored as attributes meaning they can be modified without
+utilizing the additional 'add_X' methods.
 
+`SensorsDict` holds measurements, either real or synthetic. The `SensorsDict`
+groups individual sensor xr.Datasets (see sensor.py) by their instrument
+which has a common uncertainty model. The `SensorsDict` object contains the methods
+for reorganizing measurements from this sensor-centric organization to match
+them with the appropriate solver.RTE objects.
+
+The solver.RTE objects are stored in `SolversDict`. This object contains method
+for solving a set of solver.RTE objects in parallel or calling a couple of methods
+on all solvers in the `SolversDict.`
+
+`UnknownScatterers` is only utilized during the optimization and it stores the
+data and methods for calculating the partial derivatives of optical properties
+with respect to the unknowns.
 """
 
 from collections import OrderedDict
@@ -20,37 +37,65 @@ import pyshdom.checks
 
 class SensorsDict(OrderedDict):
     """
-    TODO
+    Stores measurement geometry and has methods for rearranging the measurement
+    geometry to send to solver.RTE for calculation and then postprocessing the
+    measurements and stores them.
+
+    Sensor data (see sensor.py) is stored by instrument, each of which has a
+    list of sensors and an accompanying uncertainty model.
+
     """
-    def add_sensor(self, key, value):
+    def add_sensor(self, instrument, sensor):
         """
-        TODO
+        Adds a sensor Dataset to a given instrument's sensor list.
+
+        Parameters
+        ----------
+        instrument : Any Type.
+            The name of the instrument for this sensor.
+        sensor : xr.Dataset
+            A valid sensor.
         """
-        if not key in self:
-            self._add_instrument(key)
-        pyshdom.checks.check_sensor(value)
-        self[key]['sensor_list'].append(value)
+        if not instrument in self:
+            self._add_instrument(instrument)
+        pyshdom.checks.check_sensor(sensor)
+        self[instrument]['sensor_list'].append(sensor)
 
     def _add_instrument(self, key):
-        """TODO"""
+        """Initializes the key for an instrument"""
         self[key] = {'sensor_list': [], 'uncertainty_model': None}
 
-    def add_uncertainty_model(self, key, uncertainty_model):
-        """
-        TODO
-        """
-        self[key]['uncertainty_model'] = uncertainty_model
+    def add_uncertainty_model(self, instrument, uncertainty_model):
+        """Updates the uncertainty model for a given instrument.
 
-    def add_noise(self, key, nstokes):
+        Paramaters
+        ----------
+        instrument : Any Type
+            The key for the instrument.
+        uncertainty_model : callable
+            The model that will be called on an xr.Dataset to calculate
+            the error-covariance matrix from the Stokes Vector.
         """
-        TODO
+        if not instrument in self:
+            self._add_instrument(instrument)
+        self[instrument]['uncertainty_model'] = uncertainty_model
+
+    def add_noise(self, instrument, nstokes):
+        """Add noise to the observables in the sensors for the
+        specified instrument according to the prescribed noise model.
+
+        Paramaters
+        ----------
+        instrument : Any Type
+            The key for the instrument.
+        nstokes : int
+            The number of Stokes Components in the RTE solver.
         """
-        for sensor in self[key]['sensor_list']:
-            self[key]['uncertainty_model'].add_noise(sensor, nstokes)
+        for sensor in self[instrument]['sensor_list']:
+            self[instrument]['uncertainty_model'].add_noise(sensor, nstokes)
 
     def make_forward_sensors(self):
-        """
-        TODO
+        """Make a deep copy of self.
         """
         forward_sensors = SensorsDict()
         for key, instrument in self.items():
@@ -63,9 +108,34 @@ class SensorsDict(OrderedDict):
         return forward_sensors
 
     def get_measurements(self, solvers, n_jobs=1, mpi_comm=None, maxiter=100, verbose=True,
-                         init_solution=True, setup_grid=True, destructive=False):
+                         init_solution=True, setup_grid=True, destructive=False, solve=True):
         """
-        TODO
+        Calculates the observables specified in the sensors in self using
+        RTE solvers.
+
+        If necessary, the SHDOM solutions are performed and the StokesVector at
+        each specified ray is calculated. Rays are then averaged to 'pixel'
+        observables that are then stored matching the sensor they came from in
+        self.
+
+        Parameters
+        ----------
+        solvers : pyshdom.containers.SolversDict
+            The solvers that will be used to calculate the measurements.
+        n_jobs : 1
+            The number of workers for shared memory parallelization of the RTE
+            solutions and the
+        mpi_comm : mpi4py.MPI.Intracomm
+            An MPI communicator for the MPI parallelization of different RTE
+            solutions.
+        maxiter : int
+            The maximum number of SHDOM iterations used in the SHDOM solution
+            procedure. More are needed for an optically thicker medium.
+        verbose : bool
+            If true then some diagnostic output for the SHDOM solution is printed
+            to stdout.
+        init_solution : bool
+            Whether to
         """
         if not isinstance(solvers, SolversDict):
             raise TypeError("`solvers` should be of type '{}' not '{}'".format(SolversDict, type(solvers)))
@@ -81,8 +151,9 @@ class SensorsDict(OrderedDict):
                 index = i + mpi_comm.Get_rank()
                 if index < len(solvers):
                     key = list(solvers)[index]
-                    solvers[key].solve(maxiter=maxiter, verbose=verbose,
-                                       init_solution=init_solution, setup_grid=setup_grid)
+                    if solve:
+                        solvers[key].solve(maxiter=maxiter, verbose=verbose,
+                                           init_solution=init_solution, setup_grid=setup_grid)
                     out.append(solvers[key].integrate_to_sensor(rte_sensors[key]))
                     keys.append(key)
                     if destructive:
@@ -99,9 +170,10 @@ class SensorsDict(OrderedDict):
                 self.add_measurements_forward(sensor_mappings, organized_out, list(solvers))
 
         else:
-            solvers.parallel_solve(n_jobs=n_jobs, mpi_comm=mpi_comm, maxiter=maxiter,
-                                   verbose=verbose, init_solution=init_solution,
-                                   setup_grid=setup_grid)
+            if solve:
+                solvers.parallel_solve(n_jobs=n_jobs, mpi_comm=mpi_comm, maxiter=maxiter,
+                                       verbose=verbose, init_solution=init_solution,
+                                       setup_grid=setup_grid)
             if n_jobs == 1 or n_jobs >= self.npixels:
                 out = [solvers[key].integrate_to_sensor(rte_sensors[key]) for key in solvers]
                 keys = list(solvers)

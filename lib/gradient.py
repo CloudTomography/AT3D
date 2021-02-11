@@ -710,7 +710,7 @@ def levis_approx_uncorrelated_l2(measurements, solvers, forward_sensors, unknown
 
 
 def gamma_correction_l2(measurements, solvers, forward_sensors, unknown_scatterers,
-                        gamma_correction, n_jobs=1, mpi_comm=None,verbose=False,
+                        gamma_correction, n_jobs=1, mpi_comm=None, verbose=False,
                         maxiter=100, init_solution=True, exact_single_scatter=True,
                         setup_grid=True):
     """TODO"""

@@ -1,6 +1,120 @@
 """
 A module containing tools for generating synthetic data.
 """
+import numpy as np
+import scipy.stats as st
+import numpy.fft as fft
+
+def generate_stochastic_blob(rte_grid, var_profile, var_beta=-5.0/3.0, snr=1.0,
+                 var_vertical_correlation=0.0, xy_blob=0.2, z_blob=0.2,
+                 cloud_mask_vertical_correlation=0.8, volume_cloud_fraction=0.1,
+                 cloud_mask_beta=-3.0, remove_edges=True):
+    """
+    Generates a stochastic blob variable that is 'cumulus-like'.
+
+    Masks the `rte_grid` using a cloud mask generated from log-normal red noise with
+    an isotropic power spectrum with power-law slope `cloud_mask_beta`. The
+    power law slope is typically steeper than the variable to make a smooth cloud shell.
+    The red noise is linearly mixed in the vertical to induce vertical correlations
+    with correlation coefficient `cloud_mask_vertical_correlation` to reduce holes
+    internal to the cloud. The log-normal red noise is filtered with a Butter worth filter
+    to produce a 'blob' shape. A small fraction of the domain `volume_cloud_fraction`
+    is set to cloudy to avoid the rectangular edges of the domain affecting the cloud.
+
+    The cloudy voxels are populated by a similarly generated log-normal red noise field
+    however without any ButterWorth filtering and typically with a -5/3 spectral slope.
+    The variable has a mean that follows a given vertical profile and with a specified
+    relative standard deviation.
+
+    Parameters
+    ----------
+    rte_grid : xr.Dataset
+        A valid SHDOM grid object (see grid.py)
+    var_profile : np.ndarray
+        A 1D array of floats that describe the mean of the variable as a function of altitude.
+        This should be the same length as rte_grid.z
+    var_beta: float
+        The slope of the isotropic power spectrum of the variable S(k) ~ k^(var_beta).
+        Typically -5.0/3.0 for liquid water content.
+    snr : float
+        The relative standard deviation that determines the magnitude of the variability
+        in the output variable.
+    var_vertical_correlation, cloud_mask_vertical_correlation : float
+        Vertical correlation coefficient for the stochastic white noise for the generated variable
+        or cloud mask. In range [0, 1], larger values impose additional vertical smoothness.
+    xy_blob, z_blob : float
+        Scaling parameters for the Butterworth filter that controls how smooth the cloud mask will be.
+        Smaller values increase smoothness. Strictly positive.
+    volume_cloud_fraction : float
+        The fraction of the domain's voxels that will have cloud.
+    cloud_mask_beta : float
+        The slope of the isotropic power spectrum of the stochastic variable used
+        to determine the volumetric cloud mask S(k) ~ k^(var_beta). A value of -3.0 was decided on
+        to make the cloud smooth at the scale of the voxels.
+    remove_edges : Boolean
+        Sets the edge points to zero in `var` if True.
+
+    Returns
+    -------
+    var : np.ndarray
+        The masked stochastically generated field.
+    """
+    nx, ny, nz = rte_grid.x.size, rte_grid.y.size, rte_grid.z.size
+    domain_x, domain_y, domain_z = rte_grid.x.data.max(), rte_grid.y.data.max(), rte_grid.z.data.max()
+
+    mask_generator = GaussianFieldGenerator(
+        nx, ny, nz, cloud_mask_beta, [domain_x, domain_y, domain_z]
+    )
+    cloud_mask_field_temp = mask_generator.generate_field()
+
+    #add vertical correlations.
+    cloud_mask_field = cloud_mask_field_temp.copy()
+    for i in range(cloud_mask_field.shape[-1]-1):
+        cloud_mask_field[:,:,i+1] = cloud_mask_vertical_correlation*cloud_mask_field[:,:,i] \
+        + np.sqrt(1.0 - cloud_mask_vertical_correlation)*cloud_mask_field_temp[:,:,i+1]
+
+    cloud_mask_field = np.exp(cloud_mask_field)
+
+    #apply butterworth filter.
+    X,Y,Z = np.meshgrid((rte_grid.x.data - rte_grid.x.data.mean())/domain_x,
+                        (rte_grid.y.data - rte_grid.y.data.mean())/domain_y,
+                        (rte_grid.z.data - rte_grid.z.data.mean())/domain_z,
+                        indexing='ij')
+    R = np.sqrt(X**2+Y**2)/xy_blob
+    butter_worth_filter = 1.0/np.sqrt(1 + R**8)* 1.0/np.sqrt(1.0 + (Z/z_blob)**8)
+
+    cloud_mask_field *= butter_worth_filter
+    threshold = np.percentile(cloud_mask_field,(1.0-volume_cloud_fraction)*100)
+    mask = cloud_mask_field > threshold
+
+    var_profile[var_profile <= 0.0] = 0.0
+    var_mean = np.repeat(np.repeat(var_profile[np.newaxis, np.newaxis, :], rte_grid.x.size, axis=0),
+                         rte_grid.y.size, axis=1)
+
+    var_generator = GaussianFieldGenerator(
+        nx, ny, nz, var_beta, [domain_x, domain_y, domain_z]
+    )
+    field_temp = var_generator.generate_field()
+
+    field = field_temp.copy()
+    for i in range(field.shape[-1]-1):
+        field[:,:,i+1] = var_vertical_correlation*field[:,:,i] \
+        + np.sqrt(1.0 - var_vertical_correlation)*field_temp[:,:,i+1]
+
+    exp_field = np.exp(field[mask])
+    exp_field -= exp_field.mean()
+    exp_field /= exp_field.std()
+
+    var_values = exp_field*snr*var_mean[mask] + var_mean[mask]
+    var = np.zeros(field.shape)
+    var[mask] = var_values
+
+    if remove_edges:
+    #Set edge points to zero to avoid interaction with open boundary conditions.
+        var[0,:,:] = var[-1,:,:] = var[:,0,:] = var[:,-1,:] = var[...,0] = var[...,-1] = 0.0
+
+    return var
+
 
 class GaussianFieldGenerator:
     """
@@ -30,8 +144,8 @@ class GaussianFieldGenerator:
         A seed for the random number generator to ensure reproducibility of the
         results.
     """
-    def __init__(self, nx, ny, nz, beta, domain_size, field_min = None,field_max = None,
-                 inner_scale = None, outer_scale = None, seed = None):
+    def __init__(self, nx, ny, nz, beta, domain_size, field_min=None, field_max=None,
+                 inner_scale=None, outer_scale=None, seed=None):
 
         self.nx = nx
         self.ny = ny
@@ -57,7 +171,7 @@ class GaussianFieldGenerator:
 
         if (outer_scale is not None) and (inner_scale is not None):
             assert outer_scale > inner_scale,'power_spectrum outer_scale {} must be \
-            larger (greater) than power_spectrum inner_scale {}'.format(outer_scale,inner_scale)
+            larger (greater) than power_spectrum inner_scale {}'.format(outer_scale, inner_scale)
 
         self.outer_scale = outer_scale
         self.inner_scale = inner_scale
@@ -68,7 +182,7 @@ class GaussianFieldGenerator:
         else:
             self.seed = None
 
-    def _update_args(self,kwargs):
+    def _update_args(self, kwargs):
         """
         Updates the attributes of the generator.
         Parameters
@@ -76,9 +190,9 @@ class GaussianFieldGenerator:
         kwargs: dictionary
         """
         for name in kwargs:
-            setattr(self,name,kwargs[name])
+            setattr(self, name, kwargs[name])
 
-    def generate_field(self,return_spectra = False, **kwargs):
+    def generate_field(self, return_spectra=False, **kwargs):
         """
         Generates the field with the specified parameters.
         Any parameters of the generator can be updated by supplying them as kwargs.
