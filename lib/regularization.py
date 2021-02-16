@@ -11,24 +11,21 @@ class SpatialGradientL2:
     Minimizing this norm enforces spatial smoothness of the unknown.
     This class is not fully generalized.
     """
-    def __init__(self, grid, solvers, state_to_grid_projection,
+    def __init__(self, grid, state_to_grid_projection,
                  grid_to_state_projection):
         """
         Parameters
         ----------
         grid : xr.Dataset
             A valid pyshdom grid object e.g. the SHDOM grid (see grid.py)
-        solvers : pyshdom.containers.SolversDict
         state_to_grid_projection : callable
             Maps the state vector onto the grid. May only map a specific part
             corresponding to a single variable e.g. extinction.
         grid_to_state_projection : callable
-            Maps the spatial gradients back to gradients in the full
+            Maps the spatial gradients back to gradients in the
             state vector.
         """
-
         self._grid = grid
-        self._solvers = solvers
         self._state_to_grid_projection = state_to_grid_projection
         self._grid_to_state_projection = grid_to_state_projection
 
@@ -65,7 +62,7 @@ class SpatialGradientL2:
                 gradient[0, :, i, j] = self._x_integral_weights*np.dot(
                     data[:, i, j], np.dot(self._x_matrix.T, self._x_matrix)
                     )
-                cost += np.dot(gradient[0, :, i, j] , data[:, i, j])
+                cost += np.dot(gradient[0, :, i, j], data[:, i, j])
 
         gradient_total = np.sum(gradient, axis=0)
         gradient_for_state = self._grid_to_state_projection(state, gradient_total)

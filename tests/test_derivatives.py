@@ -100,7 +100,7 @@ class Microphysical_Derivatives(TestCase):
         unknown_scatterers = pyshdom.containers.UnknownScatterers()
         unknown_scatterers.add_unknown('cloud', ['ssalb'],self.cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
-        self.solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method, unknown_scatterers.table_data)
+        self.solvers.add_microphysical_partial_derivatives(unknown_scatterers)
         solvers = self.solvers
         self.assertTrue(all([all([np.all(solvers[key]._dalb==1.0) for key in solvers]),
             all([np.all(solvers[key]._dext==0.0) for key in solvers]),
@@ -112,7 +112,7 @@ class Microphysical_Derivatives(TestCase):
         unknown_scatterers.add_unknown('cloud', ['extinction'],self.cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         solvers = self.solvers
-        solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method, unknown_scatterers.table_data)
+        solvers.add_microphysical_partial_derivatives(unknown_scatterers)
 
         self.assertTrue(all([all([np.all(solvers[key]._dalb==0.0) for key in solvers]),
             all([np.all(solvers[key]._dext==1.0) for key in solvers]),
@@ -124,7 +124,7 @@ class Microphysical_Derivatives(TestCase):
         unknown_scatterers.add_unknown('cloud', ['density'],self.cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         solvers = self.solvers
-        solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method, unknown_scatterers.table_data)
+        solvers.add_microphysical_partial_derivatives(unknown_scatterers)
 
         self.assertTrue(all([all([np.all(solvers[key]._dalb==0.0) for key in solvers]),
             all([np.all(solvers[key]._dext==self.cloud_poly_tables[key].extinction.interp(
@@ -137,7 +137,7 @@ class Microphysical_Derivatives(TestCase):
         unknown_scatterers.add_unknown('cloud', ['legendre_0_10'],self.cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         solvers = self.solvers
-        solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method, unknown_scatterers.table_data)
+        solvers.add_microphysical_partial_derivatives(unknown_scatterers)
 
         self.assertTrue(all([all([np.all(solvers[key]._dalb==0.0) for key in solvers]),
             all([np.all(solvers[key]._dext==0.0) for key in solvers]),
@@ -228,7 +228,7 @@ class Verify_Jacobian(TestCase):
         unknown_scatterers = pyshdom.containers.UnknownScatterers()
         unknown_scatterers.add_unknown('cloud', ['extinction'],cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
-        solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method, unknown_scatterers.table_data)
+        solvers.add_microphysical_partial_derivatives(unknown_scatterers)
 
         forward_sensors = Sensordict.make_forward_sensors()
 

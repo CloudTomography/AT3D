@@ -10,8 +10,6 @@ from collections import OrderedDict
 from joblib import Parallel, delayed
 import numpy as np
 
-import pyshdom.gradient
-
 def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gradient_fun,
                       mpi_comm=None, n_jobs=1, **kwargs):
     """
@@ -102,15 +100,22 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
         gradient = np.stack([i[0] for i in out], axis=-1)
         loss = np.array([i[1] for i in out])
         forward_model_output = [i[2] for i in out]
+
+        other_output = []
+        for i in range(3, len(out[0])):
+            if out[0][i] is not None:
+                other_output.append([entry[i] for entry in out])
+
         #modify forward sensors in place to contain updated forward model estimates.
         forward_sensors.add_measurements_inverse(sensor_mappings, forward_model_output, keys)
 
-    #special treatment of jacobian out.
-    if gradient_fun == pyshdom.gradient.jacobian:
-        jacobian_list = [i[-1] for i in out]
-        return loss, gradient, jacobian_list
-    else:
-        return loss, gradient
+    return loss, gradient, other_output
+    # #special treatment of jacobian out.
+    # if gradient_fun == pyshdom.gradient.jacobian:
+    #     jacobian_list = [i[-1] for i in out]
+    #     return loss, gradient, jacobian_list
+    # else:
+    #     return loss, gradient
 
 def subdivide_raytrace_jobs(rte_sensors, n_jobs, job_factor=1):
     """
@@ -127,6 +132,10 @@ def subdivide_raytrace_jobs(rte_sensors, n_jobs, job_factor=1):
         See pyshdom.containers.sort_sensors()
     n_jobs : int
         The number of groups to subdivide each sensor into.
+    job_factor : int
+        A factor which divides up the jobs into more pieces which would improve
+        load balancing by making tasks similar sizes with a trade off against
+        overhead of workers calling the function multiple times.
     """
     #loose distribution of workers by sensor key based on number
     #of rays at each sensor key.

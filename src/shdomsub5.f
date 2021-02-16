@@ -2423,8 +2423,9 @@ C         or the one with the most scattering weight.
           DIPHASEIND = I8
         ENDIF
       ELSE
-        WRITE (6,*) 'TRILIN_INTERP_DERIVS: Gridded phase',
+        WRITE (6,*) 'PHASE_INTERP_INDS: Gridded phase',
      .                 'is not supported in pyshdom.'
+        STOP
       ENDIF
       RETURN
       END

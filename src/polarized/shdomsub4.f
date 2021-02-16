@@ -599,7 +599,7 @@ C          ENDIF
       END
 
 
-      SUBROUTINE GRADIENT_L2(NSTOKES, NX, NY, NZ, NPTS, NBPTS, NCELLS,
+      SUBROUTINE LEVISAPPROX_GRADIENT(NSTOKES, NX, NY, NZ, NPTS, NBPTS, NCELLS,
      .           NBCELLS, ML, MM, NCS, NLM, NSTLEG, NLEG, NUMPHASE,
      .           NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .           BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, SOLARAZ,
@@ -617,10 +617,14 @@ C          ENDIF
      .           UNIFORMZLEV, DPATH, DPTR, EXACT_SINGLE_SCATTER,
      .           UNCERTAINTIES, JACOBIAN,MAKEJACOBIAN,
      .           JACOBIANPTR, NUM_JACOBIAN_PTS, RAYS_PER_PIXEL,
-     .           RAY_WEIGHTS, STOKES_WEIGHTS, GRADIENTFLAG,
-     .           GRADIENTPARAMS, NUMGRADIENTPARAMS, DIPHASEIND)
+     .           RAY_WEIGHTS, STOKES_WEIGHTS, DIPHASEIND,
+     .           COSTFUNC, NCOST, NGRAD, NUNCERTAINTY, PLANCK)
 Cf2py threadsafe
       IMPLICIT NONE
+      CHARACTER COSTFUNC*2
+Cf2py intent(in) :: COSTFUNC
+      INTEGER NCOST, NGRAD
+Cf2py intent(in) :: NCOST, NGRAD
       LOGICAL EXACT_SINGLE_SCATTER
 Cf2py intent(in) ::  EXACT_SINGLE_SCATTER
       INTEGER NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS
@@ -632,12 +636,6 @@ Cf2py intent(in) :: NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS, NBPTS, NB
       REAL    EXTDIRP(*)
       DOUBLE PRECISION UNIFORMZLEV
 Cf2py intent(in) :: DELX, DELY, XSTART, YSTART NPX, NPY, NPZ, ZLEVELS, EXTDIRP, UNIFORMZLEV
-      CHARACTER GRADIENTFLAG*1
-Cf2py intent(in) :: GRADIENTFLAG
-      INTEGER NUMGRADIENTPARAMS
-Cf2py intent(in) :: NUMGRADIENTPARAMS
-      REAL GRADIENTPARAMS(NUMGRADIENTPARAMS)
-Cf2py intent(in) :: GRADIENTPARAMS
       INTEGER ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
 Cf2py intent(in) :: ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
       INTEGER  DNUMPHASE
@@ -667,7 +665,9 @@ Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
 Cf2py intent(in) :: SFCGRIDPARMS, BCRAD
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL    TOTAL_EXT(NPTS), LEGEN(NSTLEG,0:NLEG,*)
+      REAL    PLANCK(NPTS,NPART)
 Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN, TOTAL_EXT
+Cf2py intent(in) :: PLANCK
       REAL    DIRFLUX(*), FLUXES(2,*)
       REAL    SOURCE(NSTOKES, *), RADIANCE(NSTOKES,*)
 Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE, RADIANCE
@@ -682,7 +682,7 @@ Cf2py intent(in) :: NPIX
 Cf2py intent(in) :: MEASUREMENTS, DEXT ,DALB, DIPHASE, DLEG
       REAL  STOKESOUT(NSTOKES,NPIX)
 Cf2py intent(out) :: STOKESOUT
-      DOUBLE PRECISION  GRADOUT(NBPTS,NUMDER), COST
+      DOUBLE PRECISION  GRADOUT(NBPTS,NUMDER,NGRAD), COST(NCOST)
 Cf2py intent(out) :: GRADOUT, COST, STOKESOUT
       CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
 Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
@@ -694,7 +694,9 @@ Cf2py intent(in) :: NUMDER, PARTDER
 Cf2py intent(in) :: YLMSUN, PHASETAB
 Cf2py intent(in) :: NSCATANGLE, YLMSUN, PHASETAB, DPHASETAB, NSTPHASE
       REAL DPATH(8*(NPX+NPY+NPZ),*)
-      DOUBLE PRECISION UNCERTAINTIES(NSTOKES,NSTOKES,*)
+      INTEGER :: NUNCERTAINTY
+Cf2py intent(in) :: NUNCERTAINTY
+      DOUBLE PRECISION UNCERTAINTIES(NUNCERTAINTY,NUNCERTAINTY,*)
       INTEGER DPTR(8*(NPX+NPY+NPZ),*)
 Cf2py intent(in) :: DPATH, DPTR, UNCERTAINTIES
       INTEGER DIPHASEIND(NPTS,NUMDER)
@@ -805,89 +807,138 @@ C         to calculate the Stokes radiance vector for this pixel
      .             DIPHASE, DLEG, NBPTS, DNUMPHASE, SOLARFLUX, NPX,
      .             NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
-     .             EXACT_SINGLE_SCATTER, GRADIENTFLAG, GRADIENTPARAMS,
-     .             NUMGRADIENTPARAMS,DIPHASEIND)
+     .             EXACT_SINGLE_SCATTER, DIPHASEIND, PLANCK)
   900     CONTINUE
 
-
-
-          DO NS=1,NSTOKES
-            STOKESOUT(NS,IPIX) = STOKESOUT(NS,IPIX) + VISRAD(NS)*
-     .            RAY_WEIGHTS(IRAY)*STOKES_WEIGHTS(NS,IPIX)
-            RAYGRAD_PIXEL(NS,:,:) = RAYGRAD_PIXEL(NS,:,:) +
-     .            RAYGRAD(NS,:,:)*RAY_WEIGHTS(IRAY)*
-     .            STOKES_WEIGHTS(NS,IPIX)
-!checks just in case.
-            IF (ANY(ISNAN(RAYGRAD(NS,:,:)))) THEN
-             PRINT *, 'NaN in gradient.', IPIX, IRAY, NS,
-     .       MINVAL(RAYGRAD(NS,:,:)),
-     .        MAXVAL(RAYGRAD(NS,:,:)), ANY(ISNAN(RAYGRAD(NS,:,:))),
-     .        X0, Y0, Z0
-            ENDIF
-            IF (ANY(ABS(RAYGRAD(NS,:,:)) > 1e2)) THEN
-              PRINT *, 'Large Value in gradient',IPIX, IRAY, NS,
-     .          MINVAL(RAYGRAD(NS,:,:)),
-     .        MAXVAL(RAYGRAD(NS,:,:)), ANY(ISNAN(RAYGRAD(NS,:,:))),
-     .        X0, Y0, Z0
-            ENDIF
-          ENDDO
-        ENDDO !end of ray loop.
-        !calculations per pixel.
-C        PIXEL_ERROR = STOKESOUT(:, IPIX) - MEASUREMENTS(:, IPIX)
-C        CALL UPDATE_COSTFUNCTION(PIXEL_ERROR, RAYGRAD_PIXEL, GRADOUT,
-C     .          COST, UNCERTAINTIES, FLAG, NSTOKES, NBPTS, NUMDER)
-C
-        DO NS = 1, NSTOKES
-          PIXEL_ERROR = STOKESOUT(NS, IPIX) -
-     .                    MEASUREMENTS(NS, IPIX)
-          DO NS1 = 1, NSTOKES
-            WEIGHT = UNCERTAINTIES(NS,NS1,IPIX)
-            GRADOUT = GRADOUT + WEIGHT*PIXEL_ERROR*RAYGRAD_PIXEL(NS,:,:)
-            COST = COST + 0.5 * WEIGHT*PIXEL_ERROR**2
-          ENDDO
+          STOKESOUT(:,IPIX) = STOKESOUT(:,IPIX) + VISRAD(:)*
+     .      RAY_WEIGHTS(IRAY)*STOKES_WEIGHTS(:,IPIX)
+          RAYGRAD_PIXEL(:,:,:) = RAYGRAD_PIXEL(:,:,:) +
+     .      RAYGRAD(:,:,:)*RAY_WEIGHTS(IRAY)*STOKES_WEIGHTS(:,IPIX)
         ENDDO
-C
-        IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
 
+        CALL UPDATE_COSTFUNCTION(STOKESOUT(:,IPIX), RAYGRAD_PIXEL,
+     .             GRADOUT, COST, UNCERTAINTIES(:,:,IPIX), COSTFUNC,
+     .             NSTOKES, NBPTS, NUMDER, NCOST, NGRAD,
+     .             MEASUREMENTS(:,IPIX), STOKES_WEIGHTS(:,IPIX),
+     .             NUNCERTAINTY)
+
+        IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
           DO JI = 1,NUM_JACOBIAN_PTS
-C            DO JJ=1,NUMDER
-C              DO JK=1,NSTOKES
-                JACOBIAN(:,:,JI,IPIX) =
-     .            RAYGRAD_PIXEL(:,JACOBIANPTR(JI),:)
-C              ENDDO
-C            ENDDO
+            JACOBIAN(:,:,JI,IPIX) =
+     .      RAYGRAD_PIXEL(:,JACOBIANPTR(JI),:)
           END DO
         ENDIF
       ENDDO
       RETURN
       END
 
-      SUBROUTINE UPDATE_COSTFUNCTION (PIXEL_ERROR, RAYGRAD_PIXEL,
-     .             GRADOUT,COST, UNCERTAINTIES, FLAG,NSTOKES,
-     .             NBPTS, NUMDER)
+C          DO NS=1,NSTOKES
+C            STOKESOUT(NS,IPIX) = STOKESOUT(NS,IPIX) + VISRAD(NS)*
+C     .            RAY_WEIGHTS(IRAY)*STOKES_WEIGHTS(NS,IPIX)
+C            RAYGRAD_PIXEL(NS,:,:) = RAYGRAD_PIXEL(NS,:,:) +
+C     .            RAYGRAD(NS,:,:)*RAY_WEIGHTS(IRAY)*
+C     .            STOKES_WEIGHTS(NS,IPIX)
+checks just in case.
+C            IF (ANY(ISNAN(RAYGRAD(NS,:,:)))) THEN
+C             PRINT *, 'NaN in gradient.', IPIX, IRAY, NS,
+C     .       MINVAL(RAYGRAD(NS,:,:)),
+C     .        MAXVAL(RAYGRAD(NS,:,:)), ANY(ISNAN(RAYGRAD(NS,:,:))),
+C     .        X0, Y0, Z0
+C            ENDIF
+C            IF (ANY(ABS(RAYGRAD(NS,:,:)) > 1e2)) THEN
+C              PRINT *, 'Large Value in gradient',IPIX, IRAY, NS,
+C     .          MINVAL(RAYGRAD(NS,:,:)),
+C     .        MAXVAL(RAYGRAD(NS,:,:)), ANY(ISNAN(RAYGRAD(NS,:,:))),
+C     .        X0, Y0, Z0
+C            ENDIF
+C          ENDDO
+C        ENDDO !end of ray loop.
+       !calculations per pixel.
+C        PIXEL_ERROR = STOKESOUT(:, IPIX) - MEASUREMENTS(:, IPIX)
+C        CALL UPDATE_COSTFUNCTION(PIXEL_ERROR, RAYGRAD_PIXEL, GRADOUT,
+C     .          COST, UNCERTAINTIES, FLAG, NSTOKES, NBPTS, NUMDER)
 
-      CHARACTER*2 FLAG
-      INTEGER NBPTS, NUMDER, NSTOKES
-      DOUBLE PRECISION COST, GRADOUT(NBPTS,NUMDER)
+C        DO NS = 1, NSTOKES
+C          PIXEL_ERROR = STOKESOUT(NS, IPIX) -
+C     .                    MEASUREMENTS(NS, IPIX)
+C          DO NS1 = 1, NSTOKES
+C            WEIGHT = UNCERTAINTIES(NS,NS1,IPIX)
+C            GRADOUT = GRADOUT + WEIGHT*PIXEL_ERROR*RAYGRAD_PIXEL(NS,:,:)
+C            COST = COST + 0.5 * WEIGHT*PIXEL_ERROR**2
+C          ENDDO
+C        ENDDO
+
+C        IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
+C
+C          DO JI = 1,NUM_JACOBIAN_PTS
+C            DO JJ=1,NUMDER
+C              DO JK=1,NSTOKES
+C                JACOBIAN(:,:,JI,IPIX) =
+C     .            RAYGRAD_PIXEL(:,JACOBIANPTR(JI),:)
+C              ENDDO
+C            ENDDO
+C          END DO
+C        ENDIF
+C      ENDDO
+C      RETURN
+C      END
+
+      SUBROUTINE UPDATE_COSTFUNCTION (STOKESOUT, RAYGRAD_PIXEL,
+     .             GRADOUT,COST, UNCERTAINTIES, COSTFUNC, NSTOKES,
+     .             NBPTS, NUMDER, NCOST, NGRAD, MEASUREMENT,
+     .              STOKES_WEIGHTS, NUNCERTAINTY)
+
+      CHARACTER*2 COSTFUNC
+      INTEGER NBPTS, NUMDER, NSTOKES, NGRAD, NCOST
+      INTEGER NUNCERTAINTIY
+      DOUBLE PRECISION COST(NCOST), GRADOUT(NBPTS,NUMDER,NGRAD)
       DOUBLE PRECISION RAYGRAD_PIXEL(NSTOKES,NBPTS,NUMDER)
-      DOUBLE PRECISION PIXEL_ERROR(NSTOKES)
-      DOUBLE PRECISION UNCERTAINTIES(NSTOKES,NSTOKES)
+      DOUBLE PRECISION STOKESOUT(NSTOKES), MEASUREMENT(NSTOKES)
+      DOUBLE PRECISION UNCERTAINTIES(NUNCERTAINTY,NUNCERTAINTY)
+      DOUBLE PRECISION PIXEL_ERROR
+      DOUBLE PRECISION STOKES_WEIGHTS(NS)
 
       INTEGER I,J
 
-      IF (FLAG .EQ. 'L2') THEN
+      IF (COSTFUNC .EQ. 'L2') THEN
+C       A 'naive' weighted least squares on each of the stokes components.
         DO I=1,NSTOKES
+          PIXEL_ERROR = STOKESOUT(I) - MEASUREMENT(I)
           DO J=1,NSTOKES
-            COST = COST + 0.5 * UNCERTAINTIES(I,J) * PIXEL_ERROR(I)**2
-            GRADOUT = GRADOUT + 0.5 * UNCERTAINTIES(I,J) *
-     .        PIXEL_ERROR(I)*RAYGRAD_PIXEL(I,:,:)
+            COST(1) = COST(1) + 0.5D0 +
+     .        UNCERTAINTIES(I,J) * PIXEL_ERROR**2
+            GRADOUT(:,:,1) = GRADOUT(:,:,1) + UNCERTAINTIES(I,J) *
+     .        PIXEL_ERROR*RAYGRAD_PIXEL(I,:,:)
            ENDDO
          ENDDO
-      ELSEIF (FLAG .EQ. 'NC') THEN
 
+      ELSEIF (COSTFUNC .EQ. 'LL') THEN
+C       Logs of radiance and degree of linear polarization are observables
+C       which is standard in atmospheric remote sensing.
+C       e.g. Dubovik et al. 2011 https://doi.org/10.5194/amt-4-975-2011.
+        RADERROR = LOG(STOKESOUT(1)) - LOG(MEASUREMENT(1))
+
+        COST(1) = COST(1) + 0.5D0 *(RADERROR**2 *
+     .      UNCERTAINTIES(1,1))
+        GRADOUT(:,:,1) = GRADOUT(:,:,1) + RADERROR*
+     .      UNCERTAINTIES(1,1)*RAYGRAD_PIXEL(1,:,:)/STOKESOUT(1)
+
+        IF (NSTOKES .GT. 1) THEN
+          DOLP1 = SQRT(STOKESOUT(2)**2 + STOKESOUT(3)**2) /
+     .      STOKESOUT(1)
+          DOLP2 = SQRT(MEASUREMENT(2)**2 + MEASUREMENT(3)**2) /
+     .      MEASUREMENT(1)
+          DOLPERR = LOG(DOLP1) - LOG(DOLP2)
+          COST(1) = COST(1) + 0.5D0 *(DOLPERR*
+            UNCERTAINTIES(2,2))
+          GRADOUT(:,:,1) = GRADOUT(:,:,1) + DOLPERR*
+     .      UNCERTAINTIES(2,2)/(STOKESOUT(1)*DOLP1)*
+     .      (STOKESOUT(2)*RAYGRAD_PIXEL(2,:,:) +
+     .       STOKESOUT(3)*RAYGRAD_PIXEL(3,:,:))/
+     .      SQRT(STOKESOUT(2)**2 + STOKESOUT(3)**2)
+        ENDIF
 
       ENDIF
-
       RETURN
       END
 
@@ -908,8 +959,7 @@ C            ENDDO
      .             DALB, DIPHASE, DLEG, NBPTS, DNUMPHASE, SOLARFLUX,
      .             NPX, NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
-     .             EXACT_SINGLE_SCATTER, GRADIENTFLAG, GRADIENTPARAMS,
-     .             NUMGRADIENTPARAMS, DIPHASEIND)
+     .             EXACT_SINGLE_SCATTER, DIPHASEIND, PLANCK)
 
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
@@ -941,15 +991,12 @@ C     5=-Z,6=+Z).
       REAL    SFCGRIDPARMS(NSFCPAR,NBOTPTS), BCRAD(*)
       REAL    XGRID(*), YGRID(*), ZGRID(*), GRIDPOS(3,*)
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
-      REAL    LEGEN(NSTLEG,0:NLEG,*)
+      REAL    LEGEN(NSTLEG,0:NLEG,*), PLANCK(NPTS,NPART)
       DOUBLE PRECISION RAYGRAD(NSTOKES,NBPTS,NUMDER)
       REAL    DIRFLUX(*), SOURCE(NSTOKES,*), RADIANCE(NSTOKES,*)
       REAL    TOTAL_EXT(*), YLMSUN(NSTLEG,*)
       REAL    PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
       REAL    DPHASETAB(NSTPHASE,DNUMPHASE,NSCATANGLE)
-      CHARACTER GRADIENTFLAG*1
-      REAL    GRADIENTPARAMS(NUMGRADIENTPARAMS)
-      INTEGER NUMGRADIENTPARAMS
       DOUBLE PRECISION MU2, PHI2, X0,Y0,Z0, XE,YE,ZE
       DOUBLE PRECISION TRANSMIT, RADOUT(NSTOKES)
       CHARACTER SRCTYPE*1, SFCTYPE*2
@@ -1143,7 +1190,8 @@ C        ELSE
      .            EXTINCT8, SRCEXT8, TOTAL_EXT, NPART, RSHPTR, RADIANCE,
      .            OGRAD8, GRAD8, LOFJ, CELLFLAGS, PARTDER, NUMDER,
      .            DNUMPHASE, DEXT, DALB, DIPHASE, DLEG, NBPTS, BCELL,
-     .            DSINGSCAT, SINGSCAT8, OSINGSCAT8, DIPHASEIND)
+     .            DSINGSCAT, SINGSCAT8, OSINGSCAT8, DIPHASEIND,
+     .            PLANCK)
         ENDIF
 
 C         Interpolate the source and extinction to the current point
@@ -1167,7 +1215,6 @@ C         Interpolate the source and extinction to the current point
           DO N=1,8
             SINGSCAT1(:,N) = FC(N)*SINGSCAT8(:,N)
             SINGSCAT1(1,N) = MAX(0.0, SINGSCAT1(1,N))
-C            GRAD1(:,N,:) = FB(N)*GRAD8(:,N,:)
             DO KK=1,8
               GRAD1(:,KK,:) = GRAD1(:,KK,:) +
      .           FC(N)*FB(KK)*GRAD8(:,KK,N,:)
@@ -1253,7 +1300,6 @@ C            Interpolate extinction and source function along path
             DO N=1,8
               SINGSCAT0(:,N) = FC(N)*SINGSCAT8(:,N)
               SINGSCAT0(1,N) = MAX(0.0, SINGSCAT0(1,N))
-C              GRAD0(:,N,:) = FB(N)*GRAD8(:,N,:)
               DO KK=1,8
                 GRAD0(:,KK,:) = GRAD0(:,KK,:) +
      .            FC(N)*FB(KK)*GRAD8(:,KK,N,:)
@@ -1291,16 +1337,13 @@ C                 Linear extinction, linear source*extinction, to second order
             SRCGRAD = 0.0
             SRCSINGSCAT = 0.0
           ENDIF
-          RADOUT(:) = RADOUT(:) + TRANSMIT*SRC(:)*ABSCELL
 
+          RADOUT(:) = RADOUT(:) + TRANSMIT*SRC(:)*ABSCELL
           IF (.NOT. OUTOFDOMAIN) THEN
             DO KK = 1, 8
               GRIDPOINT = GRIDPTR(KK,BCELL)
-              IF (GRADIENTFLAG .EQ. 'L') THEN
-                RAYGRAD(:,GRIDPOINT,:) = RAYGRAD(:,GRIDPOINT,:) +
+              RAYGRAD(:,GRIDPOINT,:) = RAYGRAD(:,GRIDPOINT,:) +
      .                     TRANSMIT*SRCGRAD(:,KK,:)*ABSCELL
-              ENDIF
-
 C             Add gradient component due to the direct solar beam propogation
               IF (EXACT_SINGLE_SCATTER) THEN
                 II = 1
@@ -1416,7 +1459,8 @@ C             boundary then prepare for next cell
      .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART, RSHPTR,
      .             RADIANCE, OGRAD8, GRAD8, LOFJ, CELLFLAGS, PARTDER,
      .             NUMDER, DNUMPHASE, DEXT, DALB, DIPHASE, DLEG, NBPTS,
-     .             BCELL, DSINGSCAT, SINGSCAT8, OSINGSCAT8,DIPHASEIND)
+     .             BCELL, DSINGSCAT, SINGSCAT8, OSINGSCAT8,DIPHASEIND,
+     .             PLANCK)
 C       Computes the source function times extinction for gridpoints
 C     belonging to cell ICELL in the direction (MU,PHI).  The results
 C     are returned in SRCEXT8 and EXTINCT8.
@@ -1434,6 +1478,7 @@ C     for unscaled untruncated phase function.
       REAL    SOLARMU
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL    LEGEN(NSTLEG,0:NLEG,*), TOTAL_EXT(*)
+      REAL    PLANCK(NPTS,NPART)
       REAL    DIRFLUX(*), SOURCE(NSTOKES,*)
       REAL    RADIANCE(NSTOKES,*)
       REAL    YLMDIR(NSTLEG,*), YLMSUN(NSTLEG,*)
@@ -1454,6 +1499,8 @@ C     for unscaled untruncated phase function.
       INTEGER LOFJ(*), PARTDER(NUMDER), RNS, RIS, IDR, IB,NB
       INTEGER IP, J, JT, L, M, MS, ME, IPH, IS, NS, N, I,IPA,K
       REAL    SECMU0, F, DA, A, A1, B1, EXT
+      REAL    C
+      PARAMETER (C=3.544907703)
 
       GRAD8 = 0.0
       SECMU0 = 1.0D0/ABS(SOLARMU)
@@ -1499,13 +1546,12 @@ C         -JRLoveridge 2021/02/10
                 K = IP
               ENDIF
 
-              DA = DIRFLUX(IP)*SECMU0
-              FULL_SINGSCAT = 0.0
-
-              IF (DELTAM) THEN
+              IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
+                DA = DIRFLUX(IP)*SECMU0
+                FULL_SINGSCAT = 0.0
                 F = LEGEN(1,ML+1,K)
               ELSE
-                F = 0.0
+                F=0.0
               ENDIF
 
               DO NB=1,8
@@ -1607,22 +1653,30 @@ C               should be updated. - JRLoveridge 2021/02/09
                 ENDDO
 C             Add in the single scattering contribution for the original unscaled phase function.
 C             For DELTA M and L<=ML this requires reconstructing the original phase function values
-                IF (NUMPHASE .GT. 0) THEN
-                  IF (DIPHASEIND(IP,IDR) .EQ. IB) THEN
-                    FULL_SINGSCAT(:) = DA*(
+                IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
+                  IF (NUMPHASE .GT. 0) THEN
+C                   The phase function derivative is only non-zero for the
+C                   base grid point which supplied the phase function to the (adaptive)
+C                   grid point.
+                    IF (DIPHASEIND(IP,IDR) .EQ. IB) THEN
+                      FULL_SINGSCAT(:) = DA*(
      .                DEXTM*ALBEDO(IP,IPA)*SINGSCAT(:,K) +
      .                EXTINCT(IP,IPA)*DALBM*SINGSCAT(:,K) +
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*
      .                DSINGSCAT(:,DIPHASE(IB,IDR)))
-C             The phase function derivative is only non-zero for the
-C             base grid point which supplied the phase function to the (adaptive)
-C             grid point.
+                    ENDIF
+                  ELSE
+                    WRITE(*,*) 'NUMPHASE=', NUMPHASE, ' NOT SUPPORTED'
+                    STOP
                   ENDIF
-                ELSE
-                  WRITE(*,*) 'NUMPHASE=', NUMPHASE, ' NOT SUPPORTED'
-                  STOP
                 ENDIF
-              GRAD8(:,NB,N,IDR) = GRAD8(:,NB,N,IDR) + FULL_SINGSCAT(:)
+              IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
+                GRAD8(:,NB,N,IDR) = GRAD8(:,NB,N,IDR) + FULL_SINGSCAT(:)
+              ELSEIF (SRCTYPE .NE. 'S') THEN
+                GRAD8(:,NB,N,IDR) = GRAD8(:,NB,N,IDR) +
+     .            C*DEXTM*PLANCK(IP, IPA) - C*EXTINCT(IP,IPA)*DALBM*
+     .            PLANCK(IP, IPA)/(1.0 - ALBEDO(IP, IPA))
+              ENDIF
               ENDDO
             ENDDO
           ENDIF

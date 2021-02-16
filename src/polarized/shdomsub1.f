@@ -98,7 +98,8 @@ C       Get the maximum single scattering albedo over all processors
      .             DELXD, DELYD, DELJDOT, DELJOLD, DELJNEW,
      .             JNORM, NBCELLS,FFTFLAG, CMU1, CMU2, WTMU, CPHI1,
      .             CPHI2, WPHISAVE, MAXSFCPARS, WORK, WORK1, WORK2,
-     .             NSTLEG, NSTOKES, UNIFORM_SFC_BRDF, SFC_BRDF_DO)
+     .             NSTLEG, NSTOKES, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
+     .             INRADFLAG,NDELSOURCE)
 Cf2py threadsafe
 C       Initialize the SHDOM solution procedure.
       IMPLICIT NONE
@@ -122,8 +123,8 @@ Cf2py intent(in) :: GRIDPTR, TREEPTR, NEIGHPTR
 Cf2py intent(in) CELLFLAGS
       INTEGER  IPHASE(MAXIG,NPART)
 Cf2py intent(in) :: IPHASE
-      LOGICAL DELTAM, ACCELFLAG
-Cf2py intent(in) :: DELTAM, ACCELFLAG
+      LOGICAL DELTAM, ACCELFLAG, INRADFLAG
+Cf2py intent(in) :: DELTAM, ACCELFLAG, INRADFLAG
       REAL    SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD, SHACC
 Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD, SHACC
       REAL    GNDTEMP, GNDALBEDO
@@ -163,11 +164,12 @@ Cf2py intent(in) :: ZCKD, GASABS
 
 
       INTEGER WORK1(8*MAXIG)
+Cf2py intent(in,out) :: WORK1
       REAL    BCRAD(NSTOKES,MAXBCRAD), WORK(MAXIDO*NSTOKES)
       REAL    WORK2(MAXIG*NSTOKES)
-Cf2py intent(out) :: BCRAD, WORK, WORK1, WORK2
+Cf2py intent(in,out) :: BCRAD, WORK, WORK2
       REAL    FLUXES(2,MAXIG)
-Cf2py intent(out) :: FLUXES
+Cf2py intent(in,out) :: FLUXES
       INTEGER NTOPPTS, NBOTPTS, BCPTR(MAXNBC,2)
 Cf2py intent(out) :: NTOPPTS, NBOTPTS, BCPTR
       INTEGER NPHI0(NMU), NANG
@@ -177,10 +179,15 @@ Cf2py intent(out) :: SFCGRIDPARMS
       REAL    MU(NMU), WTDO(NMU,NPHI), PHI(NMU,NPHI)
 Cf2py intent(out) :: MU, WTDO, PHI
       INTEGER RSHPTR(MAXIG+2), SHPTR(MAXIG+1), OSHPTR(MAXIG+1)
-Cf2py intent(out) :: RSHPTR, SHPTR, OSHPTR
-      REAL    SOURCE(NSTOKES,MAXIV), DELSOURCE(NSTOKES,MAXIV)
+Cf2py intent(in,out) :: RSHPTR, SHPTR
+Cf2py intent(out) :: OSHPTR
+      REAL    SOURCE(NSTOKES,MAXIV)
+C     NDELSOURCE is set to MAXIV if ACCELFLAG=TRUE ELSE 1.
+      REAL    DELSOURCE(NSTOKES,NDELSOURCE)
+      INTEGER NDELSOURCE
+Cf2py intent(in) NDELSOURCE
       REAL    RADIANCE(NSTOKES,MAXIV+MAXIG), DIRFLUX(MAXIG)
-Cf2py intent(out) :: SOURCE, DELSOURCE, RADIANCE, DIRFLUX
+Cf2py intent(in,out) :: SOURCE, DELSOURCE, RADIANCE, DIRFLUX
       DOUBLE PRECISION UNIFORMZLEV
 Cf2py intent(out) ::  UNIFORMZLEV
       REAL    YLMSUN(NSTLEG,NLM), EXTDIRP(NBPTS)
@@ -252,7 +259,8 @@ C           Make the Ylm transform coefficients
 
 C        Initialize the radiance on the base grid using Eddington
 C        two-stream plane-parallel
-      CALL INIT_RADIANCE(NSTOKES, NX1*NY1, NZ, NSTLEG, NLEG,
+      IF (INRADFLAG) THEN
+        CALL INIT_RADIANCE(NSTOKES, NX1*NY1, NZ, NSTLEG, NLEG,
      .    RSHPTR, ZGRID, EXTINCT(:NPTS,:), ALBEDO(:NPTS,:), LEGEN,
      .    TEMP, NUMPHASE, IPHASE(:NPTS,:), SRCTYPE, SOLARFLUX, SOLARMU,
      .    GNDALBEDO, GNDTEMP, SKYRAD, UNITS, WAVENO, WAVELEN, RADIANCE,
@@ -260,18 +268,18 @@ C        two-stream plane-parallel
 
 C        Interpolate the radiance on the non-base grid points from the
 C          base grid points
-       CALL INTERP_RADIANCE (NSTOKES, NBPTS, NPTS, RSHPTR, RADIANCE,
+         CALL INTERP_RADIANCE (NSTOKES, NBPTS, NPTS, RSHPTR, RADIANCE,
      .             NBCELLS, NCELLS, TREEPTR, GRIDPTR, GRIDPOS)
 
 C           Initialize the source function from the radiance field
-        CALL COMPUTE_SOURCE (NSTOKES, ML, MM, NLM,
+          CALL COMPUTE_SOURCE (NSTOKES, ML, MM, NLM,
      .         NSTLEG, NLEG, NUMPHASE, NPTS,
      .         .FALSE., SRCTYPE, SOLARMU, YLMSUN, ALBEDO(:NPTS,:),
      .         LEGEN, IPHASE(:NPTS,:), PLANCK(:NPTS,:), DIRFLUX, SHACC,
      .         MAXIV, RSHPTR,RADIANCE,SHPTR,SOURCE, OSHPTR,DELSOURCE,
      .         .TRUE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .          NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS))
-
+      ENDIF
       IF (ACCELFLAG) THEN
         OSHPTR(1:NPTS+1) = SHPTR(1:NPTS+1)
         DELSOURCE(:,1:OSHPTR(NPTS+1)) = 0.0

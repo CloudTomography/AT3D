@@ -396,21 +396,21 @@ class RTE:
 
         return numerical_params
 
-    def import_grid(self, other_solver):
+    def import_grid(self, rte_grid, grid_data, numerical_params, nstokes):#other_solver):
         #If the same base grid is used and other memory parameters.
         #Then we should be able to import a SPLIT grid to initialize on.
-        if self._grid.equals(other_solver._grid) & \
-           self.numerical_params.equals(other_solver.numerical_params) & \
-           (self._nstokes == other_solver._nstokes):
+        if self._grid.equals(rte_grid) & \
+           self.numerical_params.equals(numerical_params) & \
+           (self._nstokes == nstokes):
 
             self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
-            self._treeptr, self._cellflags, self._nbcells = other_solver._npts, \
-            other_solver._ncells,other_solver._gridpos, other_solver._gridptr, \
-            other_solver._neighptr, other_solver._treeptr, other_solver._cellflags,\
-            other_solver._nbcells
+            self._treeptr, self._cellflags, self._nbcells = grid_data.npts.data, \
+            grid_data.ncells.data, grid_data.gridpos.data, grid_data.gridptr.data, \
+            grid_data.neighptr.data, grid_data.treeptr.data, grid_data.cellflags.data,\
+            grid_data.nbcells.data
         else:
             raise ValueError("Base grids and numerical parameters must "
-                             "match to import a split grid from another solver.")
+                             "match to import a split grid.")
 
     def _setup_grid(self, grid):
         """
@@ -602,8 +602,6 @@ class RTE:
             raise pyshdom.exceptions.OutOfRangeError("Phase function indices are out of bounds.")
 
         # Determine the number of legendre coefficient for a given angular resolution
-        #Note this is corrected to self._ml rather than self._mm based on original SHDOM and
-        #what PREPARE_PROP assumes.
         self._nleg = self._ml + 1 if self._deltam else self._ml
 
         self._nleg = max(legendre_table.sizes['legendre_index'] - 1, self._nleg)
@@ -672,6 +670,9 @@ class RTE:
             srctype=self._srctype,
             npts=self._npts)
 
+        #calculate cell averaged extinctions so that warnings can be raised
+        #about optical thickness of cells. High optical thickness across a cell
+        #leads to lower accuracy for SHDOM.
         reshaped_ext = self._total_ext[:self._nbpts].reshape(self._nx, self._ny, self._nz)
         cell_averaged_extinct = (reshaped_ext[1:, 1:, 1:] + reshaped_ext[1:, 1:, :-1] +   \
                                  reshaped_ext[1:, :-1, 1:] + reshaped_ext[1:, :-1, :-1] + \
@@ -693,7 +694,10 @@ class RTE:
                           "peaked phase functions.")
 
     def _release_big_arrays(self):
-
+        """Destroy the big arrays if they exist to free memory.
+        This could be called after solving to save memory
+        in a large number of sequential but independent RTE
+        solutions."""
         self._source = None
         self._radiance = None
         self._delsource = None
@@ -705,7 +709,7 @@ class RTE:
         self._dirflux = None
         self._bcrad = None
 
-    def _init_solution(self, update_optical_properties=False):
+    def _init_solution(self, update_optical_properties=False, restore_data=None):
 
         if update_optical_properties:
             self._prepare_optical_properties()
@@ -715,12 +719,46 @@ class RTE:
         self._solcrit = 1.0
         self._iters = 0
 
-        #Release big arrays if they exist before a call to pyshdom.core.init_solution
-        #to prevent doubling the memory image when it is not necessary.
-        #This is necessary because the big arrays are formed in Fortran rather than
-        #formed in python and modified in place by init_solution.
-        if hasattr(self, '_radiance'):
-            self._release_big_arrays()
+        #initialize the zero-ed large arrays.
+        #Doing this here rather than in Fortran releases the old memory of
+        #self._radiance etc if it exists which prevents doubling of memory if
+        #rewriting.
+        self._source = np.zeros((self._nstokes, self._maxiv), dtype=np.float32, order='F')
+        if self._accelflag:
+            self._delsource = np.zeros((self._nstokes, self._maxiv), dtype=np.float32, order='F')
+            self._ndelsource = self._maxiv
+        else:
+            self._delsource = np.zeros((self._nstokes, 1), dtype=np.float32, order='F')
+            self._ndelsource = 1
+        self._radiance = np.zeros((self._nstokes, self._maxiv+self._maxig), dtype=np.float32, order='F')
+        self._dirflux = np.zeros((self._maxig), dtype=np.float32, order='F')
+        self._work1 = np.zeros((8*self._maxig), dtype=np.int32, order='F')
+        self._work = np.zeros((self._maxido*self._nstokes), dtype=np.float32, order='F')
+        self._work2 = np.zeros((self._maxig*self._nstokes), dtype=np.float32, order='F')
+        self._bcrad = np.zeros((self._nstokes, self._maxbcrad), dtype=np.float32, order='F')
+        self._fluxes = np.zeros((2, self._maxig), dtype=np.float32, order='F')
+
+        self._shptr = np.zeros((self._maxig+1), dtype=np.int32, order='F')
+        self._rshptr = np.zeros((self._maxig+2), dtype=np.int32, order='F')
+
+        if restore_data is not None:
+            #if data is made available to use instead of
+            #initializing the radiance/source/fluxes with 1D delta-Eddington then
+            #this is done here.
+            self._inradflag = False
+            iradiance = restore_data.radiance.data
+            isource = restore_data.source.data
+            ishptr = restore_data.shptr.data
+            irshptr = restore_data.rshptr.data
+            self._shptr[:self._npts+1] = ishptr
+            self._rshptr[:self._npts+2] = irshptr
+            self._source[:, :ishptr[self._npts]] = isource
+            self._radiance[:, :self._rshptr[self._npts]] = iradiance
+            self._fluxes[:, :self._npts] = restore_data.fluxes.data
+
+            self.import_grid()
+        else:
+            self._inradflag = True
 
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, \
         self._sfcgridparms, self._ntoppts, self._nbotpts, self._bcptr, \
@@ -733,6 +771,19 @@ class RTE:
         self._fftflag, self._cmu1, self._cmu2, self._wtmu, self._cphi1, \
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
         self._uniform_sfc_brdf, self._sfc_brdf_do = pyshdom.core.init_solution(
+            work=self._work,
+            ndelsource=self._ndelsource,
+            work1=self._work1,
+            work2=self._work2,
+            fluxes=self._fluxes,
+            bcrad=self._bcrad,
+            dirflux=self._dirflux,
+            delsource=self._delsource,
+            source=self._source,
+            shptr=self._shptr,
+            rshptr=self._rshptr,
+            inradflag=self._inradflag,
+            radiance=self._radiance,
             nstleg=self._nstleg,
             nstokes=self._nstokes,
             nx=self._nx,
@@ -1064,6 +1115,7 @@ class RTE:
             ylmsun=self._ylmsun,
             runname=self._name
         )
+
     def integrate_to_sensor(self, sensor):
         """
         TODO
@@ -1151,7 +1203,8 @@ class RTE:
             zgrid=self._zgrid,
             gridpos=self._gridpos,
             sfcgridparms=self._sfcgridparms,
-            bcrad=copy.deepcopy(self._bcrad),
+            bcrad=copy.deepcopy(self._bcrad), #deep copied as it is modified in place
+                                              #which is otherwise bad for parallelization.
             extinct=self._extinct[:self._npts],
             albedo=self._albedo[:self._npts],
             legen=self._legen,
@@ -1198,7 +1251,6 @@ class RTE:
         return sensor
 
     def optical_path(self, sensor, deltam_scaled_path=False):
-
 
         if not isinstance(sensor, xr.Dataset):
             raise TypeError("`sensor` should be an xr.Dataset "
@@ -1352,7 +1404,7 @@ class RTE:
                     np.log10(self._solcrit), np.log10(self._solacc)
                     )
             )
-    @property
+
     def sh_out(self):
         """
         TODO
@@ -1481,7 +1533,7 @@ class RTE:
     def num_iterations(self):
         return self._iters
 
-    def _direct_beam_derivative(self):
+    def calculate_direct_beam_derivative(self):
         """
         Calculate the geometry of the direct beam at each point and solver.
         Solver is modified in-place.
@@ -1663,6 +1715,200 @@ class RTE:
             npart=self._npart,
             numder=self._num_derivatives
         )
+
+    def levis_approximation_grad(self, sensor, cost_function='L2', indices_for_jacobian=None,
+                                 exact_single_scatter=True):
+        """
+        The core l2 gradient method.
+
+        Parameters
+        ----------
+        rte_solver: pyshdom.RteSolver
+            A solver with all the associated parameters and the solution to the RTE
+        projection: pyshdom.Projection
+            A projection model which specified the position and direction of each and every pixel
+        pixels: np.array(shape=(projection.npix), dtype=np.float32)
+            The acquired pixels driving the error and optimization.
+        uncertainties: np.array(shape=(projection.npix), dtype=np.float32)
+            The pixel uncertainties.
+
+        Returns
+        -------
+        gradient: np.array(shape=(rte_solver._nbpts, self.num_derivatives), dtype=np.float64)
+            The gradient with respect to all parameters at every grid base point
+        loss: float64
+            The total loss accumulated over all pixels
+        images: np.array(shape=(rte_solver._nstokes, projection.npix), dtype=np.float32)
+            The rendered (synthetic) images.
+        """
+        camx = sensor['ray_x'].data
+        camy = sensor['ray_y'].data
+        camz = sensor['ray_z'].data
+        cammu = sensor['ray_mu'].data
+        camphi = sensor['ray_phi'].data
+        #TODO
+        #Some checks on the dimensions: this kind of thing.
+        #assert camx.ndim == camy.ndim==camz.ndim==cammu.ndim==camphi.ndim==1
+        #nrays = sensor.sizes['nrays']
+        total_pix = sensor.sizes['npixels']
+        measurement_data = sensor['measurement_data'].data
+        stokes_weights = sensor['stokes_weights'].data
+        ray_weights = sensor['ray_weight'].data
+        rays_per_pixel = sensor['rays_per_pixel'].data
+        uncertainties = sensor['uncertainties'].data
+
+        if indices_for_jacobian is None:
+            jacobian = np.empty(
+                (self._nstokes, self._num_derivatives, 1, 1),
+                order='F',
+                dtype=np.float32
+            )
+            num_jacobian_pts = 1
+            jacobian_ptr = np.zeros(num_jacobian_pts)
+            jacobian_flag = False
+        else:
+            jacobian_ptrs = np.ravel_multi_index(
+                (indices_for_jacobian),
+                (self._pa.npx, self._pa.npy, self._pa.npz)
+                ) + 1
+            num_jacobian_pts = np.size(jacobian_ptrs)
+            jacobian = np.empty((self._nstokes, self._num_derivatives, num_jacobian_pts, total_pix), order='F', dtype=np.float32)
+            jacobian_flag = True
+
+        if cost_function == 'L2':
+            cost_size = 1
+            gradient_size = 1
+        elif cost_function == 'LL':
+            cost_size = 1
+            gradient_size = 1
+        else:
+            raise NotImplementedError("`cost_function` '{}' is not valid.".format(cost_function))
+
+        gradient, loss, images, jacobian = pyshdom.core.levisapprox_gradient(
+            camx=camx,
+            camy=camy,
+            camz=camz,
+            cammu=cammu,
+            camphi=camphi,
+            npix=total_pix,
+            costfunc=cost_function,
+            ncost=cost_size,
+            ngrad=gradient_size,
+            nuncertainty=uncertainties.shape[0],
+            uncertainties=uncertainties,
+            rays_per_pixel=rays_per_pixel,
+            ray_weights=ray_weights,
+            stokes_weights=stokes_weights,
+            exact_single_scatter=exact_single_scatter,
+            measurements=measurement_data,
+            jacobian=jacobian,
+            jacobianptr=jacobian_ptr,
+            num_jacobian_pts=num_jacobian_pts,
+            makejacobian=jacobian_flag,
+            diphaseind=self._diphaseind,
+            nstphase=self._nstphase,
+            dpath=self._direct_derivative_path,
+            dptr=self._direct_derivative_ptr,
+            npx=self._pa.npx,
+            npy=self._pa.npy,
+            npz=self._pa.npz,
+            delx=self._pa.delx,
+            dely=self._pa.dely,
+            xstart=self._pa.xstart,
+            ystart=self._pa.ystart,
+            zlevels=self._pa.zlevels,
+            extdirp=self._pa.extdirp,
+            uniformzlev=self._uniformzlev,
+            partder=self._unknown_scatterer_indices,
+            numder=self._num_derivatives,
+            dext=self._dext,
+            dalb=self._dalb,
+            diphase=self._diphase,
+            dleg=self._dleg,
+            dphasetab=self._dphasetab,
+            dnumphase=self._dnumphase,
+            nscatangle=self._nscatangle,
+            phasetab=self._phasetab,
+            ylmsun=self._ylmsun,
+            nstokes=self._nstokes,
+            nstleg=self._nstleg,
+            nx=self._nx,
+            ny=self._ny,
+            nz=self._nz,
+            bcflag=self._bcflag,
+            ipflag=self._ipflag,
+            npts=self._npts,
+            nbpts=self._nbpts,
+            ncells=self._ncells,
+            nbcells=self._nbcells,
+            ml=self._ml,
+            mm=self._mm,
+            ncs=self._ncs,
+            nlm=self._nlm,
+            numphase=self._pa.numphase,
+            nmu=self._nmu,
+            nphi0max=self._nphi0max,
+            nphi0=self._nphi0,
+            maxnbc=self._maxnbc,
+            ntoppts=self._ntoppts,
+            nbotpts=self._nbotpts,
+            nsfcpar=self._nsfcpar,
+            gridptr=self._gridptr,
+            neighptr=self._neighptr,
+            treeptr=self._treeptr,
+            shptr=self._shptr,
+            bcptr=self._bcptr,
+            cellflags=self._cellflags,
+            iphase=self._iphase[:self._npts],
+            deltam=self._deltam,
+            solarflux=self._solarflux,
+            solarmu=self._solarmu,
+            solaraz=self._solaraz,
+            gndtemp=self._gndtemp,
+            gndalbedo=self._gndalbedo,
+            skyrad=self._skyrad,
+            waveno=self._waveno,
+            wavelen=self.wavelength,
+            mu=self._mu,
+            phi=self._phi,
+            wtdo=self._wtdo,
+            xgrid=self._xgrid,
+            ygrid=self._ygrid,
+            zgrid=self._zgrid,
+            gridpos=self._gridpos,
+            sfcgridparms=self._sfcgridparms,
+            bcrad=copy.deepcopy(self._bcrad),
+            extinct=self._extinct[:self._npts],
+            albedo=self._albedo[:self._npts],
+            legen=self._legen,
+            dirflux=self._dirflux[:self._npts],
+            fluxes=self._fluxes,
+            source=self._source,
+            srctype=self._srctype,
+            sfctype=self._sfctype,
+            units=self._units,
+            rshptr=self._rshptr,
+            radiance=self._radiance,
+            total_ext=self._total_ext[:self._npts],
+            planck=self._planck[:self._npts]
+        )
+
+        integrated_rays = sensor.copy(deep=True)
+        data = {}
+        if self._nstokes == 1:
+            data['I'] = (['npixels'], images[0])
+        elif self._nstokes > 1:
+            data['I'] = (['npixels'], images[0])
+            data['Q'] = (['npixels'], images[1])
+            data['U'] = (['npixels'], images[2])
+        if self._nstokes == 4:
+            data['V'] = (['npixels'], images[3])
+        for key, val in data.items():
+            integrated_rays[key] = val
+
+        if not jacobian_flag:
+            jacobian = None
+        return gradient, loss, integrated_rays, jacobian
 
 
 class ShdomPropertyArrays(object):

@@ -28,6 +28,7 @@ from joblib import Parallel, delayed
 
 import numpy as np
 import xarray as xr
+import warnings
 
 import pyshdom.core
 import pyshdom.gradient
@@ -96,6 +97,9 @@ class SensorsDict(OrderedDict):
 
     def make_forward_sensors(self):
         """Make a deep copy of self.
+
+        Used when wanting to exactly replicate the sensor geometry to store the
+        output of the forward model during optimization.
         """
         forward_sensors = SensorsDict()
         for key, instrument in self.items():
@@ -193,8 +197,40 @@ class SensorsDict(OrderedDict):
             self.add_measurements_forward(sensor_mappings, out, keys)
 
     def sort_sensors(self, solvers, measurements=None):
-        """
-        TODO check that measurements matches self.
+        """Groups sensors by RTE solver for evaluation of observables.
+        Also prepares measurements for cost/gradient calculation in inverse
+        problem.
+
+        `solvers` contains the solver.RTE objects that will be used to
+        calculate the observables. This function groups all sensors in
+        `self` by the keys of `solvers` and the inverse mapping.
+        If `measurements` is not None then the inverse error-covariance
+        is evaluated in preparation for evaluation of the cost function.
+
+        Parameters
+        ----------
+        solvers : pyshdom.containers.SolversDict
+            The SolversDict containing the solver.RTE objects that will be
+            used to evaluate the observables.
+        measurements : pyshdom.containers.SensorsDict
+            This contains the actual measurement data that is used to constrain
+            the retrieval.
+
+        Returns
+        -------
+        rte_sensors : OrderedDict
+            Keys match `solvers` and each entry is an xr.Dataset containing the
+            concatenated sensors from `self`. Also contains the start/end
+            pixels/rays for mapping back to a list of xr.Datasets.
+        sensor_mappings : OrderedDict
+            Keys are from `solvers` and the entries are the instrument name and
+            index for mapping each entry in the sensor list back into `self`.
+
+        Raises
+        ------
+        TypeError
+            If `solvers` is not pyshdom.containers.SolversDict or `measurements` is
+            not None or pyshdom.containers.SensorsDict.
         """
         if not isinstance(solvers, SolversDict):
             raise TypeError("`solvers` should be of type '{}' not '{}'".format(SolversDict, type(solvers)))
@@ -202,30 +238,26 @@ class SensorsDict(OrderedDict):
             if not isinstance(measurements, SensorsDict):
                 raise TypeError("`measurements` should be of type '{}' not '{}'".format(SensorsDict, type(measurements)))
 
-        #TODO decide on behavior when there are no sensors matching a solver's
-        #keys. At the moment this gives an awful uninformative exception.
-
         rte_sensors = OrderedDict()
         sensor_mappings = OrderedDict()
 
-        if measurements is not None:
-            for key, solver in solvers.items():
-                for instrument, instrument_data in measurements.items():
-                    for i, sensor in enumerate(instrument_data['sensor_list']):
-                        if key == sensor.wavelength:
-                            if instrument_data['uncertainty_model'] is None:
-                                uncertainty_data = np.ones((solver._nstokes,
-                                                            solver._nstokes,
-                                                            sensor.sizes['npixels']))
-#         #NB Be aware that repeated dims cause errors. so the second dim is set to 'nstokes2' even though they are identical.
-#         #Issue 1378 on xarray.
-                                sensor['uncertainties'] = (['nstokes', 'nstokes2', 'npixels'],
-                                                           uncertainty_data)
-                            else:
-                                if 'uncertainties' not in sensor:
-                                    instrument_data['uncertainty_model'].calculate_uncertainties(
-                                        sensor, solver._nstokes)
-
+#         if measurements is not None:
+#             for key, solver in solvers.items():
+#                 for instrument, instrument_data in measurements.items():
+#                     for i, sensor in enumerate(instrument_data['sensor_list']):
+#                         if key == sensor.wavelength:
+#                             if instrument_data['uncertainty_model'] is None:
+#                                 uncertainty_data = np.ones((solver._nstokes,
+#                                                             solver._nstokes,
+#                                                             sensor.sizes['npixels']))
+# 
+#                                 sensor['uncertainties'] = (['nstokes', 'nstokes2', 'npixels'],
+#                                                            uncertainty_data)
+#                             else:
+#                                 if 'uncertainties' not in sensor:
+#                                     instrument_data['uncertainty_model'].calculate_uncertainties(
+#                                         sensor, solver._nstokes)
+        var_list = ['ray_x', 'ray_y', 'ray_z', 'ray_mu', 'ray_phi', 'ray_weight', 'pixel_index']
         for key, solver in solvers.items():
             sensor_list = []
             mapping_list = []
@@ -234,49 +266,49 @@ class SensorsDict(OrderedDict):
                     if key == sensor.wavelength:
                         sensor_list.append(sensor)
                         mapping_list.append((instrument, i))
-
-            var_list = ['ray_x', 'ray_y', 'ray_z', 'ray_mu', 'ray_phi', 'ray_weight', 'pixel_index']
             output = {}
-            for var in var_list:
-                concatenated = xr.concat([sensor[var] for sensor in sensor_list], dim='nrays')
-                output[var] = ('nrays', concatenated)
+            if not sensor_list:
+                warnings.warn("No sensors found matching solver with key '{}'".format(key))
+            else:
+                for var in var_list:
+                    concatenated = xr.concat([sensor[var] for sensor in sensor_list], dim='nrays')
+                    output[var] = ('nrays', concatenated)
 
-            output['stokes'] = xr.concat([sensor.stokes for sensor in sensor_list], dim='nimage')
-            output['rays_per_image'] = ('nimage', np.array([sensor.sizes['nrays']
-                                                            for sensor in sensor_list]))
-            output['rays_per_pixel'] = ('npixels', np.concatenate([np.unique(sensor.pixel_index,
-                                                                             return_counts=True)[1]
-                                                                   for sensor in sensor_list]))
+                output['stokes'] = xr.concat([sensor.stokes for sensor in sensor_list], dim='nimage')
+                output['rays_per_image'] = ('nimage', np.array([sensor.sizes['nrays']
+                                                                for sensor in sensor_list]))
+                output['rays_per_pixel'] = ('npixels', np.concatenate([np.unique(sensor.pixel_index,
+                                                                                 return_counts=True)[1]
+                                                                       for sensor in sensor_list]))
 
-            if measurements is not None:
+                if measurements is not None:
 
-                sensor_list_measure = []
-                for instrument, instrument_data in measurements.items():
-                    for sensor in instrument_data['sensor_list']:
-                        if key == sensor.wavelength:
-                            sensor_list_measure.append(sensor)
-                            #no need for mapping as the sensors should match.
+                    sensor_list_measure = []
+                    for instrument, instrument_data in measurements.items():
+                        for sensor in instrument_data['sensor_list']:
+                            if key == sensor.wavelength:
+                                sensor_list_measure.append(sensor)
+                                #no need for mapping as the sensors should match.
 
-                stokes_weights = []
-                stokes_datas = []
-                for sensor in sensor_list_measure:
-                    stokes_weight = np.zeros((solver._nstokes, sensor.sizes['npixels']))
-                    stokes_data = np.zeros((solver._nstokes, sensor.sizes['npixels']))
-                    for i, stokes in enumerate(sensor.stokes_index):
-                        if stokes in list(sensor.data_vars):
-                            stokes_weight[i, :] = 1.0
-                            stokes_data[i, :] = sensor[str(stokes.data)]
+                    stokes_weights = []
+                    stokes_datas = []
+                    for sensor in sensor_list_measure:
+                        stokes_weight = np.zeros((solver._nstokes, sensor.sizes['npixels']))
+                        stokes_data = np.zeros((solver._nstokes, sensor.sizes['npixels']))
+                        for i, stokes in enumerate(sensor.stokes_index):
+                            if stokes in list(sensor.data_vars):
+                                stokes_weight[i, :] = 1.0
+                                stokes_data[i, :] = sensor[str(stokes.data)]
 
-                    stokes_weights.append(stokes_weight)
-                    stokes_datas.append(stokes_data)
-                output['uncertainties'] = xr.concat([sensor.uncertainties
-                                                     for sensor in sensor_list_measure],
-                                                    dim='npixels')
-                output['stokes_weights'] = (['nstokes', 'npixels'],
-                                            np.concatenate(stokes_weights, axis=-1))
-                output['measurement_data'] = (['nstokes', 'npixels'],
-                                              np.concatenate(stokes_datas, axis=-1))
-
+                        stokes_weights.append(stokes_weight)
+                        stokes_datas.append(stokes_data)
+                    output['uncertainties'] = xr.concat([sensor.uncertainties
+                                                         for sensor in sensor_list_measure],
+                                                        dim='npixels')
+                    output['stokes_weights'] = (['nstokes', 'npixels'],
+                                                np.concatenate(stokes_weights, axis=-1))
+                    output['measurement_data'] = (['nstokes', 'npixels'],
+                                                  np.concatenate(stokes_datas, axis=-1))
 
             merged_sensors = xr.Dataset(data_vars=output)
             rte_sensors[key] = merged_sensors
@@ -286,9 +318,7 @@ class SensorsDict(OrderedDict):
 
     def get_unique_solvers(self):
         """
-        scans the sensors and finds the unique solvers required
-        and assigns each one a key. At the moment, each
-        TODO
+        Finds the set of unique wavelengths among all sensors.
         """
         wavelength_list = []
         for instrument in self.values():
@@ -298,7 +328,13 @@ class SensorsDict(OrderedDict):
 
     def get_minimum_stokes(self):
         """
-        TODO
+        Find the minimum required number of stokes parameters
+        for each solver to simulate the required observables.
+
+        Notes
+        -----
+        Users may want to not use this if they want more Stokes
+        components for accuracy reasons.
         """
         min_stokes = OrderedDict({key:0 for key in self.get_unique_solvers()})
         for key in min_stokes:
@@ -314,19 +350,55 @@ class SensorsDict(OrderedDict):
                             min_stokes[float(sensor.wavelength.data)] = nstoke
         return min_stokes
 
-    def get_images(self, key):
+    def get_images(self, instrument):
+        """Returns a list of images for a specified instrument.
+
+        Parameters
+        ----------
+        instrument : Any
+            The key in `self` corresponding to the given instrument. Typically
+            a string.
+
+        Returns
+        -------
+        image_list : List
+            A list of xr.Datasets which are the xr.Datasets in `instrument`'s
+            sensor_list rearranged to form 2D images if applicable.
+
+        Raises
+        ------
+        ValueError
+            If any of the xr.Datasets in `self`[`instrument`] does not have a
+            valid image shape.
         """
-        TODO
-        """
-        return [self.get_image(key, index) for index in range(len(self[key]['sensor_list']))]
+        image_list = [self.get_image(instrument, index) for index in range(len(self[instrument]['sensor_list']))]
+        return image_list
 
 
-    def get_image(self, key, index):
+    def get_image(self, instrument, sensor_index):
+        """Make a 2D sensor for visualization purposes.
+
+        Parameters
+        ----------
+        instrument : Any
+            The key corresponding to the desired instrument.
+        sensor_index : int
+            The index of the sensor in `instrument`'s sensor_list.
+
+        Returns
+        -------
+        img_data : xr.Dataset
+            Contains the given sensor dataset reshaped into a 2D image.
+
+        Raises
+        ------
+        ValueError
+            If the specified sensor doesn't have a 2D image.
+        KeyError
+            If the observables (e.g. I, Q, U, V) have not been calculated
+            for the sensor yet.
         """
-        TODO
-        Make a 2D sensor for visualization purposes.
-        """
-        sensor = self[key]['sensor_list'][index]
+        sensor = self[instrument]['sensor_list'][sensor_index]
         if not hasattr(sensor, 'image_shape'):
             raise ValueError("Sensor dataset does not have an "
                              "'image_shape' variable."
@@ -347,12 +419,36 @@ class SensorsDict(OrderedDict):
             if sensor.stokes.sel({'stokes_index': stokes}):
                 img_data[str(stokes.data)] = (['imgdim0', 'imgdim1'],
                                               sensor[str(stokes.data)].data.reshape(
-                                                  sensor.image_shape.data,order='F'))
+                                                  sensor.image_shape.data, order='F'))
         return img_data
 
     def add_measurements_inverse(self, sensor_mappings, measurements, measurement_keys):
-        """
-        TODO
+        """Takes the output of a (possibly parallel) rendering of synthetic measurements
+        by pyshdom.gradient.gradient_l2 during the optimization and updates
+        the sensors in `self` with the observables (e.g. I, Q, etc).
+
+        Parameters
+        ----------
+        sensor_mappings : OrderedDict
+            Keys are from the SolversDict used to calculate the
+            synthetic measurements. Values are are list of tuples of
+            the instrument names and sensor indices.
+        measurements : List
+            A list of xr.Datasets containing the Stokes observables calculated
+            by pyshdom.gradient.gradient_l2.
+        measurement_keys : List
+            The solver key for each element in `measurements`. These keys
+            may be duplicated as `measurements` may have been calculated
+            in parallel.
+
+        Notes
+        -----
+        This method is similar to SensorsDict.add_measurements_forward but as the output
+        of evaluating pyshdom.gradient.gradient_l2 is different to
+        pyshdom.solver.RTE.integrate_to_sensor there are differences. Particularly,
+        pixel averaged quantities are output by pyshdom.gradient.gradient_l2
+        while ray quantities are output by input to self.add_measurements_forward.
+        See sensor.py for the difference between ray and pixel variables.
         """
 
         for key in sensor_mappings:
@@ -407,9 +503,29 @@ class SensorsDict(OrderedDict):
 
 
     def add_measurements_forward(self, sensor_mappings, measurements, measurement_keys):
-        """
-        TODO
-        output_keys
+        """Takes the output of a (possibly parallel) rendering of synthetic measurements
+        by pyshdom.solver.integrate_to_sensor and updates the sensors in `self`
+        with the observables (e.g. pixel-averaged I, Q, etc).
+
+        Parameters
+        ----------
+        sensor_mappings : OrderedDict
+            Keys are from the SolversDict used to calculate the
+            synthetic measurements. Values are are list of tuples of
+            the instrument names and sensor indices.
+        measurements : List
+            A list of xr.Datasets containing the Stokes observables calculated
+            by pyshdom.solver.integrate_to_sensor
+        measurement_keys : List
+            The solver key for each element in `measurements`. These keys
+            may be duplicated as `measurements` may have been calculated
+            in parallel.
+
+        Notes
+        -----
+        Calls self._calculate_observables to evaluate the pixel-averaged observables.
+        See also SensorsDict.add_measurements_inverse and sensor.py for definition
+        of ray and pixel quantities.
         """
         for key in sensor_mappings:
             #group output from different (possibly parallel) workers by unique solver key (sensor_mappings.keys() == solvers.keys()).
@@ -447,9 +563,24 @@ class SensorsDict(OrderedDict):
 
     def _calculate_observables(self, mapping, rendered_rays):
         """
-        TODO TESTS NEEDED.
-        Currently averages over the sub_pixel rays and only takes
-        the observables that are needed.
+        Calculates the observables (pixel averaged Stokes components)
+        required by the sensor using the ray Stokes variables output
+        from pyshdom.solver.RTE.integrate_to_sensor.
+
+        Parameters
+        ----------
+        mapping : Tuple
+            First component is the instrument key in `self` and
+            second component is the index of the sensor in that
+            instrument's sensor_list.
+        rendered_rays : xr.Dataset
+            Contains the ray variables including Stokes components
+            calculated by pyshdom.solver.RTE.integrate_to_sensor.
+
+        Notes
+        -----
+        Calls pyshdom.core.average_subpixel_rays to do the averaging.
+        See src/util.f90.
         """
         sensor = self[mapping[0]]['sensor_list'][mapping[1]]
         if not sensor.use_subpixel_rays:
@@ -483,8 +614,8 @@ class SensorsDict(OrderedDict):
 
     @property
     def nmeasurements(self):
-        """
-        TODO
+        """Calculates the total number of observed quantities
+        (pixel-averaged Stokes components) in the sensors in `self`.
         """
         nmeasurements = 0
         for instrument in self.values():
@@ -495,7 +626,7 @@ class SensorsDict(OrderedDict):
     @property
     def npixels(self):
         """
-        TODO
+        Calculates the total number of pixels in the sensors in `self`.
         """
         npixels = 0
         for instrument in self.values():
@@ -506,20 +637,44 @@ class SensorsDict(OrderedDict):
 
 class SolversDict(OrderedDict):
     """
-    TODO
+    Stores multiple solver.RTE objects and has methods for solving in parallel
+    as well as pre-processing for the evaluation of the cost/gradient.
     """
-    def add_solver(self, key, value):
+    def add_solver(self, key, solver):
+        """Adds a pyshdom.solver.RTE object to self.
+
+        Parameters
+        ----------
+        key : Any
+            The key used to uniquely identify the solver which is typically
+            the monochromatic wavelength as a float.
+        solver : pyshdom.solver.RTE
+            The solver ojbect to add to `self`.
+
+        Raises
+        ------
+        TypeError
+            If `solver` is not of the type pyshdom.solver.RTE
         """
-        TODO
-        """
-        if not isinstance(value, pyshdom.solver.RTE):
+        if not isinstance(solver, pyshdom.solver.RTE):
             raise TypeError("solver should be of type '{}'".format(pyshdom.solver.RTE))
-        self[key] = value
+        self[key] = solver
 
     def parallel_solve(self, n_jobs=1, mpi_comm=None, maxiter=100,
                        verbose=True, init_solution=True, setup_grid=True):
         """
-        TODO
+        Solves in parallel all solver.RTE objects using MPI or multi-threading.
+
+        Parameters
+        ----------
+        n_jobs : int
+            The number of workers if using multi-threaded parallelization.
+        mpi_comm : mpi4py.MPI.Intracomm
+            The MPI communicator forces the MPI parallelization to run.
+            Note that there is no type check on mpi_comm.
+        solver_kwargs : dict
+            kwargs to pass to each solver.RTE object's .solve() method.
+            All solvers receive the same kwargs.
         """
         if mpi_comm is not None:
             for i in range(0, len(self), mpi_comm.Get_size()):
@@ -529,40 +684,73 @@ class SolversDict(OrderedDict):
                     self[key].solve(maxiter=maxiter, verbose=verbose,
                                     init_solution=init_solution,
                                     setup_grid=setup_grid)
-
-        if n_jobs == 1:
-            for solver in self.values():
-                solver.solve(maxiter=maxiter, init_solution=init_solution,
-                             verbose=verbose, setup_grid=setup_grid)
         else:
-            Parallel(n_jobs=n_jobs, backend="threading")(
-                delayed(solver.solve)(maxiter=maxiter, init_solution=init_solution,
-                                      verbose=verbose, setup_grid=setup_grid)
-                for solver in self.values())
+            if n_jobs == 1:
+                for solver in self.values():
+                    solver.solve(maxiter=maxiter, init_solution=init_solution,
+                                 verbose=verbose, setup_grid=setup_grid)
+            else:
+                Parallel(n_jobs=n_jobs, backend="threading")(
+                    delayed(solver.solve)(maxiter=maxiter, init_solution=init_solution,
+                                          verbose=verbose, setup_grid=setup_grid)
+                    for solver in self.values())
 
     def add_direct_beam_derivatives(self):
         """
-        Calculate the geometry of the direct beam at each point and solver.
-        Solver is modified in-place.
-        TODO
+        Calculate the contributions of each voxel to the direct beam
+        derivative for each solver. Solvers are modified in-place.
+        Used in the inverse problem.
         """
         for solver in self.values():
-            solver._direct_beam_derivative()
+            solver.calculate_direct_beam_derivative()
 
-    def add_microphysical_partial_derivatives(self, table_to_grid_method, table_data):
+    def add_microphysical_partial_derivatives(self, unknown_scatterers):
         """
-        TODO checks on inputs.
+        Calculates the partial derivatives of optical properties with respect
+        to microphysical variables.
+
+        solver.RTE objects in `self` are modified in place.
+
+        Parameters
+        ----------
+        unknown_scatterers : pyshdom.containers.UnknownScatterers
+            The unknown_scatterers which supply the look up tables of optical properties
+            as a function of microphysical variables and the methods that should be used
+            to calculate the derivatives.
+
+        Raises
+        ------
+        TypeError
+            If `unknown_scatterers` is not of the correct type.
         """
+        if not isinstance(unknown_scatterers, UnknownScatterers):
+            raise TypeError(
+                "`unknown_scatterers` should be of type 'pyshdom.containers.UnknownScatterers'"
+                " not '{}'".format(type(unknown_scatterers))
+                )
         for key in self:
-            self[key].calculate_microphysical_partial_derivatives(table_to_grid_method, table_data[key])
+            self[key].calculate_microphysical_partial_derivatives(
+                unknown_scatterers.table_to_grid_method,
+                unknown_scatterers.table_data[key]
+                )
 
 class UnknownScatterers(OrderedDict):
     """
-    TODO
+    Holds the information about which microphysical or optical
+    variables to calculate derivatives for and the data and methods
+    to use.
+
+    See Also
+    --------
+    pyshdom.solver.RTE.calculate_microphysical_partial_derivatives
+    pyshdom.medium.table_to_grid
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        #currently only this slight adaptation of pyshdom.medium.table_to_grid is possible.
+        #The API must be updated to accomodate more flexibility if more
+        #methods become avaialble.
         def regular_grid(scatterer, table_data):
             return pyshdom.medium.table_to_grid(scatterer, table_data, inverse_mode=True)
 
@@ -571,7 +759,31 @@ class UnknownScatterers(OrderedDict):
 
     def add_unknown(self, scatterer_name, variable_name_list, table_data):
         """
-        TODO
+        Adds the variable names to calculate derivatives for each scatterer in an
+        solver.RTE object and the correct table of optical properties as a function
+        of microphysics to use for calculating derivatives.
+
+        Parameters
+        ----------
+        scatterer_name : str
+            The name of the entry in a solver.RTE.medium to calculate derivatives
+            for (e.g. 'cloud' or 'aerosol')
+        variable_name_list : List
+            List of strings of microphysical names or optical property names to
+            calculate derivatives for.
+            Valid optical variables may be 'extinction', 'ssalb', 'legendre_x_y'
+            where x is the stokes index from 1-6 and y is the legendre_index.
+            Valid microphysical names must be in `table_data.`
+            There are also a few special names e.g. 'reff_no_ext' or 'reff_phase_only'.
+            To add other special cases you will need to modify self.create_derivative_tables.
+        table_data : OrderedDict
+            Each key is a solver key, e.g. a float wavelength. Each entry is a table
+            of optical properties as a function of microphysical properties.
+            See the output of pyshdom.mie.get_poly_table(size_distribution, mie_mono_table).
+
+        See Also
+        --------
+        pyshdom.solver.RTE.calculate_microphysical_partial_derivatives
         """
         if self._table_to_grid_method.__name__ == 'regular_grid':
             self[scatterer_name] = {'variable_name_list': np.atleast_1d(variable_name_list),
@@ -581,12 +793,83 @@ class UnknownScatterers(OrderedDict):
 
     def create_derivative_tables(self):
         """
-        TODO
+        Prepares the derivative look-up-tables for the specified unknowns
+        (see self.add_unknown).
+        Should be called once all unknowns have been added.
+
+        See Also
+        --------
+        pyshdom.solver.RTE.calculate_microphysical_partial_derivatives
         """
+        #for legacy reasons, rearrange the information in `self` into this format.
         inputs = [(scatterer_name, self[scatterer_name]['table_data_input'],
                    self[scatterer_name]['variable_name_list'])
                   for scatterer_name in self]
-        self.table_data = pyshdom.gradient.create_derivative_tables(inputs)
+
+        partial_derivative_tables = OrderedDict()
+        for key in inputs[0][1].keys(): #keys are the wavelengths in the poly tables.
+            partial_derivative_dict = OrderedDict()
+            for unknown_scatterer, tables, variable_names in inputs:
+                table = tables[key]
+                variable_names = np.atleast_1d(variable_names)
+                #For each unknown_scatterer compute the tables of derivatives
+                valid_microphysics_coords = {name:table[name] for name in table.coords if name not in ('table_index', 'stokes_index')}
+                derivatives_tables = OrderedDict()
+                for variable_name in variable_names:
+
+                    if variable_name in valid_microphysics_coords.keys():
+                        differentiated = table.differentiate(coord=variable_name)
+
+                    elif variable_name == 'reff_phase_only':
+                        differentiated = table.differentiate(coord='reff')
+                        differentiated['extinction'][:] = np.zeros(table.extinction.shape)
+                        differentiated['ssalb'][:] = np.zeros(table.ssalb.shape)
+                    elif variable_name == 'veff_phase_only':
+                        differentiated = table.differentiate(coord='veff')
+                        differentiated['extinction'][:] = np.zeros(table.extinction.shape)
+                        differentiated['ssalb'][:] = np.zeros(table.ssalb.shape)
+                    elif variable_name == 'reff_no_ext':
+                        differentiated = table.differentiate(coord='reff')
+                        differentiated['extinction'][:] = np.zeros(table.extinction.shape)
+                    elif variable_name == 'veff_no_ext':
+                        differentiated = table.differentiate(coord='veff')
+                        differentiated['extinction'][:] = np.zeros(table.extinction.shape)
+                    elif variable_name == 'extinction':
+                        differentiated = table.copy(data={
+                            'extinction': np.ones(table.extinction.shape),
+                            'legcoef': np.zeros(table.legcoef.shape),
+                            'ssalb': np.zeros(table.ssalb.shape)
+                        })
+                    elif variable_name == 'ssalb':
+                        differentiated = table.copy(data={
+                            'extinction': np.zeros(table.extinction.shape),
+                            'legcoef': np.zeros(table.legcoef.shape),
+                            'ssalb': np.ones(table.ssalb.shape)
+                        })
+                    elif 'legendre_' in variable_name:
+                        leg_index = int(variable_name[len('legendre_X_'):])
+                        stokes_index = int(variable_name[len('legendre_')])
+                        legcoef = np.zeros(table.legcoef.shape)
+                        legcoef[stokes_index, leg_index, ...] = 1.0
+                        differentiated = table.copy(data={
+                            'extinction': np.zeros(table.extinction.shape),
+                            'legcoef': legcoef,
+                            'ssalb': np.zeros(table.ssalb.shape)
+                        })
+                    elif variable_name == 'density':
+                        differentiated = table.copy(data={
+                            'extinction': table.extinction,
+                            'legcoef': np.zeros(table.legcoef.shape),
+                            'ssalb': np.zeros(table.ssalb.shape)
+                        })
+                    else:
+                        raise ValueError('Invalid unknown scatterer name', variable_name)
+
+                    derivatives_tables[variable_name] = differentiated
+                partial_derivative_dict[unknown_scatterer] = derivatives_tables
+            partial_derivative_tables[key] = partial_derivative_dict
+
+        self.table_data = partial_derivative_tables
 
     @property
     def table_to_grid_method(self):

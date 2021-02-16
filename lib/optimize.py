@@ -1,3 +1,8 @@
+"""
+Defines the high level abstract objects for handling solving
+the inverse problem including.
+"""
+
 import scipy.optimize
 import numpy as np
 import time
@@ -6,7 +11,19 @@ import pyshdom.gradient
 
 class ObjectiveFunction:
     """
-    TODO
+    Specifies the type of data misfit term to use in the cost function
+    in the optimization and concurrently the linearization of that term.
+
+    Parameters
+    ----------
+    measurements : pyshdom.containers.SensorsDict
+        The observations that constrain the optimization problem.
+    loss_fn : callable
+        The function which evaluates the data misfit term when supplied with
+        a state and `measurements`
+    min_bounds :
+
+    max_bounds :
     """
     def __init__(self, measurements, loss_fn, min_bounds=None, max_bounds=None):
         self.measurements = measurements
@@ -20,28 +37,94 @@ class ObjectiveFunction:
         self._loss = loss
         return loss, gradient
 
+    # @classmethod
+    # def Flexible(cls, measurements, gradient_fn, set_state_fn, project_gradient_to_state_fn,
+    #                 min_bounds=None, max_bounds=None):
+    #
+    #     def loss_function(state, measurements):
+    #         set_state_fn(state)
+    #         loss, gradient, _ = gradient_fn(measurements)
+    #         state_gradient = project_gradient_to_state_fn(state, gradient)
+    #         return loss, state_gradient
+    #
+    #     return cls(measurements, loss_function, min_bounds=min_bounds,
+    #                 max_bounds=max_bounds)
+
+    #
     @classmethod
     def LevisApproxUncorrelatedL2(cls, measurements, solvers, forward_sensors, unknown_scatterers, set_state_fn,
-                                  project_gradient_to_state, n_jobs=1, mpi_comm=None, verbose=True,
-                                  maxiter=100, init_solution=True, exact_single_scatter=True,
+                                  project_gradient_to_state, parallel_solve_kwargs={'n_jobs': 1, 'mpi_comm':None,
+                                  'verbose':True, 'maxiter':100, 'init_solution':True},
+                                  gradient_kwargs={'cost_function': 'L2', 'exact_single_scatter':True},
                                   min_bounds=None, max_bounds=None):
         """
-        NB The passed set_state_fn must be defined using the
-        solvers/unknown_scatterers defined at the script level.
+        Use the Levis approximation to the linearization of an least squares cost function.
+        Only error covariances between Stokes components for the same pixel are supported.
+
+        This is just a thin wrapper around pyshdom.gradient.levis_approx_uncorrelated_l2
+        that shows how to define an `ObjectiveFunction` object.
+
+        Parameters
+        ----------
+        cls : pyshdom.optimize.ObjectiveFunction
+            This method will generate a special case of this class.
+        measurements : pyshdom.containers.SensorsDict
+            Contains the observations that constrain the optimization problem.
+        solvers : pyshdom.containers.SolversDict
+            Contains the solver.RTE objects that will be used to evaluate the
+            data misfit term.
+        forward_sensors : pyshdom.containers.SensorsDict
+            The object that will store the evaluation of the Forward model
+            (solver.RTE) at each iteration. This should be consistent with
+            `measurements`
+        unknown_scatterers : pyshdom.containers.UnknownScatterers
+            The object which defines which unknowns to calculate derivatives
+            for that are then used in the evaluation of the state gradient
+            (see project_gradient_to_state). Also holds the method and data
+            for evaluating the microphysical derivatives with respect to the
+            unknowns.
+        set_state_fn : callable
+            A function which takes the state as input and updates the `solvers`
+            so that they reflect the value of the state vector and
+            `solvers`.parallel_solve is ready to be called. This function
+            is typically defined at the script level.
+        project_gradient_to_state : callable
+            A function which evaluates the gradient for the abstract state vector
+            using the gridded gradient output
+            (see pyshdom.gradient.levis_approx_uncorrelated_l2) and the state
+            vector.
+        min_bounds : TODO
+
+        max_bounds : TODO
+
+        Returns
+        -------
+        An instance of ObjectiveFunction.
+
+        Notes
+        -----
+        The callables `set_state_fn` and `project_gradient_to_state`
+        must be defined consistently, this is almost certainly the easiest
+        source of error in the setup of an optimization.
         """
+        gradient_fun = pyshdom.gradient.LevisApproxGradientUncorrelated(
+            solvers, forward_sensors, unknown_scatterers, parallel_solve_kwargs,
+            gradient_kwargs
+            )
         def loss_function(state, measurements):
 
             set_state_fn(state)
-            loss, gradient = pyshdom.gradient.levis_approx_uncorrelated_l2(measurements,
-                                                                         solvers,
-                                                                         forward_sensors,
-                                                                         unknown_scatterers,
-                                                                         n_jobs=n_jobs,
-                                                                         mpi_comm=mpi_comm,
-                                                                         verbose=verbose,
-                                                                         maxiter=maxiter,
-                                                                         init_solution=init_solution,
-                                                                         exact_single_scatter=exact_single_scatter)
+            loss, gradient, _ = gradient_fun(measurements)
+            # loss, gradient = pyshdom.gradient.levis_approx_uncorrelated_l2(measurements,
+            #                                                              solvers,
+            #                                                              forward_sensors,
+            #                                                              unknown_scatterers,
+            #                                                              n_jobs=n_jobs,
+            #                                                              mpi_comm=mpi_comm,
+            #                                                              verbose=verbose,
+            #                                                              maxiter=maxiter,
+            #                                                              init_solution=init_solution,
+            #                                                              exact_single_scatter=exact_single_scatter)
             state_gradient = project_gradient_to_state(state, gradient)
             return loss, state_gradient
 
@@ -57,7 +140,6 @@ class ObjectiveFunction:
 
 class PriorFunction:
     """
-    TODO
     """
     def __init__(self, prior_fn, scale=1.0):
         self._prior_fn = prior_fn
