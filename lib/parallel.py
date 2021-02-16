@@ -110,12 +110,6 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
         forward_sensors.add_measurements_inverse(sensor_mappings, forward_model_output, keys)
 
     return loss, gradient, other_output
-    # #special treatment of jacobian out.
-    # if gradient_fun == pyshdom.gradient.jacobian:
-    #     jacobian_list = [i[-1] for i in out]
-    #     return loss, gradient, jacobian_list
-    # else:
-    #     return loss, gradient
 
 def subdivide_raytrace_jobs(rte_sensors, n_jobs, job_factor=1):
     """

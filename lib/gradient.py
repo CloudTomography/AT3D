@@ -6,6 +6,8 @@ import inspect
 import copy
 import pandas as pd
 
+import warnings
+
 import pyshdom.core
 import pyshdom.util
 import pyshdom.parallel
@@ -13,9 +15,9 @@ import pyshdom.parallel
 class LevisApproxGradient:
     """
     A base class for different cost function evaluations that does
-    the mechanical part of preparing the gradient.
+    the mechanical part of preparing the gradient and the
+    inverse error covariance matrix.
     """
-
     def __init__(self, measurements, solvers, forward_sensors,
                  unknown_scatterers, parallel_solve_kwargs, gradient_kwargs,
                  uncertainty_kwargs):
@@ -92,8 +94,10 @@ class LevisApproxGradientUncorrelated(LevisApproxGradient):
     """
     def __call__(self, measurements):
 
-        loss, gradient, other_outputs = self._prep_gradient(measurements)
-        #uncorrelated among wavelengths.
+        loss, gradient, other_outputs = self._prep_gradient()
+        #uncorrelated among the output of all (possibly parallel) workers.
+        #if wanting to impose error correlations between wavelengths etc
+        #then make a new class with a modified __call__ method.
         loss = np.sum(loss) / self.forward_sensors.nmeasurements
         gradient = np.sum(gradient, axis=-1) / self.forward_sensors.nmeasurements
         #turn gradient into a gridded dataset for use in project_gradient_to_state

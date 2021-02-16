@@ -1,12 +1,48 @@
 """
-TODO module docstring
+This module contains objects which form and describe the inverse error
+covariance matrix used in the inverse problem for weighting data misfits.
+The choice of uncertainty is closely tied to the choice of cost function
+(ie what misfits are being calculated.). See UPDATE_COSTFUNCTION in shdomsub4.f
+for implemented cost functions and how theuncertainty values are used.
+Uncertainties are currently independent per pixel but error correlations
+between Stokes quantities are allowed for a given pixel.
+
+New uncertainty objects should have a `calculate_uncertainties` and `add_noise`
+method and inherit from the base class `Uncertainty`. If new cost functions are
+implemented they should be added as valid cases to `Uncertainty`.
 """
 import warnings
 import numpy as np
 
-class Uncertainty:
+import pyshdom.checks
 
+class Uncertainty:
+    """
+    A base class for uncertainty models. A simple additive gaussian noise model
+    which sets the template for these objects.
+
+    Parameters
+    ----------
+    inverse_covariance : np.ndarray
+        The inverse covariance matrix of errors between stokes components (I, Q, U, V).
+        Should be square (ndim=2) and should have a shape consistent with
+        `cost_function`.
+    cost_function : str
+        The two character string that picks the cost function. This is passed to
+        solver.RTE.levisapprox_gradient() and used in UPDATE_COSTFUNCTION
+        in src/shdomsub4.f. Valid values are hardcoded to be restricted here to
+        ('L2', 'LL').
+
+    Raises
+    ------
+    NotImplementedError
+        If an invalid `cost_function` is supplied.
+    ValueError
+        If the shape of inverse_covariance is not consistent with the cost
+        function.
+    """
     def __init__(self, inverse_covariance, cost_function):
+
 
         self._valid_cost_functions = ('L2', 'LL')
         if not cost_function in self._valid_cost_functions:
@@ -30,13 +66,23 @@ class Uncertainty:
         self._inverse_covariance = inverse_covariance
         try:
             self._covariance = np.linalg.inv(self.inverse_covariance)
-        except np.linalg.LinAlgError as err:
+        except np.linalg.LinAlgError:
             warnings.warn("`inverse_covariance` of errors in uninvertible."
                           "It cannot be used to generate noise and will "
                           "cause an exception to be raised if attempted.")
             self._covariance = None
 
     def calculate_uncertainties(self, sensor):
+        """Replicates the inverse error-covariance matrix for all pixels and
+        updates the sensor.
+
+        Parameters
+        ----------
+        sensor : xr.Dataset
+            A valid sensor containing Stokes components at specific locations
+            and directions. See sensor.py for details.
+        """
+        pyshdom.checks.check_sensor(sensor)
         #NB Be aware that repeated dims cause errors so the second dim is set to
         #'num_uncertainty2' even though they are identical.
         #Issue 1378 on xarray.
@@ -46,7 +92,23 @@ class Uncertainty:
                 )
 
     def add_noise(self, sensor):
+        """Calculates additive perturbations to the sensor's Stokes Components
+        that are drawn from the error co-variance matrix.
 
+        Parameters
+        ----------
+        sensor : xr.Dataset
+            A valid sensor containing Stokes components at specific locations
+            and directions. See sensor.py for details.
+
+        Raises
+        ------
+        ValueError
+            If there is no valid error-covariance matrix.
+        KeyError
+            If some of the required observables are not available.
+
+        """
         if self._covariance is None:
             raise ValueError("Noise cannot be generated as `inverse_covariance`"
              " was not invertible.")
@@ -54,15 +116,15 @@ class Uncertainty:
         perturbations = np.random.multivariate_normal(
             mean=np.zeros(self.num_uncertainty), cov=self._covariance, size=(sensor.sizes['npixels'])
             )
-        if 'I' in sensor.data_vars:
-            sensor['I'][:] += perturbations[0]
-        else:
-            raise KeyError("Radiance 'I' is not found in sensor."
-            " Cannot generate noise on measurements that do not exist.")
-        if 'Q' in sensor.data_vars:
-            sensor['Q'][:] += perturbations[1]
-        if 'U' in sensor.data_vars:
-            sensor['U'][:] += perturbations[2]
+        pyshdom.checks.check_sensor(sensor)
+        for i, has_stokes in enumerate(sensor.stokes.data):
+            if has_stokes and (not sensor.stokes_index[i].data in sensor.data_vars):
+                raise KeyError(
+                    "Stokes component '{}' is not found in sensor even though it is an "
+                    "observable. Noise perturbations for this observable cannot be generated.".format(
+                    sensor.stokes_index[i].data
+                    ))
+            sensor[str(sensor.stokes_index[i].data)][:] += perturbations[i]
 
     @property
     def inverse_covariance(self):
@@ -78,7 +140,19 @@ class Uncertainty:
         return self._valid_cost_functions
 
 class NullUncertainty(Uncertainty):
+    """
+    An equal weighting uncertainty model that is applied if none is supplied
+    to ensure that a valid inverse error co-variance matrix is passed to
+    solver.RTE.levisapprox_gradient.
 
+    A diagonal matrix of the correct shape is generated to match the cost function
+    that is going to be used.
+
+    Parameters
+    ----------
+    cost_function : str
+        The cost function that the gradient is set to use.
+    """
     def __init__(self, cost_function):
         if cost_function == 'L2':
             inverse_covariance = np.diagonal(np.ones(4))
@@ -93,6 +167,10 @@ class NullUncertainty(Uncertainty):
         )
 
 class DoLPUncertainty(Uncertainty):
+    """
+    An unfinished Uncertainty class for the 'LL' cost function which uses
+    DoLP as an observable rather than Q and U.
+    """
     def __init__(self, dolp_abs_uncertainty, radiance_relative_uncertainty):
         inverse_covariance = np.diag(
             np.array([1.0/radiance_relative_uncertainty, 1.0/dolp_abs_uncertainty])

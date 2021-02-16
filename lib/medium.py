@@ -34,7 +34,7 @@ def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=Fals
         linear if False, and nearest if True.
     inverse_mode : bool
         A flag for whether optical properties or their derivatives with respect
-        to microphysical properties are being calculated.
+        to microphysical properties are being interpolated.
         The only difference is that extinction_efficiency passed instead of
         extinction.
 

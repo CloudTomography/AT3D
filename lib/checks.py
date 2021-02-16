@@ -258,7 +258,7 @@ def check_sensor(dataset):
             If the cosine of viewing zenith are not in the range [-1.0 , 1.0] or
             the viewing azimuth angles are not in the range [-pi, pi]
         TypeError
-            If the 'stokes'/'use_subpixel_rays' varaibles are not of boolean type.
+            If the 'stokes'/'use_subpixel_rays' variables are not of boolean type.
     """
     check_hasdim(dataset, ray_mu='nrays', ray_phi='nrays', ray_x='nrays',
                  ray_y='nrays', ray_z='nrays', cam_mu='npixels', cam_phi='npixels',

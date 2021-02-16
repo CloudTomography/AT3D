@@ -3,9 +3,9 @@ Defines the high level abstract objects for handling solving
 the inverse problem including.
 """
 
+import time
 import scipy.optimize
 import numpy as np
-import time
 
 import pyshdom.gradient
 
