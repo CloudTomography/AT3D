@@ -1,3 +1,9 @@
+C     This file contains fortran subroutines that have been modified from
+C     original SHDOM as well as original subroutines that have only
+C     received f2py tags.
+C     New subroutines include INIT_SOLUTION, SOLUTION_ITERATIONS
+
+
       SUBROUTINE TRANSFER_PA_TO_GRID (ML, MM, MAXIG, NLEG, NUMPHASE,
      .             DELTAM, SRCTYPE, UNITS, WAVENO, WAVELEN,
      .             TEMP, PLANCK, EXTINCT, ALBEDO, LEGEN, IPHASE,

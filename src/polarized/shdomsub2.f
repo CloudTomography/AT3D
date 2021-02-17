@@ -1,3 +1,7 @@
+C     This file contains original subroutines from SHDOM with the only
+C     modification being the addition of f2py wrapping.
+C      -JRLoveridge 2021/02/17
+
 
       SUBROUTINE NEW_GRIDS (BCFLAG, GRIDTYPE, NPX,NPY,NPZ, NX, NY, NZ,
      .                      XSTART, YSTART, DELXP, DELYP, ZLEVELS,

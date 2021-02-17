@@ -1,3 +1,11 @@
+C     This file contains original fortran subroutines for SHDOM.
+C     The subroutines in this file are largely for I/O and none
+C     of them are directly used in pyshdom. The routines here are
+C     only modified with f2py tags in some cases.
+C      A modified version of READ_SURFACE called PREP_SURFACE
+C     (located in in src/surface.f) IS used.
+C      -JRLoveridge 2021/02/17
+
       SUBROUTINE NAMELIST_INPUT
      .               (dRUNNAME, dPROPFILE, dSFCFILE, dCKDFILE,
      .                dINSAVEFILE, dOUTSAVEFILE,
