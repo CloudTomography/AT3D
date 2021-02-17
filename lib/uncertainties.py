@@ -43,7 +43,6 @@ class Uncertainty:
     """
     def __init__(self, inverse_covariance, cost_function):
 
-
         self._valid_cost_functions = ('L2', 'LL')
         if not cost_function in self._valid_cost_functions:
             raise NotImplementedError("`cost_function` '{}' is not supported for "
@@ -56,7 +55,7 @@ class Uncertainty:
         elif self.cost_function == 'LL':
             self._num_uncertainty = 2
 
-        if not (inverse_covariance.shape[0] == inverse_covariance.shape[1]) == self._num_uncertainty:
+        if not inverse_covariance.shape[0] == inverse_covariance.shape[1] == self._num_uncertainty:
             raise ValueError(
                 "`inverse_covariance` should be of shape=({0}, {0}) for `cost_function`"
                 " '{1}''".format(
@@ -136,7 +135,7 @@ class Uncertainty:
     def num_uncertainty(self):
         return self._num_uncertainty
     @property
-    def _valid_cost_functions(self):
+    def valid_cost_functions(self):
         return self._valid_cost_functions
 
 class NullUncertainty(Uncertainty):
@@ -155,9 +154,9 @@ class NullUncertainty(Uncertainty):
     """
     def __init__(self, cost_function):
         if cost_function == 'L2':
-            inverse_covariance = np.diagonal(np.ones(4))
+            inverse_covariance = np.diag(np.ones(4))
         elif cost_function == 'LL':
-            inverse_covariance = np.diagonal(np.ones(2))
+            inverse_covariance = np.diag(np.ones(2))
         super().__init__(inverse_covariance, cost_function)
 
     def add_noise(self, sensor):

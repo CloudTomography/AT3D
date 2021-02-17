@@ -222,20 +222,22 @@ class Verify_Jacobian(TestCase):
                                 name=None
                                 )
 
-            solvers.add_solver(wavelength,solver)
+            solvers.add_solver(wavelength, solver)
         Sensordict.get_measurements(solvers, maxiter=100, n_jobs=8, verbose=False)
 
         unknown_scatterers = pyshdom.containers.UnknownScatterers()
-        unknown_scatterers.add_unknown('cloud', ['extinction'],cloud_poly_tables)
+        unknown_scatterers.add_unknown('cloud', ['extinction'], cloud_poly_tables)
         unknown_scatterers.create_derivative_tables()
         solvers.add_microphysical_partial_derivatives(unknown_scatterers)
 
         forward_sensors = Sensordict.make_forward_sensors()
 
-        out,gradient,jacobian_exact = pyshdom.gradient.levis_approx_jacobian(Sensordict, solvers, forward_sensors, unknown_scatterers,
-                    ([1],[1],[1]), n_jobs=8,mpi_comm=None,verbose=False,
-                    maxiter=100, init_solution=False, setup_grid=False,
-                    exact_single_scatter=True)
+        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        solvers, forward_sensors, unknown_scatterers,
+        parallel_solve_kwargs={'n_jobs':4, 'maxiter': 100, 'setup_grid':True, 'verbose':False},
+        gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
+        'indices_for_jacobian': ([1],[1],[1])}, uncertainty_kwargs={'add_noise': False})
+        out, gradient, jacobian_exact = gradient_call()
 
         cls.jacobian_exact = jacobian_exact
 

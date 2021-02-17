@@ -599,7 +599,8 @@ C          ENDIF
       END
 
 
-      SUBROUTINE LEVISAPPROX_GRADIENT(NSTOKES, NX, NY, NZ, NPTS, NBPTS, NCELLS,
+      SUBROUTINE LEVISAPPROX_GRADIENT(NSTOKES, NX, NY, NZ, NPTS,
+     .           NCELLS,NBPTS,
      .           NBCELLS, ML, MM, NCS, NLM, NSTLEG, NLEG, NUMPHASE,
      .           NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .           BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, SOLARAZ,
@@ -629,7 +630,8 @@ Cf2py intent(in) :: NCOST, NGRAD
 Cf2py intent(in) ::  EXACT_SINGLE_SCATTER
       INTEGER NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS
       INTEGER NBPTS, NCELLS, NBCELLS
-Cf2py intent(in) :: NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS, NBPTS, NBCELLS
+Cf2py intent(in) :: NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG,
+Cf2py intent(in) :: NPTS, NCELLS, NBPTS, NBCELLS
       INTEGER NPX, NPY, NPZ
       REAL    DELX, DELY, XSTART, YSTART
       REAL    ZLEVELS(*)
@@ -809,18 +811,18 @@ C         to calculate the Stokes radiance vector for this pixel
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER, DIPHASEIND, PLANCK)
   900     CONTINUE
-
-          STOKESOUT(:,IPIX) = STOKESOUT(:,IPIX) + VISRAD(:)*
-     .      RAY_WEIGHTS(IRAY)*STOKES_WEIGHTS(:,IPIX)
-          RAYGRAD_PIXEL(:,:,:) = RAYGRAD_PIXEL(:,:,:) +
-     .      RAYGRAD(:,:,:)*RAY_WEIGHTS(IRAY)*STOKES_WEIGHTS(:,IPIX)
+          DO NS=1,NSTOKES
+            STOKESOUT(NS,IPIX) = STOKESOUT(NS,IPIX) + VISRAD(NS)*
+     .        RAY_WEIGHTS(IRAY)*STOKES_WEIGHTS(NS,IPIX)
+            RAYGRAD_PIXEL(NS,:,:) = RAYGRAD_PIXEL(NS,:,:) +
+     .        RAYGRAD(NS,:,:)*RAY_WEIGHTS(IRAY)*STOKES_WEIGHTS(NS,IPIX)
+          ENDDO
         ENDDO
 
         CALL UPDATE_COSTFUNCTION(STOKESOUT(:,IPIX), RAYGRAD_PIXEL,
      .             GRADOUT, COST, UNCERTAINTIES(:,:,IPIX), COSTFUNC,
      .             NSTOKES, NBPTS, NUMDER, NCOST, NGRAD,
-     .             MEASUREMENTS(:,IPIX), STOKES_WEIGHTS(:,IPIX),
-     .             NUNCERTAINTY)
+     .             MEASUREMENTS(:,IPIX), NUNCERTAINTY)
 
         IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
           DO JI = 1,NUM_JACOBIAN_PTS
@@ -886,28 +888,32 @@ C      END
       SUBROUTINE UPDATE_COSTFUNCTION (STOKESOUT, RAYGRAD_PIXEL,
      .             GRADOUT,COST, UNCERTAINTIES, COSTFUNC, NSTOKES,
      .             NBPTS, NUMDER, NCOST, NGRAD, MEASUREMENT,
-     .              STOKES_WEIGHTS, NUNCERTAINTY)
+     .             NUNCERTAINTY)
 
       CHARACTER*2 COSTFUNC
+Cf2py intent(in) :: COSTFUNC
       INTEGER NBPTS, NUMDER, NSTOKES, NGRAD, NCOST
       INTEGER NUNCERTAINTIY
       DOUBLE PRECISION COST(NCOST), GRADOUT(NBPTS,NUMDER,NGRAD)
+Cf2py intent(in,out) :: COST, GRADOUT
       DOUBLE PRECISION RAYGRAD_PIXEL(NSTOKES,NBPTS,NUMDER)
+Cf2py intent(in) :: RAYGRAD_PIXEL
       DOUBLE PRECISION STOKESOUT(NSTOKES), MEASUREMENT(NSTOKES)
+Cf2py intent(in) :: STOKESOUT, MEASUREMENT
       DOUBLE PRECISION UNCERTAINTIES(NUNCERTAINTY,NUNCERTAINTY)
+Cf2py intetn(in) :: UNCERTAINTIES
       DOUBLE PRECISION PIXEL_ERROR
-      DOUBLE PRECISION STOKES_WEIGHTS(NS)
 
-      INTEGER I,J
+      INTEGER I, J
 
       IF (COSTFUNC .EQ. 'L2') THEN
 C       A 'naive' weighted least squares on each of the stokes components.
         DO I=1,NSTOKES
           PIXEL_ERROR = STOKESOUT(I) - MEASUREMENT(I)
           DO J=1,NSTOKES
-            COST(1) = COST(1) + 0.5D0 +
+            COST(1) = COST(1) + 0.5D0*
      .        UNCERTAINTIES(I,J) * PIXEL_ERROR**2
-            GRADOUT(:,:,1) = GRADOUT(:,:,1) + UNCERTAINTIES(I,J) *
+            GRADOUT(:,:,1) = GRADOUT(:,:,1) + UNCERTAINTIES(I,J)*
      .        PIXEL_ERROR*RAYGRAD_PIXEL(I,:,:)
            ENDDO
          ENDDO
@@ -930,7 +936,7 @@ C       e.g. Dubovik et al. 2011 https://doi.org/10.5194/amt-4-975-2011.
      .      MEASUREMENT(1)
           DOLPERR = LOG(DOLP1) - LOG(DOLP2)
           COST(1) = COST(1) + 0.5D0 *(DOLPERR*
-            UNCERTAINTIES(2,2))
+     .      UNCERTAINTIES(2,2))
           GRADOUT(:,:,1) = GRADOUT(:,:,1) + DOLPERR*
      .      UNCERTAINTIES(2,2)/(STOKESOUT(1)*DOLP1)*
      .      (STOKESOUT(2)*RAYGRAD_PIXEL(2,:,:) +
@@ -1042,8 +1048,8 @@ C     5=-Z,6=+Z).
 
 
 C         TRANSCUT is the transmission to stop the integration at
-      TRANSCUT = 0.0D0
-C5.0E-5
+      TRANSCUT = 5.0E-5
+C0.0D0
 C         TAUTOL is the maximum optical path for the subgrid intervals
       TAUTOL = 0.2
 

@@ -1,15 +1,14 @@
-import numpy as np
-import xarray as xr
-from collections import OrderedDict
-from joblib import Parallel, delayed
-import inspect
+"""
+Contains the
+"""
 import copy
-import pandas as pd
-
 import warnings
 
+import numpy as np
+import xarray as xr
+import pandas as pd
+
 import pyshdom.core
-import pyshdom.util
 import pyshdom.parallel
 
 class LevisApproxGradient:
@@ -36,10 +35,10 @@ class LevisApproxGradient:
             if instrument['uncertainty_model'] is None:
                 warnings.warn(
                     "No uncertainty model supplied for instrument '{}'. "
-                    "Using pyshdom.uncertainties.NullNoise.".format(name))
+                    "Using pyshdom.uncertainties.NullUncertainty.".format(name))
                 self.measurements.add_uncertainty_model(
                     name,
-                    pyshdom.uncertainties.NullNoise(self.gradient_kwargs['cost_function'])
+                    pyshdom.uncertainties.NullUncertainty(self.gradient_kwargs['cost_function'])
                     )
             if instrument['uncertainty_model'].cost_function != self.gradient_kwargs['cost_function']:
                 raise ValueError(
@@ -73,12 +72,232 @@ class LevisApproxGradient:
             )
         self._rte_sensors = rte_sensors
         self._sensor_mapping = sensor_mapping
+        mpi_comm = self.parallel_solve_kwargs['mpi_comm'] if 'mpi_comm' in self.parallel_solve_kwargs else None
+        n_jobs = self.parallel_solve_kwargs['n_jobs'] if 'n_jobs' in self.parallel_solve_kwargs else None
+
+        #The treatment of the gradient_kwargs is quite clumsy here as they are known in self
+        #but are sent, instead of redefining gradient_fun to be self.levis_approximation_grad
+        #WITH the kwargs set.
         outputs = pyshdom.parallel.parallel_gradient(
             self.solvers, rte_sensors, sensor_mapping, self.forward_sensors,
-            mpi_comm=self.parallel_solve_kwargs['mpi_comm'],
-            n_jobs=self.parallel_solve_kwargs['n_jobs'], **self.gradient_kwargs
+            gradient_fun=self.levis_approximation_grad,
+            mpi_comm=mpi_comm,
+            n_jobs=n_jobs, **self.gradient_kwargs
             )
         return outputs
+
+    def levis_approximation_grad(self, rte_solver, sensor, cost_function='L2', indices_for_jacobian=None,
+                                 exact_single_scatter=True):
+        """
+        The core l2 gradient method.
+
+        Parameters
+        ----------
+        rte_solver : pyshdom.solver.RTE
+            Should be solved, so that this it holds a solution to an RTE.
+        sensor : xr.Dataset
+            A sensor which should contain pixel-level uncertainties and measurement data
+            as well as the ray & pixel geometry for calculating the forward model
+            pixel values for evaluation of the cost function and its gradient.
+        Returns
+        -------
+        loss: float64
+            The value of the cost function accumulated over all pixels.
+        gradient: np.array(shape=(rte_solver._nbpts, rte_solver.num_derivatives), dtype=np.float64)
+            The gradient with respect to all parameters at every grid base point
+        integrated_rays : xr.Dataset
+            The forward model output used to evaluate the cost function against
+            the measurements.
+        """
+        #This function could also be a method of solver.RTE just like
+        #calculate_microphysical_partial_derivatives and calculate_direct_beam_derivative.
+        #both of which are preparatory for the inverse problem.
+        #However, this function doesn't modify the solver in place.
+        #It is expected that if the API for pyshdom.core.levisapprox_gradient
+        #changes it will be todo with cost function / etc changes rather than changes
+        #in how solver.RTE is defined so we are happy accessing all of the 'private'
+        #variables of solver.RTE here.
+        if not isinstance(rte_solver, pyshdom.solver.RTE):
+            raise TypeError(
+                "`rte_solver` must be of type pyshdom.solver.RTE for this gradient"
+                "calculation. "
+            )
+
+        if not isinstance(sensor, xr.Dataset):
+            raise TypeError("`sensor` should be an xr.Dataset not "
+                            "of type '{}''".format(type(sensor)))
+        pyshdom.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
+                                    ray_x='nrays', ray_y='nrays', ray_z='nrays',
+                                    stokes='stokes_index')
+
+        #Update this code here if new cost functions are implemented in
+        #src/shdomsub4.f UPDATE_COSTFUNCTION that require a larger number of scalar
+        #or vector quantities (e.g. normalized cross correlation.)
+        if cost_function in ('L2', 'LL'):
+            cost_size = 1
+            gradient_size = 1
+        else:
+            raise NotImplementedError("`cost_function` '{}' is not valid.".format(cost_function))
+
+        camx = sensor['ray_x'].data
+        camy = sensor['ray_y'].data
+        camz = sensor['ray_z'].data
+        cammu = sensor['ray_mu'].data
+        camphi = sensor['ray_phi'].data
+
+        total_pix = sensor.sizes['npixels']
+        measurement_data = sensor['measurement_data'].data
+        stokes_weights = sensor['stokes_weights'].data
+        ray_weights = sensor['ray_weight'].data
+        rays_per_pixel = sensor['rays_per_pixel'].data
+        uncertainties = sensor['uncertainties'].data
+        num_uncertainty = sensor['num_uncertainty'].size
+
+        if indices_for_jacobian is None:
+            jacobian = np.empty(
+                (rte_solver._nstokes, rte_solver._num_derivatives, 1, 1),
+                order='F',
+                dtype=np.float32
+            )
+            num_jacobian_pts = 1
+            jacobian_ptr = np.zeros(num_jacobian_pts)
+            jacobian_flag = False
+        else:
+            jacobian_ptr = np.ravel_multi_index(
+                (indices_for_jacobian),
+                (rte_solver._pa.npx, rte_solver._pa.npy, rte_solver._pa.npz)
+                ) + 1
+            num_jacobian_pts = np.size(jacobian_ptr)
+            jacobian = np.empty((rte_solver._nstokes, rte_solver._num_derivatives, num_jacobian_pts, total_pix), order='F', dtype=np.float32)
+            jacobian_flag = True
+
+        gradient, loss, images, jacobian = pyshdom.core.levisapprox_gradient(
+            camx=camx,
+            camy=camy,
+            camz=camz,
+            cammu=cammu,
+            camphi=camphi,
+            npix=total_pix,
+            costfunc=cost_function,
+            ncost=cost_size,
+            ngrad=gradient_size,
+            nuncertainty=num_uncertainty,
+            uncertainties=uncertainties,
+            rays_per_pixel=rays_per_pixel,
+            ray_weights=ray_weights,
+            stokes_weights=stokes_weights,
+            exact_single_scatter=exact_single_scatter,
+            measurements=measurement_data,
+            jacobian=jacobian,
+            jacobianptr=jacobian_ptr,
+            num_jacobian_pts=num_jacobian_pts,
+            makejacobian=jacobian_flag,
+            diphaseind=rte_solver._diphaseind,
+            nstphase=rte_solver._nstphase,
+            dpath=rte_solver._direct_derivative_path,
+            dptr=rte_solver._direct_derivative_ptr,
+            npx=rte_solver._pa.npx,
+            npy=rte_solver._pa.npy,
+            npz=rte_solver._pa.npz,
+            delx=rte_solver._pa.delx,
+            dely=rte_solver._pa.dely,
+            xstart=rte_solver._pa.xstart,
+            ystart=rte_solver._pa.ystart,
+            zlevels=rte_solver._pa.zlevels,
+            extdirp=rte_solver._pa.extdirp,
+            uniformzlev=rte_solver._uniformzlev,
+            partder=rte_solver._unknown_scatterer_indices,
+            numder=rte_solver._num_derivatives,
+            dext=rte_solver._dext,
+            dalb=rte_solver._dalb,
+            diphase=rte_solver._diphase,
+            dleg=rte_solver._dleg,
+            dphasetab=rte_solver._dphasetab,
+            dnumphase=rte_solver._dnumphase,
+            nscatangle=rte_solver._nscatangle,
+            phasetab=rte_solver._phasetab,
+            ylmsun=rte_solver._ylmsun,
+            nstokes=rte_solver._nstokes,
+            nstleg=rte_solver._nstleg,
+            nx=rte_solver._nx,
+            ny=rte_solver._ny,
+            nz=rte_solver._nz,
+            bcflag=rte_solver._bcflag,
+            ipflag=rte_solver._ipflag,
+            npts=rte_solver._npts,
+            nbpts=rte_solver._nbpts,
+            ncells=rte_solver._ncells,
+            nbcells=rte_solver._nbcells,
+            ml=rte_solver._ml,
+            mm=rte_solver._mm,
+            ncs=rte_solver._ncs,
+            nlm=rte_solver._nlm,
+            numphase=rte_solver._pa.numphase,
+            nmu=rte_solver._nmu,
+            nphi0max=rte_solver._nphi0max,
+            nphi0=rte_solver._nphi0,
+            maxnbc=rte_solver._maxnbc,
+            ntoppts=rte_solver._ntoppts,
+            nbotpts=rte_solver._nbotpts,
+            nsfcpar=rte_solver._nsfcpar,
+            gridptr=rte_solver._gridptr,
+            neighptr=rte_solver._neighptr,
+            treeptr=rte_solver._treeptr,
+            shptr=rte_solver._shptr,
+            bcptr=rte_solver._bcptr,
+            cellflags=rte_solver._cellflags,
+            iphase=rte_solver._iphase[:rte_solver._npts],
+            deltam=rte_solver._deltam,
+            solarflux=rte_solver._solarflux,
+            solarmu=rte_solver._solarmu,
+            solaraz=rte_solver._solaraz,
+            gndtemp=rte_solver._gndtemp,
+            gndalbedo=rte_solver._gndalbedo,
+            skyrad=rte_solver._skyrad,
+            waveno=rte_solver._waveno,
+            wavelen=rte_solver.wavelength,
+            mu=rte_solver._mu,
+            phi=rte_solver._phi,
+            wtdo=rte_solver._wtdo,
+            xgrid=rte_solver._xgrid,
+            ygrid=rte_solver._ygrid,
+            zgrid=rte_solver._zgrid,
+            gridpos=rte_solver._gridpos,
+            sfcgridparms=rte_solver._sfcgridparms,
+            bcrad=copy.deepcopy(rte_solver._bcrad),
+            extinct=rte_solver._extinct[:rte_solver._npts],
+            albedo=rte_solver._albedo[:rte_solver._npts],
+            legen=rte_solver._legen,
+            dirflux=rte_solver._dirflux[:rte_solver._npts],
+            fluxes=rte_solver._fluxes,
+            source=rte_solver._source,
+            srctype=rte_solver._srctype,
+            sfctype=rte_solver._sfctype,
+            units=rte_solver._units,
+            rshptr=rte_solver._rshptr,
+            radiance=rte_solver._radiance,
+            total_ext=rte_solver._total_ext[:rte_solver._npts],
+            planck=rte_solver._planck[:rte_solver._npts]
+        )
+
+        integrated_rays = sensor.copy(deep=True)
+        data = {}
+        if rte_solver._nstokes == 1:
+            data['I'] = (['npixels'], images[0])
+        elif rte_solver._nstokes > 1:
+            data['I'] = (['npixels'], images[0])
+            data['Q'] = (['npixels'], images[1])
+            data['U'] = (['npixels'], images[2])
+        if rte_solver._nstokes == 4:
+            data['V'] = (['npixels'], images[3])
+        for key, val in data.items():
+            integrated_rays[key] = val
+
+        if not jacobian_flag:
+            jacobian = None
+        return gradient, loss, integrated_rays, jacobian
+
+
 
     def __call__(self):
         """
@@ -91,8 +310,10 @@ class LevisApproxGradientUncorrelated(LevisApproxGradient):
     """
     LevisApproxGradient that assumes different wavelengths
     are uncorrelated.
+
+    This is the default method to use.
     """
-    def __call__(self, measurements):
+    def __call__(self):
 
         loss, gradient, other_outputs = self._prep_gradient()
         #uncorrelated among the output of all (possibly parallel) workers.
@@ -104,7 +325,7 @@ class LevisApproxGradientUncorrelated(LevisApproxGradient):
         gradient_dataset = make_gradient_dataset(gradient, self.unknown_scatterers, self.solvers)
         if other_outputs:
             jacobian_dataset = make_jacobian_dataset(
-                other_outputs, self.unknown_scatterers,
+                other_outputs[0], self.unknown_scatterers,
                 self.gradient_kwargs['indices_for_jacobian'], self.solvers, self._rte_sensors
                 )
         else:
@@ -237,80 +458,6 @@ def make_jacobian_dataset(jacobian_list, unknown_scatterers, indices_for_jacobia
                     }
     )
     return jacobian_dataset
-
-# def levis_approx_jacobian(measurements, solvers, forward_sensors, unknown_scatterers, indices_for_jacobian, n_jobs=1,mpi_comm=None,verbose=False,
-#                             maxiter=100, init_solution=True, setup_grid=True,
-#                             exact_single_scatter=True):
-#
-#     #note this division of solving and 'raytracing' is not optimal for distributed memory parallelization
-#     #where tasks take varying amounts of time.
-#     for solver in solvers.values():
-#         if solver._srctype != 'S':
-#             raise NotImplementedError('Only Solar Source is supported for gradient calculations.')
-#
-#     solvers.parallel_solve(n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,maxiter=maxiter,
-#                             init_solution=init_solution, setup_grid=setup_grid)
-#
-#     solvers.add_direct_beam_derivatives()
-#
-#     solvers.add_microphysical_partial_derivatives(
-#         unknown_scatterers.table_to_grid_method,
-#         unknown_scatterers.table_data
-#         ) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
-#     #prepare the sensors for the fortran subroutine for calculating gradient.
-#     rte_sensors, sensor_mapping = forward_sensors.sort_sensors(solvers, measurements)
-#     loss, gradient, jacobian = pyshdom.parallel.parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors,
-#                         gradient_fun=pyshdom.gradient.jacobian,
-#                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter,indices_for_jacobian=indices_for_jacobian)
-#
-#     #uncorrelated l2.
-#     loss = np.sum(loss) / forward_sensors.nmeasurements
-#     gradient = np.sum(gradient, axis=-1)/ forward_sensors.nmeasurements
-#
-#     #turn gradient into a gridded dataset for use in project_gradient_to_state
-#     gradient_dataset = make_gradient_dataset(gradient, unknown_scatterers, solvers)
-#     #turn jacobian into a dataset (minimal postprocessing)
-#     jacobian_dataset = make_jacobian_dataset(
-#         jacobian, unknown_scatterers, indices_for_jacobian, solvers, rte_sensors
-#         )
-#
-#     return np.array(loss), gradient_dataset, jacobian_dataset
-
-
-# def gamma_correction_l2(measurements, solvers, forward_sensors, unknown_scatterers,
-#                         gamma_correction, n_jobs=1, mpi_comm=None, verbose=False,
-#                         maxiter=100, init_solution=True, exact_single_scatter=True,
-#                         setup_grid=True):
-#     """TODO"""
-#     #note this division of solving and 'raytracing' is not optimal for distributed memory parallelization
-#     #where tasks take varying amounts of time.
-#     for solver in solvers.values():
-#         if solver._srctype != 'S':
-#             raise NotImplementedError('Only Solar Source is supported for gradient calculations.')
-#
-#     solvers.parallel_solve(n_jobs=n_jobs, mpi_comm=mpi_comm,verbose=verbose,maxiter=maxiter,
-#                             init_solution=init_solution, setup_grid=setup_grid)
-#
-#     solvers.add_direct_beam_derivatives()
-#
-#     solvers.add_microphysical_partial_derivatives(unknown_scatterers.table_to_grid_method,
-#                                                   unknown_scatterers.table_data) #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
-#
-#     #prepare the sensors for the fortran subroutine for calculating gradient.
-#     rte_sensors, sensor_mapping = forward_sensors.sort_sensors(solvers, measurements)
-#     gradientparams = gamma_correction()
-#     loss, gradient = pyshdom.parallel.parallel_gradient(solvers, rte_sensors, sensor_mapping, forward_sensors, gradient_fun=grad_l2,
-#                      mpi_comm=mpi_comm, n_jobs=n_jobs, exact_single_scatter=exact_single_scatter,
-#                      gradientflag='G', gradientparams=gradientparams, numgradientparams=len(gradientparams))
-#
-#     #uncorrelated l2.
-#     loss = np.sum(loss)/ forward_sensors.nmeasurements
-#     gradient = np.sum(gradient, axis=-1)/ forward_sensors.nmeasurements
-#
-#     #turn gradient into a gridded dataset for use in project_gradient_to_state
-#     gradient_dataset = make_gradient_dataset(gradient, unknown_scatterers, solvers)
-#     return np.array(loss), gradient_dataset
-
 
 # def grad_l2_old(rte_solver, sensor, exact_single_scatter=True,
 #     jacobian_flag=False, stokes_weights=[1.0,1.0,1.0,0.0]):

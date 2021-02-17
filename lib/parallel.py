@@ -66,10 +66,10 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
             else:
                 warnings.warn(
                     "kwarg '{}' passed to pyshdom.gradient.parallel_gradient is unused by"
-                    "gradient_fun '{}''".format(name, gradient_fun.__name__))
+                    "'{}'".format(name, gradient_fun.__name__))
         else:
-            warnings.warn("kwarg '{}' passed to pyshdom.gradient.parallel_gradient is unused by \
-                            gradient_fun '{}''".format(name, gradient_fun.__name__))
+            warnings.warn("kwarg '{}' passed to pyshdom.gradient.parallel_gradient is unused by"
+                            "'{}'".format(name, gradient_fun.__name__))
 
     if mpi_comm is not None:
         raise NotImplementedError
