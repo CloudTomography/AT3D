@@ -150,9 +150,9 @@ class Microphysical_Derivatives(TestCase):
                             name=None
                             )
 
-            solvers.add_solver(wavelength,solver)
+            solvers.add_solver(wavelength, solver)
 
-        solvers.parallel_solve(maxiter=100,verbose=False)
+        solvers.parallel_solve(maxiter=100, verbose=False)
         cls.solvers=solvers
         cls.cloud_poly_tables = cloud_poly_tables
 
@@ -187,7 +187,7 @@ class Microphysical_Derivatives(TestCase):
         solvers.add_microphysical_partial_derivatives(unknown_scatterers)
 
         self.assertTrue(all([all([np.all(solvers[key]._dalb==0.0) for key in solvers]),
-            all([np.all(solvers[key]._dext==self.cloud_poly_tables[key].extinction.interp(
+            all([np.allclose(solvers[key]._dext, self.cloud_poly_tables[key].extinction.interp(
                     {'reff':0.5,'veff':0.1}, method='linear').data) for key in solvers]),
                 all([np.all(solvers[key]._dleg==0.0)for key in solvers]),
                 all([np.all(solvers[key]._dphasetab==0.0)for key in solvers])]))
@@ -303,3 +303,111 @@ class Verify_Jacobian(TestCase):
 
     def test_jacobian(self):
         self.assertAlmostEqual(self.jacobian_exact['jacobian_0.860'][0,0,0,0].data, 0.00396336, places=5)
+
+class ThermalJacobian(TestCase):
+    @classmethod
+    def setUpClass(cls):
+
+        ext = 30
+        veff = 0.1
+        reff = 10.0
+        rte_grid = pyshdom.grid.make_grid(0.05, 15, 0.05, 15, np.arange(0.1, 0.75, 0.05))
+        grid_shape = (rte_grid.x.size, rte_grid.y.size, rte_grid.z.size)
+        rte_grid['density'] = (['x','y','z'], np.ones(grid_shape))
+        rte_grid['reff'] = (['x','y','z'], np.zeros(grid_shape) + reff)
+        rte_grid['veff'] = (['x','y','z'] ,np.zeros(grid_shape) + veff)
+
+        #resample the cloud onto the rte_grid
+        cloud_scatterer_on_rte_grid = pyshdom.grid.resample_onto_grid(rte_grid, rte_grid)
+
+        #define any necessary variables for microphysics here.
+        size_distribution_function = pyshdom.size_distribution.gamma
+
+        #define sensors.
+        Sensordict = pyshdom.containers.SensorsDict()
+
+        sensor = pyshdom.sensor.make_sensor_dataset(np.array([0.25]),np.array([0.25]),
+                                                  np.array([0.7]),np.array([1.0]),
+                                                  np.array([0.0]),
+                                                 wavelength=11.0,stokes=['I'],fill_ray_variables=True)
+        Sensordict.add_sensor('MISR', sensor)
+
+        #Define the RTE solvers needed to model the measurements and
+        #calculate optical properties.
+        wavelengths = Sensordict.get_unique_solvers()
+
+        cloud_poly_tables = OrderedDict()
+        solvers = pyshdom.containers.SolversDict()
+
+        atmosphere = xr.Dataset(data_vars={
+            'temperature': (['x','y','z'], np.ones(grid_shape)*280.0)
+        }, coords={'x':rte_grid.x, 'y': rte_grid.y, 'z': rte_grid.z})
+        atmosphere2 = pyshdom.grid.resample_onto_grid(rte_grid, atmosphere)
+
+        mie_mono_table = pyshdom.mie.get_mono_table('Water',(11.0,11.0),
+                                                  max_integration_radius=65.0,
+                                                  minimum_effective_radius=0.1,
+                                                  relative_dir='../mie_tables',
+                                                  verbose=False)
+        for wavelength in wavelengths:
+
+            cloud_size_distribution = pyshdom.size_distribution.get_size_distribution_grid(
+                                                                    mie_mono_table.radius.data,
+                                size_distribution_function=size_distribution_function,particle_density=1.0,
+                                reff={'coord_min':9.0, 'coord_max': 11.0, 'npoints': 100,
+                                'spacing': 'logarithmic', 'units': 'micron'},
+                                veff={'coord_min':0.09, 'coord_max': 0.11, 'npoints': 12,
+                                'spacing': 'linear', 'units': 'unitless'}
+                                )
+            poly_table = pyshdom.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
+            optical_properties = pyshdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table,
+                                                                             exact_table=False)
+            optical_properties['ssalb'][:,:,:] = 0.0#9999
+            extinction = np.zeros(optical_properties.extinction.shape)
+            extinction[3:-3,3:-3,3:-3] = ext
+            extinction[3:-3,3:-3,-3:] = 0.0
+            #extinction[a,b,c] += step
+            #optical_properties['legcoef'][:,1:,:] = 0.0
+            optical_properties['extinction'][:,:,:] = extinction
+            cloud_poly_tables[wavelength] = poly_table
+            config = pyshdom.configuration.get_config('../default_config.json')
+            config['num_mu_bins'] = 16
+            config['num_phi_bins'] = 32
+            config['split_accuracy'] = 0.1
+            config['spherical_harmonics_accuracy'] = 0.0
+            config['adapt_grid_factor'] = 100.0
+            config['solution_accuracy'] = 1e-5
+            config['deltam'] = True
+            solver = pyshdom.solver.RTE(
+                                numerical_params=config,
+                                medium={'cloud': optical_properties},
+                                source=pyshdom.source.thermal(wavelength),
+                                surface=pyshdom.surface.lambertian(albedo=0.0),
+                                num_stokes=1,
+                                atmosphere=atmosphere2,
+                                name=None
+                                )
+
+            solvers.add_solver(wavelength,solver)
+        Sensordict.get_measurements(solvers, maxiter=100, n_jobs=8, verbose=False)
+
+        unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        unknown_scatterers.add_unknown('cloud', ['extinction'], cloud_poly_tables)
+        unknown_scatterers.create_derivative_tables()
+        solvers.add_microphysical_partial_derivatives(unknown_scatterers)
+
+        forward_sensors = Sensordict.make_forward_sensors()
+
+        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        solvers, forward_sensors, unknown_scatterers,
+        parallel_solve_kwargs={'maxiter':100,'n_jobs':1, 'setup_grid':False, 'verbose': False, 'init_solution':False},
+        gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
+        'indices_for_jacobian': np.where(extinction > 0.0)}, uncertainty_kwargs={'add_noise': False})
+
+        cost, gradient, jacobian = gradient_call()
+        derivs = np.zeros(extinction.shape)
+        derivs[np.where(extinction > 0.0)] = jacobian['jacobian_11.000'][0,0,:,0].data
+        cls.jacobian = derivs[5, 5]
+
+    def test_jacobian(self):
+        self.assertAlmostEqual(self.jacobian.sum(), 0.8255725, places=7)

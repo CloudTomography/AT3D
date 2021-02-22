@@ -946,42 +946,57 @@ class RTE:
         """
         Calculate the geometry of the direct beam at each point and solver.
         Solver is modified in-place.
+        If the solver does not have any solar source then empty arrays
+        are added so that the signature of the gradient call doesn't need
+        to change for each source type.
         """
-        #calculate the solar direct beam on the base grid
-        #which ensures the solver has the required information to
-        #calculate the derivative.
-        self._make_direct()
+        if self._srctype != 'T':
+            #calculate the solar direct beam on the base grid
+            #which ensures the solver has the required information to
+            #calculate the derivative.
+            self._make_direct()
 
-        direct_derivative_path, direct_derivative_ptr = \
-            pyshdom.core.make_direct_derivative(
-                npts=self._npts,
-                bcflag=self._bcflag,
-                gridpos=self._gridpos,
-                npx=self._pa.npx,
-                npy=self._pa.npy,
-                npz=self._pa.npz,
-                delx=self._pa.delx,
-                dely=self._pa.dely,
-                xstart=self._pa.xstart,
-                ystart=self._pa.ystart,
-                zlevels=self._pa.zlevels,
-                ipdirect=self._ipdirect,
-                di=self._di,
-                dj=self._dj,
-                dk=self._dk,
-                epss=self._epss,
-                epsz=self._epsz,
-                xdomain=self._xdomain,
-                ydomain=self._ydomain,
-                cx=self._cx,
-                cy=self._cy,
-                cz=self._cz,
-                cxinv=self._cxinv,
-                cyinv=self._cyinv,
-                czinv=self._czinv,
-                uniformzlev=self._uniformzlev,
-                delxd=self._delxd,
-                delyd=self._delyd
+            direct_derivative_path, direct_derivative_ptr = \
+                pyshdom.core.make_direct_derivative(
+                    npts=self._npts,
+                    bcflag=self._bcflag,
+                    gridpos=self._gridpos,
+                    npx=self._pa.npx,
+                    npy=self._pa.npy,
+                    npz=self._pa.npz,
+                    delx=self._pa.delx,
+                    dely=self._pa.dely,
+                    xstart=self._pa.xstart,
+                    ystart=self._pa.ystart,
+                    zlevels=self._pa.zlevels,
+                    ipdirect=self._ipdirect,
+                    di=self._di,
+                    dj=self._dj,
+                    dk=self._dk,
+                    epss=self._epss,
+                    epsz=self._epsz,
+                    xdomain=self._xdomain,
+                    ydomain=self._ydomain,
+                    cx=self._cx,
+                    cy=self._cy,
+                    cz=self._cz,
+                    cxinv=self._cxinv,
+                    cyinv=self._cyinv,
+                    czinv=self._czinv,
+                    uniformzlev=self._uniformzlev,
+                    delxd=self._delxd,
+                    delyd=self._delyd
+                )
+        else:
+            direct_derivative_ptr = np.zeros(
+                (8*(self._pa.npx + self._pa.npy + self._pa.npz), self._npts),
+                dtype=np.int32,
+                order='F'
+            )
+            direct_derivative_path = np.zeros(
+                (8*(self._pa.npx + self._pa.npy + self._pa.npz), self._npts),
+                dtype=np.float32,
+                order='F'
             )
         self._direct_derivative_ptr = direct_derivative_ptr
         self._direct_derivative_path = direct_derivative_path

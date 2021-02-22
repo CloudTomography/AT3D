@@ -142,7 +142,7 @@ class NullUncertainty(Uncertainty):
     """
     An equal weighting uncertainty model that is applied if none is supplied
     to ensure that a valid inverse error co-variance matrix is passed to
-    solver.RTE.levisapprox_gradient.
+    solver.RTE.levisapprox_gradient. Equivalent to unweighted least squares.
 
     A diagonal matrix of the correct shape is generated to match the cost function
     that is going to be used.

@@ -424,7 +424,7 @@ C             Extrapolate ray to domain top if above
             Y0 = Y0 + R*SQRT(1-MURAY**2)*SIN(PHIRAY)
             Z0 = ZGRID(NZ)
           ELSE IF (Z0 .LT. ZGRID(1)) THEN
-            WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
+            WRITE (6,*) 'LEVISAPPROX_GRADIENT: Level below domain'
             STOP
           ENDIF
 C         Integrate the extinction and source function along this ray
@@ -587,7 +587,9 @@ C         TAUTOL is the maximum optical path for the subgrid intervals
 C       Calculate the generalized spherical harmonics for this direction
       CALL YLMALL (.FALSE.,SNGL(MU2),SNGL(PHI2),ML,MM,NSTLEG, YLMDIR)
       SECMU0 = 1.0D0/ABS(SOLARMU)
-      IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
+      IF (SRCTYPE .NE. 'T') THEN
+C       This is modified so that its done even for no delta-M so the
+C       'exact single scatter' derivative can be calculated.
 C          Get the solar single scattering Stokes vector for the outgoing
 C          direction my interpolating in scattering angle in the PHASETAB
 C          table and then rotating the Q/U polarization to the outgoing plane.
@@ -685,7 +687,7 @@ C         Loop until reach a Z boundary or transmission is very small
 
 C           Make sure current cell is valid
         IF (ICELL .LE. 0) THEN
-          WRITE (6,*)'INTEGRATE_1RAY: ICELL=',ICELL,
+          WRITE (6,*)'GRAD_INTEGRATE_1RAY: ICELL=',ICELL,
      .                MU2,PHI2,XE,YE,ZE
           STOP
         ENDIF
@@ -702,6 +704,7 @@ C           These are also the points we need the gradient for.
           OSINGSCAT8(:,I) = SINGSCAT8(:,I)
           OGRAD8(:,:,I,:) = GRAD8(:,:,I,:)
         ENDDO
+
 C         Compute the source function times extinction in direction (MU2,PHI2)
 C     Evaluate the 'source of the linearized RTE' at each of the grid points.
         IF (NSTOKES .GE. 1) THEN
@@ -786,7 +789,7 @@ C             (always need to deal with the cell that is wrapped)
         SOZ = (GRIDPOS(3,IOPP)-ZE)*CZINV
         SO = MIN(SOX,SOY,SOZ)
         IF (SO .LT. -EPS) THEN
-          WRITE (6,*) 'INTEGRATE_1RAY: SO<0  ',
+          WRITE (6,*) 'GRAD_INTEGRATE_1RAY: SO<0  ',
      .      MU2,PHI2,XE,YE,ZE,SO,ICELL
           STOP
         ENDIF
@@ -862,7 +865,8 @@ C             (Formal solution to RTE).
               SRCGRAD = ( 0.5*(GRAD0+GRAD1)
      .          + 0.08333333333*(EXT0*GRAD1-EXT1*GRAD0)*DELS
      .           *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
-               IF (EXACT_SINGLE_SCATTER) THEN
+               IF (EXACT_SINGLE_SCATTER .AND.
+     .           SRCTYPE .NE. 'T') THEN
                  SRCSINGSCAT = ( 0.5*(SINGSCAT0+SINGSCAT1)
      .            + 0.08333333333*(EXT0*SINGSCAT1-EXT1*SINGSCAT0)*DELS
      .                    *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
@@ -884,7 +888,8 @@ C             (Formal solution to RTE).
               RAYGRAD(:,GRIDPOINT,:) = RAYGRAD(:,GRIDPOINT,:) +
      .                     TRANSMIT*SRCGRAD(:,KK,:)*ABSCELL
 C             Add gradient component due to the direct solar beam propogation
-              IF (EXACT_SINGLE_SCATTER) THEN
+              IF (EXACT_SINGLE_SCATTER .AND.
+     .          SRCTYPE .NE. 'T') THEN
                 II = 1
                 GRIDPOINT = GRIDPTR(KK,BCELL)
                 DO IDR=1,NUMDER
@@ -1104,8 +1109,8 @@ C             Sum over the real generalized spherical harmonic series
 C             and calculate the source for the linearized
 C             RTE (not the Source function). The contribution from each base grid point and
 C             (adpative) grid point pair is calculated. - JRLoveridge (2021/02/10)
-                DO J = 1, RNS
-                  L = LOFJ(J)
+C                DO J = 1, RNS
+C                  L = LOFJ(J)
 C               The phase derivative is only non-zero for the
 C               base grid point which supplied the phase function to
 C               the adaptive point. This is due to the non-smooth
@@ -1113,85 +1118,85 @@ C               'max-scatter' interpolation rule currently used for
 C               phase functions (TRILIN_INTERP_PROP).
 C               To avoid this non-smoothness the interpolation rule
 C               should be updated. - JRLoveridge 2021/02/09
-                  IF (DIPHASEIND(IP,IDR) .EQ. IB) THEN
-                    DLEGM(:) = DLEG(:,L,DIPHASE(IB,IDR))
-                  ELSE
-                    DLEGM = 0.0
-                  ENDIF
-
-                  GRAD8(1,NB,N,IDR) = GRAD8(1,NB,N,IDR) +
-     .            RADIANCE(1,RIS+J)*YLMDIR(1,J)*(
-     .              DEXTM*(ALBEDO(IP,IPA)*LEGEN(1,L,K)-1.0) +
-     .              EXTINCT(IP,IPA)*DALBM*LEGEN(1,L,K) +
-     .              EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(1))
-
-                  IF (NSTOKES .GT. 1) THEN
-                    GRAD8(1,NB,N,IDR) = GRAD8(1,NB,N,IDR) +
-     .              RADIANCE(2,RIS+J)*YLMDIR(1,J)*(
-     .              DEXTM*ALBEDO(IP,IPA)*LEGEN(5,L,K) +
-     .              EXTINCT(IP,IPA)*DALBM*LEGEN(5,L,K) +
-     .              EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(5))
-
-                    IF (J .GE. 5) THEN
-                      GRAD8(2,NB,N,IDR) = GRAD8(2,NB,N,IDR) +
-     .                RADIANCE(1,RIS+J)*YLMDIR(2,J)*(
-     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(5,L,K) +
-     .                EXTINCT(IP,IPA)*DALBM*LEGEN(5,L,K) +
-     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(5))
-                      GRAD8(2,NB,N,IDR) = GRAD8(2,NB,N,IDR) +
-     .                RADIANCE(2,RIS+J)*YLMDIR(2,J)*(
-     .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(2,L,K)-1.0) +
-     .                EXTINCT(IP,IPA)*DALBM*LEGEN(2,L,K) +
-     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(2))
-                      GRAD8(2,NB,N,IDR) = GRAD8(2,NB,N,IDR) +
-     .                RADIANCE(3,RIS+J)*YLMDIR(5,J)*(
-     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(3,L,K)  +
-     .                EXTINCT(IP,IPA)*DALBM*LEGEN(3,L,K) +
-     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(3))
-
-                      GRAD8(3,NB,N,IDR) = GRAD8(3,NB,N,IDR) +
-     .                RADIANCE(1,RIS+J)*YLMDIR(6,J)*(
-     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(5,L,K) +
-     .                EXTINCT(IP,IPA)*DALBM*LEGEN(5,L,K) +
-     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(5))
-                      GRAD8(3,NB,N,IDR) = GRAD8(3,NB,N,IDR) +
-     .                RADIANCE(2,RIS+J)*YLMDIR(6,J)*(
-     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(2,L,K) +
-     .                EXTINCT(IP,IPA)*DALBM*LEGEN(2,L,K) +
-     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(2))
-                      GRAD8(3,NB,N,IDR) = GRAD8(3,NB,N,IDR) +
-     .                RADIANCE(3,RIS+J)*YLMDIR(3,J)*(
-     .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(3,L,K)-1.0) +
-     .                EXTINCT(IP,IPA)*DALBM*LEGEN(3,L,K) +
-     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(3))
-                    ENDIF
-                  ENDIF
-                  IF (NSTOKES .EQ. 4) THEN
-                      GRAD8(2,NB,N,IDR) = GRAD8(2,NB,N,IDR) +
-     .                RADIANCE(4,RIS+J)*YLMDIR(5,J)*(
-     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(6,L,K) +
-     .                EXTINCT(IP,IPA)*DALBM*LEGEN(6,L,K) +
-     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(6))
-
-                      GRAD8(3,NB,N,IDR) = GRAD8(3,NB,N,IDR) +
-     .                RADIANCE(4,RIS+J)*YLMDIR(3,J)*(
-     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(6,L,K) +
-     .                EXTINCT(IP,IPA)*DALBM*LEGEN(6,L,K) +
-     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(6))
-
-                      GRAD8(4,NB,N,IDR) = GRAD8(4,NB,N,IDR) -
-     .                RADIANCE(3,RIS+J)*YLMDIR(4,J)*(
-     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(6,L,K) +
-     .                EXTINCT(IP,IPA)*DALBM*LEGEN(6,L,K) +
-     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(6))
-
-                      GRAD8(4,NB,N,IDR) = GRAD8(4,NB,N,IDR) +
-     .                RADIANCE(4,RIS+J)*YLMDIR(4,J)*(
-     .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(4,L,K)-1.0) +
-     .                EXTINCT(IP,IPA)*DALBM*LEGEN(4,L,K) +
-     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(4))
-                  ENDIF
-                ENDDO
+C                  IF (DIPHASEIND(IP,IDR) .EQ. IB) THEN
+C                    DLEGM(:) = DLEG(:,L,DIPHASE(IB,IDR))
+C                  ELSE
+C                    DLEGM = 0.0
+C                  ENDIF
+C
+C                  GRAD8(1,NB,N,IDR) = GRAD8(1,NB,N,IDR) +
+C     .            RADIANCE(1,RIS+J)*YLMDIR(1,J)*(
+C     .              DEXTM*(ALBEDO(IP,IPA)*LEGEN(1,L,K)-1.0) +
+C     .              EXTINCT(IP,IPA)*DALBM*LEGEN(1,L,K) +
+C     .              EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(1))
+C
+C                  IF (NSTOKES .GT. 1) THEN
+C                    GRAD8(1,NB,N,IDR) = GRAD8(1,NB,N,IDR) +
+C     .              RADIANCE(2,RIS+J)*YLMDIR(1,J)*(
+C     .              DEXTM*ALBEDO(IP,IPA)*LEGEN(5,L,K) +
+C     .              EXTINCT(IP,IPA)*DALBM*LEGEN(5,L,K) +
+C     .              EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(5))
+C
+C                    IF (J .GE. 5) THEN
+C                      GRAD8(2,NB,N,IDR) = GRAD8(2,NB,N,IDR) +
+C     .                RADIANCE(1,RIS+J)*YLMDIR(2,J)*(
+C     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(5,L,K) +
+C     .                EXTINCT(IP,IPA)*DALBM*LEGEN(5,L,K) +
+C     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(5))
+C                      GRAD8(2,NB,N,IDR) = GRAD8(2,NB,N,IDR) +
+C     .                RADIANCE(2,RIS+J)*YLMDIR(2,J)*(
+C     .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(2,L,K)-1.0) +
+C     .                EXTINCT(IP,IPA)*DALBM*LEGEN(2,L,K) +
+C     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(2))
+C                      GRAD8(2,NB,N,IDR) = GRAD8(2,NB,N,IDR) +
+C     .                RADIANCE(3,RIS+J)*YLMDIR(5,J)*(
+C     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(3,L,K)  +
+C     .                EXTINCT(IP,IPA)*DALBM*LEGEN(3,L,K) +
+C     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(3))
+C
+C                      GRAD8(3,NB,N,IDR) = GRAD8(3,NB,N,IDR) +
+C     .                RADIANCE(1,RIS+J)*YLMDIR(6,J)*(
+C     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(5,L,K) +
+C     .                EXTINCT(IP,IPA)*DALBM*LEGEN(5,L,K) +
+C     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(5))
+C                      GRAD8(3,NB,N,IDR) = GRAD8(3,NB,N,IDR) +
+C     .                RADIANCE(2,RIS+J)*YLMDIR(6,J)*(
+C     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(2,L,K) +
+C     .                EXTINCT(IP,IPA)*DALBM*LEGEN(2,L,K) +
+C     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(2))
+C                      GRAD8(3,NB,N,IDR) = GRAD8(3,NB,N,IDR) +
+C     .                RADIANCE(3,RIS+J)*YLMDIR(3,J)*(
+C     .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(3,L,K)-1.0) +
+C     .                EXTINCT(IP,IPA)*DALBM*LEGEN(3,L,K) +
+C     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(3))
+C                    ENDIF
+C                  ENDIF
+C                  IF (NSTOKES .EQ. 4) THEN
+C                      GRAD8(2,NB,N,IDR) = GRAD8(2,NB,N,IDR) +
+C     .                RADIANCE(4,RIS+J)*YLMDIR(5,J)*(
+C     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(6,L,K) +
+C     .                EXTINCT(IP,IPA)*DALBM*LEGEN(6,L,K) +
+C     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(6))
+C
+C                      GRAD8(3,NB,N,IDR) = GRAD8(3,NB,N,IDR) +
+C     .                RADIANCE(4,RIS+J)*YLMDIR(3,J)*(
+C     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(6,L,K) +
+C     .                EXTINCT(IP,IPA)*DALBM*LEGEN(6,L,K) +
+C     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(6))
+C
+C                      GRAD8(4,NB,N,IDR) = GRAD8(4,NB,N,IDR) -
+C     .                RADIANCE(3,RIS+J)*YLMDIR(4,J)*(
+C     .                DEXTM*ALBEDO(IP,IPA)*LEGEN(6,L,K) +
+C     .                EXTINCT(IP,IPA)*DALBM*LEGEN(6,L,K) +
+C     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(6))
+C
+C                      GRAD8(4,NB,N,IDR) = GRAD8(4,NB,N,IDR) +
+C     .                RADIANCE(4,RIS+J)*YLMDIR(4,J)*(
+C     .                DEXTM*(ALBEDO(IP,IPA)*LEGEN(4,L,K)-1.0) +
+C     .                EXTINCT(IP,IPA)*DALBM*LEGEN(4,L,K) +
+C     .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(4))
+C                  ENDIF
+C                ENDDO
 C             Add in the single scattering contribution for the original unscaled phase function.
 C             For DELTA M and L<=ML this requires reconstructing the original phase function values
                 IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
@@ -1211,17 +1216,18 @@ C                   grid point.
                     STOP
                   ENDIF
                 ENDIF
-              IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
-                GRAD8(:,NB,N,IDR) = GRAD8(:,NB,N,IDR) + FULL_SINGSCAT(:)
-              ELSEIF (SRCTYPE .NE. 'S') THEN
-                GRAD8(:,NB,N,IDR) = GRAD8(:,NB,N,IDR) +
-     .            C*DEXTM*PLANCK(IP, IPA) - C*EXTINCT(IP,IPA)*DALBM*
-     .            PLANCK(IP, IPA)/(1.0 - ALBEDO(IP, IPA))
-              ENDIF
+                IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
+                  GRAD8(:,NB,N,IDR) = GRAD8(:,NB,N,IDR)
+     .                + FULL_SINGSCAT(:)
+                ENDIF
+                IF (SRCTYPE .NE. 'S') THEN
+                  GRAD8(:,NB,N,IDR) = GRAD8(:,NB,N,IDR) +
+     .              C*DEXTM*PLANCK(IP, IPA) - C*EXTINCT(IP,IPA)*
+     .              DALBM*PLANCK(IP, IPA)/(1.0 - ALBEDO(IP, IPA))
+                ENDIF
               ENDDO
             ENDDO
           ENDIF
-
 C             Sum over the real generalized spherical harmonic series
 C             of the source function
           SRCEXT8(:,N) = 0.0
@@ -1295,9 +1301,12 @@ C             First subtract off the truncated single scattering
 C             Then add in the single scattering contribution for the
 C             original unscaled phase function.
             IF (NUMPHASE .GT. 0) THEN
-              SINGSCAT8(:,N) = SINGSCAT8(:,N) + DA*SINGSCAT(:,IPH)
-              IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
-                SRCEXT8(:,N) = SRCEXT8(:,N) + DA*SINGSCAT(:,IPH)
+              IF (SRCTYPE .NE. 'T') THEN
+                DA = ALBEDO(IP,IPA)*DIRFLUX(IP)*SECMU0*W
+                SINGSCAT8(:,N) = SINGSCAT8(:,N) + DA*SINGSCAT(:,IPH)
+                IF (DELTAM) THEN
+                  SRCEXT8(:,N) = SRCEXT8(:,N) + DA*SINGSCAT(:,IPH)
+                ENDIF
               ENDIF
             ELSE IF (NSTOKES .EQ. 1) THEN
               F = LEGEN(1,ML+1,IPH)
@@ -1324,8 +1333,9 @@ C             original unscaled phase function.
       END
 
 
-CThis subroutine has not been updated with the correct
-Cmicrophysical derivative interpolation. -JRLoveridge 2021/02/10
+C     This subroutine has not been updated with the correct
+C     microphysical derivative interpolation. It is no longer supported.
+C     -JRLoveridge 2021/02/10
       SUBROUTINE COMPUTE_SOURCE_GRAD_1CELL_UNPOL (ICELL, GRIDPTR,
      .             ML, MM, NLM, NLEG, NUMPHASE,
      .             NPTS, DELTAM, SRCTYPE, SOLARMU,

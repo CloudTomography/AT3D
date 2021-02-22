@@ -42,7 +42,8 @@ class LevisApproxGradient:
             if instrument['uncertainty_model'] is None:
                 warnings.warn(
                     "No uncertainty model supplied for instrument '{}'. "
-                    "Using pyshdom.uncertainties.NullUncertainty.".format(name))
+                    "Using pyshdom.uncertainties.NullUncertainty which is"
+                    "equivalent to unweighted least squares.".format(name))
                 self.measurements.add_uncertainty_model(
                     name,
                     pyshdom.uncertainties.NullUncertainty(self.gradient_kwargs['cost_function'])
@@ -62,10 +63,10 @@ class LevisApproxGradient:
 
     def _prep_gradient(self):
 
-        for solver in self.solvers.values():
-            if solver._srctype != 'S':
-                raise NotImplementedError(
-                    "Only Solar Source is supported for gradient calculations.")
+        # for solver in self.solvers.values():
+        #     if solver._srctype != 'S':
+        #         raise NotImplementedError(
+        #             "Only Solar Source is supported for gradient calculations.")
 
         self.solvers.parallel_solve(**self.parallel_solve_kwargs)
         #does some preprocessing for calculating the sensitivity of a gridpoint's

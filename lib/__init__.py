@@ -1,11 +1,12 @@
 """
 Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer
 
-This is a python wrapper for SHDOM created by Aviad Levis and Amit Aides, Technion Inst. of Technology.
+This is a python wrapper for SHDOM created by Aviad Levis and Amit Aides, Technion Inst. of Technology
+and Jesse Loveridge, University of Illinois at Urbana-Champaign.
 The purpose of this wrapper is to develop 3D remote sensing metoglogies.
 
 The documentation of the source Fortran code by Frank Evans can be found at
-http://nit.colorado.edu/shdom/shdomdoc
+https://nit.coloradolinux.com/~evans/shdom.html
 
 Information about the source code taken from the documentation page:
 This program computes unpolarized monochromatic or spectral band radiative transfer in a one, two,
