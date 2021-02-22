@@ -1,7 +1,14 @@
-C     This file containts subroutines that were modified from their original purpose
-C     The original subroutines were written by Frank Evans for the Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer.
-C     The modified subroutines were written by Aviad Levis, Technion Institute of Technology, 2019
-C     with updates by Jesse Loveridge, University of Illinois at Urbana-Champaign, 2020-2021
+C     This file contains fortran subroutines adapted from subroutines written
+C     Frank Evans for SHDOM.
+C     https://nit.coloradolinux.com/~evans/shdom.html
+C     See shdom.txt for documentation of SHDOM variables.
+C     These subroutines have been written for use in pyshdom by
+C     Aviad Levis, Technion Institute of Technology, 2019 and
+C     later modified by Jesse Loveridge, University of Illinois at Urbana-Champaign,
+C     2020-2021.
+C     This file contains the subroutines that are used to evaluate cost functions
+C     gradients (using the Levis approximation) for solutions to retrieval problems.
+C     -JRLoveridge 2021/02/22
 
       SUBROUTINE UPDATE_COSTFUNCTION (STOKESOUT, RAYGRAD_PIXEL,
      .             GRADOUT,COST, UNCERTAINTIES, COSTFUNC, NSTOKES,
@@ -61,13 +68,14 @@ C       e.g. Dubovik et al. 2011 https://doi.org/10.5194/amt-4-975-2011.
           DOLP2 = SQRT(MEASUREMENT(2)**2 + MEASUREMENT(3)**2) /
      .      MEASUREMENT(1)
           DOLPERR = LOG(DOLP1) - LOG(DOLP2)
-          COST(1) = COST(1) + 0.5D0 *(DOLPERR*
+
+          COST(1) = COST(1) + 0.5D0 *(DOLPERR**2 *
      .      UNCERTAINTIES(2,2))
           GRADOUT(:,:,1) = GRADOUT(:,:,1) + DOLPERR*
-     .      UNCERTAINTIES(2,2)/(STOKESOUT(1)*DOLP1)*
-     .      (STOKESOUT(2)*RAYGRAD_PIXEL(2,:,:) +
-     .       STOKESOUT(3)*RAYGRAD_PIXEL(3,:,:))/
-     .      SQRT(STOKESOUT(2)**2 + STOKESOUT(3)**2)
+     .      UNCERTAINTIES(2,2)*(STOKESOUT(2)*
+     .      RAYGRAD_PIXEL(2,:,:) +
+     .      STOKESOUT(3)*RAYGRAD_PIXEL(3,:,:))/
+     .      (STOKESOUT(2)**2 + STOKESOUT(3)**2)
         ENDIF
 
       ENDIF
@@ -1959,5 +1967,171 @@ C          ENDIF
         ENDIF
 
       ENDDO
+      RETURN
+      END
+
+      SUBROUTINE PREPARE_DIPHASEIND(GRIDPOS, DIPHASEIND,
+     .                     NPX, NPY, NPZ, NPTS, NBPTS, NUMPHASE, DELX,
+     .                      DELY, XSTART, YSTART, ZLEVELS, EXTINCTP,
+     .                      ALBEDOP, NPART, NUMDER)
+CPrepares the DIPHASEIND for use in the gradient calculation.
+CThis holds the pointer to the base grid point from which the
+C(adaptive) grid point's phase function comes from.
+        IMPLICIT NONE
+        INTEGER NPTS, NUMDER, NPART, NBPTS
+Cf2py intent(in) :: NPTS, NUMDER, NPART, NBPTS
+        INTEGER NPX, NPY, NPZ, NUMPHASE
+Cf2py intent(in) :: NPX, NPY, NPZ, NUMPHASE
+        REAL GRIDPOS(3, NPTS)
+Cf2py intent(in) :: GRIDPOS
+        INTEGER DIPHASEIND(NPTS,NUMDER)
+Cf2py intent(out) :: DIPHASEIND
+        REAL ALBEDOP(NBPTS, NPART), EXTINCTP(NBPTS, NPART)
+Cf2py intent(in) :: ALBEDOP, EXTINCTP
+        REAL DELX, DELY, XSTART, YSTART
+Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
+        REAL ZLEVELS(*)
+Cf2py intent(in) :: ZLEVELS
+
+        INTEGER IP, IPA
+
+        DO IPA=1,NUMDER
+          DO IP=1,NPTS
+            CALL GET_PHASE_INTERP_INDS(GRIDPOS(1,IP), GRIDPOS(2,IP),
+     .         GRIDPOS(3,IP), NPX, NPY, NPZ, NUMPHASE, DELX,
+     .         DELY, XSTART, YSTART, ZLEVELS, EXTINCTP(:,IPA),
+     .         ALBEDOP(:,IPA), DIPHASEIND(IP,IPA))
+          ENDDO
+        ENDDO
+        RETURN
+      END
+
+      SUBROUTINE GET_PHASE_INTERP_INDS (X, Y, Z,
+     .                 NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
+     .                 XSTART, YSTART, ZLEVELS, EXTINCTP,
+     .                 ALBEDOP, DIPHASEIND)
+C    Adapated from TRILIN_INTERP_PROP - JRLoveridge 2021/02/10
+      IMPLICIT NONE
+      INTEGER DIPHASE
+      REAL    X, Y, Z,  DEXT, DALB, DSCAT
+      INTEGER IX, IXP, IY, IYP, IZ, IL, IM, IU, J
+      INTEGER I1, I2, I3, I4, I5, I6, I7, I8, I
+      DOUBLE PRECISION U, V, W, F1, F2, F3, F4, F5, F6, F7, F8, F
+      DOUBLE PRECISION SCAT1,SCAT2,SCAT3,SCAT4,SCAT5,SCAT6,SCAT7,SCAT8
+      DOUBLE PRECISION SCATTER, MAXSCAT
+
+      INTEGER NPX, NPY, NPZ
+      INTEGER NUMPHASE, DIPHASEIND
+      REAL DELX, DELY, XSTART, YSTART
+      REAL ZLEVELS(*)
+      REAL EXTINCTP(*), ALBEDOP(*)
+      REAL  EXTINCT, ALBEDO
+
+C         Find the grid location and compute the interpolation factors
+      IL=0
+      IU=NPZ
+      DO WHILE (IU-IL .GT. 1)
+        IM = (IU+IL)/2
+        IF (Z .GE. ZLEVELS(IM)) THEN
+          IL = IM
+        ELSE
+          IU=IM
+        ENDIF
+      ENDDO
+      IZ = MAX(IL,1)
+      W = DBLE(Z - ZLEVELS(IZ))/(ZLEVELS(IZ+1) - ZLEVELS(IZ))
+      W = MAX( MIN( W, 1.0D0), 0.0D0)
+      IX = INT((X-XSTART)/DELX) + 1
+      IF (ABS(X-XSTART-NPX*DELX) .LT. 0.01*DELX) IX = NPX
+      IF (IX .LT. 1 .OR. IX .GT. NPX) THEN
+        WRITE (6,*) 'INTERP_DERIVS: Beyond X domain',IX,NPX,X,XSTART
+        STOP
+      ENDIF
+      IXP = MOD(IX,NPX) + 1
+      U = DBLE(X-XSTART-DELX*(IX-1))/DELX
+      U = MAX( MIN( U, 1.0D0), 0.0D0)
+      IF (U .LT. 1.0D-5) U = 0.0D0
+      IF (U .GT. 1.0D0-1.0D-5) U = 1.0D0
+      IY = INT((Y-YSTART)/DELY) + 1
+      IF (ABS(Y-YSTART-NPY*DELY) .LT. 0.01*DELY) IY = NPY
+      IF (IY .LT. 1 .OR. IY .GT. NPY) THEN
+        WRITE (6,*) 'INTERP_DERIVS: Beyond Y domain',IY,NPY,Y,YSTART
+        STOP
+      ENDIF
+      IYP = MOD(IY,NPY) + 1
+      V = DBLE(Y-YSTART-DELY*(IY-1))/DELY
+      V = MAX( MIN( V, 1.0D0), 0.0D0)
+      IF (V .LT. 1.0D-5) V = 0.0D0
+      IF (V .GT. 1.0D0-1.0D-5) V = 1.0D0
+
+      F1 = (1-U)*(1-V)*(1-W)
+      F2 =    U *(1-V)*(1-W)
+      F3 = (1-U)*   V *(1-W)
+      F4 =    U *   V *(1-W)
+      F5 = (1-U)*(1-V)*   W
+      F6 =    U *(1-V)*   W
+      F7 = (1-U)*   V *   W
+      F8 =    U *   V *   W
+      I1 = IZ + NPZ*(IY-1) + NPZ*NPY*(IX-1)
+      I2 = IZ + NPZ*(IY-1) + NPZ*NPY*(IXP-1)
+      I3 = IZ + NPZ*(IYP-1) + NPZ*NPY*(IX-1)
+      I4 = IZ + NPZ*(IYP-1) + NPZ*NPY*(IXP-1)
+      I5 = I1+1
+      I6 = I2+1
+      I7 = I3+1
+      I8 = I4+1
+
+      SCAT1 = F1*EXTINCTP(I1)*ALBEDOP(I1)
+      SCAT2 = F2*EXTINCTP(I2)*ALBEDOP(I2)
+      SCAT3 = F3*EXTINCTP(I3)*ALBEDOP(I3)
+      SCAT4 = F4*EXTINCTP(I4)*ALBEDOP(I4)
+      SCAT5 = F5*EXTINCTP(I5)*ALBEDOP(I5)
+      SCAT6 = F6*EXTINCTP(I6)*ALBEDOP(I6)
+      SCAT7 = F7*EXTINCTP(I7)*ALBEDOP(I7)
+      SCAT8 = F8*EXTINCTP(I8)*ALBEDOP(I8)
+      SCATTER = SCAT1+SCAT2+SCAT3+SCAT4+SCAT5+SCAT6+SCAT7+SCAT8
+
+C         For tabulated phase functions pick the one we are on top of
+C         or the one with the most scattering weight.
+
+      IF (NUMPHASE .GT. 0) THEN
+        MAXSCAT = -1.0
+        IF (SCAT1 .GT. MAXSCAT .OR. ABS(F1-1) .LT. 0.001) THEN
+          MAXSCAT = SCAT1
+          DIPHASEIND = I1
+        ENDIF
+        IF (SCAT2 .GT. MAXSCAT .OR. ABS(F2-1) .LT. 0.001) THEN
+          MAXSCAT = SCAT2
+          DIPHASEIND = I2
+        ENDIF
+        IF (SCAT3 .GT. MAXSCAT .OR. ABS(F3-1) .LT. 0.001) THEN
+          MAXSCAT = SCAT3
+          DIPHASEIND = I3
+        ENDIF
+        IF (SCAT4 .GT. MAXSCAT .OR. ABS(F4-1) .LT. 0.001) THEN
+          MAXSCAT = SCAT4
+          DIPHASEIND = I4
+        ENDIF
+        IF (SCAT5 .GT. MAXSCAT .OR. ABS(F5-1) .LT. 0.001) THEN
+          MAXSCAT = SCAT5
+          DIPHASEIND = I5
+        ENDIF
+        IF (SCAT6 .GT. MAXSCAT .OR. ABS(F6-1) .LT. 0.001) THEN
+          MAXSCAT = SCAT6
+          DIPHASEIND = I6
+        ENDIF
+        IF (SCAT7 .GT. MAXSCAT .OR. ABS(F7-1) .LT. 0.001) THEN
+          MAXSCAT = SCAT7
+          DIPHASEIND = I7
+        ENDIF
+        IF (SCAT8 .GT. MAXSCAT .OR. ABS(F8-1) .LT. 0.001) THEN
+          MAXSCAT = SCAT8
+          DIPHASEIND = I8
+        ENDIF
+      ELSE
+        WRITE (6,*) 'PHASE_INTERP_INDS: Gridded phase',
+     .                 'is not supported in pyshdom.'
+        STOP
+      ENDIF
       RETURN
       END

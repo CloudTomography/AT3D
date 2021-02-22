@@ -21,6 +21,7 @@ Users should add their own generating functions for specialized sensors.
 """
 import itertools
 import inspect
+import sys
 import xarray as xr
 import numpy as np
 
@@ -564,6 +565,8 @@ def _parse_sub_pixel_ray_args(sub_pixel_ray_args):
     subpixel_ray_kwargs_x = {}
     subpixel_ray_kwargs_y = {}
     subpixel_ray_params = inspect.signature(sub_pixel_ray_args['method']).parameters
+    # Find only the kwargs that are in the signature of the subpixel ray method.
+    # Bad kwargs raise a KeyError.
     for name, value in sub_pixel_ray_args.items():
         if name != 'method':
             try:
@@ -576,10 +579,13 @@ def _parse_sub_pixel_ray_args(sub_pixel_ray_args):
                     else:
                         subpixel_ray_kwargs_x[name] = value
                         subpixel_ray_kwargs_y[name] = value
-            except: #TODO add a specific exception here. (likely attribute error?)
-                raise ValueError("Invalid kwarg '{}' passed to the "
-                                 "sub_pixel_ray_args['method'] callable. '{}'".format(
-                                     name, sub_pixel_ray_args['method'].__name__))
+            except KeyError as err:
+                raise type(err)(str(err).replace('"', "") + \
+                    "Invalid kwarg '{}' passed to the "
+                    "sub_pixel_ray_args['method'] callable. '{}'".format(
+                        name, sub_pixel_ray_args['method'].__name__)
+                    ).with_traceback(sys.exc_info()[2])
+
     return sub_pixel_ray_args['method'], subpixel_ray_kwargs_x, subpixel_ray_kwargs_y
 
 def _add_null_subpixel_rays(sensor):

@@ -1,4 +1,13 @@
+C     This file contains fortran subroutines that perform the
+C     original SHDOM solution written by Frank Evans.
+C     https://nit.coloradolinux.com/~evans/shdom.html
+C     See shdom.txt for documentation.
+C     Many of these subroutines have been modified for use in pyshdom by
+C     Aviad Levis, Technion Institute of Technology, 2019 and
+C     Jesse Loveridge, University of Illinois at Urbana-Champaign, 2020-2021.
+C     Subroutines only have f2py directives added.
 C Dummy routines to allow parallel SHDOM to compile without MPI.
+
 
       SUBROUTINE START_MPI (MASTERPROC)
       IMPLICIT NONE
@@ -48,7 +57,7 @@ Cf2py intent(out) :: XSTART, YSTART
       CHARACTER OUTFILES(*)*64, INSAVEFILE*64, OUTSAVEFILE*64
 
       RETURN
-      END 
+      END
 
 
 
@@ -62,8 +71,8 @@ Cf2py intent(in, out) :: DELX, DELY
       END
 
 
-      SUBROUTINE SCATTER_PROPERTIES (NPXT,NPYT, NPX,NPY,NPZ, NLEG, 
-     .                    NUMPHASE, ZLEVELS, MAXASYM, TEMPPT, 
+      SUBROUTINE SCATTER_PROPERTIES (NPXT,NPYT, NPX,NPY,NPZ, NLEG,
+     .                    NUMPHASE, ZLEVELS, MAXASYM, TEMPPT,
      .                    EXTINCTPT, ALBEDOPT, LEGENPT, IPHASEPT,
      .                    TEMPP, EXTINCTP, ALBEDOP, LEGENP, IPHASEP)
       INTEGER   NPXT, NPYT, NPX, NPY, NPZ, NUMPHASE, NLEG
@@ -77,7 +86,7 @@ Cf2py intent(in) :: TEMPPT, EXTINCTPT
 Cf2py intent(in) :: ALBEDOPT, LEGENPT
       INTEGER IPHASEPT(NPZ,NPYT,NPXT)
 Cf2py intent(in) :: IPHASEPT
-      REAL     TEMPP(NPZ,NPY,NPX), EXTINCTP(NPZ,NPY,NPX) 
+      REAL     TEMPP(NPZ,NPY,NPX), EXTINCTP(NPZ,NPY,NPX)
 Cf2py intent(out) :: TEMPP, EXTINCTP
       REAL     ALBEDOP(NPZ,NPY,NPX), LEGENP(*)
 Cf2py intent(out) :: ALBEDOP, LEGENP
@@ -88,8 +97,8 @@ Cf2py intent(out) :: IPHASEP
       END
 
 
-      SUBROUTINE READ_BROADCAST_MEM_PARAMS (MAX_TOTAL_MB, 
-     .                ADAPT_GRID_FACTOR, NUM_SH_TERM_FACTOR, 
+      SUBROUTINE READ_BROADCAST_MEM_PARAMS (MAX_TOTAL_MB,
+     .                ADAPT_GRID_FACTOR, NUM_SH_TERM_FACTOR,
      .                CELL_TO_POINT_RATIO, RUNNAME)
       REAL MAX_TOTAL_MB, ADAPT_GRID_FACTOR
 Cf2py intent(in, out) :: MAX_TOTAL_MB, ADAPT_GRID_FACTOR
@@ -131,7 +140,7 @@ Cf2py intent(in, out) :: DELXSFC, DELYSFC, SFCPARMS, GNDTEMP, GNDALBEDO
       END
 
 
-      SUBROUTINE BROADCAST_KDIST_PARMS (SOLFLUX, NG, DELG, 
+      SUBROUTINE BROADCAST_KDIST_PARMS (SOLFLUX, NG, DELG,
      .                                  NZCKD, ZCKD, KABS)
       INTEGER NG, NZCKD
       REAL    SOLFLUX, DELG(NG), ZCKD(*), KABS(NZCKD,NG)
@@ -177,7 +186,7 @@ Cf2py intent(in) :: NCELLSTOT, NPTSTOT, NSHTOT
         real cpuTimes
         SUM_CPU_TIME = cpuTimes
         RETURN
-      END 
+      END
 
 
       SUBROUTINE TOTAL_ALBEDO_MAX (ALBMAX)
@@ -198,7 +207,7 @@ Cf2py intent(in) :: NCELLSTOT, NPTSTOT, NSHTOT
       END
 
 
-      SUBROUTINE MAKE_DIRECT_PAR (SPT, NPTS, BCFLAG, IPFLAG, DELTAM, 
+      SUBROUTINE MAKE_DIRECT_PAR (SPT, NPTS, BCFLAG, IPFLAG, DELTAM,
      .                ML, NLEG, SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS,
      .                NX, XGRID, NY, YGRID,  DIRFLUX)
       IMPLICIT NONE
@@ -286,7 +295,7 @@ Cf2py intent(in) :: MU, PHI, WTDO
       REAL    XDOMAIN, YDOMAIN, XGRID(*), YGRID(*), ZGRID(*)
 Cf2py intent(in) :: XDOMAIN, YDOMAIN, XGRID, YGRID, ZGRID
       REAL    GRIDPOS(3,NPTS)
-Cf2py intent(in) :: GRIDPOS     
+Cf2py intent(in) :: GRIDPOS
       REAL    SFCGRIDPARMS(*), BCRAD(*)
 Cf2py intent(in) :: SFCGRIDPARMS, BCRAD
       REAL    EXTINCT(*), ALBEDO(*), LEGEN(0:NLEG,*)
@@ -306,7 +315,7 @@ Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
 
 
 
-      SUBROUTINE CALC_ACCEL_SOLCRIT (DOACCEL, DELJDOT, DELJOLD, DELJNEW, 
+      SUBROUTINE CALC_ACCEL_SOLCRIT (DOACCEL, DELJDOT, DELJOLD, DELJNEW,
      .                               JNORM, ACCELPAR, SOLCRIT, A)
 C     Calculates the acceleration parameter and solution criterion from
 C     the delta source function vector dot  products.
@@ -315,7 +324,7 @@ C     the delta source function vector dot  products.
       REAL    DELJDOT, DELJOLD, DELJNEW, JNORM, ACCELPAR, SOLCRIT
       REAL    R, THETA, A
 
-C       Accelerate if desired, didn't last time, and things are converging. 
+C       Accelerate if desired, didn't last time, and things are converging.
       IF (DOACCEL .AND. A .EQ. 0.0 .AND. DELJNEW .LT. DELJOLD) THEN
 C       Compute the acceleration extrapolation factor and apply it.
         R = SQRT(DELJNEW/DELJOLD)
@@ -358,4 +367,3 @@ Cf2py intent(in) :: GRIDPOS, XSTART, YSTART, DELX, DELY
       WRITE (6,*) ERRSTR
       stop
       END
-

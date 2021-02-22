@@ -1,9 +1,18 @@
-C     This file contains original fortran subroutines for SHDOM.
+C     This file contains fortran subroutines that perform the
+C     original SHDOM solution written by Frank Evans.
+C     https://nit.coloradolinux.com/~evans/shdom.html
+C     See shdom.txt for documentation.
+C     Many of these subroutines have been modified for use in pyshdom by
+C     Aviad Levis, Technion Institute of Technology, 2019 and
+C     Jesse Loveridge, University of Illinois at Urbana-Champaign, 2020-2021.
+
 C     The subroutines in this file are largely for I/O and none
 C     of them are directly used in pyshdom. The routines here are
-C     only modified with f2py tags in some cases.
+C     only modified with f2py directives in some cases.
 C      A modified version of READ_SURFACE called PREP_SURFACE
 C     (located in in src/surface.f) IS used.
+C     RESTORE_STATE and SAVE_STATE were used as reference for
+C     solver.RTE.load_solution and .save_solution.
 C      -JRLoveridge 2021/02/17
 
       SUBROUTINE NAMELIST_INPUT

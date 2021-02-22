@@ -4,6 +4,66 @@ import numpy as np
 import xarray as xr
 import pyshdom
 
+class CostFunctionL2(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cost = 0.0
+        gradout = np.zeros((10, 1, 1))
+        raygrad_pixel = np.ones((4, 10, 1))
+        uncertainties = np.ones((4, 4))*5
+        costfunc = 'L2'
+        stokesout = np.ones(4)*10.0
+        stokesout[3] = 0.0
+        measurement = np.ones(4)*13.0
+        gradout, cost = pyshdom.core.update_costfunction(
+            cost=cost,
+            gradout=gradout,
+            stokesout=stokesout,
+            measurement=measurement,
+            raygrad_pixel=raygrad_pixel,
+            uncertainties=uncertainties,
+            costfunc=costfunc,
+        )
+        cls.gradout = gradout
+        cls.cost = cost
+    def test_cost(self):
+        self.assertAlmostEqual(self.cost, 1960.0, places=5)
+    def test_gradient(self):
+        self.assertAlmostEqual(self.gradout[0, 0, 0], -440.0, places=5)
+
+class CostFunctionLL(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cost = 0.0
+        gradout = np.zeros((10, 1, 1))
+        raygrad_pixel = np.ones((3, 10, 1))
+        uncertainties = np.zeros((2, 2))
+        uncertainties[0, 0] = (1.0/0.03)**2
+        uncertainties[1, 1] = (1.0/0.005)**2
+        costfunc = 'LL'
+        stokesout = np.ones(3)
+        stokesout[1] = 0.5
+        stokesout[2] = 0.0
+        measurement = np.ones(3)*1.25
+        measurement[1] = 0.25
+        measurement[2] = 0.25
+
+        gradout, cost = pyshdom.core.update_costfunction(
+            cost=cost,
+            gradout=gradout,
+            stokesout=stokesout,
+            measurement=measurement,
+            raygrad_pixel=raygrad_pixel,
+            uncertainties=uncertainties,
+            costfunc=costfunc,
+        )
+        cls.gradout = gradout
+        cls.cost = cost
+    def test_cost(self):
+        self.assertAlmostEqual(self.cost, 6519.21, places=2)
+    def test_gradient(self):
+        self.assertAlmostEqual(self.gradout[0, 0, 0], 45329.43, places=2)
+
 
 class Microphysical_Derivatives(TestCase):
     @classmethod

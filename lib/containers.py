@@ -112,7 +112,8 @@ class SensorsDict(OrderedDict):
         return forward_sensors
 
     def get_measurements(self, solvers, n_jobs=1, mpi_comm=None, maxiter=100, verbose=True,
-                         init_solution=True, setup_grid=True, destructive=False, solve=True):
+                         init_solution=True, setup_grid=True, destructive=False,
+                         overwrite_solver=False):
         """
         Calculates the observables specified in the sensors in self using
         RTE solvers.
@@ -131,38 +132,55 @@ class SensorsDict(OrderedDict):
             solutions and the
         mpi_comm : mpi4py.MPI.Intracomm
             An MPI communicator for the MPI parallelization of different RTE
-            solutions.
-        maxiter : int
-            The maximum number of SHDOM iterations used in the SHDOM solution
-            procedure. More are needed for an optically thicker medium.
-        verbose : bool
-            If true then some diagnostic output for the SHDOM solution is printed
-            to stdout.
-        init_solution : bool
-            Whether to
+            solutions. MPI is prioritized over other parallelization methods.
+        destructive : bool
+            If True when MPI is used then the large memory is released after measurements
+            are simulated. This means that solvers will have to be resolved to
+            recalculate measurements but can prevent running out of memory if a large
+            number of sequential RTE solutions are calculated by each worker.
+        overwrite_solver : bool
+            If True then forces all solvers to resolve the RTE even if they have
+            already converged.
+        maxiter: integer
+            Maximum number of iterations for the iterative solution to SHDOM.
+        setup_grid: boolean
+            If True then a new grid is initialized. If False then the grid
+            (including adaptive grid points)
+        init_solution: boolean, default=True
+            If False then a solution is initialized. This is overwritten
+            to True if no existing Radiance/Source function fields exist.
+            The solution initialization will use a Radiance/Source field provided
+            by RTE.load_solution or use a 1D two-stream model.
+        verbose: boolean
+            True will output solution iteration information into stdout.
         """
         if not isinstance(solvers, SolversDict):
-            raise TypeError("`solvers` should be of type '{}' not '{}'".format(SolversDict, type(solvers)))
+            raise TypeError(
+                "`solvers` should be of type '{}' not '{}'".format(
+                    SolversDict, type(solvers))
+                )
         if not isinstance(destructive, np.bool):
             raise TypeError("`destructive` should be a boolean.")
 
         rte_sensors, sensor_mappings = self.sort_sensors(solvers)
+        keys, to_solve = solvers.to_solve(overwrite_solver)
 
         if mpi_comm is not None:
             out = []
             keys = []
-            for i in range(0, len(solvers), mpi_comm.Get_size()):
+            for i in range(0, len(to_solve), mpi_comm.Get_size()):
                 index = i + mpi_comm.Get_rank()
-                if index < len(solvers):
-                    key = list(solvers)[index]
-                    if solve:
-                        solvers[key].solve(maxiter=maxiter, verbose=verbose,
-                                           init_solution=init_solution, setup_grid=setup_grid)
+                if index < len(to_solve):
+                    key = keys[index]
+                    to_solve[index].solve(
+                        maxiter=maxiter, verbose=verbose, init_solution=init_solution,
+                        setup_grid=setup_grid)
                     out.append(solvers[key].integrate_to_sensor(rte_sensors[key]))
                     keys.append(key)
                     if destructive:
-                        #memory management. After rendering the large arrays are released to ensure that the largest
-                        #max_total_mb is not exceeded.
+                        # memory management. After rendering, the large arrays are
+                        # released to ensure that the largest
+                        # max_total_mb is not exceeded.
                         solvers[key]._release_big_arrays()
 
             out = mpi_comm.gather(out, root=0)
@@ -174,10 +192,9 @@ class SensorsDict(OrderedDict):
                 self.add_measurements_forward(sensor_mappings, organized_out, list(solvers))
 
         else:
-            if solve:
-                solvers.parallel_solve(n_jobs=n_jobs, mpi_comm=mpi_comm, maxiter=maxiter,
-                                       verbose=verbose, init_solution=init_solution,
-                                       setup_grid=setup_grid)
+            solvers.parallel_solve(n_jobs=n_jobs, mpi_comm=mpi_comm, maxiter=maxiter,
+                                   verbose=verbose, init_solution=init_solution,
+                                   setup_grid=setup_grid, overwrite_solver=overwrite_solver)
             if n_jobs == 1 or n_jobs >= self.npixels:
                 out = [solvers[key].integrate_to_sensor(rte_sensors[key]) for key in solvers]
                 keys = list(solvers)
@@ -250,7 +267,7 @@ class SensorsDict(OrderedDict):
 #                                 uncertainty_data = np.ones((solver._nstokes,
 #                                                             solver._nstokes,
 #                                                             sensor.sizes['npixels']))
-# 
+#
 #                                 sensor['uncertainties'] = (['nstokes', 'nstokes2', 'npixels'],
 #                                                            uncertainty_data)
 #                             else:
@@ -660,7 +677,7 @@ class SolversDict(OrderedDict):
             raise TypeError("solver should be of type '{}'".format(pyshdom.solver.RTE))
         self[key] = solver
 
-    def parallel_solve(self, n_jobs=1, mpi_comm=None, maxiter=100,
+    def parallel_solve(self, n_jobs=1, mpi_comm=None, overwrite_solver=False, maxiter=100,
                        verbose=True, init_solution=True, setup_grid=True):
         """
         Solves in parallel all solver.RTE objects using MPI or multi-threading.
@@ -672,28 +689,62 @@ class SolversDict(OrderedDict):
         mpi_comm : mpi4py.MPI.Intracomm
             The MPI communicator forces the MPI parallelization to run.
             Note that there is no type check on mpi_comm.
-        solver_kwargs : dict
-            kwargs to pass to each solver.RTE object's .solve() method.
-            All solvers receive the same kwargs.
+        overwrite_solver : bool
+            If True then forces all solvers to resolve the RTE even if they have
+            already converged.
+        maxiter: integer
+            Maximum number of iterations for the iterative solution to SHDOM.
+        setup_grid: boolean
+            If True then a new grid is initialized. If False then the grid
+            (including adaptive grid points)
+        init_solution: boolean, default=True
+            If False then a solution is initialized. This is overwritten
+            to True if no existing Radiance/Source function fields exist.
+            The solution initialization will use a Radiance/Source field provided
+            by RTE.load_solution or use a 1D two-stream model.
+        verbose: boolean
+            True will output solution iteration information into stdout.
         """
+        key_list, to_solve = self.to_solve(overwrite_solver)
         if mpi_comm is not None:
-            for i in range(0, len(self), mpi_comm.Get_size()):
+            for i in range(0, len(to_solve), mpi_comm.Get_size()):
                 index = i + mpi_comm.Get_rank()
-                if index < len(self):
-                    key = list(self)[index]
-                    self[key].solve(maxiter=maxiter, verbose=verbose,
-                                    init_solution=init_solution,
-                                    setup_grid=setup_grid)
+                if index < len(to_solve):
+                    to_solve[index].solve(
+                        maxiter=maxiter, verbose=verbose, init_solution=init_solution,
+                        setup_grid=setup_grid)
         else:
             if n_jobs == 1:
-                for solver in self.values():
+                for solver in to_solve:
                     solver.solve(maxiter=maxiter, init_solution=init_solution,
                                  verbose=verbose, setup_grid=setup_grid)
             else:
                 Parallel(n_jobs=n_jobs, backend="threading")(
                     delayed(solver.solve)(maxiter=maxiter, init_solution=init_solution,
                                           verbose=verbose, setup_grid=setup_grid)
-                    for solver in self.values())
+                    for solver in to_solve)
+
+    def to_solve(self, overwrite_solver):
+        """
+        Returns the keys and solvers of solvers that have not already
+        converged to the prescribed solution accuracy.
+
+        This is used to avoid repeating possibly expensive RTE solutions
+        if not necessary.
+
+        Parameters
+        ----------
+        overwrite_solver : bool
+            If True then returns all keys and solvers in self. Else, only those
+            which have not converged.
+        """
+        if overwrite_solver:
+            solver_list = self.values()
+            key_list = self.keys()
+        else:
+            solver_list = [solver for solver in self.values() if not solver.check_solved(verbose=False)]
+            key_list = [key for key, solver in self.items() if not solver.check_solved(verbose=False)]
+        return key_list, solver_list
 
     def add_direct_beam_derivatives(self):
         """
@@ -873,7 +924,4 @@ class UnknownScatterers(OrderedDict):
 
     @property
     def table_to_grid_method(self):
-        """
-        TODO
-        """
         return self._table_to_grid_method

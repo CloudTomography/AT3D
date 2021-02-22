@@ -1,5 +1,15 @@
+! Fortran subroutines written by
+! Jesse Loveridge, University of Illinois at Urbana-Champaign, 2020-2021
+! for inclusion in pyshdom. `average_subpixel_rays` is essential to the operation
+! of pyshdom.
+! `cell_average` is useful for diagnostics when comparing between grids.
+! There is also a ray integration routine to allow linear tomography methods
+! utilizing an SHDOM-type grid.
+
 subroutine average_subpixel_rays (npixels,nrays, weighted_stokes, nstokes, &
                               pixel_index, observables)
+! Averages over sub-pixel rays to calculate pixel average observables.
+! See pyshdom.containers._calculate_observables.
 
   implicit none
   integer npixels, nrays, nstokes, pixel_index(nrays)

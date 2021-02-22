@@ -13,9 +13,24 @@ import pyshdom.grid
 
 class SpaceCarver:
     """
-    An object that sets up an SHDOM grid structure through which
-    rays can be traced to perform space carving and ray integration
-    operations.
+    Performs a space carving operation to mask points in a volume based on masked
+    projections of the volume.
+
+    This can be used to estimate the cloudy volume from multi-angle imager cloud
+    masks.
+    Uses the SHDOM grid structure and ray tracing to perform the space carving.
+    A grid point is flagged by a ray's mask if the ray passes through a cell to
+    which the gridpoint is adjacent. This is also the criteria for the ray having a
+    non-zero contribution to the gradient at that point.
+    This object can also perform integrations of an arbitrary field defined on the
+    SHDOM grid (linear interpolation kernel) and can also backproject 'ray weights' to the
+    grid points.
+
+    Parameters
+    ----------
+    grid : xr.Dataset
+        A valid SHDOM grid object containing the x, y, z coordinates. See grid.py
+        for more details.
     """
     def __init__(self, grid):
 
@@ -125,7 +140,38 @@ class SpaceCarver:
 
     def carve(self, sensor_masks, agreement=None, linear_mode=False):
         """
-        Performs a space carving operation on
+        Performs a space carving operation using the binary masks from the
+        sensors.
+
+        Parameters
+        ----------
+        sensor_masks : List/Tuple of xr.Dataset or pyshdom.containers.SensorsDict
+            A group of datasets containing geometry of the rays and also their
+            binary masks. See sensor.py for more details.
+        agreement : Tuple/List
+            Sets the logic for defining when a gridpoint is masks based on
+            the ray masks from each of the elements of `sensor_masks`.
+            If None, then the individual gridpoint masks are returned to be
+            combined by the user.
+            Otherwise, the first element of agreement is the threshold fraction of masked
+            to total rays that intersect each grid point. If greater, then the
+            gridpoint is set as cloudy for the contribution from that SENSOR
+            (elements in `sensor_masks`).
+            The second element sets the fraction of SENSORS that have to be masked
+            at each gridpoint for that gridpoint to be masked.
+        linear_mode : bool
+            A flag which decides whether a linear or nearest neighbor interpolation
+            kernel is used for the back propagation of weights. The linear interpolation
+            kernel has not been debugged.
+
+        Returns
+        -------
+        space_carved : xr.Dataset
+            Contains the masked counts and total counts of ray intersections with
+            grid points as well as the average weight, for each element of `sensor_masks`.
+            Additionally, if `agreement` is supplied a 'mask' variable is present based
+            on thresholding and averaging of the volumetric masks from each of the
+            sensors.
         """
         if isinstance(sensor_masks, xr.Dataset):
             sensor_list = [sensor_masks]
@@ -136,6 +182,9 @@ class SpaceCarver:
             for instrument in sensor_masks:
                 sensor_list.extend(sensor_masks[instrument]['sensor_list'])
 
+        if linear_mode:
+            raise NotImplementedError("`linear_mode`=True has not been debugged.")
+
         volume = np.zeros((len(sensor_list), 3, self._nx, self._ny, self._nz))
         for i, sensor in enumerate(sensor_list):
 
@@ -145,7 +194,10 @@ class SpaceCarver:
             cammu = sensor['ray_mu'].data
             camphi = sensor['ray_phi'].data
             flags = sensor['cloud_mask'].data
-            weights = sensor['weights'].data
+            if 'weights' in sensor.data_vars:
+                weights = sensor['weights'].data
+            else:
+                weights = np.ones(flags.shape)
 
             assert camx.ndim == camy.ndim == camz.ndim == cammu.ndim == camphi.ndim == 1
             total_pix = camphi.size
@@ -191,7 +243,7 @@ class SpaceCarver:
 
         if agreement is not None:
             mask = ((space_carved.cloudy_counts/space_carved.total_counts > agreement[0]).astype(
-                    np.int).mean('nsensors') >= agreement[1]).astype(np.int)
+                np.int).mean('nsensors') >= agreement[1]).astype(np.int)
             masked_weights = (space_carved.weights/space_carved.total_counts).mean('nsensors')
             space_carved['mask'] = mask
             space_carved['masked_weights'] = masked_weights
@@ -199,8 +251,20 @@ class SpaceCarver:
         return space_carved
 
     def project(self, weights, sensors, return_matrix=False):
-        """
-        TODO
+        """Performs line integrations assuming a linear interpolation kernel.
+
+        The supplied `weights` are first interpolated onto the grid used by the
+        SpaceCarver then line integrations are performed for each ray in the `sensors`.
+        The `sensors` are modified in place to include the result of the line integrations.
+
+        Parameters
+        ----------
+        weights : xr.Dataset
+            A dataset containing a 'density' variable which will be integrated assuming
+            linear interpolation between points.
+        sensors : List/Tuple or pyshdom.containers.SensorsDict or xr.Dataset
+            Contains the ray geometry for defining the line integrations. See
+            sensor.py for more details.
         """
         if isinstance(sensors, xr.Dataset):
             sensor_list = [sensors]
@@ -211,8 +275,9 @@ class SpaceCarver:
             for instrument in sensors:
                 sensor_list.extend(sensors[instrument]['sensor_list'])
         weights = weights.copy(deep=True)
-        weights = weights.drop_vars([name for name in weights.variables
-                           if name not in ('x', 'y', 'z', 'density')])
+        weights = weights.drop_vars(
+            [name for name in weights.variables if name not in ('x', 'y', 'z', 'density')]
+            )
 
         resampled_weights = pyshdom.grid.resample_onto_grid(self._grid, weights).density.data.ravel()
         for sensor in sensor_list:

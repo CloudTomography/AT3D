@@ -27,3 +27,8 @@ class GridError(Exception):
     """Raised if an xr.Dataset has coordinates which are not consistent
     with the requirements of an SHDOM grid. See checks.check_grid.
     """
+
+class SHDOMError(Exception):
+    """Raised if there is an error that would call 'STOP' in SHDOM within
+    the python wrapping, e.g. if there is an issue in memory allocation.
+    """

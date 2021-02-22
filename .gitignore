@@ -3,9 +3,10 @@ notebooks/.ipynb_checkpoints/
 build/
 dist/
 mie_tables/
-shdom.egg-info/
-pyshdom/__pycache__/
-shdom/*.so
+pyshdom.egg-info/
+lib/__pycache__/
+tests/__pycache__/
+lib/*.so
 venv/
 src/core.pyf
 src/coremodule.c

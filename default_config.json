@@ -19,7 +19,7 @@
     "default_value": 0.03,
     "description": [
       "(SPLITACC) cell splitting accuracy; grid cells that have the adaptive splitting criterion above this value are split.",
-      "This is an absolute measure, but cannot be easily associated with the resulting radiometric accuracy.\n Set to zero or negative for no adaptive cell splitting."
+      "This is an absolute measure, but cannot be easily associated with the resulting radiometric accuracy. Set to zero or negative for no adaptive cell splitting."
     ]
   },
   "deltam": {
@@ -50,12 +50,12 @@
     "description": "(ADAPT_GRID_FACTOR) ratio of total grid points to base grid points"
   },
   "num_sh_term_factor": {
-    "default_value": 5,
-    "description": "(NUM_SH_TERM_FACTOR) ratio of average number of spherical harmonic terms to total possible (NLM)"
+    "default_value": 1.0,
+    "description": "(NUM_SH_TERM_FACTOR) ratio of average number of spherical harmonic terms to total possible (NLM) (<=1.0)"
   },
   "cell_to_point_ratio": {
     "default_value": 1.5,
-    "description": "(CELL_TO_POINT_RATIO) ratio of number of grid cells to grid points"
+    "description": "(CELL_TO_POINT_RATIO) ratio of number of grid cells to grid points (1.0 - 2.0)"
   },
   "high_order_radiance": {
     "default_value": false,
@@ -68,5 +68,9 @@
       "3 for indepedent pixels (i.e. bit 0 for X and bit 1 for Y). Bit 2 of IPFLAG means do the direct beam in 3D,",
       " e.g. IPFLAG=7 means 3D direct beam but IP diffuse radiative transfer."
     ]
+  },
+  "iterfixsh": {
+      "default_value": 30,
+      "description": "The number of iterations after which the spherical harmonic truncation is fixed."
   }
 }

@@ -1,8 +1,18 @@
-C     This file contains fortran subroutines that have been modified from
-C     original SHDOM as well as original subroutines that have only
-C     received f2py tags.
-C     New subroutines include INIT_SOLUTION, SOLUTION_ITERATIONS
+C     This file contains fortran subroutines that perform the
+C     original SHDOM solution written by Frank Evans.
+C     https://nit.coloradolinux.com/~evans/shdom.html
+C     See shdom.txt for documentation.
+C     Many of these subroutines have been modified for use in pyshdom by
+C     Aviad Levis, Technion Institute of Technology, 2019 and
+C     Jesse Loveridge, University of Illinois at Urbana-Champaign, 2020-2021.
 
+C     The main SOLVE_RTE subroutine has been
+C     broken into INIT_SOLUTION and SOLUTION_ITERATIONS.
+C     Several subroutines have been modified to accomodate mixing of
+C     phase functions between different particle types at run time
+C     e.g. COMPUTE_SOURCE.
+C     Directives for the f2py wrapping have also been added.
+C     - JRLoveridge 2021/02/22
 
       SUBROUTINE TRANSFER_PA_TO_GRID (ML, MM, MAXIG, NLEG, NUMPHASE,
      .             DELTAM, SRCTYPE, UNITS, WAVENO, WAVELEN,
@@ -363,7 +373,8 @@ C           inequality holds.
      .               NPHI0MAX, EPSS, EPSZ, XDOMAIN, YDOMAIN, DELXD,
      .               DELYD, ALBMAX, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .               FFTFLAG, CMU1, CMU2, WTMU, CPHI1, CPHI2, WPHISAVE,
-     .               WORK, WORK1, WORK2, UNIFORM_SFC_BRDF, SFC_BRDF_DO)
+     .               WORK, WORK1, WORK2, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
+     .               ITERFIXSH)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -375,8 +386,8 @@ C       cells and points on output.
 Cf2py intent(in) :: NSTOKES, NX, NY, NX1, NY1, NZ, NXSFC, NYSFC, NSFCPAR
       INTEGER ML, MM, NCS, NLM, NMU, NPHI, NANG, NLEG, NSTLEG, NUMPHASE
 Cf2py intent(in) :: ML, MM, NCS, NLM, NMU, NPHI, NANG, NLEG, NSTLEG, NUMPHASE
-      INTEGER NPHI0(NMU), MAXITER, ITER, BCFLAG, IPFLAG
-Cf2py intent(in) :: MAXITER, BCFLAG, IPFLAG, NPHI0
+      INTEGER NPHI0(NMU), MAXITER, ITER, BCFLAG, IPFLAG, ITERFIXSH
+Cf2py intent(in) :: MAXITER, BCFLAG, IPFLAG, NPHI0, ITERFIXSH
       INTEGER MAXIV, MAXIC, MAXIG, MAXIDO
 Cf2py intent(in) :: MAXIV, MAXIC, MAXIG, MAXIDO
       INTEGER MAXNBC, MAXBCRAD
@@ -607,7 +618,9 @@ C             discrete ordinates.
 C            Compute the source function from the radiance field,
 C              do the adaptive spherical harmonics truncation, compute
 C              the solution criterion, and dot products for acceleration.
-        IF (SOLCRIT .LT. ENDADAPTSOL .OR. ITER .GT. 30)  FIXSH = .TRUE.
+        IF (SOLCRIT .LT. ENDADAPTSOL .OR. ITER .GT. ITERFIXSH) THEN
+          FIXSH = .TRUE.
+        ENDIF
         CALL COMPUTE_SOURCE (NSTOKES, ML, MM, NLM,
      .         NSTLEG, NLEG, NUMPHASE, NPTS,
      .         FIXSH, SRCTYPE, SOLARMU, YLMSUN, ALBEDO(:NPTS,:), LEGEN,

@@ -1,3 +1,12 @@
+!     This file contains fortran subroutines that perform mie calculations
+!     written by Frank Evans.
+!     https://nit.coloradolinux.com/~evans/shdom.html
+!     Many of these subroutines have been modified for use in pyshdom by
+!     Aviad Levis, Technion Institute of Technology, 2019 and
+!     Jesse Loveridge, University of Illinois at Urbana-Champaign, 2020-2021.
+!     - JRLoveridge 2021/02/22
+
+
 SUBROUTINE GET_MIE_TABLE (NRETAB, MAXLEG, WAVELEN1, WAVELEN2, WAVELENCEN, DELTAWAVE, &
                           PARDENS, SRETAB, ERETAB, ALPHA, GAMMA, MAXRADIUS, RINDEX, PARTYPE, &
                           AVGFLAG, DISTFLAG, REFF, EXTINCT,SSALB,NLEG,LEGCOEF,LOGRE, &

@@ -1,6 +1,16 @@
-!  SHDOM: Spherical harmonic discrete ordinate radiative transfer method.
-!      See shdom.txt for documentation.
-!      Fortran 90 version of the main program for using allocatable arrays.
+!     This file contains fortran subroutines that perform mie calculations
+!     written by Frank Evans.
+!     https://nit.coloradolinux.com/~evans/shdom.html
+!     See shdom.txt for documentation.
+!     Many of these subroutines have been modified for use in pyshdom by
+!     Aviad Levis, Technion Institute of Technology, 2019 and
+!     Jesse Loveridge, University of Illinois at Urbana-Champaign, 2020-2021.
+
+!     The main program has been removed as it is now represented in python
+!     as the solver.RTE object.
+!     Directives for the f2py wrapping have also been added.
+!     - JRLoveridge 2021/02/22
+
 
       SUBROUTINE TRILIN_INTERP_PROP (X, Y, Z, INIT, NSTLEG, NLEG, &
                      TEMP, EXTINCT, ALBEDO, LEGEN, IPHASE, &

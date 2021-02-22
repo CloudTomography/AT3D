@@ -1,5 +1,5 @@
 """
-Utility functions
+Utility functions for pyshdom. These are not critical to its operation.
 """
 import typing
 
@@ -12,22 +12,6 @@ import pandas as pd
 import pyshdom.core
 import pyshdom.solver
 import pyshdom.grid
-
-def float_round(x):
-    """Round a float or np.float32 to a 3 digits float"""
-    if type(x) == np.float32:
-        x = x.item()
-    return round(x,3)
-
-def int_round(x):
-    """Round a float or np.float32 to a 3 digits integer by 1000x scaling"""
-    return int(np.round(x*1000))
-
-def find_nearest(array, value):
-    """Find the nearest element index in an array"""
-    array = np.asarray(array)
-    idx = (np.abs(array - value)).argmin()
-    return idx
 
 def set_pyshdom_path():
     """set path to pyshdom parent directory"""
@@ -186,9 +170,9 @@ def get_phase_function(legcoef, angles, phase_elements='All'):
     for name in coord_sizes:
         coords[name] = legcoef.coords[name]
 
-    phase_functions_full = np.stack(phase_functions_full, axis=-1).reshape([len(phase_elements),
-                                                                            len(angles),
-                                                                            ]+list(small_coord_sizes.values()))
+    phase_functions_full = np.stack(phase_functions_full, axis=-1).reshape(
+        [len(phase_elements), len(angles)] + list(small_coord_sizes.values())
+    )
 
     phase_array = xr.DataArray(
         name='phase_function',
@@ -199,8 +183,7 @@ def get_phase_function(legcoef, angles, phase_elements='All'):
     return phase_array
 
 
-
-def planck_function(temperature, wavelength, c=2.99792458e8,h=6.62606876e-34,k=1.3806503e-23):
+def planck_function(temperature, wavelength, c=2.99792458e8, h=6.62606876e-34, k=1.3806503e-23):
     """
     temperature
         units, Kelvin
@@ -210,7 +193,7 @@ def planck_function(temperature, wavelength, c=2.99792458e8,h=6.62606876e-34,k=1
         units, Watts/m^2/micrometer/steradian (SHDOM units)
     """
     wavelength = wavelength*1e-6
-    radiance = 2*h*c**2/ wavelength**5 * 1.0 / (np.exp((h*c) / (wavelength*k*temperature)) - 1.0) * 1e-6
+    radiance = 2*h*c**2/ wavelength**5 *1.0/(np.exp((h*c)/(wavelength*k*temperature)) - 1.0)*1e-6
     return radiance
 
 def cell_average_comparison(reference, other, variable_name):
@@ -218,24 +201,22 @@ def cell_average_comparison(reference, other, variable_name):
     calculates average values of 'variable name' in the cells
     of reference's grid for both reference and other (other is on a different grid.)
     """
-    xgrid1 = reference.x.data
-    ygrid1 = reference.y.data
-    zgrid1 = reference.z.data
-    values1 = reference[variable_name].data
-
-    xgrid2 = other.x.data
-    ygrid2 = other.y.data
-    zgrid2 = other.z.data
-    values2 = other[variable_name].data
-
-    ref_vol,ref_val, other_vol, other_val = pyshdom.core.cell_average(xgrid1=xgrid1,ygrid1=ygrid1,zgrid1=zgrid1,
-                        xgrid2=xgrid2,ygrid2=ygrid2,zgrid2=zgrid2,
-                        values1=values1,
-                        values2=values2)
+    ref_vol, ref_val, other_vol, other_val = pyshdom.core.cell_average(
+        xgrid1=reference.x.data,
+        ygrid1=reference.y.data,
+        zgrid1=reference.z.data,
+        xgrid2=other.x.data,
+        ygrid2=other.y.data,
+        zgrid2=other.z.data,
+        values1=reference[variable_name].data,
+        values2=other[variable_name].data
+    )
     cell_average_ref = np.zeros(ref_vol.shape)
-    cell_average_ref[np.where(ref_vol > 0.0)] = ref_val[np.where(ref_vol > 0.0)] /ref_vol[np.where(ref_vol > 0.0)]
-    cell_average_other= np.zeros(other_vol.shape)
-    cell_average_other[np.where(other_vol > 0.0)] = other_val[np.where(other_vol > 0.0)] /other_vol[np.where(other_vol > 0.0)]
+    cell_average_ref[np.where(ref_vol > 0.0)] = ref_val[np.where(ref_vol > 0.0)] / \
+        ref_vol[np.where(ref_vol > 0.0)]
+    cell_average_other = np.zeros(other_vol.shape)
+    cell_average_other[np.where(other_vol > 0.0)] = other_val[np.where(other_vol > 0.0)] \
+        /other_vol[np.where(other_vol > 0.0)]
     return cell_average_ref, cell_average_other
 
 def load_2parameter_lwc_file(file_name, density='lwc'):

@@ -1,9 +1,12 @@
+C     This file contains fortran subroutines that perform mie calculations
+C     written by Frank Evans.
+C     https://nit.coloradolinux.com/~evans/shdom.html
 
       SUBROUTINE MIE_ONE (WAVELENGTH, MINDEX, RADIUS,
      .                   MAXRANK, EXTINCTION, SCATTER, NRANK, WIGCOEF)
 C       Computes the Mie scattering properties for a single homogeneous
-C     sphere of radius RADIUS.  The six phase matrix elements times the 
-C     scattering coefficient is returned as Wigner d-function series 
+C     sphere of radius RADIUS.  The six phase matrix elements times the
+C     scattering coefficient is returned as Wigner d-function series
 C     coefficients.
       IMPLICIT NONE
       INTEGER     MAXRANK, NRANK
@@ -24,9 +27,9 @@ C     coefficients.
       DOUBLE COMPLEX A(MAXN), B(MAXN)
       SAVE MU, WTS, LASTNQUAD
       DATA LASTNQUAD/-1/
-      
 
-      PI = ACOS(-1.0D0)      
+
+      PI = ACOS(-1.0D0)
       X = 2.0D0*PI*RADIUS/WAVELENGTH
       GEOMAREA = PI*RADIUS**2
       MSPHERE = MINDEX
@@ -55,7 +58,7 @@ C         Get the Gauss-Legendre quadrature abscissas and weights
 
 
 C         Calculate the phase function at the quadrature angles and then
-C         integrate over angle to get the Wigner d-function coefficients. 
+C         integrate over angle to get the Wigner d-function coefficients.
       DO L = 0, NRANK
         DO J = 1, 6
           COEF(J,L) = 0.0D0
@@ -92,14 +95,14 @@ C         Calculate the series expansion coefficients
           WIGCOEF(J,L) = SNGL( (WAVELENGTH**2/PI) *COEF(J,L) )
         ENDDO
       ENDDO
-       
+
       RETURN
       END
- 
- 
 
- 
- 
+
+
+
+
       SUBROUTINE MIECALC (NTERMS, X, MN, A, B)
 C        MIECALC calculates the complex Mie coefficients An and Bn
 C      given the dimensionless size parameter X and the complex
@@ -116,8 +119,8 @@ C      appropriate number is calculated and returned in NTERMS.
       DOUBLE PRECISION  DCOS, DSIN
       DOUBLE COMPLEX  M, Y, D(MAXTERMS+15), XIN, XIM, CTMP
       DOUBLE COMPLEX  DCMPLX
- 
- 
+
+
 C           If NTERMS is not specified calculate it
       NSTOP = X + 4.0*X**0.3334 + 2
       IF (NTERMS .LE. 0)  NTERMS = NSTOP
@@ -126,7 +129,7 @@ C           If NTERMS is not specified calculate it
      .       'Mie calculation requires more terms than available.'
           STOP
       ENDIF
- 
+
 C           Generate the Dn's by down recurrence  D = d(log(PSI(y)))/dy
       M = DCONJG(MN)
       Y = M*X
@@ -135,7 +138,7 @@ C           Generate the Dn's by down recurrence  D = d(log(PSI(y)))/dy
       DO N = NN, 2, -1
           D(N-1) = N/Y - 1.0/ (D(N) + N/Y)
       ENDDO
- 
+
 C           Generate the PSIn's and XIn'S by upward recurrence
 C             and calculate the An's and Bn's from them.
 C             (PSIN = PSI(n), PSIM = PSI(n-1), same for CHI)
@@ -157,12 +160,12 @@ C             (PSIN = PSI(n), PSIM = PSI(n-1), same for CHI)
           CTMP = M*D(N) + N/X
           B(N) = (CTMP*PSIN - PSIM) / (CTMP*XIN - XIM)
       ENDDO
- 
+
       RETURN
       END
- 
- 
- 
+
+
+
 
       SUBROUTINE MIECROSS (NTERMS, X, A, B, QEXT, QSCAT)
 C        MIECROSS calculates the extinction, scattering, and
@@ -174,7 +177,7 @@ C      and the size parameter X.
       DOUBLE COMPLEX  A(*), B(*)
       INTEGER    N
       DOUBLE PRECISION  SUM1, SUM2, DREAL
- 
+
       SUM1 = 0.0D0
       SUM2 = 0.0D0
       DO N = 1, NTERMS
@@ -187,15 +190,15 @@ C      and the size parameter X.
 
       RETURN
       END
- 
- 
- 
- 
+
+
+
+
       SUBROUTINE MIEANGLE (NTERMS, A, B, MU, P1, P2, P3, P4)
 C        MIEANGLE calculates the scattering matrix elements (P1,P2,P3,P4)
-C      for a particular value of MU (cos(theta)) from the Mie coefficients 
+C      for a particular value of MU (cos(theta)) from the Mie coefficients
 C      An's and Bn's.  The matrix elements are for the Stokes vector
-C      (I,Q,U,V) and are calculated from the complex scattering 
+C      (I,Q,U,V) and are calculated from the complex scattering
 C      amplitudes S1 and S2.
       IMPLICIT NONE
       INTEGER    NTERMS
@@ -204,7 +207,7 @@ C      amplitudes S1 and S2.
       INTEGER    N
       DOUBLE PRECISION TMP, PIN, PIM, TAUN, C
       DOUBLE COMPLEX  S1, S2
- 
+
       S1 = DCMPLX(0.0,0.0)
       S2 = DCMPLX(0.0,0.0)
 C               Sum up the series using the An's and Bn's
@@ -230,11 +233,11 @@ C           Calculate the first Stokes parameter scattering matrix element
       RETURN
       END
 
- 
+
 
       SUBROUTINE GAUSQUAD (N, XA, WT)
 C        Generates the abscissas (X) and weights (W) for an N point
-C      Gauss-Legendre quadrature.  
+C      Gauss-Legendre quadrature.
       IMPLICIT NONE
       INTEGER  N
       DOUBLE PRECISION  XA(*), WT(*)
@@ -267,6 +270,3 @@ C      Gauss-Legendre quadrature.
 
       RETURN
       END
-
-
-

@@ -1,5 +1,12 @@
 """
-Contains the
+Contains the implementation of the Levis approximation to the Frechet derivatives which
+does all of the hardwork of a) preparing uncertainties and b) the mechanistic
+part of the evaluation of the cost function and the gradient.
+To implement a slightly different cost function / gradient that still makes
+use of the Levis approximation, you will need to a) create a new cost function
+in src/shdomsub4.f UPDATE_COSTFUNCTION, b) make sure an uncertainty model is
+compatible (uncertainties.py) and possibly, c) add a class that inherits from
+LevisApproxGradient (e.g. LevisApproxGradientUncorrelated).
 """
 import copy
 import warnings
@@ -86,10 +93,13 @@ class LevisApproxGradient:
             )
         return outputs
 
-    def levis_approximation_grad(self, rte_solver, sensor, cost_function='L2', indices_for_jacobian=None,
-                                 exact_single_scatter=True):
+    def levis_approximation_grad(self, rte_solver, sensor, cost_function='L2',
+                                 indices_for_jacobian=None, exact_single_scatter=True):
         """
-        The core l2 gradient method.
+        Calculates the gradient of a cost function according to the Levis approximation to the Frechet
+        derivatives of the RTE equation.
+
+        Calls the main fortran subroutine in src/polarized/shdomsub4.f.
 
         Parameters
         ----------
@@ -168,7 +178,11 @@ class LevisApproxGradient:
                 (rte_solver._pa.npx, rte_solver._pa.npy, rte_solver._pa.npz)
                 ) + 1
             num_jacobian_pts = np.size(jacobian_ptr)
-            jacobian = np.empty((rte_solver._nstokes, rte_solver._num_derivatives, num_jacobian_pts, total_pix), order='F', dtype=np.float32)
+            jacobian = np.empty(
+                (rte_solver._nstokes, rte_solver._num_derivatives, num_jacobian_pts, total_pix),
+                order='F',
+                dtype=np.float32
+            )
             jacobian_flag = True
 
         gradient, loss, images, jacobian = pyshdom.core.levisapprox_gradient(
@@ -363,23 +377,23 @@ def make_gradient_dataset(gradient, unknown_scatterers, solvers):
         of which scattering species gradients have been calculated for.
     """
     derivative_names = []
-    unknown_scatterer_names2  = []
-    for name,values in unknown_scatterers.items():
+    unknown_scatterer_names2 = []
+    for name, values in unknown_scatterers.items():
         for variable_name in values['variable_name_list']:
             derivative_names.append(variable_name)
             unknown_scatterer_names2.append(name)
     unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices - 1
     unknown_scatterer_names = np.array(list(list(solvers.values())[0].medium.keys()))[unknown_scatterer_indices]
     assert np.all(unknown_scatterer_names == np.atleast_1d(unknown_scatterer_names2)), 'Two different ways of listing unknown scatterer names do not match.'
-    derivative_index = pd.MultiIndex.from_arrays([unknown_scatterer_names, derivative_names], names=("scatterer_name","variable_name"))
+    derivative_index = pd.MultiIndex.from_arrays([unknown_scatterer_names, derivative_names], names=("scatterer_name", "variable_name"))
 
     grid = list(solvers.values())[0]._grid
     gradient_dataset = xr.Dataset(
-                        data_vars = {
-                            'gradient': (['x','y','z','derivative_index'],
-                                         gradient.reshape((grid.sizes['x'], grid.sizes['y'], grid.sizes['z'],-1)))
+                        data_vars={
+                            'gradient': (['x', 'y', 'z', 'derivative_index'],
+                                 gradient.reshape((grid.sizes['x'], grid.sizes['y'], grid.sizes['z'], -1)))
                         },
-        coords = {
+        coords={
             'x': grid.x,
             'y': grid.y,
             'z': grid.z,
@@ -445,16 +459,16 @@ def make_jacobian_dataset(jacobian_list, unknown_scatterers, indices_for_jacobia
     unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices - 1
     unknown_scatterer_names = np.array(list(list(solvers.values())[0].medium.keys()))[unknown_scatterer_indices]
     assert np.all(unknown_scatterer_names == np.atleast_1d(unknown_scatterer_names2)), 'Two different ways of listing unknown scatterer names do not match.'
-    derivative_index = pd.MultiIndex.from_arrays([unknown_scatterer_names, derivative_names], names=("scatterer_name","variable_name"))
+    derivative_index = pd.MultiIndex.from_arrays([unknown_scatterer_names, derivative_names], names=("scatterer_name", "variable_name"))
 
     jacobian_dataset = xr.Dataset(
                                 data_vars ={
-                                'jacobian_{:1.3f}'.format(wavelength): (['nstokes','derivative_index','grid_index', 'npixels_{:1.3f}'.format(wavelength)], jacobian)
-                                        for wavelength, jacobian in zip(solvers.keys(), split_jacobian)
+                                'jacobian_{:1.3f}'.format(wavelength): (['nstokes', 'derivative_index', 'grid_index', 'npixels_{:1.3f}'.format(wavelength)], jacobian)
+                                    for wavelength, jacobian in zip(solvers.keys(), split_jacobian)
                                 },
                     coords={
-                    'grid_index': grid_index,
-                    'derivative_index': derivative_index
+                        'grid_index': grid_index,
+                        'derivative_index': derivative_index
                     }
     )
     return jacobian_dataset

@@ -20,7 +20,8 @@ def solar(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
         The monochromatic (center) wavelength for use in the solar source in [microns]
     solarmu : float
         cosine of solar zenith angle. Points in the direction of propagation of
-        the solar beam.
+        the solar beam. Is required to be negative, if positive values are supplied
+        they are set to negative.
     solar_azimuth : float
         The azimuthal angle of the solar beam. Points in the direction of
         propagation of the solar beam.
@@ -49,6 +50,7 @@ def solar(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
     To avoid having to retune the numerical parameters, it is advisible to set
     `solarflux`=1.0 for all purely solar problems.
     """
+    solarmu = -1*np.abs(solarmu)
     if not (-1.0 <= solarmu) & (solarmu < 0.0):
         raise ValueError("solarmu must be in the range -1.0 <= solarmu < 0.0 not '{}'. "
                          "The SHDOM convention for solar direction is that it points"
@@ -133,7 +135,8 @@ def combined(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
         The monochromatic (center) wavelength for use in the solar source in [microns]
     solarmu : float
         cosine of solar zenith angle. Points in the direction of propagation of
-        the solar beam.
+        the solar beam. Is required to be negative, if positive values are supplied
+        they are set to negative.
     solar_azimuth : float
         The azimuthal angle of the solar beam. Points in the direction of
         propagation of the solar beam.
@@ -163,6 +166,7 @@ def combined(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
     correspondingly scaled, these could be chosen as a proportionally scaling by
     the sum of `solarflux` and the flux emitted from the surface, for example.
     """
+    solarmu = -1*np.abs(solarmu)
     if not (-1.0 <= solarmu) & (solarmu < 0.0):
         raise ValueError("solarmu must be in the range -1.0 <= solarmu < 0.0 not '{}'. "
                          "The SHDOM convention for solar direction is that it points"

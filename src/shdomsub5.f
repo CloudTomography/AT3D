@@ -1,4 +1,13 @@
-C Joint routines for both Polarized and Unpolarized sources
+C     Joint routines for both Polarized and Unpolarized sources
+C     This contains adaptations of subroutines written by Frank Evans
+C     for use in SHDOM.
+C     https://nit.coloradolinux.com/~evans/shdom.html
+C     See shdom.txt for documentation.
+
+C     These subroutines have been written for use in pyshdom by
+C     Aviad Levis, Technion Institute of Technology, 2019 and
+C     later modified by Jesse Loveridge, University of Illinois at Urbana-Champaign,
+C     2020-2021.
 
       SUBROUTINE MIN_OPTICAL_DEPTH(NX, NY, NZ, NPTS, NCELLS,
      .             XGRID, YGRID, ZGRID, GRIDPOS, EXTINCT,
@@ -7,7 +16,10 @@ C Joint routines for both Polarized and Unpolarized sources
      .             CAMMU, CAMPHI, NPIX, PATH, IPHASE,
      .             ALBEDO, LEGEN, DELTAMPATH, DELTAM,
      .             NPART, NSTLEG, NLEG,ML,PATHS_SIZE)
-
+C     Integrates the extinction field (EXTINCT) along a ray and stores the minimum
+C     optical path that intersects a cell adjacent to each gridpoint.
+C     Stores only the minimum across all the set of rays.
+C     -JRLoveridge 2021/02/22.
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NPTS, NCELLS, PATHS_SIZE
 Cf2py intent(in) :: NX, NY, NZ, NPTS, NCELLS, PATHS_SIZE
@@ -87,9 +99,8 @@ C             Extrapolate ray to domain top if above
      .                      ALBEDO, LEGEN, DELTAMPATH, DELTAM,
      .                      NPART, NSTLEG, NLEG,ML,N, PATHS_SIZE)
 
-C       Integrates the source function through the extinction field
-C     (EXTINCT) backward in the direction (MURAY,PHIRAY) to find the
-C     outgoing radiance (RAD) at the point X0,Y0,Z0.
+C     Integrates the extinction field (EXTINCT) along a ray and stores the minimum
+C     optical path that intersects a cell adjacent to each gridpoint.
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NPTS, NCELLS, PATHS_SIZE
       INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
@@ -367,7 +378,9 @@ C             boundary then prepare for next cell
      .             CAMMU, CAMPHI, NPIX, PATH, IPHASE,
      .             ALBEDO, LEGEN, DELTAMPATH, DELTAM,
      .             NPART, NSTLEG, NLEG, ML)
-
+C    Integrates the extinction field along the line of sight,
+C    this may be delta-M scaled extinction or not depending on
+C    DELTAMPATH (and DELTAM). - JRLoveridge 2021/02/22
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NPTS, NCELLS
 Cf2py intent(in) :: NX, NY, NZ, NPTS, NCELLS
@@ -722,7 +735,10 @@ C             boundary then prepare for next cell
      .             BCFLAG, IPFLAG, CAMX, CAMY, CAMZ,
      .             CAMMU, CAMPHI, NPIX, VOLUME, FLAGS, WEIGHTS,
      .              LINEAR)
-
+C    Performs a space carving algorithm by counting intersections between
+C    cells and rays. Can also backproject a set of weights. A nearest neighbor
+C    interpolation kernel is assumed. The linear one does not operate correctly
+C    and needs debugging. - JRLoveridge 2021/02/22
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NPTS, NCELLS
 Cf2py intent(in) :: NX, NY, NZ, NPTS, NCELLS
@@ -799,9 +815,8 @@ C             Extrapolate ray to domain top if above
      .                       GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
      .			             X0, Y0, Z0, VOLUME, FLAG, WEIGHT, LINEAR)
 
-C       Integrates the source function through the extinction field
-C     (EXTINCT) backward in the direction (MURAY,PHIRAY) to find the
-C     outgoing radiance (RAD) at the point X0,Y0,Z0.
+C     Performs the space carving by traversing the grid.
+C     LINEAR mode is untested.
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NPTS, NCELLS
       INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
@@ -1027,7 +1042,11 @@ C             boundary then prepare for next cell
      .             CAMMU, CAMPHI, NPIX,PATH, RETURN_MATRIX,
      .             MATRIX, MATRIX_PTRS, MATRIX_SIZE,
      .             PIXEL_INDICES, RAY_WEIGHTS, NRAYS)
-
+C     Performs ray integration (PATH) of a set of WEIGHTS assuming
+C     a linear interpolation kernel. Is also supposed to output
+C     the matrix of describing this integration but it is inconsistent and
+C     should not be used, likely due to boundary condition issues.
+C     - JRLoveridge 2021/02/22
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NPTS, NCELLS
 Cf2py intent(in) :: NX, NY, NZ, NPTS, NCELLS
@@ -1444,9 +1463,9 @@ C     Compute trilinear interpolation kernel F(8)
      .		         IPDIRECT, DI, DJ, DK, CX, CY, CZ, CXINV,
      .		         CYINV, CZINV, EPSS, EPSZ, XDOMAIN, YDOMAIN,
      .		         UNIFORMZLEV, DELXD, DELYD, DPATH, DPTR)
-C       Makes the direct beam solar flux for the internal base grid.
-C     DIRFLUX is set to F*exp(-tau_sun).
-C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
+C     Calculates the sensitvity of the direct beam to the extinction
+C     along the path from each grid point to the sun.
+C     Actually calls DIRECT_BEAM_AND_PATHS_PROP to do all the hard work.
       IMPLICIT NONE
       INTEGER NPTS, BCFLAG
 Cf2py intent(in) :: NPTS, BCFLAG
@@ -1861,6 +1880,7 @@ C       Compute the inner derivatives (minus the path lengths)
      .                   NEIGHPTR, TREEPTR)
 
 C    Calculates the source function for a pencil-beam source.
+C    Completely untested.
       IMPLICIT NONE
       INTEGER BCFLAG, IPFLAG
 Cf2py intent(in) BCFLAG, IPFLAG
@@ -2142,290 +2162,5 @@ C             boundary then prepare for next cell
 
       SIDE = IFACE
 
-      RETURN
-      END
-
-      SUBROUTINE YLMALL_WRAP (TRANSPOSE, MU, PHI, ML, MM, NLM,NSTLEG,
-     .                          YR)
-C       This subroutine computes a set of normalized real generalized
-C     spherical harmonic functions (YR) for a particular direction mu,phi.
-C     (Doicu et al. 2013; http://dx.doi.org/10.1016/j.jqsrt.2012.12.009)
-C     ML is the maximum meridional mode, MM is the maximum azimuthal mode.
-C     NSTLEG is the number of matrix elements returned, either 1 for the
-C     1,1 term or 6 for the 6 unique elements of the 4x4 matrix.
-C     J = 2*(L*(L+1))/2 + M+1  for L<=MM
-C     J = (2*MM+1)*L-MM*(2+2*(MM-1))/2 + M+1  for L>MM
-      IMPLICIT NONE
-      INTEGER ML, MM, NSTLEG, NLM
-Cf2py intent(in) :: ML, MM, NSTLEG, NLM
-      REAL    MU, PHI
-Cf2py intent(in) :: MU, PHI
-      LOGICAL TRANSPOSE
-Cf2py intent(in) :: TRANSPOSE
-      REAL YR(NSTLEG,NLM)
-Cf2py intent(out) :: YR
-      INTEGER           J, M, MABS, L
-      DOUBLE PRECISION  X, PI, FCT, P1, P2, P3, COSM, SINM, SIGN
-      DOUBLE PRECISION, ALLOCATABLE :: DM0(:), DM2P(:), DM2M(:)
-
-
-      IF (NSTLEG .EQ. 1) THEN
-        CALL YLMALL_UNPOL (MU, PHI, ML, MM, YR)
-        RETURN
-      ENDIF
-
-      ALLOCATE (DM0(0:ML), DM2P(0:ML), DM2M(0:ML))
-      X = DBLE(MU)
-
-      PI  = DACOS(- 1.D0)
-      FCT = 1.D0/DSQRT(2.D0*PI)
-
-C       sign accounting for transpose matrices
-      IF (.NOT. TRANSPOSE) THEN
-        SIGN =  1.D0
-      ELSE
-        SIGN = -1.D0
-      END IF
-
-C     ..................................................................
-C                                M = 0
-      M = 0
-      CALL WIGNERFCT02P2M_NORMALIZED (X, ML, M,  DM0, DM2P, DM2M)
-      DO L = 0, ML
-        IF (L .LE. MM) THEN
-          J = L*(L+1) + M + 1
-        ELSE
-          J = (2*MM+1)*L - MM**2 + M + 1
-        ENDIF
-        P1 = FCT*DM0(L)
-        P2 = -0.5D0*FCT*(DM2P(L) + DM2M(L))
-        P3 = -0.5D0*FCT*(DM2P(L) - DM2M(L))
-
-C       --- Unm = Pnm*cos(m*phi) ---
-        YR(1,J) =  P1
-        IF (NSTLEG .EQ. 6) THEN
-          YR(2,J) = P2
-          YR(3,J) = P2
-          YR(4,J) = P1
-          YR(5,J) = P3
-          YR(6,J) = P3
-        ENDIF
-      END DO
-
-C     ..................................................................
-C                                   M =/ 0
-      DO MABS = 1, MM
-        CALL WIGNERFCT02P2M_NORMALIZED (X, ML, MABS,DM0, DM2P, DM2M)
-        COSM = COS(MABS*PHI)
-        SINM = SIN(MABS*PHI)
-        DO L = MABS, ML
-C         ..............................................................
-C                                     M > 0
-          M = MABS
-          IF (L .LE. MM) THEN
-            J = L * (L+1) + M + 1
-          ELSE
-            J = (2*MM+1) * L - MM**2 + M + 1
-          ENDIF
-          P1 = FCT*DM0(L)
-          P2 = -0.5D0*FCT*(DM2P(L) + DM2M(L))
-          P3 = -0.5D0*FCT*(DM2P(L) - DM2M(L))
-C
-C         --- Unm = Pnm*cos(m*phi) - D*Pnm*sin(m*phi) ---
-          YR(1,J) = P1*COSM - P1*SINM
-          IF (NSTLEG .EQ. 6) THEN
-            YR(2,J) = P2*COSM - P2*SINM
-            YR(3,J) = P2*COSM + P2*SINM
-            YR(4,J) = P1*COSM + P1*SINM
-            YR(5,J) = P3*COSM - SIGN*P3*SINM
-            YR(6,J) = P3*COSM + SIGN*P3*SINM
-          ENDIF
-C         ..............................................................
-C                                      M < 0
-          M = -MABS
-          IF (L .LE. MM) THEN
-            J = L*(L+1) + M + 1
-          ELSE
-            J = (2*MM + 1)*L - MM**2 + M + 1
-          ENDIF
-
-C         --- Vnm = Pnm*sin(m*phi) + D*Pnm*cos(m*phi) ---
-          YR(1,J) = P1*SINM + P1*COSM
-          IF (NSTLEG .EQ. 6) THEN
-            YR(2,J) = P2*SINM + P2*COSM
-            YR(3,J) = P2*SINM - P2*COSM
-            YR(4,J) = P1*SINM - P1*COSM
-            YR(5,J) = P3*SINM + SIGN*P3*COSM
-            YR(6,J) = P3*SINM - SIGN*P3*COSM
-          ENDIF
-        END DO
-      END DO
-      DEALLOCATE (DM0, DM2P, DM2M)
-      RETURN
-      END
-
-      SUBROUTINE PREPARE_DIPHASEIND(GRIDPOS, DIPHASEIND,
-     .                     NPX, NPY, NPZ, NPTS, NBPTS, NUMPHASE, DELX,
-     .                      DELY, XSTART, YSTART, ZLEVELS, EXTINCTP,
-     .                      ALBEDOP, NPART, NUMDER)
-CPrepares the DIPHASEIND for use in the gradient calculation.
-CThis holds the pointer to the base grid point from which the
-C(adaptive) grid point's phase function comes from.
-        IMPLICIT NONE
-        INTEGER NPTS, NUMDER, NPART, NBPTS
-Cf2py intent(in) :: NPTS, NUMDER, NPART, NBPTS
-        INTEGER NPX, NPY, NPZ, NUMPHASE
-Cf2py intent(in) :: NPX, NPY, NPZ, NUMPHASE
-        REAL GRIDPOS(3, NPTS)
-Cf2py intent(in) :: GRIDPOS
-        INTEGER DIPHASEIND(NPTS,NUMDER)
-Cf2py intent(out) :: DIPHASEIND
-        REAL ALBEDOP(NBPTS, NPART), EXTINCTP(NBPTS, NPART)
-Cf2py intent(in) :: ALBEDOP, EXTINCTP
-        REAL DELX, DELY, XSTART, YSTART
-Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
-        REAL ZLEVELS(*)
-Cf2py intent(in) :: ZLEVELS
-
-        INTEGER IP, IPA
-
-        DO IPA=1,NUMDER
-          DO IP=1,NPTS
-            CALL GET_PHASE_INTERP_INDS(GRIDPOS(1,IP), GRIDPOS(2,IP),
-     .         GRIDPOS(3,IP), NPX, NPY, NPZ, NUMPHASE, DELX,
-     .         DELY, XSTART, YSTART, ZLEVELS, EXTINCTP(:,IPA),
-     .         ALBEDOP(:,IPA), DIPHASEIND(IP,IPA))
-          ENDDO
-        ENDDO
-        RETURN
-      END
-
-      SUBROUTINE GET_PHASE_INTERP_INDS (X, Y, Z,
-     .                 NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
-     .                 XSTART, YSTART, ZLEVELS, EXTINCTP,
-     .                 ALBEDOP, DIPHASEIND)
-C    Adapated from TRILIN_INTERP_PROP - JRLoveridge 2021/02/10
-      IMPLICIT NONE
-      INTEGER DIPHASE
-      REAL    X, Y, Z,  DEXT, DALB, DSCAT
-      INTEGER IX, IXP, IY, IYP, IZ, IL, IM, IU, J
-      INTEGER I1, I2, I3, I4, I5, I6, I7, I8, I
-      DOUBLE PRECISION U, V, W, F1, F2, F3, F4, F5, F6, F7, F8, F
-      DOUBLE PRECISION SCAT1,SCAT2,SCAT3,SCAT4,SCAT5,SCAT6,SCAT7,SCAT8
-      DOUBLE PRECISION SCATTER, MAXSCAT
-
-      INTEGER NPX, NPY, NPZ
-      INTEGER NUMPHASE, DIPHASEIND
-      REAL DELX, DELY, XSTART, YSTART
-      REAL ZLEVELS(*)
-      REAL EXTINCTP(*), ALBEDOP(*)
-      REAL  EXTINCT, ALBEDO
-
-C         Find the grid location and compute the interpolation factors
-      IL=0
-      IU=NPZ
-      DO WHILE (IU-IL .GT. 1)
-        IM = (IU+IL)/2
-        IF (Z .GE. ZLEVELS(IM)) THEN
-          IL = IM
-        ELSE
-          IU=IM
-        ENDIF
-      ENDDO
-      IZ = MAX(IL,1)
-      W = DBLE(Z - ZLEVELS(IZ))/(ZLEVELS(IZ+1) - ZLEVELS(IZ))
-      W = MAX( MIN( W, 1.0D0), 0.0D0)
-      IX = INT((X-XSTART)/DELX) + 1
-      IF (ABS(X-XSTART-NPX*DELX) .LT. 0.01*DELX) IX = NPX
-      IF (IX .LT. 1 .OR. IX .GT. NPX) THEN
-        WRITE (6,*) 'INTERP_DERIVS: Beyond X domain',IX,NPX,X,XSTART
-        STOP
-      ENDIF
-      IXP = MOD(IX,NPX) + 1
-      U = DBLE(X-XSTART-DELX*(IX-1))/DELX
-      U = MAX( MIN( U, 1.0D0), 0.0D0)
-      IF (U .LT. 1.0D-5) U = 0.0D0
-      IF (U .GT. 1.0D0-1.0D-5) U = 1.0D0
-      IY = INT((Y-YSTART)/DELY) + 1
-      IF (ABS(Y-YSTART-NPY*DELY) .LT. 0.01*DELY) IY = NPY
-      IF (IY .LT. 1 .OR. IY .GT. NPY) THEN
-        WRITE (6,*) 'INTERP_DERIVS: Beyond Y domain',IY,NPY,Y,YSTART
-        STOP
-      ENDIF
-      IYP = MOD(IY,NPY) + 1
-      V = DBLE(Y-YSTART-DELY*(IY-1))/DELY
-      V = MAX( MIN( V, 1.0D0), 0.0D0)
-      IF (V .LT. 1.0D-5) V = 0.0D0
-      IF (V .GT. 1.0D0-1.0D-5) V = 1.0D0
-
-      F1 = (1-U)*(1-V)*(1-W)
-      F2 =    U *(1-V)*(1-W)
-      F3 = (1-U)*   V *(1-W)
-      F4 =    U *   V *(1-W)
-      F5 = (1-U)*(1-V)*   W
-      F6 =    U *(1-V)*   W
-      F7 = (1-U)*   V *   W
-      F8 =    U *   V *   W
-      I1 = IZ + NPZ*(IY-1) + NPZ*NPY*(IX-1)
-      I2 = IZ + NPZ*(IY-1) + NPZ*NPY*(IXP-1)
-      I3 = IZ + NPZ*(IYP-1) + NPZ*NPY*(IX-1)
-      I4 = IZ + NPZ*(IYP-1) + NPZ*NPY*(IXP-1)
-      I5 = I1+1
-      I6 = I2+1
-      I7 = I3+1
-      I8 = I4+1
-
-      SCAT1 = F1*EXTINCTP(I1)*ALBEDOP(I1)
-      SCAT2 = F2*EXTINCTP(I2)*ALBEDOP(I2)
-      SCAT3 = F3*EXTINCTP(I3)*ALBEDOP(I3)
-      SCAT4 = F4*EXTINCTP(I4)*ALBEDOP(I4)
-      SCAT5 = F5*EXTINCTP(I5)*ALBEDOP(I5)
-      SCAT6 = F6*EXTINCTP(I6)*ALBEDOP(I6)
-      SCAT7 = F7*EXTINCTP(I7)*ALBEDOP(I7)
-      SCAT8 = F8*EXTINCTP(I8)*ALBEDOP(I8)
-      SCATTER = SCAT1+SCAT2+SCAT3+SCAT4+SCAT5+SCAT6+SCAT7+SCAT8
-
-C         For tabulated phase functions pick the one we are on top of
-C         or the one with the most scattering weight.
-
-      IF (NUMPHASE .GT. 0) THEN
-        MAXSCAT = -1.0
-        IF (SCAT1 .GT. MAXSCAT .OR. ABS(F1-1) .LT. 0.001) THEN
-          MAXSCAT = SCAT1
-          DIPHASEIND = I1
-        ENDIF
-        IF (SCAT2 .GT. MAXSCAT .OR. ABS(F2-1) .LT. 0.001) THEN
-          MAXSCAT = SCAT2
-          DIPHASEIND = I2
-        ENDIF
-        IF (SCAT3 .GT. MAXSCAT .OR. ABS(F3-1) .LT. 0.001) THEN
-          MAXSCAT = SCAT3
-          DIPHASEIND = I3
-        ENDIF
-        IF (SCAT4 .GT. MAXSCAT .OR. ABS(F4-1) .LT. 0.001) THEN
-          MAXSCAT = SCAT4
-          DIPHASEIND = I4
-        ENDIF
-        IF (SCAT5 .GT. MAXSCAT .OR. ABS(F5-1) .LT. 0.001) THEN
-          MAXSCAT = SCAT5
-          DIPHASEIND = I5
-        ENDIF
-        IF (SCAT6 .GT. MAXSCAT .OR. ABS(F6-1) .LT. 0.001) THEN
-          MAXSCAT = SCAT6
-          DIPHASEIND = I6
-        ENDIF
-        IF (SCAT7 .GT. MAXSCAT .OR. ABS(F7-1) .LT. 0.001) THEN
-          MAXSCAT = SCAT7
-          DIPHASEIND = I7
-        ENDIF
-        IF (SCAT8 .GT. MAXSCAT .OR. ABS(F8-1) .LT. 0.001) THEN
-          MAXSCAT = SCAT8
-          DIPHASEIND = I8
-        ENDIF
-      ELSE
-        WRITE (6,*) 'PHASE_INTERP_INDS: Gridded phase',
-     .                 'is not supported in pyshdom.'
-        STOP
-      ENDIF
       RETURN
       END

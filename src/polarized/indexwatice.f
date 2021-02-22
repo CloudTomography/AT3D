@@ -1,4 +1,6 @@
-
+C     This file contains fortran subroutines that perform the
+C     original SHDOM solution written by Frank Evans.
+C     https://nit.coloradolinux.com/~evans/shdom.html
 
 
       REAL FUNCTION GAMMLN(XX)
@@ -936,5 +938,3 @@ C
       ABSCOF=4.0*PI*CN/ALAM
       RETURN
       END
-
-

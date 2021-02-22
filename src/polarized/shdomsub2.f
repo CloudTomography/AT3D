@@ -1,6 +1,16 @@
-C     This file contains original subroutines from SHDOM with the only
-C     modification being the addition of f2py wrapping.
-C      -JRLoveridge 2021/02/17
+C     This file contains fortran subroutines that perform the
+C     original SHDOM solution written by Frank Evans.
+C     https://nit.coloradolinux.com/~evans/shdom.html
+C     See shdom.txt for documentation.
+C     Many of these subroutines have been modified for use in pyshdom by
+C     Aviad Levis, Technion Institute of Technology, 2019 and
+C     Jesse Loveridge, University of Illinois at Urbana-Champaign, 2020-2021.
+
+C     Several subroutines have been modified to accomodate mixing of
+C     phase functions between different particle types at run time
+C     e.g. PREPARE_PROP.
+C     Directives for the f2py wrapping have also been added.
+C     - JRLoveridge 2021/02/22
 
 
       SUBROUTINE NEW_GRIDS (BCFLAG, GRIDTYPE, NPX,NPY,NPZ, NX, NY, NZ,

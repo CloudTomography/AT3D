@@ -102,8 +102,6 @@ F2PY_CORE_API = [
     'fixed_lambertian_boundary',
     'variable_lambertian_boundary',
     'levisapprox_gradient',
-    'gradient_normcorr',
-    # 'gradient_l2',
     'space_carve',
     'precompute_phase_check',
     'precompute_phase_check_grad',
@@ -123,8 +121,8 @@ F2PY_CORE_API = [
     'check_property_input',
     'nearest_binary',
     'cell_average',
-    'ylmall_wrap',
     'prepare_diphaseind',
+    'update_costfunction',
 ]
 
 def _run_command(cmd):
