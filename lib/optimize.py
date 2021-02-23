@@ -56,6 +56,7 @@ class ObjectiveFunction:
                                   project_gradient_to_state, parallel_solve_kwargs={'n_jobs': 1, 'mpi_comm':None,
                                   'verbose':True, 'maxiter':100, 'init_solution':True},
                                   gradient_kwargs={'cost_function': 'L2', 'exact_single_scatter':True},
+                                  uncertainty_kwargs={'add_noise': False},
                                   min_bounds=None, max_bounds=None):
         """
         Use the Levis approximation to the linearization of an least squares cost function.
@@ -108,13 +109,13 @@ class ObjectiveFunction:
         source of error in the setup of an optimization.
         """
         gradient_fun = pyshdom.gradient.LevisApproxGradientUncorrelated(
-            solvers, forward_sensors, unknown_scatterers, parallel_solve_kwargs,
-            gradient_kwargs
-            )
+            measurements, solvers, forward_sensors, unknown_scatterers, parallel_solve_kwargs,
+            gradient_kwargs, uncertainty_kwargs)
+
         def loss_function(state, measurements):
 
             set_state_fn(state)
-            loss, gradient, _ = gradient_fun(measurements)
+            loss, gradient, _ = gradient_fun()
             # loss, gradient = pyshdom.gradient.levis_approx_uncorrelated_l2(measurements,
             #                                                              solvers,
             #                                                              forward_sensors,

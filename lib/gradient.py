@@ -27,7 +27,7 @@ class LevisApproxGradient:
     def __init__(self, measurements, solvers, forward_sensors,
                  unknown_scatterers, parallel_solve_kwargs, gradient_kwargs,
                  uncertainty_kwargs):
-
+        #TODO do type checks here.
         self.measurements = measurements
         self.solvers = solvers
         self.forward_sensors = forward_sensors

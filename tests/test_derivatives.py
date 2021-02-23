@@ -410,4 +410,4 @@ class ThermalJacobian(TestCase):
         cls.jacobian = derivs[5, 5]
 
     def test_jacobian(self):
-        self.assertAlmostEqual(self.jacobian.sum(), 0.8255725, places=7)
+        self.assertAlmostEqual(self.jacobian.sum(), 0.55919063371038, places=7)
