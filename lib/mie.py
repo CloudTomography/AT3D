@@ -50,7 +50,7 @@ def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
         For 'Water' the refractive index is ignored and loaded from a table
         in src/polarized/indexwatice. For 'Aerosol' the refractive index should
         have a negative imaginary part. ri = n - ik
-        For water with costume refractive index use 'Aerosol' particle type.
+        For water with custom refractive index use 'Aerosol' particle type.
     relative_dir: string
         The path to a directory which contains saved mie_table netcdf files. If there is a file with
         'mie_table' in the name that matches the input parameters this file is loaded.

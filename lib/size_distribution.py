@@ -244,7 +244,12 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
         **parameter_dict,
         particle_density=particle_density
     )
-    #TODO this can fail silently in some cases (produce nans), add checks.
+    if np.any(np.isnan(number_density_raveled)) or np.any(number_density_raveled < 0.0):
+        raise ValueError(
+            "size_distribution_function: {} produced NaN or negative values "
+            "when being evaluated on grid of parameters."
+            )
+
     number_density = number_density_raveled.reshape(grid_shape)
 
     # create "flat" attrs dictionary to enable saving to netCDF
