@@ -19,29 +19,18 @@ At present pyshdom has the following features:
   3. Vector or scalar radiative transfer.
   4. Open or periodic boundary conditions.
 
+* Local optimization procedures are included for recovery of the microphysical or optical properties of atmospheric constituents (retrieval of surface BRDF is not currently supported.
 * Each RTE solution is serial (**unlike SHDOM**) but independent wavelengths and pixel radiance calculations are parallelized using either MPI or a multi-threading shared memory framework.
 * Wide field-of-view radiances can be estimated and arbitrary observation geometries are supported. Defaults for both Perspective and Orthographic sensor geometries are included.
 * Mie & Rayleigh scattering optical property calculations. Optical properties of other species (e.g. non-spherical ice or aerosol or absorbing gases) can be included but must be calculated externally.
-* microphysical/optical properties can be generated or be read from netCDF or the SHDOM/i3rc file format.
-
-
-
-* Scalar radiative transfer from SHDOM with Perspective or Orthographic sensor geometries and Lambertian Surface.
-* Each SHDOM solution is serial but independent wavelengths and pixel radiance calculations are
-parallelised in a shared memory framework.
-* Local & Global optimization procedures for recovery of cloud microphysical properties (liquid water content,
-droplet effective radius, droplet effective variance) on 3D (or reduced order) grids from simulated (or observed) radiances.
-* The calculation of optical properties and each SHDOM solution have been streamlined to minimize computational resources
-necessary at each iteration of the optimization routines.
+* Microphysical/optical properties can be generated or be read from netCDF or the SHDOM/i3rc file format.
 
 Future Improvements:
 
-* Implement vector SHDOM to include polarisation information in the optimization.
-* Add additional sensor geometries (cross-track scan, push-broom) & expand to other surface types in SHDOM.
-* Include a more flexible parallelisation scheme.
-* Add useful regularisation options in the optimization procedure.
-* Add further accelerations for computational efficiency.
-* Include gaseous absorption for greater realism.
+* Add additional sensor geometries (cross-track scan, push-broom).
+* Parallelize RTE solution with MPI.
+* Include retrieval of surface BRDF.
+
 
 &nbsp;
 
