@@ -24,7 +24,7 @@ Pyshdom performs 3D reconstruction of cloud/aerosol microphysical properties fro
 * Mie & Rayleigh scattering optical property calculations. Optical properties of other species (e.g. non-spherical ice or aerosol or absorbing gases) can be included but must be calculated externally.
 * Microphysical/optical properties can be generated or be read from netCDF or the SHDOM/i3rc file format.
 
-###Future Improvements:
+### Future Improvements:
 
 * Add additional sensor geometries (cross-track scan, push-broom).
 * Parallelize RTE solution with MPI.
