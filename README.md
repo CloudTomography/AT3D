@@ -1,6 +1,7 @@
 # pyshdom
 
 Pyshdom performs 3D reconstruction of cloud microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2]]. The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[3]]. The python package was created by Aviad Levis, Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois).
+Pyshdom is intended to use 
 
 [1]: http://openaccess.thecvf.com/content_iccv_2015/html/Levis_Airborne_Three-Dimensional_Cloud_ICCV_2015_paper.html
 [2]: http://openaccess.thecvf.com/content_cvpr_2017/html/Levis_Multiple-Scattering_Microphysics_Tomography_CVPR_2017_paper.html
@@ -12,8 +13,19 @@ Pyshdom performs 3D reconstruction of cloud microphysical properties from multi-
 
 At present pyshdom has the following features:
 
-* Mie & Rayleigh scattering optical property calculations. Optical properties of other species (e.g. non-spherical ice or aerosol) can be included but must be calculated externally.
-* Cloud data of varying complexity can be generated or read from LES output.
+* The key features of polarized SHDOM are included
+1. Solar/Thermal/Combined sources
+2. A variety of (spatially variable) surface BRDFs
+3. Vector or scalar radiative transfer.
+4. Open or periodic boundary conditions.
+Additionally:
+* Each RTE solution is serial (**unlike SHDOM**) but independent wavelengths and pixel radiance calculations are parallelized using either MPI or a multi-threading shared memory framework.
+* Wide field-of-view radiances can be estimated and arbitrary observation geometries are supported. Defaults for both Perspective and Orthographic sensor geometries are included.
+* Mie & Rayleigh scattering optical property calculations. Optical properties of other species (e.g. non-spherical ice or aerosol or absorbing gases) can be included but must be calculated externally.
+* microphysical/optical properties can be generated or be read from netCDF or the SHDOM/i3rc file format.
+
+
+
 * Scalar radiative transfer from SHDOM with Perspective or Orthographic sensor geometries and Lambertian Surface.
 * Each SHDOM solution is serial but independent wavelengths and pixel radiance calculations are
 parallelised in a shared memory framework.
