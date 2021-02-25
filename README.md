@@ -14,10 +14,10 @@ Pyshdom is intended to use
 At present pyshdom has the following features:
 
 * The key features of polarized SHDOM are included
-1. Solar/Thermal/Combined sources
-2. A variety of (spatially variable) surface BRDFs
-3. Vector or scalar radiative transfer.
-4. Open or periodic boundary conditions.
+  1. Solar/Thermal/Combined sources
+  2. A variety of (spatially variable) surface BRDFs
+  3. Vector or scalar radiative transfer.
+  4. Open or periodic boundary conditions.
 Additionally:
 * Each RTE solution is serial (**unlike SHDOM**) but independent wavelengths and pixel radiance calculations are parallelized using either MPI or a multi-threading shared memory framework.
 * Wide field-of-view radiances can be estimated and arbitrary observation geometries are supported. Defaults for both Perspective and Orthographic sensor geometries are included.
