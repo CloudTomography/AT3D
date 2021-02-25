@@ -18,7 +18,7 @@ At present pyshdom has the following features:
   2. A variety of (spatially variable) surface BRDFs
   3. Vector or scalar radiative transfer.
   4. Open or periodic boundary conditions.
-Additionally:
+
 * Each RTE solution is serial (**unlike SHDOM**) but independent wavelengths and pixel radiance calculations are parallelized using either MPI or a multi-threading shared memory framework.
 * Wide field-of-view radiances can be estimated and arbitrary observation geometries are supported. Defaults for both Perspective and Orthographic sensor geometries are included.
 * Mie & Rayleigh scattering optical property calculations. Optical properties of other species (e.g. non-spherical ice or aerosol or absorbing gases) can be included but must be calculated externally.
