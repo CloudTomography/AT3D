@@ -1,16 +1,15 @@
 # pyshdom
 
-Pyshdom performs 3D reconstruction of cloud microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2]]. The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[3]]. The python package was created by Aviad Levis, Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois).
+Pyshdom performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]]. The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[3]]. The python package was created by Aviad Levis, Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois).
 
 [1]: http://openaccess.thecvf.com/content_iccv_2015/html/Levis_Airborne_Three-Dimensional_Cloud_ICCV_2015_paper.html
 [2]: http://openaccess.thecvf.com/content_cvpr_2017/html/Levis_Multiple-Scattering_Microphysics_Tomography_CVPR_2017_paper.html
+[3]: https://www.mdpi.com/2072-4292/12/17/2831
 [3]: http://coloradolinux.com/~evans/shdom.html
 
 &nbsp;
 
 ## Features
-
-At present pyshdom has the following features:
 
 * The key features of polarized SHDOM are included
   1. Solar/Thermal/Combined sources
@@ -18,13 +17,14 @@ At present pyshdom has the following features:
   3. Vector or scalar radiative transfer.
   4. Open or periodic boundary conditions.
 
-* Local optimization procedures are included for recovery of the microphysical or optical properties of atmospheric constituents (retrieval of surface BRDF is not currently supported.
+* Local optimization procedures are included for recovery of the microphysical or optical properties of atmospheric constituents.
+  1. The linearization used in the optimization employs an approximation to the Frechet derivatives of the RTE developed by Levis et al. [[3]].
 * Each RTE solution is serial (**unlike SHDOM**) but independent wavelengths and pixel radiance calculations are parallelized using either MPI or a multi-threading shared memory framework.
-* Wide field-of-view radiances can be estimated and arbitrary observation geometries are supported. Defaults for both Perspective and Orthographic sensor geometries are included.
+* Wide field-of-view radiances can be calculated and arbitrary observation geometries are supported. Defaults for both Perspective and Orthographic sensor geometries are included.
 * Mie & Rayleigh scattering optical property calculations. Optical properties of other species (e.g. non-spherical ice or aerosol or absorbing gases) can be included but must be calculated externally.
 * Microphysical/optical properties can be generated or be read from netCDF or the SHDOM/i3rc file format.
 
-Future Improvements:
+###Future Improvements:
 
 * Add additional sensor geometries (cross-track scan, push-broom).
 * Parallelize RTE solution with MPI.
@@ -46,6 +46,7 @@ Future Improvements:
 &nbsp;
 
 ## Installation
+Compilation of this package requires Fortran & C compilers. It has been tested with Homebrew's GCC 9.3.0_1.
 Installation using using anaconda package management
 
 Start a clean virtual environment
