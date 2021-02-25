@@ -1,11 +1,11 @@
 # pyshdom
 
-Pyshdom performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]]. The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[3]]. The python package was created by Aviad Levis, Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois).
+Pyshdom performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]]. The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[4]]. The python package was created by Aviad Levis, Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois).
 
 [1]: http://openaccess.thecvf.com/content_iccv_2015/html/Levis_Airborne_Three-Dimensional_Cloud_ICCV_2015_paper.html
 [2]: http://openaccess.thecvf.com/content_cvpr_2017/html/Levis_Multiple-Scattering_Microphysics_Tomography_CVPR_2017_paper.html
 [3]: https://www.mdpi.com/2072-4292/12/17/2831
-[3]: http://coloradolinux.com/~evans/shdom.html
+[4]: http://coloradolinux.com/~evans/shdom.html
 
 &nbsp;
 
@@ -33,20 +33,16 @@ Pyshdom performs 3D reconstruction of cloud/aerosol microphysical properties fro
 
 &nbsp;
 
-## Updates in pyshdom3.0
- - Code migration to python3
- - Multispectral rendering and optimization
- - Microphysical optimization
- - Single scattering derivatives are exact (along broken ray paths)
- - Main changes to SHDOM core Fortran code:
-     1. Removal of global variables (property array)
-     2. Particle mixing is done at runtime and not as an a-priori computation
-     4. Mie computations are broken down to mono-disperse and poly-disperse
+## Updates in pyshdom 4.0
+ - Data is represented using xarray objects.
+ - Wide field of fiew radiances are now modeled.
+ - Multiple 
 
 &nbsp;
 
 ## Installation
-Compilation of this package requires Fortran & C compilers. It has been tested with Homebrew's GCC 9.3.0_1.
+Compilation of this package requires Fortran & C compilers (e.g. GCC 9.3.0_1) to be available and correctly linked. Installation has been tested on Mac and Linux.
+
 Installation using using anaconda package management
 
 Start a clean virtual environment
@@ -89,24 +85,15 @@ nosetests test_XYZ.py
 
 ## Basic usage
 For basic usage follow the following jupyter notebook tutorials
-- notebooks/Radiance Rendering [Single Image].ipynb
-- notebooks/Radiance Rendering [Multiview].ipynb
-- notebooks/Radiance Rendering [Multispectral].ipynb
+TODO
 
 &nbsp;
 
 ## Main scripts
 For generating rendering and optimization scripts see the list below.
 The scripts folder contains another readme file with examples of how to run each script.
-  - scripts/generate_mie_tables.py
-  - scripts/render_radiance_toa.py
-  - scripts/optimize_extinction_lbfgs.py
-  - scripts/optimize_microphysics_lbfgs.py
+TODO
 
-For info about command-line flags of each script use
-```
-python script.py --help
-```
 
 &nbsp;
 
