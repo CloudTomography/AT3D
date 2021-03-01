@@ -98,3 +98,38 @@ class SpatialGradientL2:
         integral_weights = np.append(np.append(0.5*diff[0], 0.5*(diff[1:] + diff[:-1])),
                                      0.5*diff[-1])
         return matrix, integral_weights
+
+
+class LocalCorrelation:
+
+    def __init__(self, grid, state_on_grid_indicators, correlation_length, state_start=None, state_end=None):
+
+        from scipy.spatial import distance_matrix
+        #TODO properly check inputs.
+        self._state_start, self._state_end = state_start, state_end
+
+        a,b,c = state_on_grid_indicators
+        xs = grid.x.data[a]
+        ys = grid.y.data[b]
+        zs = grid.z.data[c]
+        positions = np.stack((xs,ys,zs),axis=1)
+        dist_mat = distance_matrix(positions, positions)
+
+        self._grid = grid
+        self._dist_mat = dist_mat
+        self._correl_matrix = np.exp(-dist_mat/correlation_length)
+
+    def __call__(self, state):
+
+        grad_vect = np.zeros(state.shape)
+        if self._state_start is None and self._state_end is None:
+            state_start = 0
+            state_end = len(state)
+        else:
+            state_start, state_end = self._state_start, self._state_end
+        temp = state[state_start:state_end]
+        residual = temp - np.dot(self._correl_matrix, temp)
+        cost = np.dot(residual, np.dot(np.diag(np.ones(temp.shape)), residual)) / (temp.size**2)
+        grad = 2*np.dot(residual, np.diag(np.ones(temp.shape))) / temp.size
+        grad_vect[state_start:state_end] = grad
+        return cost, grad_vect

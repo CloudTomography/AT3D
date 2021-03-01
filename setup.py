@@ -123,6 +123,7 @@ F2PY_CORE_API = [
     'cell_average',
     'prepare_diphaseind',
     'update_costfunction',
+    'output_cell_split',
 ]
 
 def _run_command(cmd):

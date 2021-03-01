@@ -1208,45 +1208,50 @@ C     If the file name is 'NONE' then no file is written.
 
 
 
-      SUBROUTINE OUTPUT_CELL_SPLIT (OUTFILE, GRIDPTR,GRIDPOS, EXTINCT,
-     .                              SHPTR, SOURCE, NCELLS)
+      SUBROUTINE OUTPUT_CELL_SPLIT (GRIDPTR, GRIDPOS, TOTAL_EXT,
+     .                              SHPTR, SOURCE, NCELLS, CELLEXTINCT,
+     .                              ADAPTCRIT, NSTOKES)
 C       Outputs the final cell splitting criterion for each grid cell
 C     and direction (X,Y,Z).  Calls CELL_SPLIT_TEST.
 C     Mainly for debugging purposes.
+C     Modified for pyshdom to use f2py rather than writing to file.
+C     -JRLoveridge 2021/02/28
       IMPLICIT NONE
-      INTEGER NCELLS
+      INTEGER NCELLS, NSTOKES
+Cf2py intent(in) :: NCELLS, NSTOKES
       INTEGER SHPTR(*), GRIDPTR(8,*)
-      REAL    GRIDPOS(3,*), EXTINCT(*), SOURCE(*)
-      CHARACTER OUTFILE*80
+Cf2py intent(in) :: SHPTR, GRIDPTR
+      REAL    GRIDPOS(3,*), TOTAL_EXT(*), SOURCE(*)
+Cf2py intent(in) :: GRIDPOS, TOTAL_EXT, SOURCE
+      REAL ADAPTCRIT(3,NCELLS)
+Cf2py intent(out) :: ADAPTCRIT
+      REAL CELLEXTINCT(NCELLS)
+Cf2py intent(out) :: CELLEXTINCT
       INTEGER IP1, IP2, ICELL, IDIR
-      REAL    ADAPTCRIT(3), MAXADAPT, XC, YC, ZC, EXT
-
-      OPEN (UNIT=9, FILE=OUTFILE, STATUS='UNKNOWN')
-      WRITE (9,*) '!  ICELL   Xc     Yc     Zc  ',
-     .            'Extinct SplitX  SplitY  SplitZ'
+      REAL    MAXADAPT, XC, YC, ZC, ADAPTCRITTEMP(3)
 
 C         Loop over all the cells
       DO ICELL = 1, NCELLS
 C           Get the adaptive grid criterion for the 3 directions
-        CALL CELL_SPLIT_TEST (GRIDPTR, GRIDPOS, EXTINCT,
-     .                        SHPTR, SOURCE, ICELL,
-     .                        ADAPTCRIT, MAXADAPT, IDIR)
+        CALL CELL_SPLIT_TEST (GRIDPTR, GRIDPOS, TOTAL_EXT,
+     .                        SHPTR, NSTOKES, SOURCE, ICELL,
+     .                        ADAPTCRITTEMP, MAXADAPT, IDIR)
 C           Compute the cell center location and mean extinction
+        ADAPTCRIT(:,ICELL) = ADAPTCRITTEMP
         IP1 = GRIDPTR(1,ICELL)
         IP2 = GRIDPTR(8,ICELL)
         XC = 0.5*(GRIDPOS(1,IP1)+GRIDPOS(1,IP2))
         YC = 0.5*(GRIDPOS(2,IP1)+GRIDPOS(2,IP2))
         ZC = 0.5*(GRIDPOS(3,IP1)+GRIDPOS(3,IP2))
-        EXT = (EXTINCT(GRIDPTR(1,ICELL)) + EXTINCT(GRIDPTR(2,ICELL))
-     .       + EXTINCT(GRIDPTR(3,ICELL)) + EXTINCT(GRIDPTR(4,ICELL))
-     .       + EXTINCT(GRIDPTR(5,ICELL)) + EXTINCT(GRIDPTR(6,ICELL))
-     .       + EXTINCT(GRIDPTR(7,ICELL)) + EXTINCT(GRIDPTR(8,ICELL)))/8
-        WRITE (9,'(1X,I5,3(1X,F6.3),1X,E11.4,3(1X,F7.5))')
-     .        ICELL, XC, YC, ZC, EXT,
-     .        ADAPTCRIT(1), ADAPTCRIT(2), ADAPTCRIT(3)
+        CELLEXTINCT(ICELL) = (TOTAL_EXT(GRIDPTR(1,ICELL))
+     .       + TOTAL_EXT(GRIDPTR(2,ICELL))
+     .       + TOTAL_EXT(GRIDPTR(3,ICELL))
+     .       + TOTAL_EXT(GRIDPTR(4,ICELL))
+     .       + TOTAL_EXT(GRIDPTR(5,ICELL))
+     .       + TOTAL_EXT(GRIDPTR(6,ICELL))
+     .       + TOTAL_EXT(GRIDPTR(7,ICELL))
+     .       + TOTAL_EXT(GRIDPTR(8,ICELL)))/8
       ENDDO
-
-      CLOSE (9)
       RETURN
       END
 
