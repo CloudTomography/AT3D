@@ -200,15 +200,6 @@ class RTE:
         self._shterm_fac_out = None
         self._cell_point_out = None
 
-        #These are variables that are not used in standard gradient calculations.
-        #They were used to debug the radiance calculation in the gradient
-        #function. They are still in place for tests but are just left
-        #with these defaults. DO NOT CHANGE self._uselongrad unless you know
-        #what you are doing.
-        self._uselongrad = 'Q'
-        self._longradiance = np.zeros((self._nstokes, self._npts), dtype=np.float32,
-                                      order='F')
-
     @property
     def final_maxmb(self):
         return self._maxmb_out
@@ -1193,6 +1184,15 @@ class RTE:
             npart=self._npart,
             numder=self._num_derivatives
         )
+        #These are variables that are not used in standard gradient calculations.
+        #They were used to debug the radiance calculation in the gradient
+        #function. They are still in place for tests but are just left
+        #with these defaults. DO NOT CHANGE self._uselongrad unless you know
+        #what you are doing.
+        self._uselongrad = 'Q'
+        self._longradiance = np.zeros((self._nstokes, self._npts), dtype=np.float32,
+                                      order='F')
+
 
     def load_solution(self, input_dataset, load_radiance=True):
         """

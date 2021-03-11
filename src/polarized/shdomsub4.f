@@ -1043,9 +1043,9 @@ C             boundary then prepare for next cell
      .                      RADBND)
           RADOUT(:) = RADOUT(:) + TRANSMIT*RADBND(:)
           DO KK=1,NPASSED
-            PASSEDRAD(:,KK) = PASSEDRAD(:,KK) + TRANSMIT*RADBND(:)
+            PASSEDRAD(:,KK) = PASSEDRAD(:,KK) +
+     .        TRANSMIT*RADBND(:)/PASSEDTRANSMIT(KK)
           ENDDO
-
         ELSE
           ICELL = INEXTCELL
         ENDIF
