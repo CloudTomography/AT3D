@@ -207,6 +207,8 @@ class LevisApproxGradient:
             jacobianptr=jacobian_ptr,
             num_jacobian_pts=num_jacobian_pts,
             makejacobian=jacobian_flag,
+            longradiance=rte_solver._longradiance,
+            uselongrad=rte_solver._uselongrad,
             diphaseind=rte_solver._diphaseind,
             nstphase=rte_solver._nstphase,
             dpath=rte_solver._direct_derivative_path,

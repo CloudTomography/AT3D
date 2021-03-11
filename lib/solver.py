@@ -200,6 +200,31 @@ class RTE:
         self._shterm_fac_out = None
         self._cell_point_out = None
 
+        #These are variables that are not used in standard gradient calculations.
+        #They were used to debug the radiance calculation in the gradient
+        #function. They are still in place for tests but are just left
+        #with these defaults. DO NOT CHANGE self._uselongrad unless you know
+        #what you are doing.
+        self._uselongrad = 'Q'
+        self._longradiance = np.zeros((self._nstokes, self._npts), dtype=np.float32,
+                                      order='F')
+
+    @property
+    def final_maxmb(self):
+        return self._maxmb_out
+
+    @property
+    def final_adapt_grid_factor(self):
+        return self._adapt_grid_factor_out
+
+    @property
+    def final_shterm_factor(self):
+        return self._shterm_fac_out
+
+    @property
+    def final_cell_point_ratio(self):
+        return self._cell_point_out
+
     @property
     def solution_accuracy(self):
         return self._solacc
@@ -434,10 +459,10 @@ class RTE:
         self._adapt_grid_factor_out = self._npts/self._nbpts
         self._shterm_fac_out = nsh/(self._nlm*self._npts)
         self._cell_point_out = self._ncells/self._npts
-        if verbose:
-            print("Actual MAX_TOTAL_MB: {:.2f}".format(self._maxmb_out))
-            print("Actual adapt_grid_factor: {:.4f}".format(self._adapt_grid_factor_out))
-            print("Actual cell_point_ratio: {:.4f}".format(self._cell_point_out))
+        # if verbose:
+        #     print("Actual MAX_TOTAL_MB: {:.2f}".format(self._maxmb_out))
+        #     print("Actual adapt_grid_factor: {:.4f}".format(self._adapt_grid_factor_out))
+        #     print("Actual cell_point_ratio: {:.4f}".format(self._cell_point_out))
 
     def integrate_to_sensor(self, sensor):
         """Calculates the StokesVector at specified geometry using an RTE solution.
@@ -1075,6 +1100,12 @@ class RTE:
 
         # Concatenate all legendre tables into one table
         legendre_table = xr.concat(padded_legcoefs, dim='table_index')
+        if self._nleg > legendre_table.sizes['legendre_index']:
+            legendre_table = legendre_table.pad(
+                {'legendre_index':
+                 (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])
+                }, constant_values=0.0
+            )
         dnumphase = legendre_table.sizes['table_index']
         dleg = legendre_table.data
 
@@ -1857,11 +1888,12 @@ class RTE:
             print('adapt_grid_factor reduced to ', self._adapt_grid_factor)
 
         wantmem *= reduce
-        if wantmem > self._max_int32_size:
-            raise pyshdom.exceptions.SHDOMError(
-                "Number of words of memory ({}) exceeds max integer size: {}".format(
-                    wantmem, self._max_int32_size
-                ))
+        # below is only necessary for 32 bit systems, I guess. - JRLoveridge 2021/03/02
+        # if wantmem > self._max_int32_size:
+        #     raise pyshdom.exceptions.SHDOMError(
+        #         "Number of words of memory ({}) exceeds max integer size: {}".format(
+        #             wantmem, self._max_int32_size
+        #         ))
 
         #These are the sizes of the main arrays.
         self._maxig = int(self._adapt_grid_factor * self._nbpts)
@@ -1875,12 +1907,12 @@ class RTE:
         #To upgrade this, it will be necessary to upgrade the precision in
         #the Fortran subroutines.
 
-        if 4.0*(self._maxiv + self._maxig)*self._nstokes > self._max_int32_size:
+        if self._maxiv > self._max_int32_size:
             raise pyshdom.exceptions.SHDOMError(
                 "Size of largest array (RADIANCE) with shape (NSTOKES, MAXIV+MAXIG) "
                 "likely exceeds the max integer number of bytes. This will result in array probably"
-                " failing to allocate. {} > {}".format(
-                    (self._maxiv + self._maxig)*self._nstokes, self._max_int32_size)
+                " failing to allocate. Current Size: {} > Max Size: {}".format(
+                    self._maxiv, self._max_int32_size)
                 )
 
         if 4.0*8.0*self._maxic > self._max_int32_size:

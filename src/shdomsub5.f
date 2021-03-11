@@ -2164,3 +2164,238 @@ C             boundary then prepare for next cell
 
       RETURN
       END
+
+      SUBROUTINE COMPUTE_RADIANCE_GRID(NSTOKES, RADIANCE, RSHPTR,
+     .           NPTS, MU, PHI, ML, MM, NSTLEG, NLM, GRIDRAD)
+
+      IMPLICIT NONE
+      INTEGER NSTOKES, NPTS, ML, MM, NSTLEG, NLM
+!f2py intent(in) :: NSTOKES, NPTS, ML, MM, NSTLEG, NLM
+      INTEGER RSHPTR(*)
+!f2py intent(in) :: RSHPTR
+      REAL MU, PHI, RADIANCE(NSTOKES, *)
+!f2py intent(in) :: MU, PHI, RADIANCE
+      REAL GRIDRAD(NSTOKES,NPTS)
+!f2py intent(out) :: GRIDRAD
+
+      INTEGER I, RS, RE,J
+      REAL YLMDIR(NSTLEG,NLM)
+      GRIDRAD = 0.0
+
+      CALL YLMALL (.FALSE.,MU,PHI,ML,MM,NSTLEG, YLMDIR)
+      DO I=1,NPTS
+        RS = RSHPTR(I)
+        RE = RSHPTR(I+1)-RS
+        DO J=1,RE
+          GRIDRAD(1,I) = GRIDRAD(1,I) +
+     .      RADIANCE(1,RS+J)*YLMDIR(1,J)
+        ENDDO
+      ENDDO
+      RETURN
+      END
+
+      SUBROUTINE TRAVERSE_GRID(NX, NY, NZ, NPTS, NCELLS,
+     .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
+     .                       BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,
+     .                       GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
+     .			                 X0, Y0, Z0, XE,YE,ZE, SIDE)
+C    Finds the ending point of a ray integration so that we can
+C    trace a ray from the end point to the starting point.
+      IMPLICIT NONE
+      INTEGER NX, NY, NZ, NPTS, NCELLS,SIDE
+Cf2py intent(in) :: NX,NY,NZ,NPTS,NCELLS
+Cf2py intent(out) :: SIDE
+      INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
+Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
+      INTEGER*2 CELLFLAGS(*)
+Cf2py intent(in) :: CELLFLAGS
+      REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
+Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
+      REAL    MURAY, PHIRAY, MU2, PHI2
+Cf2py intent(in) :: MURAY, PHIRAY, MU2,PHI2
+      DOUBLE PRECISION X0, Y0, Z0
+Cf2py intent(in) :: X0, Y0, Z0
+      INTEGER BCFLAG, IPFLAG
+Cf2py intent(in) :: BCFLAG, IPFLAG
+
+      INTEGER BITX, BITY, BITZ, IOCT, ICELL, INEXTCELL, IFACE
+      INTEGER IOPP, NTAU, IT, I, IPT1, IPT2, K
+      LOGICAL DONE, IPINX, IPINY, OPENBCFACE, OUTOFDOMAIN
+      INTEGER JFACE, KFACE, IC, MAXCELLSCROSS, NGRID
+      INTEGER OPPFACE(6), OLDIPTS(8)
+      INTEGER DONEFACE(8,7), ONEX(8), ONEY(8)
+      INTEGER DONETHIS(8)
+      REAL    XM, YM
+      DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
+      DOUBLE PRECISION XE, YE, ZE, XN, YN, ZN, XI, YI, ZI
+Cf2py intent(out) :: XE,YE,ZE
+      DOUBLE PRECISION SO, SOX, SOY, SOZ, EPS, F1(8), F2(8)
+
+      REAL FM
+      INTEGER J
+
+      DATA OPPFACE/2,1,4,3,6,5/
+      DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
+      DATA DONEFACE/0,0,0,0,0,0,0,0, 0,1,0,3,0,5,0,7, 2,0,4,0,6,0,8,0,
+     .              0,0,1,2,0,0,5,6, 3,4,0,0,5,6,0,0,
+     .              0,0,0,0,1,2,3,4, 5,6,7,8,0,0,0,0/
+
+      EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
+      MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
+
+C         Make the ray direction (opposite to the discrete ordinate direction)
+      CX = SQRT(1.0-MURAY**2)*COS(PHIRAY)
+      CY = SQRT(1.0-MURAY**2)*SIN(PHIRAY)
+      CZ = MURAY
+      IF (ABS(CX) .GT. 1.0E-6) THEN
+        CXINV = 1.0D0/CX
+      ELSE
+        CX = 0.0
+        CXINV = 1.0E6
+      ENDIF
+      IF (ABS(CY) .GT. 1.0E-6) THEN
+        CYINV = 1.0D0/CY
+      ELSE
+        CY = 0.0
+        CYINV = 1.0E6
+      ENDIF
+      IF (ABS(CZ) .GT. 1.0E-6) THEN
+        CZINV = 1.0D0/CZ
+      ELSE
+        CZ = 0.0
+        CZINV = 1.0E6
+      ENDIF
+
+C         Setup for the ray path direction
+      IF (CX .LT. 0.0) THEN
+        BITX = 1
+      ELSE
+        BITX = 0
+      ENDIF
+      IF (CY .LT. 0.0) THEN
+        BITY = 1
+      ELSE
+        BITY = 0
+      ENDIF
+      IF (CZ .LT. 0.0) THEN
+        BITZ = 1
+      ELSE
+        BITZ = 0
+      ENDIF
+      IOCT = 1 + BITX + 2*BITY + 4*BITZ
+      XM = 0.5*(XGRID(1)+XGRID(NX))
+      YM = 0.5*(YGRID(1)+YGRID(NY))
+
+C         Start at the desired point, getting the extinction and source there
+      XE = X0
+      YE = Y0
+      ZE = Z0
+      CALL LOCATE_GRID_CELL (NX, NY, NZ, XGRID, YGRID, ZGRID,
+     .                  NCELLS, TREEPTR, GRIDPTR, CELLFLAGS, GRIDPOS,
+     .                  BCFLAG, IPFLAG, XE, YE, ZE, ICELL)
+
+      IFACE = 0
+      NGRID = 0
+
+C         Loop until reach a Z boundary or transmission is very small
+      DONE = .FALSE.
+      DO WHILE (.NOT. DONE)
+C           Make sure current cell is valid
+        IF (ICELL .LE. 0) THEN
+          WRITE (6,*)'TRAVERSE_GRID: ICELL=',ICELL,
+     .                MURAY,PHIRAY,XE,YE,ZE
+          STOP
+        ENDIF
+        NGRID = NGRID + 1
+
+C           This cell is independent pixel if IP mode or open boundary
+C             conditions and ray is leaving domain (i.e. not entering)
+        IPINX = BTEST(INT(CELLFLAGS(ICELL)),0) .AND.
+     .          .NOT. ( BTEST(BCFLAG,0) .AND.
+     .          ((CX.GT.0.AND.XE.LT.XM) .OR. (CX.LT.0.AND.XE.GT.XM)) )
+        IPINY = BTEST(INT(CELLFLAGS(ICELL)),1) .AND.
+     .          .NOT. ( BTEST(BCFLAG,1) .AND.
+     .          ((CY.GT.0.AND.YE.LT.YM) .OR. (CY.LT.0.AND.YE.GT.YM)) )
+
+C           Find boundaries of the current cell
+C           Find the three possible intersection planes (X,Y,Z)
+C             from the coordinates of the opposite corner grid point
+        IOPP = GRIDPTR(9-IOCT,ICELL)
+C           Get the distances to the 3 planes and select the closest
+C             (always need to deal with the cell that is wrapped)
+        IF (IPINX) THEN
+          SOX = 1.0E20
+        ELSE
+          SOX = (GRIDPOS(1,IOPP)-XE)*CXINV
+        ENDIF
+        IF (IPINY) THEN
+          SOY = 1.0E20
+        ELSE
+          SOY = (GRIDPOS(2,IOPP)-YE)*CYINV
+        ENDIF
+        SOZ = (GRIDPOS(3,IOPP)-ZE)*CZINV
+        SO = MIN(SOX,SOY,SOZ)
+        IF (SO .LT. -EPS) THEN
+          WRITE (6,*) 'TRAVERSE_GRID: SO<0  ',
+     .      MURAY,PHIRAY,XE,YE,ZE,SO,ICELL
+          STOP
+        ENDIF
+        XN = XE + SO*CX
+        YN = YE + SO*CY
+        ZN = ZE + SO*CZ
+
+C               Get the intersection face number (i.e. neighptr index)
+        IF (SOX .LE. SOZ .AND. SOX .LE. SOY) THEN
+          IFACE = 2-BITX
+          JFACE = 1
+          OPENBCFACE=BTEST(INT(CELLFLAGS(ICELL)),0).AND.BTEST(BCFLAG,0)
+        ELSE IF (SOY .LE. SOZ) THEN
+          IFACE = 4-BITY
+          JFACE = 2
+          OPENBCFACE=BTEST(INT(CELLFLAGS(ICELL)),1).AND.BTEST(BCFLAG,1)
+        ELSE
+          IFACE = 6-BITZ
+          JFACE = 3
+          OPENBCFACE=.FALSE.
+        ENDIF
+C            Get the next cell to go to
+        INEXTCELL = NEIGHPTR(IFACE,ICELL)
+        IF (INEXTCELL .LT. 0) THEN
+          CALL NEXT_CELL (XN, YN, ZN, IFACE, JFACE, ICELL, GRIDPOS,
+     .           GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,  INEXTCELL)
+        ENDIF
+C             If going to same or larger face then use previous face
+        IF (NEIGHPTR(IFACE,ICELL) .GE. 0 .AND. .NOT.OPENBCFACE) THEN
+          KFACE = IFACE
+          IC = ICELL
+        ELSE
+C             If going to smaller face then use next face (more accurate)
+          KFACE = OPPFACE(IFACE)
+          IC = INEXTCELL
+          IFACE = 0
+        ENDIF
+C           Get the location coordinate
+        IF (INEXTCELL .GT. 0) THEN
+          IF (JFACE .EQ. 1) THEN
+            XN = GRIDPOS(1,GRIDPTR(IOCT,INEXTCELL))
+          ELSE IF (JFACE .EQ. 2) THEN
+            YN = GRIDPOS(2,GRIDPTR(IOCT,INEXTCELL))
+          ELSE
+            ZN = GRIDPOS(3,GRIDPTR(IOCT,INEXTCELL))
+          ENDIF
+        ENDIF
+
+C           If the transmission is greater than zero and not at a
+C             boundary then prepare for next cell
+        IF ((INEXTCELL .EQ. 0).OR.(NGRID.GT.MAXCELLSCROSS)) THEN
+          DONE = .TRUE.
+        ELSE
+          XE = XN
+          YE = YN
+          ZE = ZN
+          ICELL = INEXTCELL
+        ENDIF
+      ENDDO
+
+      RETURN
+      END
