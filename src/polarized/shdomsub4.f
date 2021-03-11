@@ -953,6 +953,8 @@ C         so that component of the gradient can be calculated.
               GRIDPOINT = GRIDPTR(KK,BCELL)
               RAYGRAD(:,GRIDPOINT,:) = RAYGRAD(:,GRIDPOINT,:) +
      .           TRANSMIT*SRCGRAD(:,KK,:)*ABSCELL
+              PRINT *,'src', GRIDPOINT, TRANSMIT, SRCGRAD(1,KK,1),
+     .           ABSCELL
 C             Add gradient component due to the direct solar beam propogation
               IF (EXACT_SINGLE_SCATTER .AND.
      .          SRCTYPE .NE. 'T') THEN
@@ -1078,20 +1080,24 @@ C     subgrid integration interval.
      .        PASSEDINTERP1(K,KK)
           ENDDO
           EXT = 0.5*(EXT0+EXT1)
-          DO K=1,8
-            RAD0(:) = -1*PASSEDRAD(:,KK)*
+          IF (EXT .NE. 0.0) THEN
+            DO K=1,8
+              RAD0(:) = -1*PASSEDRAD(:,KK)*
      .        DEXT(PASSEDPOINTS(K,KK),IDR)*
      .        PASSEDINTERP0(K,KK)
-            RAD1(:) = -1*PASSEDRAD(:,KK+1)*
+              RAD1(:) = -1*PASSEDRAD(:,KK+1)*
      .        DEXT(PASSEDPOINTS(K,KK),IDR)*
      .        PASSEDINTERP1(K,KK)
-            RADGRAD(:) = ( 0.5*(RAD0+RAD1)
+              RADGRAD(:) = ( 0.5*(RAD0+RAD1)
      .           + 0.08333333333*(EXT0*RAD1-EXT1*RAD0)*DELS
      .                *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
-            GRIDPOINT = PASSEDPOINTS(K,KK)
-            RAYGRAD(:,GRIDPOINT,IDR) = RAYGRAD(:,GRIDPOINT,IDR)+
+              GRIDPOINT = PASSEDPOINTS(K,KK)
+              RAYGRAD(:,GRIDPOINT,IDR) = RAYGRAD(:,GRIDPOINT,IDR)+
      .          RADGRAD(:)*PASSEDTRANSMIT(KK)*PASSEDABSCELL(KK)
-          ENDDO
+              PRINT *, 'rad', GRIDPOINT, RADGRAD(1), PASSEDTRANSMIT(KK),
+     .        PASSEDABSCELL(KK)
+            ENDDO
+          ENDIF
 
         ENDDO
       ENDDO
