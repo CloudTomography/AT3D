@@ -628,11 +628,12 @@ C     initialize counter for subgrid intervals.
 C     initialize passed points to horrific numbers so its obvious if there
 C     is an error.
       PASSEDPOINTS = 0
-      PASSEDINTERP0 = 45.0
-      PASSEDINTERP1 = 45.0
-      PASSEDDELS = -500.0
+      PASSEDINTERP0 = 99999.0
+      PASSEDINTERP1 = 99999.0
+      PASSEDDELS = 99999.0
       PASSEDRAD = 0.0
-      PASSEDABSCELL = -9999.0
+      PASSEDABSCELL = -99999.0
+      PASSEDTRANSMIT = 99999.0
 
       PI = ACOS(-1.0D0)
 C       Calculate the generalized spherical harmonics for this direction
@@ -864,7 +865,11 @@ C           Loop over the subgrid cells
 C         save the interpolation kernel and pointers for each subgrid
 C         interval so that the radiance gradient
           PASSEDDELS(NPASSED) = DELS
-          PASSEDINTERP1(:,NPASSED) = FB(:)
+          IF (.NOT. OUTOFDOMAIN) THEN
+            PASSEDINTERP1(:,NPASSED) = FB(:)
+          ELSE
+            PASSEDINTERP1(:,NPASSED) = 0.0
+          ENDIF
           PASSEDPOINTS(:,NPASSED) = GRIDPTR(:,BCELL)
 
           S = IT*DELS
@@ -899,10 +904,11 @@ C            Interpolate extinction and source function along path
      .            FC(N)*FB(KK)*GRAD8(:,KK,N,:)
               ENDDO
             ENDDO
+            PASSEDINTERP0(:,NPASSED) = FB(:)
           ELSE
             GRAD0 = 0.0
+            PASSEDINTERP0(:,NPASSED) = 0.0
           ENDIF
-          PASSEDINTERP0(:,NPASSED) = FB(:)
 C            Compute the subgrid radiance: integration of the source function
           EXT = 0.5*(EXT0+EXT1)
           IF (EXT .NE. 0.0) THEN
@@ -975,6 +981,8 @@ C                 has the sensitivity to the direct beam.
                 ENDDO
               ENDIF
             ENDDO
+C         Only increment the subgrid interval if it is within the domain,
+C         ie valid.
           ENDIF
           NPASSED = NPASSED + 1
           TRANSMIT = TRANSMIT*TRANSCELL
@@ -1042,6 +1050,8 @@ C             boundary then prepare for next cell
      .                      SFCTYPE, NSFCPAR, SFCGRIDPARMS,
      .                      RADBND)
           RADOUT(:) = RADOUT(:) + TRANSMIT*RADBND(:)
+          PASSEDTRANSMIT(NPASSED) = TRANSMIT
+          PASSEDABSCELL(NPASSED) = 0.0
           DO KK=1,NPASSED
             PASSEDRAD(:,KK) = PASSEDRAD(:,KK) +
      .        TRANSMIT*RADBND(:)/PASSEDTRANSMIT(KK)
@@ -1067,7 +1077,7 @@ C     subgrid integration interval.
       IF (USELONGRAD .EQ. 'Q') THEN
       DO IDR=1,NUMDER
         IPA = PARTDER(IDR)
-        DO KK=1,NPASSED - 1
+        DO KK=1,NPASSED-1
           EXT0 = 0.0
           EXT1 = 0.0
           DELS = PASSEDDELS(KK)
