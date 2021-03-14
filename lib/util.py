@@ -8,6 +8,8 @@ from collections import OrderedDict
 import netCDF4 as nc
 import xarray as xr
 import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 import pyshdom.core
 import pyshdom.solver
@@ -181,6 +183,104 @@ def get_phase_function(legcoef, angles, phase_elements='All'):
         coords=coords
     )
     return phase_array
+
+def plot_cell_grid(solver, y, visualize=None):
+    """
+    Visualize the adaptive grid.
+
+    Plots all cell lines in the X-Z plane within the nearest base grid cell
+    to the specified y value.
+
+    Parameters
+    ----------
+    solver : pyshdom.solver.RTE
+        The solver object.
+    y : float
+        The Y-plane of the grid to visualize.
+    visualize : str
+        If None then only the adaptive grid lines are visualized.
+        If 'extinct' then the cell averaged extinction is visualized.
+        If 'adaptcrit' then the maximum adaptive grid splitting criterion
+        for each cell is visualized.
+
+    Notes
+    -----
+    The adaptive grid cells are plotted on top of each other without any transparency
+    so the most recently formed ones (which should be highest resolution) are the
+    ones that are shown.
+    """
+    diff = solver._ygrid-y
+    yinds = np.where(np.abs(diff) == np.abs(diff).min())[0]
+    if diff[yinds] < 0.0:
+        y_low = yinds
+        y_high = yinds+1
+    else:
+        y_low = yinds-1
+        y_high = yinds
+    fig, ax = plt.subplots(figsize=(8, 8))
+    if visualize is not None:
+        cellextinct, adaptcrit = pyshdom.core.output_cell_split(
+            gridptr=solver._gridptr,
+            gridpos=solver._gridpos,
+            nstokes=solver._nstokes,
+            total_ext=solver._total_ext,
+            shptr=solver._shptr,
+            source=solver._source,
+            ncells=solver._ncells
+       )
+
+        if visualize == 'extinct':
+            minv = cellextinct.min()
+            maxv = cellextinct.max()*1.1
+            label = 'Cell averaged Extinction'
+        elif visualize == 'adaptcrit':
+            if not solver.check_solved(verbose=False):
+                raise pyshdom.exceptions.SHDOMError(
+                    "pyshdom.solver.RTE object has to be solved to visualize "
+                    "adaptive splitting."
+                )
+            adapt = np.max(adaptcrit, axis=0)
+            minv = adapt.min()
+            maxv = solver._splitacc
+            label = 'Maximum cell splitting criterion.'
+
+        cmap = plt.cm.gray_r
+        norm = plt.Normalize(minv, maxv)
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        plt.colorbar(sm, ax=ax, label=label)
+
+    for IC in range(solver._ncells):
+        X1 = solver._gridpos[0, solver._gridptr[0, IC]-1]
+        Z1 = solver._gridpos[2, solver._gridptr[0, IC]-1]
+        X2 = solver._gridpos[0, solver._gridptr[1, IC]-1]
+        Z2 = solver._gridpos[2, solver._gridptr[1, IC]-1]
+        X3 = solver._gridpos[0, solver._gridptr[5, IC]-1]
+        Z3 = solver._gridpos[2, solver._gridptr[5, IC]-1]
+        X4 = solver._gridpos[0, solver._gridptr[4, IC]-1]
+        Z4 = solver._gridpos[2, solver._gridptr[4, IC]-1]
+        y = solver._gridpos[1, solver._gridptr[:, IC]-1]
+        if (y.min() >= solver._ygrid[y_low]-1e-6) & (y.max() <= solver._ygrid[y_high]+1e-6):
+            if visualize == 'extinct':
+                facecolor = cmap(norm(cellextinct[IC]))
+            elif visualize == 'adaptcrit':
+                facecolor = cmap(norm(adapt[IC]))
+            else:
+                facecolor = 'none'
+            rect = patches.Rectangle((X1, Z1), X2-X1, Z4-Z1, linewidth=0.5,
+                                     edgecolor='black', facecolor=facecolor)
+            ax.add_patch(rect)
+            #print(colors.to_rgba('black', vis[IC]))
+    zdomain = solver._zgrid[-1] - solver._zgrid[0]
+    xdomain = solver._xgrid[-1] - solver._xgrid[0]
+    ax.set_xlim(-0.1*xdomain, 1.1*xdomain)
+    ax.set_ylim(solver._zgrid[0]-0.1*zdomain, solver._zgrid[-1]+0.1*zdomain)
+    ax.set_ylabel('Z (km)')
+    ax.set_xlabel('X (km)')
+    ax.set_title('Adaptive grid lines in the y=[{:2.3f}, {:2.3f}] plane'.format(
+        solver._ygrid[y_low][0], solver._ygrid[y_high][0])
+        )
+    plt.show()
 
 
 def planck_function(temperature, wavelength, c=2.99792458e8, h=6.62606876e-34, k=1.3806503e-23):

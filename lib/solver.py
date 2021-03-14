@@ -201,6 +201,22 @@ class RTE:
         self._cell_point_out = None
 
     @property
+    def final_maxmb(self):
+        return self._maxmb_out
+
+    @property
+    def final_adapt_grid_factor(self):
+        return self._adapt_grid_factor_out
+
+    @property
+    def final_shterm_factor(self):
+        return self._shterm_fac_out
+
+    @property
+    def final_cell_point_ratio(self):
+        return self._cell_point_out
+
+    @property
     def solution_accuracy(self):
         return self._solacc
 
@@ -434,10 +450,10 @@ class RTE:
         self._adapt_grid_factor_out = self._npts/self._nbpts
         self._shterm_fac_out = nsh/(self._nlm*self._npts)
         self._cell_point_out = self._ncells/self._npts
-        if verbose:
-            print("Actual MAX_TOTAL_MB: {:.2f}".format(self._maxmb_out))
-            print("Actual adapt_grid_factor: {:.4f}".format(self._adapt_grid_factor_out))
-            print("Actual cell_point_ratio: {:.4f}".format(self._cell_point_out))
+        # if verbose:
+        #     print("Actual MAX_TOTAL_MB: {:.2f}".format(self._maxmb_out))
+        #     print("Actual adapt_grid_factor: {:.4f}".format(self._adapt_grid_factor_out))
+        #     print("Actual cell_point_ratio: {:.4f}".format(self._cell_point_out))
 
     def integrate_to_sensor(self, sensor):
         """Calculates the StokesVector at specified geometry using an RTE solution.
@@ -1075,6 +1091,12 @@ class RTE:
 
         # Concatenate all legendre tables into one table
         legendre_table = xr.concat(padded_legcoefs, dim='table_index')
+        if self._nleg > legendre_table.sizes['legendre_index']:
+            legendre_table = legendre_table.pad(
+                {'legendre_index':
+                 (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])
+                }, constant_values=0.0
+            )
         dnumphase = legendre_table.sizes['table_index']
         dleg = legendre_table.data
 
@@ -1163,6 +1185,7 @@ class RTE:
             numder=self._num_derivatives
         )
 
+
     def load_solution(self, input_dataset, load_radiance=True):
         """
         Loads the grid and radiance/source spherical harmonics of another
@@ -1205,21 +1228,41 @@ class RTE:
                     input_dataset['nx'].data, input_dataset['ny'].data,
                     input_dataset['nz'].data)
                 )
-        if input_dataset.xgrid.data != self._xgrid or input_dataset.ygrid.data != self._ygrid \
-            or input_dataset.zgrid.data != self._zgrid:
+        if np.any(input_dataset.xgrid.data != self._xgrid) or np.any(input_dataset.ygrid.data != self._ygrid) \
+            or np.any(input_dataset.zgrid.data != self._zgrid):
             raise ValueError(
                 "Incompatible grids (xgrid, ygrid, zgrid) between loaded solution and self."
             )
 
         #read grid into memory here and overwrite normal grid from
         #initialization, no need to worry about this as this is small.
-        self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
-        self._treeptr, self._cellflags, self._nbcells = input_dataset.npts.data, \
-        input_dataset.ncells.data, input_dataset.gridpos.data, input_dataset.gridptr.data, \
-        input_dataset.neighptr.data, input_dataset.treeptr.data, input_dataset.cellflags.data,\
-        input_dataset.nbcells.data
-        self._setup_grid_flag = False
+        if self._gridpos.shape[1] < input_dataset.npts.data:
+            raise pyshdom.exceptions.SHDOMError(
+                "Cannot load solution as loaded grid has more points ({}) "
+                "than supported by the current RTE's memory parameters ({})".format(
+                    input_dataset.npts.data, self._gridpos.shape[1]
+                )
+            )
+        if self._gridptr.shape[1] < input_dataset.ncells.data:
+            raise pyshdom.exceptions.SHDOMError(
+                "Cannot load solution as loaded grid has more cells ({}) "
+                "than supported by the current RTE's memory parameters ({})".format(
+                    input_dataset.ncells.data, self._gridptr.shape[1]
+                )
+            )
 
+        self._npts, self._ncells, self._nbcells = input_dataset.npts.data, \
+        input_dataset.ncells.data, input_dataset.nbcells.data
+        self._gridpos[:, :self._npts] = input_dataset.gridpos.data
+        self._gridptr[:, :self._ncells] = input_dataset.gridptr.data
+        self._treeptr[:, :self._ncells] = input_dataset.treeptr.data
+        self._cellflags[:self._ncells] = input_dataset.cellflags.data
+        self._neighptr[:, :self._ncells] = input_dataset.neighptr.data
+
+        self._setup_grid_flag = False
+        # interpolate the optical properties onto the grid points
+        # (including the adaptive ones.)
+        self._prepare_optical_properties()
         if load_radiance:
             if input_dataset['nstokes'].data != self._nstokes:
                 raise ValueError(
@@ -1291,26 +1334,26 @@ class RTE:
             save_grid = True
 
         if save_grid:
-            output_dataset.coords['npts'] = self._npts
-            output_dataset.coords['ncells'] = self._ncells
-            output_dataset.coords['nbcells'] = self._nbcells
+            output_dataset['npts'] = self._npts
+            output_dataset['ncells'] = self._ncells
+            output_dataset['nbcells'] = self._nbcells
             output_dataset['xgrid'] = (['nx+1'], self._xgrid)
             output_dataset['ygrid'] = (['ny+1'], self._ygrid)
-            output_dataset['zgrid'] = (['nz'], self._zgrid)
-            output_dataset['gridpos'] = (['xyz', 'npts'], self._gridpos[:, :self._npts])
-            output_dataset['gridptr'] = (['8points', 'ncells'], self._gridptr[:, :self._ncells])
-            output_dataset['neighptr'] = (['6neighbours', 'ncells'],
+            output_dataset['zgrid'] = (['nz_dim'], self._zgrid)
+            output_dataset['gridpos'] = (['xyz', 'npts_dim'], self._gridpos[:, :self._npts])
+            output_dataset['gridptr'] = (['8points', 'ncells_dim'], self._gridptr[:, :self._ncells])
+            output_dataset['neighptr'] = (['6neighbours', 'ncells_dim'],
                                           self._neighptr[:, :self._ncells])
-            output_dataset['treeptr'] = (['parent/child', 'ncells'],
+            output_dataset['treeptr'] = (['parent/child', 'ncells_dim'],
                                          self._treeptr[:, :self._ncells])
-            output_dataset['cellflags'] = (['ncells'], self._cellflags[:self._ncells])
+            output_dataset['cellflags'] = (['ncells_dim'], self._cellflags[:self._ncells])
         if save_radiances:
-            output_dataset['fluxes'] = (['updown', 'npts'], self._fluxes[:, :self._npts])
+            output_dataset['fluxes'] = (['updown', 'npts_dim'], self._fluxes[:, :self._npts])
             output_dataset['shptr'] = (['npts+1'], self._shptr[:self._npts+1])
             output_dataset['rshptr'] = (['npts+2'], self._rshptr[:self._npts+2])
-            output_dataset['source'] = (['nstokes', 'sourcesize'],
+            output_dataset['source'] = (['nstokes_dim', 'sourcesize'],
                                         self._source[:, :self._shptr[self._npts]])
-            output_dataset['radiance'] = (['nstokes', 'radsize'],
+            output_dataset['radiance'] = (['nstokes_dim', 'radsize'],
                                           self._radiance[:, :self._rshptr[self._npts]])
         return output_dataset
 
@@ -1837,11 +1880,12 @@ class RTE:
             print('adapt_grid_factor reduced to ', self._adapt_grid_factor)
 
         wantmem *= reduce
-        if wantmem > self._max_int32_size:
-            raise pyshdom.exceptions.SHDOMError(
-                "Number of words of memory ({}) exceeds max integer size: {}".format(
-                    wantmem, self._max_int32_size
-                ))
+        # below is only necessary for 32 bit systems, I guess. - JRLoveridge 2021/03/02
+        # if wantmem > self._max_int32_size:
+        #     raise pyshdom.exceptions.SHDOMError(
+        #         "Number of words of memory ({}) exceeds max integer size: {}".format(
+        #             wantmem, self._max_int32_size
+        #         ))
 
         #These are the sizes of the main arrays.
         self._maxig = int(self._adapt_grid_factor * self._nbpts)
@@ -1855,12 +1899,12 @@ class RTE:
         #To upgrade this, it will be necessary to upgrade the precision in
         #the Fortran subroutines.
 
-        if 4.0*(self._maxiv + self._maxig)*self._nstokes > self._max_int32_size:
+        if self._maxiv > self._max_int32_size:
             raise pyshdom.exceptions.SHDOMError(
                 "Size of largest array (RADIANCE) with shape (NSTOKES, MAXIV+MAXIG) "
                 "likely exceeds the max integer number of bytes. This will result in array probably"
-                " failing to allocate. {} > {}".format(
-                    (self._maxiv + self._maxig)*self._nstokes, self._max_int32_size)
+                " failing to allocate. Current Size: {} > Max Size: {}".format(
+                    self._maxiv, self._max_int32_size)
                 )
 
         if 4.0*8.0*self._maxic > self._max_int32_size:

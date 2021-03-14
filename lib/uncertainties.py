@@ -172,7 +172,7 @@ class DoLPUncertainty(Uncertainty):
     """
     def __init__(self, dolp_abs_uncertainty, radiance_relative_uncertainty):
         inverse_covariance = np.diag(
-            np.array([1.0/radiance_relative_uncertainty, 1.0/dolp_abs_uncertainty])
+            np.array([1.0/dolp_abs_uncertainty,1.0/radiance_relative_uncertainty])
             )
         super().__init__(inverse_covariance, 'LL')
 
