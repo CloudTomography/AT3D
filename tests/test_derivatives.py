@@ -391,7 +391,7 @@ def cloud(ext,veff,reff,ssalb,solarmu,surfacealb, step=0.0, index=(1,1,1),
         solver = pyshdom.solver.RTE(
                             numerical_params=config,
                             medium={'cloud': optical_properties},
-                            source=pyshdom.source.thermal(wavelength)
+                            source=pyshdom.source.thermal(wavelength),
                             surface=pyshdom.surface.lambertian(albedo=surfacealb, ground_temperature=0.0),
                             num_stokes=1,
                             atmosphere=atmosphere2,
@@ -464,7 +464,7 @@ class ThermalJacobian(TestCase):
         #     out.append((rte_sensor_high[11.0].measurement_data[0].data - rte_sensor_low[11.0].measurement_data[0].data)/(2*step))#[a,b,c])
         # finite_jacobian = np.stack(out, axis=0)
         # np.save('./reference_noscat_jacobian.npy')
-        cls.jacobian_reference = np.load('./reference_noscat_jacobian.npy')
+        cls.jacobian_reference = np.load('./data/reference_noscat_jacobian.npy')
 
     def test_jacobian(self):
-        self.assertTrue(np.allclose(self.jacobian.ravel(), self.jacobian_rference.ravel(), atol=8e-3))
+        self.assertTrue(np.allclose(self.jacobian.ravel(), self.jacobian_reference.ravel(), atol=8e-3))

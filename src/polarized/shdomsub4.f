@@ -759,7 +759,7 @@ C           These are also the points we need the gradient for.
           OSINGSCAT8(:,I) = SINGSCAT8(:,I)
           OGRAD8(:,:,I,:) = GRAD8(:,:,I,:)
         ENDDO
-        PRINT *, 'USELONGRAD', USELONGRAD
+
 C         Compute the source function times extinction in direction (MU2,PHI2)
 C     Evaluate the 'source of the linearized RTE' at each of the grid points.
         IF (NSTOKES .GE. 1) THEN
@@ -1091,8 +1091,6 @@ C     subgrid integration interval.
           EXT = 0.5*(EXT0+EXT1)
           IF (EXT .NE. 0.0) THEN
             DO K=1,8
-C              PRINT *, KK, PASSEDPOINTS(K,KK), PASSEDRAD(1,KK),
-C     .        PASSEDINTERP0(K,KK), PASSEDINTERP1(K,KK)
               RAD0(:) = -1*PASSEDRAD(:,KK+1)*
      .        DEXT(PASSEDPOINTS(K,KK),IDR)*
      .        PASSEDINTERP0(K,KK)
