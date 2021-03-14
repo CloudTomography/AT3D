@@ -4,6 +4,9 @@ import numpy as np
 import xarray as xr
 import pyshdom
 
+import warnings
+warnings.filterwarnings('ignore')
+
 class CostFunctionL2(TestCase):
     @classmethod
     def setUpClass(cls):
@@ -305,14 +308,8 @@ class Verify_Jacobian(TestCase):
         self.assertAlmostEqual(self.jacobian_exact['jacobian_0.860'][0,0,0,0].data, 0.00396336, places=5)
 
 #A function for computing clouds.
-def cloud(ext,veff,reff,ssalb,solarmu,surfacealb, step=0.0, index=(1,1,1),
+def cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=0.0, index=(1,1,1),
           nmu=16, split=0.03, load_solution=None, resolution=1):
-
-    mie_mono_table = pyshdom.mie.get_mono_table('Water',(11.0,11.0),
-                                          max_integration_radius=65.0,
-                                          minimum_effective_radius=0.1,
-                                          relative_dir='../mie_tables',
-                                          verbose=False)
 
     rte_grid = pyshdom.grid.make_grid(0.05/resolution, 7*resolution, 0.05/resolution, 7*resolution,
                                       np.arange(0.1, 0.5, 0.05/resolution))
@@ -392,7 +389,8 @@ def cloud(ext,veff,reff,ssalb,solarmu,surfacealb, step=0.0, index=(1,1,1),
                             numerical_params=config,
                             medium={'cloud': optical_properties},
                             source=pyshdom.source.thermal(wavelength),
-                            surface=pyshdom.surface.lambertian(albedo=surfacealb, ground_temperature=0.0),
+                            surface=pyshdom.surface.lambertian(albedo=surfacealb,
+                            ground_temperature=ground_temperature),
                             num_stokes=1,
                             atmosphere=atmosphere2,
                             name=None
@@ -401,10 +399,10 @@ def cloud(ext,veff,reff,ssalb,solarmu,surfacealb, step=0.0, index=(1,1,1),
             solver.load_solution(load_solution)
         solvers.add_solver(wavelength,solver)
 
-    Sensordict.get_measurements(solvers, maxiter=200, n_jobs=1, verbose=True)
+    Sensordict.get_measurements(solvers, maxiter=200, n_jobs=1, verbose=False)
     return solvers, Sensordict, cloud_poly_tables, step
 
-class ThermalJacobian(TestCase):
+class ThermalJacobianNoSurface(TestCase):
     @classmethod
     def setUpClass(cls):
         tautol=0.2
@@ -418,7 +416,14 @@ class ThermalJacobian(TestCase):
         ext=10.0
         veff=0.1
         step=1e-4
-        solvers, Sensordict,cloud_poly_tables,final_step = cloud(ext,veff,reff,ssalb,solarmu,surfacealb,step=0.0,nmu=nmu,split=split,
+        ground_temperature = 0.0
+        mie_mono_table = pyshdom.mie.get_mono_table('Water',(11.0,11.0),
+                                              max_integration_radius=65.0,
+                                              minimum_effective_radius=0.1,
+                                              relative_dir='../mie_tables',
+                                              verbose=False)
+
+        solvers, Sensordict,cloud_poly_tables,final_step = cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature,step=0.0,nmu=nmu,split=split,
                                                                 resolution=resolutionfactor)
         Sensordict.add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
         for sensor in Sensordict['MISR']['sensor_list']:
@@ -435,7 +440,7 @@ class ThermalJacobian(TestCase):
 
         gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
         solvers, forward_sensors, unknown_scatterers,
-        parallel_solve_kwargs={'maxiter':200,'n_jobs':1, 'setup_grid':False, 'verbose': True, 'init_solution':False},
+        parallel_solve_kwargs={'maxiter':200,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
         gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
         'indices_for_jacobian': np.where(solver.medium['cloud'].extinction.data > 0.0)}, uncertainty_kwargs={'add_noise': False})
         cost, gradient, jacobian = gradient_call()
@@ -444,18 +449,18 @@ class ThermalJacobian(TestCase):
         # CODE THAT IS USED TO GENERATE THE FINITE DIFFERENCE REFERENCE
         # indices_for_jacobian = np.where(solver.medium['cloud'].extinction.data > 0.0)
         # saved = solver.save_solution()
-
+        # print("calculating finite differencing lineariztion. This will take a while. . .")
         # out = []
         # for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
         #     print(i)
-        #     data = cloud(ext,veff,reff,ssalb,solarmu,surfacealb, step=step,index=(a,b,c),nmu=nmu,load_solution=saved, split=0.0,
+        #     data = cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_temperature,step=step,index=(a,b,c),nmu=nmu,load_solution=saved, split=0.0,
         #                  resolution=resolutionfactor)
         #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
         #     for sensor in data[1]['MISR']['sensor_list']:
         #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         #     rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
-
-        #     data = cloud(ext,veff,reff,ssalb,solarmu,surfacealb, step=-1*step,index=(a,b,c),nmu=nmu,load_solution=saved, split=0.0,
+        #
+        #     data = cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=-1*step,index=(a,b,c),nmu=nmu,load_solution=saved, split=0.0,
         #                  resolution=resolutionfactor)
         #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
         #     for sensor in data[1]['MISR']['sensor_list']:
@@ -463,8 +468,81 @@ class ThermalJacobian(TestCase):
         #     rte_sensor_low, mapping = data[1].sort_sensors(solvers, measurements=data[1])
         #     out.append((rte_sensor_high[11.0].measurement_data[0].data - rte_sensor_low[11.0].measurement_data[0].data)/(2*step))#[a,b,c])
         # finite_jacobian = np.stack(out, axis=0)
-        # np.save('./reference_noscat_jacobian.npy')
-        cls.jacobian_reference = np.load('./data/reference_noscat_jacobian.npy')
+        # np.save('./data/reference_noscat_nosurface_jacobian.npy', finite_jacobian)
+        cls.jacobian_reference = np.load('./data/reference_noscat_nosurface_jacobian.npy')
+
+    def test_jacobian(self):
+        self.assertTrue(np.allclose(self.jacobian.ravel(), self.jacobian_reference.ravel(), atol=8e-3))
+
+
+class ThermalJacobianWithSurface(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        tautol=0.2
+        surfacealb=0.0
+        ssalb = 0.0
+        solarmu = 1.0
+        reff=10.0
+        resolutionfactor = 1
+        nmu=2
+        split=0.5
+        ext=10.0
+        veff=0.1
+        step=1e-4
+        ground_temperature = 200.0
+        mie_mono_table = pyshdom.mie.get_mono_table('Water',(11.0,11.0),
+                                              max_integration_radius=65.0,
+                                              minimum_effective_radius=0.1,
+                                              relative_dir='../mie_tables',
+                                              verbose=False)
+
+        solvers, Sensordict,cloud_poly_tables,final_step = cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature,step=0.0,nmu=nmu,split=split,
+                                                                resolution=resolutionfactor)
+        Sensordict.add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        for sensor in Sensordict['MISR']['sensor_list']:
+            Sensordict['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
+        rte_sensor_ref, mapping_ref = Sensordict.sort_sensors(solvers, measurements=Sensordict)
+        rte_sensor_ref = rte_sensor_ref[11.0]
+        solver = solvers[11.0]
+
+        unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        unknown_scatterers.add_unknown('cloud', ['extinction'], cloud_poly_tables)
+        unknown_scatterers.create_derivative_tables()
+        solvers.add_microphysical_partial_derivatives(unknown_scatterers)
+        forward_sensors = Sensordict.make_forward_sensors()
+
+        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        solvers, forward_sensors, unknown_scatterers,
+        parallel_solve_kwargs={'maxiter':200,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
+        gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
+        'indices_for_jacobian': np.where(solver.medium['cloud'].extinction.data > 0.0)}, uncertainty_kwargs={'add_noise': False})
+        cost, gradient, jacobian = gradient_call()
+        cls.jacobian = jacobian['jacobian_11.000'][0,0].data
+
+        # CODE THAT IS USED TO GENERATE THE FINITE DIFFERENCE REFERENCE
+        # indices_for_jacobian = np.where(solver.medium['cloud'].extinction.data > 0.0)
+        # saved = solver.save_solution()
+        # print("calculating finite differencing lineariztion. This will take a while. . .")
+        # out = []
+        # for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
+        #     print(i)
+        #     data = cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_temperature,step=step,index=(a,b,c),nmu=nmu,load_solution=saved, split=0.0,
+        #                  resolution=resolutionfactor)
+        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     for sensor in data[1]['MISR']['sensor_list']:
+        #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
+        #     rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
+        #
+        #     data = cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=-1*step,index=(a,b,c),nmu=nmu,load_solution=saved, split=0.0,
+        #                  resolution=resolutionfactor)
+        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     for sensor in data[1]['MISR']['sensor_list']:
+        #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
+        #     rte_sensor_low, mapping = data[1].sort_sensors(solvers, measurements=data[1])
+        #     out.append((rte_sensor_high[11.0].measurement_data[0].data - rte_sensor_low[11.0].measurement_data[0].data)/(2*step))#[a,b,c])
+        # finite_jacobian = np.stack(out, axis=0)
+        # np.save('./data/reference_noscat_surface_jacobian.npy', finite_jacobian)
+        cls.jacobian_reference = np.load('./data/reference_noscat_surface_jacobian.npy')
 
     def test_jacobian(self):
         self.assertTrue(np.allclose(self.jacobian.ravel(), self.jacobian_reference.ravel(), atol=8e-3))
