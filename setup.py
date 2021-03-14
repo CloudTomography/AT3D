@@ -125,6 +125,7 @@ F2PY_CORE_API = [
     'update_costfunction',
     'output_cell_split',
     'compute_radiance_grid',
+    'compute_source_grid',
     'traverse_grid'
 ]
 

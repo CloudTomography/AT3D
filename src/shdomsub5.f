@@ -2194,6 +2194,36 @@ C             boundary then prepare for next cell
       RETURN
       END
 
+
+      SUBROUTINE COMPUTE_SOURCE_GRID(NSTOKES, SOURCE, SHPTR,
+     .           NPTS, MU, PHI, ML, MM, NSTLEG, NLM, GRIDSOURCE)
+
+      IMPLICIT NONE
+      INTEGER NSTOKES, NPTS, ML, MM, NSTLEG, NLM
+!f2py intent(in) :: NSTOKES, NPTS, ML, MM, NSTLEG, NLM
+      INTEGER SHPTR(*)
+!f2py intent(in) :: SHPTR
+      REAL MU, PHI, SOURCE(NSTOKES, *)
+!f2py intent(in) :: MU, PHI, SOURCE
+      REAL GRIDSOURCE(NSTOKES,NPTS)
+!f2py intent(out) :: GRIDSOURCE
+
+      INTEGER I, RS, RE,J
+      REAL YLMDIR(NSTLEG,NLM)
+      GRIDSOURCE = 0.0
+
+      CALL YLMALL (.FALSE.,MU,PHI,ML,MM,NSTLEG, YLMDIR)
+      DO I=1,NPTS
+        RS = SHPTR(I)
+        RE = SHPTR(I+1)-RS
+        DO J=1,RE
+          GRIDSOURCE(1,I) = GRIDSOURCE(1,I) +
+     .      SOURCE(1,RS+J)*YLMDIR(1,J)
+        ENDDO
+      ENDDO
+      RETURN
+      END
+
       SUBROUTINE TRAVERSE_GRID(NX, NY, NZ, NPTS, NCELLS,
      .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                       BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,

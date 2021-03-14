@@ -245,7 +245,7 @@ C         to calculate the Stokes radiance vector for this pixel
      .           JACOBIANPTR, NUM_JACOBIAN_PTS, RAYS_PER_PIXEL,
      .           RAY_WEIGHTS, STOKES_WEIGHTS, DIPHASEIND,
      .           COSTFUNC, NCOST, NGRAD, NUNCERTAINTY, PLANCK,
-     .           LONGRADIANCE, USELONGRAD)
+     .           LONGRADIANCE, USELONGRAD, TAUTOL)
 C    Calculates the cost function and its gradient using the Levis approximation
 C    to the Frechet derivatives of the radiative transfer equation.
 C    Calculates the Stokes Vector at the given directions (CAMMU, CAMPHI)
@@ -358,6 +358,8 @@ Cf2py intent(in) :: NUM_JACOBIAN_PTS, JACOBIANPTR
 Cf2py intent(in) :: RAYS_PER_PIXEL
       DOUBLE PRECISION   RAY_WEIGHTS(*), STOKES_WEIGHTS(NSTOKES, *)
 Cf2py intent(in) :: RAY_WEIGHTS, STOKES_WEIGHTS
+      DOUBLE PRECISION TAUTOL
+Cf2py intent(in) :: TAUTOL
 
       DOUBLE PRECISION WEIGHT
       DOUBLE PRECISION PIXEL_ERROR
@@ -457,7 +459,7 @@ C         while traversing the SHDOM grid.
      .             NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER, DIPHASEIND, PLANCK,
-     .             LONGRADIANCE, USELONGRAD)
+     .             LONGRADIANCE, USELONGRAD, TAUTOL)
   900     CONTINUE
           DO NS=1,NSTOKES
             STOKESOUT(NS,IPIX) = STOKESOUT(NS,IPIX) + VISRAD(NS)*
@@ -498,7 +500,7 @@ C         while traversing the SHDOM grid.
      .             NPX, NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER, DIPHASEIND, PLANCK,
-     .             LONGRADIANCE, USELONGRAD)
+     .             LONGRADIANCE, USELONGRAD, TAUTOL)
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
 C     radiance (RADOUT) at the point X0,Y0,Z0.
@@ -578,8 +580,9 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
       DOUBLE PRECISION, ALLOCATABLE :: SUNDIRLEG(:)
 
       INTEGER, ALLOCATABLE :: PASSEDPOINTS(:,:)
-      REAL, ALLOCATABLE :: PASSEDRAD(:,:), PASSEDABSCELL(:)
-      REAL, ALLOCATABLE :: PASSEDTRANSMIT(:)
+      DOUBLE PRECISION, ALLOCATABLE :: PASSEDRAD(:,:)
+      DOUBLE PRECISION, ALLOCATABLE :: PASSEDABSCELL(:)
+      DOUBLE PRECISION, ALLOCATABLE :: PASSEDTRANSMIT(:)
       DOUBLE PRECISION, ALLOCATABLE :: PASSEDINTERP0(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: PASSEDINTERP1(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: PASSEDDELS(:)
@@ -597,7 +600,7 @@ C         TRANSCUT is the transmission to stop the integration at
       TRANSCUT = 5.0E-5
 C0.0D0
 C         TAUTOL is the maximum optical path for the subgrid intervals
-      TAUTOL = 0.2
+C      TAUTOL = 0.2
 
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
       MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
@@ -756,7 +759,7 @@ C           These are also the points we need the gradient for.
           OSINGSCAT8(:,I) = SINGSCAT8(:,I)
           OGRAD8(:,:,I,:) = GRAD8(:,:,I,:)
         ENDDO
-
+        PRINT *, 'USELONGRAD', USELONGRAD
 C         Compute the source function times extinction in direction (MU2,PHI2)
 C     Evaluate the 'source of the linearized RTE' at each of the grid points.
         IF (NSTOKES .GE. 1) THEN
@@ -981,8 +984,6 @@ C                 has the sensitivity to the direct beam.
                 ENDDO
               ENDIF
             ENDDO
-C         Only increment the subgrid interval if it is within the domain,
-C         ie valid.
           ENDIF
           NPASSED = NPASSED + 1
           TRANSMIT = TRANSMIT*TRANSCELL
@@ -1090,10 +1091,12 @@ C     subgrid integration interval.
           EXT = 0.5*(EXT0+EXT1)
           IF (EXT .NE. 0.0) THEN
             DO K=1,8
-              RAD0(:) = -1*PASSEDRAD(:,KK)*
+C              PRINT *, KK, PASSEDPOINTS(K,KK), PASSEDRAD(1,KK),
+C     .        PASSEDINTERP0(K,KK), PASSEDINTERP1(K,KK)
+              RAD0(:) = -1*PASSEDRAD(:,KK+1)*
      .        DEXT(PASSEDPOINTS(K,KK),IDR)*
      .        PASSEDINTERP0(K,KK)
-              RAD1(:) = -1*PASSEDRAD(:,KK+1)*
+              RAD1(:) = -1*PASSEDRAD(:,KK)*
      .        DEXT(PASSEDPOINTS(K,KK),IDR)*
      .        PASSEDINTERP1(K,KK)
               RADGRAD(:) = ( 0.5*(RAD0+RAD1)
