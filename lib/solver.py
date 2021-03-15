@@ -501,6 +501,7 @@ class RTE:
         total_pix = sensor.sizes['nrays']
 
         self.check_solved()
+        print('calling before rendering')
         self._precompute_phase()
 
         output = pyshdom.core.render(
@@ -1036,7 +1037,7 @@ class RTE:
             this is the derivative analogue of a look up table of optical properties
             as a function of bulk microphysical parameters.
         """
-
+        print('calling before computation of micro to optical derivatives')
         self._precompute_phase()
         #solver_derivative_table = #all_derivative_tables[key]
         num_derivatives = sum([len(scatterer_derivative_table.values()) for
@@ -1107,23 +1108,6 @@ class RTE:
         dleg[0, 0, :] = 0.0
         dleg = dleg[:self._nstleg] / scaling_factor
 
-        #dphasetab holds tabulated values of the phase function derivative
-        # ie the inverse legendre transform of dleg evaluated at
-        # the same angles that the phase function is calculated.
-        dphasetab = pyshdom.core.precompute_phase_check_grad(
-            negcheck=False,
-            nstphase=self._nstphase,
-            nstleg=self._nstleg,
-            nscatangle=self._nscatangle,
-            nstokes=self._nstokes,
-            dnumphase=dnumphase,
-            ml=self._ml,
-            nlm=self._nlm,
-            nleg=self._nleg,
-            dleg=dleg,
-            deltam=self._deltam
-        )
-
         if self._deltam:
             deriv_ind = self._unknown_scatterer_indices - 1
             albs = self._pa.albedop[:, deriv_ind]
@@ -1154,12 +1138,30 @@ class RTE:
                 (table_legs[0:min(4, self._nstleg)] - 1.0)/((1.0 -table_f)**2)
             if self._nstleg > 1:
                 self._dleg[4:] += table_df*table_legs[4:]/((1.0 - table_f)**2)
-            self._dphasetab = dphasetab/(1.0 - table_f[:, np.newaxis])
+            #self._dphasetab = dphasetab/(1.0 - table_f[:, np.newaxis])
         else:
             self._dext = dext
             self._dleg = dleg
             self._dalb = dalb
-            self._dphasetab = dphasetab
+            #self._dphasetab = dphasetab
+
+        #dphasetab holds tabulated values of the phase function derivative
+        # ie the inverse legendre transform of dleg evaluated at
+        # the same angles that the phase function is calculated.
+        self._dphasetab = pyshdom.core.precompute_phase_check_grad(
+            negcheck=False,
+            nstphase=self._nstphase,
+            nstleg=self._nstleg,
+            nscatangle=self._nscatangle,
+            nstokes=self._nstokes,
+            dnumphase=dnumphase,
+            ml=self._ml,
+            nlm=self._nlm,
+            nleg=self._nleg,
+            dleg=self._dleg, #use the dleg already divided by 1-f.
+            deltam=self._deltam
+        )
+
 
         self._dnumphase, self._diphase = dnumphase, diphase
 

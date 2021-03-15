@@ -137,7 +137,7 @@ def solve_prop(solver, filename='data/rico32x36x26w672.prp'):
     #finally initialize the radiance/source fields based on the optical properties.
     solver._init_solution()
     #solve without redoing init_solution which would undo all the work we did.
-    solver.solve(maxiter=100, init_solution=False, verbose=False)
+    solver.solve(maxiter=100, init_solution=False, verbose=True)
 
 
 class Verify_Solver(TestCase):

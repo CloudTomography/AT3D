@@ -45,6 +45,11 @@ class LevisApproxGradient:
         #what you are doing.
         self._uselongrad = 'Q'
         self._longradiance = None
+        # Turns off the contribution of diffuse radiance to both radiance and
+        # gradient calculation (single scatter only). All calculations
+        # are still performed. This is just for checking the single scatter
+        # is exact.
+        self._nodiffuse = False
         # tautol is the subgrid interval size for the radiance integration.
         # this was added as an option for testing. But it is hardcoded
         # to the original value used in SHDOM radiance integration of 0.2.
@@ -221,6 +226,7 @@ class LevisApproxGradient:
             jacobianptr=jacobian_ptr,
             num_jacobian_pts=num_jacobian_pts,
             makejacobian=jacobian_flag,
+            nodiffuse=self._nodiffuse,
             longradiance=self._longradiance,
             uselongrad=self._uselongrad,
             tautol=self._tautol,

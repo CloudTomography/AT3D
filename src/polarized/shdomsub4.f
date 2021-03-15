@@ -245,7 +245,7 @@ C         to calculate the Stokes radiance vector for this pixel
      .           JACOBIANPTR, NUM_JACOBIAN_PTS, RAYS_PER_PIXEL,
      .           RAY_WEIGHTS, STOKES_WEIGHTS, DIPHASEIND,
      .           COSTFUNC, NCOST, NGRAD, NUNCERTAINTY, PLANCK,
-     .           LONGRADIANCE, USELONGRAD, TAUTOL)
+     .           LONGRADIANCE, USELONGRAD, TAUTOL, NODIFFUSE)
 C    Calculates the cost function and its gradient using the Levis approximation
 C    to the Frechet derivatives of the radiative transfer equation.
 C    Calculates the Stokes Vector at the given directions (CAMMU, CAMPHI)
@@ -360,6 +360,8 @@ Cf2py intent(in) :: RAYS_PER_PIXEL
 Cf2py intent(in) :: RAY_WEIGHTS, STOKES_WEIGHTS
       DOUBLE PRECISION TAUTOL
 Cf2py intent(in) :: TAUTOL
+      LOGICAL NODIFFUSE
+Cf2py intent(in) :: NODIFFUSE
 
       DOUBLE PRECISION WEIGHT
       DOUBLE PRECISION PIXEL_ERROR
@@ -459,7 +461,7 @@ C         while traversing the SHDOM grid.
      .             NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER, DIPHASEIND, PLANCK,
-     .             LONGRADIANCE, USELONGRAD, TAUTOL)
+     .             LONGRADIANCE, USELONGRAD, TAUTOL, NODIFFUSE)
   900     CONTINUE
           DO NS=1,NSTOKES
             STOKESOUT(NS,IPIX) = STOKESOUT(NS,IPIX) + VISRAD(NS)*
@@ -500,7 +502,7 @@ C         while traversing the SHDOM grid.
      .             NPX, NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER, DIPHASEIND, PLANCK,
-     .             LONGRADIANCE, USELONGRAD, TAUTOL)
+     .             LONGRADIANCE, USELONGRAD, TAUTOL, NODIFFUSE)
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
 C     radiance (RADOUT) at the point X0,Y0,Z0.
@@ -578,6 +580,7 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
       REAL YLMDIR(NSTLEG,NLM)
       REAL, ALLOCATABLE ::  SINGSCAT(:,:), DSINGSCAT(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: SUNDIRLEG(:)
+      LOGICAL :: NODIFFUSE
 
       INTEGER, ALLOCATABLE :: PASSEDPOINTS(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: PASSEDRAD(:,:)
@@ -784,7 +787,7 @@ C        ELSE
      .            OGRAD8, GRAD8, LOFJ, CELLFLAGS, PARTDER, NUMDER,
      .            DNUMPHASE, DEXT, DALB, DIPHASE, DLEG, NBPTS, BCELL,
      .            DSINGSCAT, SINGSCAT8, OSINGSCAT8, DIPHASEIND,
-     .            PLANCK, LONGRADIANCE, USELONGRAD)
+     .            PLANCK, LONGRADIANCE, USELONGRAD, NODIFFUSE)
         ENDIF
 
 C         Interpolate the source and extinction to the current point
@@ -1126,7 +1129,7 @@ C     subgrid integration interval.
      .             RADIANCE, OGRAD8, GRAD8, LOFJ, CELLFLAGS, PARTDER,
      .             NUMDER, DNUMPHASE, DEXT, DALB, DIPHASE, DLEG, NBPTS,
      .             BCELL, DSINGSCAT, SINGSCAT8, OSINGSCAT8,DIPHASEIND,
-     .             PLANCK, LONGRADIANCE, USELONGRAD)
+     .             PLANCK, LONGRADIANCE, USELONGRAD, NODIFFUSE)
 C       Computes the source function times extinction for gridpoints
 C     belonging to cell ICELL in the direction (MU,PHI).  The results
 C     are returned in SRCEXT8 and EXTINCT8.
@@ -1158,7 +1161,7 @@ C     This is unapproximated (apart from practicalities of discretization).
       DOUBLE PRECISION SUNDIRLEG(0:NLEG), UNSCALED_ALBEDO
       CHARACTER SRCTYPE*1
       INTEGER*2 CELLFLAGS(*)
-      LOGICAL OUTOFDOMAIN
+      LOGICAL OUTOFDOMAIN, NODIFFUSE
       REAL    GRAD8(NSTOKES,8,8,NUMDER), OGRAD8(NSTOKES,8,8,NUMDER)
       REAL    SINGSCAT8(NSTOKES,8), OSINGSCAT8(NSTOKES,8)
       REAL    FULL_SINGSCAT(NSTOKES)
@@ -1233,6 +1236,7 @@ C             Sum over the real generalized spherical harmonic series
 C             and calculate the source for the linearized
 C             RTE (not the Source function). The contribution from each base grid point and
 C             (adpative) grid point pair is calculated. - JRLoveridge (2021/02/10)
+                IF (.NOT. NODIFFUSE) THEN
                 DO J = 1, RNS
                   L = LOFJ(J)
 C               The phase derivative is only non-zero for the
@@ -1321,6 +1325,7 @@ C               should be updated. - JRLoveridge 2021/02/09
      .                EXTINCT(IP,IPA)*ALBEDO(IP,IPA)*DLEGM(4))
                   ENDIF
                 ENDDO
+                ENDIF
 C             Add in the single scattering contribution for the original unscaled phase function.
 C             For DELTA M and L<=ML this requires reconstructing the original phase function values
 C              Note that this is part of the SOURCE derivative.
@@ -1464,7 +1469,11 @@ C             original unscaled phase function.
             ENDIF
           ENDDO
           SINGSCAT8(:,N) = SINGSCAT8(:,N)*EXT
-          SRCEXT8(:,N) = SRCEXT8(:,N)*EXT
+          IF (NODIFFUSE) THEN
+            SRCEXT8(:,N) = SINGSCAT8(:,N)*EXT
+          ELSE
+            SRCEXT8(:,N) = SRCEXT8(:,N)*EXT
+          ENDIF
           EXTINCT8(N) = EXT
         ENDIF
       ENDDO
@@ -1779,7 +1788,8 @@ C           Sum the first Wigner function series, which is actually a Legendre s
             A1  = A1 + FCT*DBLE(UNSCLEGEN(1,L))*DMM1(L)
           ENDDO
           IF (NEGCHECK .AND. A1 .LE. 0.0) THEN
-            WRITE (6,*) 'PRECOMPUTE_PHASE: negative phase function',
+            WRITE (6,*) 'PRECOMPUTE_PHASE_CHECK: negative phase ',
+     .        'function',
      .          ' for tabulated phase function: ',IPH, J, A1
             STOP
           ENDIF
@@ -1867,8 +1877,8 @@ C           Sum the first Wigner function series, which is actually a Legendre s
             A1  = A1 + FCT*DBLE(UNSCLEGEN(1,L))*DMM1(L)
           ENDDO
           IF (NEGCHECK .AND. A1 .LE. 0.0) THEN
-            WRITE (6,*) 'PRECOMPUTE_PHASE: negative phase function',
-     .          ' for tabulated phase function: ',IPH, J, A1
+            WRITE (6,*) 'PRECOMPUTE_PHASE_CHECK_GRAD: negative phase ',
+     .         'function for tabulated phase function: ',IPH, J, A1
             STOP
           ENDIF
           DPHASETAB(1,IPH,J) = SNGL(A1*OFOURPI)
