@@ -1115,8 +1115,10 @@ class RTE:
             legs = self._pa.legenp.reshape((self._nstleg, self._nleg+1, self._pa.numphase), order='F')/scaling_factor
 
             # f (the delta-M scaling factor) is sensitive to changes in microphysics.
-            f = legs[0, self._ml, self._pa.iphasep[:, deriv_ind]-1]
-            df = dleg[0, self._ml, diphase-1]
+            # note that the index for 'F' is ml+1 the same as in Fortran because
+            # LEGEN is one of the few Fortran arrays that is zero indexed.
+            f = legs[0, self._ml+1, self._pa.iphasep[:, deriv_ind]-1]
+            df = dleg[0, self._ml+1, diphase-1]
             self._dext = dext*(1.0 - albs*f) - df*albs*exts - dalb*f*exts
             self._dalb = dalb*(1.0 - f)/((1.0 - f*albs)**2) + \
                 df*(albs - 1.0)*albs/((1.0 - f*albs)**2)
@@ -1130,8 +1132,8 @@ class RTE:
                         table_ind.append(np.unique(test))
             table_inds = np.array(table_ind)[:, 0] - 1 #-1 back to python 0-indexing.
             table_legs = legs[:, :, table_inds]
-            table_f = table_legs[0, self._ml]
-            table_df = dleg[0, self._ml]
+            table_f = table_legs[0, self._ml+1]
+            table_df = dleg[0, self._ml+1]
 
             self._dleg = dleg/(1.0 - table_f)
             self._dleg[0:min(4, self._nstleg)] += table_df* \
@@ -1158,7 +1160,7 @@ class RTE:
             ml=self._ml,
             nlm=self._nlm,
             nleg=self._nleg,
-            dleg=self._dleg, #use the dleg already divided by 1-f.
+            dleg=self._dleg, #use the dleg already divided by 1-f if deltam.
             deltam=self._deltam
         )
 

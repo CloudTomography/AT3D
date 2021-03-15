@@ -949,7 +949,6 @@ C             (Formal solution to RTE).
             SRCSINGSCAT = 0.0
           ENDIF
 
-
           RADOUT(:) = RADOUT(:) + TRANSMIT*SRC(:)*ABSCELL
 C         Add the radiance increment to the gridpoints we have passed.
 C         so that component of the gradient can be calculated.
