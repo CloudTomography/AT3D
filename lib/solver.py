@@ -501,7 +501,6 @@ class RTE:
         total_pix = sensor.sizes['nrays']
 
         self.check_solved()
-        print('calling before rendering')
         self._precompute_phase()
 
         output = pyshdom.core.render(
@@ -1037,7 +1036,6 @@ class RTE:
             this is the derivative analogue of a look up table of optical properties
             as a function of bulk microphysical parameters.
         """
-        print('calling before computation of micro to optical derivatives')
         self._precompute_phase()
         #solver_derivative_table = #all_derivative_tables[key]
         num_derivatives = sum([len(scatterer_derivative_table.values()) for
