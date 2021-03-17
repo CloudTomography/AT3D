@@ -461,7 +461,8 @@ C         while traversing the SHDOM grid.
      .             NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER, DIPHASEIND, PLANCK,
-     .             LONGRADIANCE, USELONGRAD, TAUTOL, NODIFFUSE)
+     .             LONGRADIANCE, USELONGRAD, TAUTOL, NODIFFUSE,
+     .             GNDALBEDO)
   900     CONTINUE
           DO NS=1,NSTOKES
             STOKESOUT(NS,IPIX) = STOKESOUT(NS,IPIX) + VISRAD(NS)*
@@ -502,7 +503,8 @@ C         while traversing the SHDOM grid.
      .             NPX, NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER, DIPHASEIND, PLANCK,
-     .             LONGRADIANCE, USELONGRAD, TAUTOL, NODIFFUSE)
+     .             LONGRADIANCE, USELONGRAD, TAUTOL, NODIFFUSE,
+     .             GNDALBEDO)
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
 C     radiance (RADOUT) at the point X0,Y0,Z0.
@@ -581,6 +583,9 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
       REAL, ALLOCATABLE ::  SINGSCAT(:,:), DSINGSCAT(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: SUNDIRLEG(:)
       LOGICAL :: NODIFFUSE
+      DOUBLE PRECISION :: DIRRAD(NSTOKES,4), BOUNDINTERP(4)
+      INTEGER :: BOUNDPTS(4)
+      REAL :: GNDALBEDO
 
       INTEGER, ALLOCATABLE :: PASSEDPOINTS(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: PASSEDRAD(:,:)
@@ -591,7 +596,8 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
       DOUBLE PRECISION, ALLOCATABLE :: PASSEDDELS(:)
       INTEGER MAXSUBGRIDINTS, NPASSED, K, MAXBYOPT
       REAL MAXTAU, DZMAX
-      REAL  RADGRAD(NSTOKES), RAD0(NSTOKES), RAD1(NSTOKES)
+      DOUBLE PRECISION  RADGRAD(NSTOKES), RAD0(NSTOKES)
+      DOUBLE PRECISION  RAD1(NSTOKES)
 
       DATA OPPFACE/2,1,4,3,6,5/
       DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
@@ -877,7 +883,6 @@ C         interval so that the radiance gradient
             PASSEDINTERP1(:,NPASSED) = 0.0
           ENDIF
           PASSEDPOINTS(:,NPASSED) = GRIDPTR(:,BCELL)
-
           S = IT*DELS
           XI = XE + S*CX
           YI = YE + S*CY
@@ -940,7 +945,6 @@ C             (Formal solution to RTE).
      .                    *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
                ENDIF
             ENDIF
-
           ELSE
             ABSCELL = 0.0
             TRANSCELL = 1.0
@@ -964,25 +968,21 @@ C         so that component of the gradient can be calculated.
               GRIDPOINT = GRIDPTR(KK,BCELL)
               RAYGRAD(:,GRIDPOINT,:) = RAYGRAD(:,GRIDPOINT,:) +
      .           TRANSMIT*SRCGRAD(:,KK,:)*ABSCELL
+
 C             Add gradient component due to the direct solar beam propogation
               IF (EXACT_SINGLE_SCATTER .AND.
      .          SRCTYPE .NE. 'T') THEN
                 II = 1
                 GRIDPOINT = GRIDPTR(KK,BCELL)
                 DO IDR=1,NUMDER
-                  IF (GRIDPOINT .EQ.
-     .              DIPHASEIND(GRIDPTR(KK,ICELL),IDR)) THEN
-C                 Only the base grid point which supplied the phase function
-C                 has the sensitivity to the direct beam.
-                    DO WHILE (DPTR(II,GRIDPOINT).GT.0)
-                      SSP = DPTR(II,GRIDPOINT)
-                      RAYGRAD(:,SSP,IDR) = RAYGRAD(:,SSP,IDR) -
-     .                  DPATH(II,GRIDPOINT)*DEXT(SSP,IDR)*
-     .                  ABSCELL*TRANSMIT*
-     .                  SRCSINGSCAT(:,KK)*DIRFLUX(SSP)*SECMU0
-                      II = II + 1
+                  DO WHILE (DPTR(II,GRIDPOINT).GT.0)
+                    SSP = DPTR(II,GRIDPOINT)
+                    RAYGRAD(:,SSP,IDR) = RAYGRAD(:,SSP,IDR) -
+     .                 DPATH(II,GRIDPOINT)*DEXT(SSP,IDR)*
+     .                 ABSCELL*TRANSMIT*
+     .                 SRCSINGSCAT(:,KK)*DIRFLUX(SSP)*SECMU0
+                    II = II + 1
                     ENDDO
-                  ENDIF
                 ENDDO
               ENDIF
             ENDDO
@@ -1044,14 +1044,15 @@ C             boundary then prepare for next cell
 
         ELSE IF (INEXTCELL .EQ. 0 .AND. IFACE .GE. 5) THEN
           VALIDRAD = .TRUE.
-          CALL FIND_BOUNDARY_RADIANCE (NSTOKES, XN, YN,
+          CALL FIND_BOUNDARY_RADIANCE_GRAD (NSTOKES, XN, YN,
      .                      SNGL(MU2), SNGL(PHI2),
      .                      IC, KFACE, GRIDPTR, GRIDPOS,
      .                      MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD,
      .                      NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .                      SRCTYPE, WAVELEN, SOLARMU,SOLARAZ, DIRFLUX,
      .                      SFCTYPE, NSFCPAR, SFCGRIDPARMS,
-     .                      RADBND)
+     .                      RADBND, BOUNDPTS, BOUNDINTERP, DIRRAD,
+     .                      GNDALBEDO)
           RADOUT(:) = RADOUT(:) + TRANSMIT*RADBND(:)
           PASSEDTRANSMIT(NPASSED) = TRANSMIT
           PASSEDABSCELL(NPASSED) = 0.0
@@ -1059,6 +1060,22 @@ C             boundary then prepare for next cell
             PASSEDRAD(:,KK) = PASSEDRAD(:,KK) +
      .        TRANSMIT*RADBND(:)/PASSEDTRANSMIT(KK)
           ENDDO
+          IF (EXACT_SINGLE_SCATTER .AND.
+     .          SRCTYPE .NE. 'T') THEN
+            DO KK=1,4
+              II = 1
+              GRIDPOINT = BOUNDPTS(KK)
+              DO IDR=1,NUMDER
+                DO WHILE (DPTR(II,GRIDPOINT).GT.0)
+                  SSP = DPTR(II,GRIDPOINT)
+                  RAYGRAD(:,SSP,IDR) = RAYGRAD(:,SSP,IDR) -
+     .                 DPATH(II,GRIDPOINT)*DEXT(SSP,IDR)*
+     .                 TRANSMIT*DIRRAD(:,KK)*BOUNDINTERP(KK)
+                  II = II + 1
+                ENDDO
+              ENDDO
+            ENDDO
+          ENDIF
         ELSE
           ICELL = INEXTCELL
         ENDIF
@@ -1085,9 +1102,9 @@ C     subgrid integration interval.
           EXT1 = 0.0
           DELS = PASSEDDELS(KK)
           DO K=1,8
-            EXT0 = EXT0 + EXTINCT(PASSEDPOINTS(K,KK),IPA)*
+            EXT0 = EXT0 + TOTAL_EXT(PASSEDPOINTS(K,KK))*
      .        PASSEDINTERP0(K,KK)
-            EXT1 = EXT1 + EXTINCT(PASSEDPOINTS(K,KK),IPA)*
+            EXT1 = EXT1 + TOTAL_EXT(PASSEDPOINTS(K,KK))*
      .        PASSEDINTERP1(K,KK)
           ENDDO
           EXT = 0.5*(EXT0+EXT1)
@@ -1103,6 +1120,7 @@ C     subgrid integration interval.
      .           + 0.08333333333*(EXT0*RAD1-EXT1*RAD0)*DELS
      .                *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
               GRIDPOINT = PASSEDPOINTS(K,KK)
+
               RAYGRAD(:,GRIDPOINT,IDR) = RAYGRAD(:,GRIDPOINT,IDR)+
      .          RADGRAD(:)*PASSEDTRANSMIT(KK)*PASSEDABSCELL(KK)
             ENDDO
@@ -1683,6 +1701,131 @@ C               original unscaled phase function.
       RETURN
       END
 
+
+      SUBROUTINE FIND_BOUNDARY_RADIANCE_GRAD (NSTOKES, XB, YB, MU2,
+     .                      PHI2,
+     .                      ICELL, KFACE, GRIDPTR, GRIDPOS,
+     .                      MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD,
+     .                      NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
+     .                      SRCTYPE, WAVELEN, SOLARMU,SOLARAZ, DIRFLUX,
+     .                      SFCTYPE, NSFCPAR, SFCGRIDPARMS,
+     .                      RADBND, BOUNDPTS, BOUNDINTERP,DIRRAD,
+     .                      GNDALBEDO)
+C       Returns the interpolated Stokes radiance at the boundary (RADBND).
+C     Inputs are the boundary location (XB,YB), ray direction away from
+C     boundary (MU2,PHI2), cell number (ICELL) and face (KFACE) at
+C     the boundary point.
+      IMPLICIT NONE
+      INTEGER NSTOKES, ICELL, KFACE, MAXNBC, NTOPPTS, NBOTPTS
+      INTEGER GRIDPTR(8,*), BCPTR(MAXNBC,2)
+      INTEGER NMU, NPHI0MAX, NPHI0(*), NSFCPAR
+      REAL    MU2, PHI2
+      INTEGER BOUNDPTS(4)
+      DOUBLE PRECISION BOUNDINTERP(4), DIRRAD(NSTOKES,4)
+      DOUBLE PRECISION XB, YB
+      REAL    GRIDPOS(3,*), RADBND(NSTOKES)
+      REAL    WTDO(NMU,*), MU(NMU), PHI(NMU,*)
+      REAL    WAVELEN, SOLARMU, SOLARAZ, DIRFLUX(*)
+      REAL    SFCGRIDPARMS(NSFCPAR,*), BCRAD(NSTOKES,*)
+      CHARACTER SRCTYPE*1, SFCTYPE*2
+      REAL GNDALBEDO
+
+      DOUBLE PRECISION U, V
+      INTEGER IL, IM, IU, IP, IBC, J
+      LOGICAL LAMBERTIAN
+      REAL    X(4), Y(4), RAD(NSTOKES,4), OPI
+      REAL    REFLECT(4,4)
+      INTEGER GRIDFACE(4,6)
+      DATA    GRIDFACE/1,3,5,7, 2,4,6,8,  1,2,5,6, 3,4,7,8,
+     .                 1,2,3,4, 5,6,7,8/
+
+      LAMBERTIAN = SFCTYPE(2:2) .EQ. 'L'
+      OPI = 1.0/ACOS(-1.0)
+C       Loop over the four gridpoints of the cell face on the boundary
+      DIRRAD = 0.0
+      DO J = 1, 4
+        IP = GRIDPTR(GRIDFACE(J,KFACE),ICELL)
+        BOUNDPTS(J) = IP
+        X(J) = GRIDPOS(1,IP)
+        Y(J) = GRIDPOS(2,IP)
+
+        IF (MU2 .LT. 0.0) THEN
+C           Do a binary search to locate the top boundary point
+          IL = 1
+          IU = NTOPPTS
+          DO WHILE (IU-IL .GT. 1)
+            IM = (IU+IL)/2
+            IF (IP .GE. BCPTR(IM,1)) THEN
+              IL = IM
+            ELSE
+              IU = IM
+            ENDIF
+          ENDDO
+          IBC = IL
+          IF (BCPTR(IBC,1) .NE. IP)  IBC=IU
+          IF (BCPTR(IBC,1) .NE. IP)
+     .      STOP 'FIND_BOUNDARY_RADIANCE: Not at boundary'
+          RAD(:,J) = BCRAD(:,IBC)
+        ELSE
+
+C           Do a binary search to locate the bottom boundary point
+          IL = 1
+          IU = NBOTPTS
+          DO WHILE (IU-IL .GT. 1)
+            IM = (IU+IL)/2
+            IF (IP .GE. BCPTR(IM,2)) THEN
+              IL = IM
+            ELSE
+              IU = IM
+            ENDIF
+          ENDDO
+          IBC = IL
+          IF (BCPTR(IBC,2) .NE. IP)  IBC=IU
+          IF (BCPTR(IBC,2) .NE. IP)
+     .      STOP 'FIND_BOUNDARY_RADIANCE: Not at boundary'
+
+          IF (LAMBERTIAN) THEN
+            IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
+              IF (SFCTYPE(1:1) .EQ. 'V') THEN
+                DIRRAD(1,J) = OPI*SFCGRIDPARMS(2,IBC)*DIRFLUX(IP)
+              ELSEIF (SFCTYPE(1:1) .EQ. 'F') THEN
+                DIRRAD(1,J) = OPI*GNDALBEDO*DIRFLUX(IP)
+              ENDIF
+            ENDIF
+          ELSE
+            CALL VARIABLE_BRDF_SURFACE (NBOTPTS,IBC,IBC, BCPTR(1,2),
+     .             NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, MU2, PHI2,
+     .             SRCTYPE, WAVELEN, SOLARMU, SOLARAZ, DIRFLUX,
+     .             SFCTYPE, NSFCPAR, SFCGRIDPARMS, NSTOKES,
+     .             BCRAD(:,1+NTOPPTS))
+
+            CALL SURFACE_BRDF (SFCTYPE(2:2), SFCGRIDPARMS(2,IBC),
+     .                    WAVELEN, MU2, PHI2, SOLARMU,SOLARAZ,
+     .                      NSTOKES, REFLECT)
+            DIRRAD(:,J) = OPI*REFLECT(1:NSTOKES,1)*DIRFLUX(IP)
+
+          ENDIF
+          RAD(:,J) = BCRAD(:,NTOPPTS+IBC)
+        ENDIF
+      ENDDO
+      IF (X(2)-X(1) .GT. 0.0) THEN
+        U = (XB-X(1))/(X(2)-X(1))
+      ELSE
+        U = 0.0
+      ENDIF
+      IF (Y(3)-Y(1) .GT. 0.0) THEN
+        V = (YB-Y(1))/(Y(3)-Y(1))
+      ELSE
+        V = 0.0
+      ENDIF
+      BOUNDINTERP(1) = (1-U)*(1-V)
+      BOUNDINTERP(2) = U*(1-V)
+      BOUNDINTERP(3) = (1-U)*V
+      BOUNDINTERP(4) = U*V
+      RADBND(:) = (1-U)*(1-V)*RAD(:,1) + U*(1-V)*RAD(:,2)
+     .              + (1-U)*V*RAD(:,3) +     U*V*RAD(:,4)
+      RETURN
+      END
 
 
       SUBROUTINE RAYLEIGH_PHASE_FUNCTION (WAVELEN, RAYLEGCOEF,

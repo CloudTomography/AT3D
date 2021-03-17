@@ -17,7 +17,7 @@
                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY, &
                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
                      ALBEDOP, LEGENP, IPHASEP, NZCKD, &
-                     ZCKD, GASABS, EXTMIN, SCATMIN)
+                     ZCKD, GASABS, EXTMIN, SCATMIN, INTERPMETHOD)
 !      Trilinearly interpolates the quantities on the input property
 !     grid at the single point (X,Y,Z) to get the output TEMP,EXTINCT,
 !     ALBEDO, and LEGEN or IPHASE.  Interpolation is done on the
@@ -36,6 +36,7 @@
       DOUBLE PRECISION U, V, W, F1, F2, F3, F4, F5, F6, F7, F8, F
       DOUBLE PRECISION SCAT1,SCAT2,SCAT3,SCAT4,SCAT5,SCAT6,SCAT7,SCAT8
       DOUBLE PRECISION SCATTER, MAXSCAT, KG, EXTMIN, SCATMIN
+      CHARACTER INTERPMETHOD*2
 
       INTEGER NPX, NPY, NPZ
       INTEGER NUMPHASE
@@ -130,10 +131,37 @@
       SCAT7 = F7*EXTINCTP(I7)*ALBEDOP(I7)
       SCAT8 = F8*EXTINCTP(I8)*ALBEDOP(I8)
       SCATTER = SCAT1+SCAT2+SCAT3+SCAT4+SCAT5+SCAT6+SCAT7+SCAT8
-      IF (EXTINCT .GT. EXTMIN) THEN
-        ALBEDO = SCATTER/EXTINCT
-      ELSE
-        ALBEDO = SCATTER/EXTMIN
+
+      IF (INTERPMETHOD(1:1) .EQ. 'O') THEN
+        IF (EXTINCT .GT. EXTMIN) THEN
+          ALBEDO = SCATTER/EXTINCT
+        ELSE
+          ALBEDO = SCATTER/EXTMIN
+        ENDIF
+      ELSEIF (INTERPMETHOD(1:1) .EQ. 'N') THEN
+        IF (ABS(F1-1) .LT.0.001) THEN
+          ALBEDO = ALBEDOP(I1)
+        ELSEIF (ABS(F2-1) .LT. 0.001) THEN
+          ALBEDO = ALBEDOP(I2)
+        ELSEIF (ABS(F3-1) .LT. 0.001) THEN
+          ALBEDO = ALBEDOP(I3)
+        ELSEIF (ABS(F4-1) .LT. 0.001) THEN
+          ALBEDO = ALBEDOP(I4)
+        ELSEIF (ABS(F5-1) .LT. 0.001) THEN
+          ALBEDO = ALBEDOP(I5)
+        ELSEIF (ABS(F6-1) .LT. 0.001) THEN
+          ALBEDO = ALBEDOP(I6)
+        ELSEIF (ABS(F7-1) .LT. 0.001) THEN
+          ALBEDO = ALBEDOP(I7)
+        ELSEIF (ABS(F8-1) .LT. 0.001) THEN
+          ALBEDO = ALBEDOP(I8)
+        ELSE
+          IF (EXTINCT .GT. EXTMIN) THEN
+            ALBEDO = SCATTER/EXTINCT
+          ELSE
+            ALBEDO = SCATTER/EXTMIN
+          ENDIF
+        ENDIF
       ENDIF
 
 !         For tabulated phase functions pick the one we are on top of

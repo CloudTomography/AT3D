@@ -20,7 +20,8 @@ C     - JRLoveridge 2021/02/22
      .             NPTS, GRIDPOS, NPX, NPY, NPZ, DELX, DELY, XSTART,
      .             YSTART, ZLEVELS, TEMPP, EXTINCTP, NBPTS, ALBEDOP,
      .             LEGENP, IPHASEP, NZCKD, ZCKD, GASABS,
-     .             NPART, TOTAL_EXT, EXTMIN, SCATMIN, ALBMAX, NSTLEG)
+     .             NPART, TOTAL_EXT, EXTMIN, SCATMIN, ALBMAX, NSTLEG,
+     .             INTERPMETHOD)
 Cf2py threadsafe
       IMPLICIT NONE
 
@@ -67,6 +68,8 @@ Cf2py intent(in) :: IPHASEP
 Cf2py intent(in) :: NZCKD
       REAL ZCKD(*), GASABS(*)
 Cf2py intent(in) :: ZCKD, GASABS
+      CHARACTER INTERPMETHOD*2
+Cf2py intent(in) :: INTERPMETHOD
 
 C       Set up some things before solution loop
 C           Transfer the medium properties to the internal grid and add gas abs
@@ -76,7 +79,8 @@ C           Transfer the medium properties to the internal grid and add gas abs
      .        LEGEN, IPHASE(:NPTS,:), NPX, NPY, NPZ, NUMPHASE,
      .        DELX, DELY, XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .        ALBEDOP, LEGENP, IPHASEP, NZCKD, ZCKD, GASABS,
-     .        EXTMIN, SCATMIN, NPART, TOTAL_EXT(:NPTS), NBPTS)
+     .        EXTMIN, SCATMIN, NPART, TOTAL_EXT(:NPTS), NBPTS,
+     .        INTERPMETHOD)
 
 C         If Delta-M then scale the extinction, albedo, and Legendre terms.
 C         Put the Planck blackbody source in PLANCK.
@@ -374,7 +378,7 @@ C           inequality holds.
      .               DELYD, ALBMAX, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .               FFTFLAG, CMU1, CMU2, WTMU, CPHI1, CPHI2, WPHISAVE,
      .               WORK, WORK1, WORK2, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
-     .               ITERFIXSH)
+     .               ITERFIXSH, INTERPMETHOD)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -410,6 +414,8 @@ Cf2py intent(in) :: MU, WTDO, PHI
 Cf2py intent(in) :: XGRID, YGRID, ZGRID
       CHARACTER SRCTYPE*1, UNITS*1, SFCTYPE*2
 Cf2py intent(in) :: SRCTYPE, UNITS, SFCTYPE
+      CHARACTER INTERPMETHOD*2
+Cf2py intent(in) :: INTERPMETHOD
       LOGICAL VERBOSE
 Cf2py intent(in) :: VERBOSE
       CHARACTER(LEN=*) :: RUNNAME
@@ -579,7 +585,7 @@ C           Make sure all processors are going to split cells if any want to
      .             ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV,
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
-     .             NBPTS, TOTAL_EXT)
+     .             NBPTS, TOTAL_EXT, INTERPMETHOD)
             IF (SOLCRIT .GT. STARTADAPTSOL)  STARTSPLITACC = SPLITCRIT
           ENDIF
 C           Find the maximum splitting criterion over all processors
@@ -3889,7 +3895,7 @@ C             do first and put the second child on the stack.
      .             ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV,
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
-     .             NBPTS, TOTAL_EXT)
+     .             NBPTS, TOTAL_EXT, INTERPMETHOD)
 C       Splits the cells that have a cell dividing criterion greater than
 C     CURSPLITACC if DOSPLIT is true.  The current splitting criterion
 C     achieved is returned in SPLITCRIT.  If we are at the end of the
@@ -3913,7 +3919,7 @@ C     by MAXIG, MAXIC, MAXIV, MAXIDO) then the OUTOFMEM flag is returned true.
       REAL    LEGEN(NSTLEG,0:NLEG,*), TOTAL_EXT(*)
       REAL    RADIANCE(NSTOKES,*), SOURCE(NSTOKES,*)
       REAL    TEMP(*), PLANCK(MAXIG,NPART), DIRFLUX(*)
-      CHARACTER SRCTYPE*1, UNITS*1
+      CHARACTER SRCTYPE*1, UNITS*1, INTERPMETHOD*2
       INTEGER ICELL, ICELL1, IDIR, I, N, NEWPOINTS(3,4), OLDNPTS
       INTEGER MAXCELLS, MAXPTS, MAXWORK, MAXSH, MAXRAD
       LOGICAL OUTOFMEM0
@@ -3997,7 +4003,7 @@ C                 Interpolate the medium properties, radiance, and source
      .            ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ,
      .            CXINV, CYINV,CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .            DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .            NPART,MAXIG, NBPTS, TOTAL_EXT)
+     .            NPART,MAXIG, NBPTS, TOTAL_EXT, INTERPMETHOD)
             ENDIF
             I = I + 1
           ENDDO
@@ -4041,7 +4047,7 @@ C                   Interpolate the medium properties, radiance, and source
      .               ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ,
      .               CXINV, CYINV,CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .               DELYD,XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .               NPART,MAXIG, NBPTS, TOTAL_EXT)
+     .               NPART,MAXIG, NBPTS, TOTAL_EXT, INTERPMETHOD)
               ENDIF
             ENDIF
             I = I + 1
@@ -4095,7 +4101,7 @@ C         Find the max adaptive cell criterion after the cell divisions
      .       ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV,
      .       CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .       XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
-     .       MAXIG, NBPTS, TOTAL_EXT)
+     .       MAXIG, NBPTS, TOTAL_EXT, INTERPMETHOD)
 C       Interpolates the medium properties, radiance, and source function for
 C     new grid points (specified in NEWPOINTS).  The medium properties are
 C     interpolated from the property grid, since interpolating from the
@@ -4119,7 +4125,7 @@ C     function for the new points.
       REAL    TEMP(*), PLANCK(MAXIG,NPART), DIRFLUX(*)
       REAL    RADIANCE(NSTOKES,*), SOURCE(NSTOKES,*)
       REAL    GRIDPOS(3,*)
-      CHARACTER SRCTYPE*1, UNITS*1
+      CHARACTER SRCTYPE*1, UNITS*1, INTERPMETHOD*2
       INTEGER I, IP1, IP2, IP, IPH, J, K, L, M, ME, MS
       INTEGER IS, NS, NS1, NS2
       INTEGER IR, IR1, IR2, NR, NR1, NR2, SIDE
@@ -4182,7 +4188,8 @@ C             Interpolate the medium properties from the property grid
      .             NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .             XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP(:,IPA),
      .             ALBEDOP(:,IPA), LEGENP, IPHASEP(:,IPA),
-     .             NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN)
+     .             NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
+     .             INTERPMETHOD)
 C             Do the Delta-M scaling of extinction and albedo for this point
 	        IF (DELTAM) THEN
 	          IF (NUMPHASE .GT. 0) THEN

@@ -319,7 +319,7 @@ C               Base grid cells have no parents or children
      .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .               ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .               ZCKD, GASABS, EXTMIN, SCATMIN,NPART,
-     .		         TOTAL_EXT, NBPTS)
+     .		         TOTAL_EXT, NBPTS, INTERPMETHOD)
 C       Calls TRILIN_INTERP_PROP to interpolate the input arrays from
 C     the property grid to each internal grid point.
       IMPLICIT NONE
@@ -329,6 +329,7 @@ C     the property grid to each internal grid point.
       REAL    TEMP(*), EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL    LEGEN(NSTLEG,0:NLEG,*)
       INTEGER IP, IPA
+      CHARACTER*2 INTERPMETHOD
 
       INTEGER NPX, NPY, NPZ
       INTEGER NUMPHASE
@@ -348,7 +349,8 @@ C         Initialize: transfer the tabulated phase functions
      .                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .                      ALBEDOP, LEGENP, IPHASEP, NZCKD,
-     .                      ZCKD, GASABS, EXTMIN, SCATMIN)
+     .                      ZCKD, GASABS, EXTMIN, SCATMIN,
+     .                      INTERPMETHOD)
 
 C         Trilinearly interpolate from the property grid to the adaptive grid
       TOTAL_EXT(:NPTS) = 0.0
@@ -361,7 +363,8 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP(:,IPA),
      .            ALBEDOP(:,IPA), LEGENP, IPHASEP(:,IPA),
-     .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN)
+     .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
+     .            INTERPMETHOD)
 	  TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
 	ENDDO
       ENDDO
@@ -2120,7 +2123,6 @@ C     5=-Z,6=+Z).
      .              0,0,1,2,0,0,5,6, 3,4,0,0,5,6,0,0,
      .              0,0,0,0,1,2,3,4, 5,6,7,8,0,0,0,0/
 
-
 C         TRANSCUT is the transmission to stop the integration at
       TRANSCUT = 5.0E-5
 C         TAUTOL is the maximum optical path for the subgrid intervals
@@ -2368,6 +2370,16 @@ C                 Linear extinction, linear source*extinction, to second order
             TRANSCELL = 1.0
             SRC(:) = 0.0
           ENDIF
+
+C          PRINT *, XE,YE,ZE
+C          , XI,YI,ZI, NGRID,IT,NTAU,DELS
+C          PRINT *, GRIDPOS(1,GRIDPTR(:,ICELL))
+C          PRINT *, GRIDPOS(2,GRIDPTR(:,ICELL))
+C          PRINT *, GRIDPOS(3,GRIDPTR(:,ICELL))
+C          PRINT *, EXTINCT8(:)
+C          PRINT *, EXT0,EXT1, EXT, DELS, TRANSMIT, ABSCELL
+C          PRINT *, SRCEXT0(1), SRCEXT1(1), SRC(1)
+
           RADIANCE(:) = RADIANCE(:) + TRANSMIT*SRC(:)*ABSCELL
           TRANSMIT = TRANSMIT*TRANSCELL
           EXT1 = EXT0

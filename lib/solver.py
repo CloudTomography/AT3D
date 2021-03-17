@@ -131,6 +131,19 @@ class RTE:
         self._nstokes = num_stokes
         self._nstleg = 1 if num_stokes == 1 else 6
 
+        # 'interpmethod' controls the interpolation method to form RTE variables from
+        # property arrays and to form new adaptive grid points.
+        # first character controls the single scatter albedo interpolation.
+        #   'O' is for original SHDOM method.
+        #   'N' is a modified version which forces the base point single scatter
+        #       albedo to match the property grid when right on top of it.
+        #       This is critical to avoid errors in the gradient but the old version
+        #       is included just in case.
+        # The second character will control phase interpolation method
+        # but currently only the original SHDOM method is supported so it
+        # does nothing.
+        self._interpmethod = 'NO'
+
         self.source = self._setup_source(source)
         self.medium, self._grid = self._setup_medium(medium)
 
@@ -199,6 +212,7 @@ class RTE:
         self._adapt_grid_factor_out = None
         self._shterm_fac_out = None
         self._cell_point_out = None
+
 
     @property
     def final_maxmb(self):
@@ -297,6 +311,7 @@ class RTE:
         self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
         self._work2 = pyshdom.core.solution_iterations(
             verbose=verbose,
+            interpmethod=self._interpmethod,
             iterfixsh=self._iterfixsh,
             iter=self._iters,
             uniform_sfc_brdf=self._uniform_sfc_brdf,
@@ -2036,7 +2051,8 @@ class RTE:
             npy=self._pa.npy,
             npz=self._pa.npz,
             srctype=self._srctype,
-            npts=self._npts)
+            npts=self._npts,
+            interpmethod=self._interpmethod)
 
         #calculate cell averaged extinctions so that warnings can be raised
         #about optical thickness of cells. High optical thickness across a cell
