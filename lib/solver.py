@@ -457,7 +457,7 @@ class RTE:
             ylmsun=self._ylmsun,
             runname=self._name
         )
-        nsh = self._shptr[self._npts+1]
+        nsh = self._shptr[self._npts]
         self._maxmb_out = 4*(self._nmu*(2+2*self._nphi + 2*self._nlm+2*33*32) \
                         + 4.5*self._maxpg + self._maxpgl + self._pa.numphase*(self._nleg + 1) \
                         + 16.5*self._ncells + self._npts*(28+self._nphi0max*self._nstokes) \

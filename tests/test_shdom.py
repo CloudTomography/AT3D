@@ -104,6 +104,7 @@ def solve_prop(solver, filename='data/rico32x36x26w672.prp'):
     #overwrite the main optical properties on grid.
     solver._temp, solver._planck, solver._extinct, solver._albedo, solver._legen, solver._iphase, \
     solver._total_ext, solver._extmin, solver._scatmin, solver._albmax = pyshdom.core.transfer_pa_to_grid(
+        interpmethod='NO',
         nstleg=solver._nstleg,
         npart=solver._npart,
         extinctp=solver._pa.extinctp,

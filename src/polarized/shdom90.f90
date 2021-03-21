@@ -132,37 +132,32 @@
       SCAT8 = F8*EXTINCTP(I8)*ALBEDOP(I8)
       SCATTER = SCAT1+SCAT2+SCAT3+SCAT4+SCAT5+SCAT6+SCAT7+SCAT8
 
-      IF (INTERPMETHOD(1:1) .EQ. 'O') THEN
-        IF (EXTINCT .GT. EXTMIN) THEN
-          ALBEDO = SCATTER/EXTINCT
-        ELSE
-          ALBEDO = SCATTER/EXTMIN
-        ENDIF
-      ELSEIF (INTERPMETHOD(1:1) .EQ. 'N') THEN
-        IF (ABS(F1-1) .LT.0.001) THEN
-          ALBEDO = ALBEDOP(I1)
-        ELSEIF (ABS(F2-1) .LT. 0.001) THEN
-          ALBEDO = ALBEDOP(I2)
-        ELSEIF (ABS(F3-1) .LT. 0.001) THEN
-          ALBEDO = ALBEDOP(I3)
-        ELSEIF (ABS(F4-1) .LT. 0.001) THEN
-          ALBEDO = ALBEDOP(I4)
-        ELSEIF (ABS(F5-1) .LT. 0.001) THEN
-          ALBEDO = ALBEDOP(I5)
-        ELSEIF (ABS(F6-1) .LT. 0.001) THEN
-          ALBEDO = ALBEDOP(I6)
-        ELSEIF (ABS(F7-1) .LT. 0.001) THEN
-          ALBEDO = ALBEDOP(I7)
-        ELSEIF (ABS(F8-1) .LT. 0.001) THEN
-          ALBEDO = ALBEDOP(I8)
-        ELSE
-          IF (EXTINCT .GT. EXTMIN) THEN
-            ALBEDO = SCATTER/EXTINCT
-          ELSE
-            ALBEDO = SCATTER/EXTMIN
-          ENDIF
-        ENDIF
+      IF (EXTINCT .GT. EXTMIN) THEN
+        ALBEDO = SCATTER/EXTINCT
+      ELSE
+        ALBEDO = SCATTER/EXTMIN
       ENDIF
+
+      ! IF (INTERPMETHOD(1:1) .EQ. 'N' .AND. &
+      !     SCATTER .EQ. 0.0) THEN
+      !   IF (ABS(F1-1) .LT.0.001) THEN
+      !     ALBEDO = ALBEDOP(I1)
+      !   ELSEIF (ABS(F2-1) .LT. 0.001) THEN
+      !     ALBEDO = ALBEDOP(I2)
+      !   ELSEIF (ABS(F3-1) .LT. 0.001) THEN
+      !     ALBEDO = ALBEDOP(I3)
+      !   ELSEIF (ABS(F4-1) .LT. 0.001) THEN
+      !     ALBEDO = ALBEDOP(I4)
+      !   ELSEIF (ABS(F5-1) .LT. 0.001) THEN
+      !     ALBEDO = ALBEDOP(I5)
+      !   ELSEIF (ABS(F6-1) .LT. 0.001) THEN
+      !     ALBEDO = ALBEDOP(I6)
+      !   ELSEIF (ABS(F7-1) .LT. 0.001) THEN
+      !     ALBEDO = ALBEDOP(I7)
+      !   ELSEIF (ABS(F8-1) .LT. 0.001) THEN
+      !     ALBEDO = ALBEDOP(I8)
+      !   ENDIF
+      ! ENDIF
 
 !         For tabulated phase functions pick the one we are on top of
 !         or the one with the most scattering weight.

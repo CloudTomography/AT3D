@@ -355,8 +355,8 @@ C         Initialize: transfer the tabulated phase functions
 C         Trilinearly interpolate from the property grid to the adaptive grid
       TOTAL_EXT(:NPTS) = 0.0
       DO IPA = 1, NPART
-	DO IP = 1, NPTS
-	  CALL TRILIN_INTERP_PROP
+	       DO IP = 1, NPTS
+	          CALL TRILIN_INTERP_PROP
      .          (GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP),
      .           .FALSE., NSTLEG, NLEG, TEMP(IP), EXTINCT(IP,IPA),
      .            ALBEDO(IP,IPA), LEGEN(1,0,IP), IPHASE(IP,IPA),
@@ -365,8 +365,8 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .            ALBEDOP(:,IPA), LEGENP, IPHASEP(:,IPA),
      .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
      .            INTERPMETHOD)
-	  TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
-	ENDDO
+	           TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
+	       ENDDO
       ENDDO
 
       RETURN
@@ -2126,7 +2126,7 @@ C     5=-Z,6=+Z).
 C         TRANSCUT is the transmission to stop the integration at
       TRANSCUT = 5.0E-5
 C         TAUTOL is the maximum optical path for the subgrid intervals
-      TAUTOL = 0.2
+      TAUTOL = 0.02
       RADIANCE(:) = 0.0D0
 
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
