@@ -780,7 +780,9 @@ C           terms for.
         ENDDO
 
 C         Compute the source function times extinction in direction (MU2,PHI2)
-C     Evaluate the 'source of the linearized RTE' at each of the grid points.
+C     Compute the quantities at each base and adaptive grid combination
+C     that will be used for calculating sensitivities with respect to the
+C     scattering kernel/emission/solar source.
         CALL COMPUTE_SOURCE_GRAD_1CELL (ICELL, GRIDPTR,
      .            NSTOKES, NSTLEG, ML, MM, NLM, NLEG, NUMPHASE,
      .            NPTS, DELTAM, SRCTYPE, SOLARMU,
@@ -815,9 +817,14 @@ C       in original SHDOM.
      .         FC(5)*EXTINCT8(5) + FC(6)*EXTINCT8(6) +
      .         FC(7)*EXTINCT8(7) + FC(8)*EXTINCT8(8)
 
-        OUTOFDOMAIN = (BTEST(INT(CELLFLAGS(ICELL)),0).OR.
-     .                 BTEST(INT(CELLFLAGS(ICELL)),1))
-
+C       OUTOFDOMAIN tests whether we are in a cell which has
+C       an independent column boundary condition in either X (first bit)
+C       or Y. Gradient contributions are not calculated for these components
+C       This is now removed as gradients do appear to be calculated
+C       without larger errors at boundary points or in 1D mode.
+C        OUTOFDOMAIN = (BTEST(INT(CELLFLAGS(ICELL)),0).OR.
+C     .                 BTEST(INT(CELLFLAGS(ICELL)),1))
+        OUTOFDOMAIN = .FALSE.
         IF (.NOT. OUTOFDOMAIN) THEN
 C         Base grid cell interpolation for radiance gradient contribution.
           CALL GET_INTERP_KERNEL(BCELL,GRIDPTR,GRIDPOS,XE,YE,ZE,FB)
@@ -931,7 +938,7 @@ C           Compute the base grid cell interpolation factors which are
 C           used in the radiance part of the gradient.
             CALL GET_INTERP_KERNEL(BCELL,GRIDPTR,GRIDPOS,XI,YI,ZI,FB)
             PASSEDINTERP0(:,NPASSED) = FB(:)
-C           Single scatter for EXACT_SINGLE_SCATTER portions of gradient.
+C           Single scatter is used for EXACT_SINGLE_SCATTER portions of gradient.
             DO N=1,8
                 SINGSCAT0(:,N) = FC(N)*SINGSCAT8(:,N)
                 SINGSCAT0(1,N) = MAX(0.0, SINGSCAT0(1,N))
@@ -967,13 +974,14 @@ C                 Linear extinction, linear source*extinction, to second order
      .           + 0.08333333333*(EXT0*SRCEXT1(:)-EXT1*SRCEXT0(:))*DELS
      .                *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
             IF (.NOT. OUTOFDOMAIN) THEN
-C             Integrating the 'source of the linearized RTE' weighted by transmission
-C             to the sensor (Levis approximation to Frechet derivative.)
-C             using the same formula for integrating SHDOM's source function
-C             (Formal solution to RTE).
-C             This is the calculation for the scattering kernel related
-C             components of the 'source of the linearized RTE'. The radiance
-C             part is calculated at the end of the subroutine.
+C             Inner product between scattering kernel/emission/singlescatter (SOURCE)
+C             related gradient terms and the 'adjoint direct beam' which is
+C             just a weighting by transmission to sensor.
+C             The neglect of other terms in the integral here is the Levis
+C             approximation to the Frechet derivative of SHDOM.
+C             The portion of the inner product from integration of radiance
+C             multiplied by extinction is calculated at the end of the
+C             subroutine.
               SRCGRAD = ( 0.5*(GRAD0+GRAD1)
      .          + 0.08333333333*(EXT0*GRAD1-EXT1*GRAD0)*DELS
      .           *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
@@ -1202,7 +1210,8 @@ C     The spherical harmonic source function series is input in SOURCE.
 C     For a solar source if delta-M then use Nakajima and Tanaka TMS
 C     procedure, replacing delta-M single scattering with single scattering
 C     for unscaled untruncated phase function.
-C     Evaluate the 'source of the linearized RTE' at each of the grid points.
+C     Evaluate the 'source of the linearized RTE' for each combination of
+C     of base and adaptive grid point.
 C     This is unapproximated (apart from practicalities of discretization).
       IMPLICIT NONE
       INTEGER ICELL, NSTOKES, NSTLEG, NPTS, ML, MM, NLM, NLEG, NUMPHASE
@@ -1239,6 +1248,7 @@ C     This is unapproximated (apart from practicalities of discretization).
       INTEGER IDP
       REAL GRAD8(NSTOKES,8,8,NUMDER), SOURCET(NSTOKES)
       REAL OGRAD8(NSTOKES,8,8,NUMDER)
+      REAL PHAGRAD(NSTOKES)
       DOUBLE PRECISION BASEADAPTINTERP(8,8)
       DOUBLE PRECISION OBASEADAPTINTERP(8,8)
       DOUBLE PRECISION X0,Y0,Z0
@@ -1251,6 +1261,8 @@ C     and base grid points.
       DO N = 1, 8
         IP = GRIDPTR(N,ICELL)
         I = DONETHIS(N)
+C     We reuse calculations from gridpoints that were part of the previous
+C     cell.
         IF (I .GT. 0 .AND. IP .EQ. OLDIPTS(N)) THEN
           EXTINCT8(N) = OEXTINCT8(I)
           SRCEXT8(:,N) = OSRCEXT8(:,I)
@@ -1264,13 +1276,18 @@ C     and base grid points.
           GRAD8(:,:,N,:) = GRAD8(:,:,ABS(I),:)
           BASEADAPTINTERP(:,N) = BASEADAPTINTERP(:,ABS(I))
         ELSE
+C         Calculate new points. First the gradient.
           EXT = TOTAL_EXT(IP)
           OLDIPTS(N) = IP
           IS = SHPTR(IP)
           NS = SHPTR(IP+1)-IS
           GRAD8(:,:,N,:) = 0.0
-          OUTOFDOMAIN = (BTEST(INT(CELLFLAGS(ICELL)),0).OR.
-     .                   BTEST(INT(CELLFLAGS(ICELL)),1))
+
+C         See comment in above subroutine (GRAD_INTEGRATE_1RAY)
+C         for removal of this flag.
+C          OUTOFDOMAIN = (BTEST(INT(CELLFLAGS(ICELL)),0).OR.
+C     .                   BTEST(INT(CELLFLAGS(ICELL)),1))
+          OUTOFDOMAIN = .FALSE.
           BASEADAPTINTERP(:,N) = 0.0D0
 
           IF (.NOT.OUTOFDOMAIN) THEN
@@ -1374,7 +1391,8 @@ C              Add the contributions for thermal emission to the
 C              extinction and albedo derivatives.
                 IF (SRCTYPE .NE. 'S' .AND. (1.0 - ALBEDO(IP,IPA) .GE.
      .              1e-9) ) THEN
-C                 Make sure no divide by zero error.
+C                 Make sure no divide by zero error. We could also
+C                 recalculate Planck radiance here from temperature.
                   GRAD8(1,NB,N,IDR) = GRAD8(1,NB,N,IDR) +
      .                (BASEADAPTINTERP(NB,N)*PLANCK(IP,IPA)
      .                /(1.0 - ALBEDO(IP,IPA))) *
@@ -1389,6 +1407,7 @@ C               possible candidates.
 C               If the base point is the inheriting point then we add it.
 C               The equivalent to BASEADAPTINTERP is just 1.0 for the inheriting
 C               point and zero elsewhere.
+                PHAGRAD = 0.0
                 IF (DIPHASEIND(IP,IDR) .EQ. IB) THEN
                   IDP = DIPHASE(IB,IDR)
                   IF (.NOT. NODIFFUSE) THEN
@@ -1434,6 +1453,8 @@ C               point and zero elsewhere.
                       ENDDO
                     ENDIF
                   ENDIF
+                  GRAD8(:,NB,N,IDR) = GRAD8(:,NB,N,IDR) +
+     .              PHAGRAD*ALBEDO(IP,IPA)*EXTINCT(IP,IPA)
 C             Add the single scatter contribution to the phase derivative.
                   IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
                     IF (NUMPHASE .GT. 0) THEN
@@ -1552,7 +1573,7 @@ C             original unscaled phase function.
 C         The SRCEXT8 is used to calculate the radiance, which is itself
 C         used in the gradient. If we only want the single scatter (NODIFFUSE) then
 C         the source should only include the single scatter so we set that
-C         here.
+C         here. This doesn't save computation time at all though.
           IF (NODIFFUSE) THEN
             SRCEXT8(:,N) = SINGSCAT8(:,N)*EXT
           ELSE
