@@ -2126,7 +2126,7 @@ C     5=-Z,6=+Z).
 C         TRANSCUT is the transmission to stop the integration at
       TRANSCUT = 5.0E-5
 C         TAUTOL is the maximum optical path for the subgrid intervals
-      TAUTOL = 0.02
+      TAUTOL = 0.2
       RADIANCE(:) = 0.0D0
 
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
@@ -2370,15 +2370,6 @@ C                 Linear extinction, linear source*extinction, to second order
             TRANSCELL = 1.0
             SRC(:) = 0.0
           ENDIF
-
-C          PRINT *, XE,YE,ZE
-C          , XI,YI,ZI, NGRID,IT,NTAU,DELS
-C          PRINT *, GRIDPOS(1,GRIDPTR(:,ICELL))
-C          PRINT *, GRIDPOS(2,GRIDPTR(:,ICELL))
-C          PRINT *, GRIDPOS(3,GRIDPTR(:,ICELL))
-C          PRINT *, EXTINCT8(:)
-C          PRINT *, EXT0,EXT1, EXT, DELS, TRANSMIT, ABSCELL
-C          PRINT *, SRCEXT0(1), SRCEXT1(1), SRC(1)
 
           RADIANCE(:) = RADIANCE(:) + TRANSMIT*SRC(:)*ABSCELL
           TRANSMIT = TRANSMIT*TRANSCELL

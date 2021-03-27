@@ -142,7 +142,7 @@ class RTE:
         # The second character will control phase interpolation method
         # but currently only the original SHDOM method is supported so it
         # does nothing.
-        self._interpmethod = 'NO'
+        self._interpmethod = 'OO'
 
         self.source = self._setup_source(source)
         self.medium, self._grid = self._setup_medium(medium)
