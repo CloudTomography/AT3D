@@ -124,7 +124,7 @@ C       Get the maximum single scattering albedo over all processors
      .             JNORM, NBCELLS,FFTFLAG, CMU1, CMU2, WTMU, CPHI1,
      .             CPHI2, WPHISAVE, MAXSFCPARS, WORK, WORK1, WORK2,
      .             NSTLEG, NSTOKES, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
-     .             INRADFLAG,NDELSOURCE)
+     .             INRADFLAG,NDELSOURCE, IERR, ERRMSG)
 Cf2py threadsafe
 C       Initialize the SHDOM solution procedure.
       IMPLICIT NONE
@@ -235,9 +235,12 @@ Cf2py intent(out) :: FFTFLAG, CMU1, CMU2, WTMU, CPHI1, CPHI2, WPHISAVE
       LOGICAL UNIFORM_SFC_BRDF
       REAL    SFC_BRDF_DO(NSTOKES,NMU/2,NPHI0MAX,NSTOKES,NMU/2,NPHI0MAX)
 Cf2py intent(out) ::  UNIFORM_SFC_BRDF, SFC_BRDF_DO
-      INTEGER ORDINATESET, IERR
+      INTEGER ORDINATESET, IERR2
       LOGICAL LAMBERTIAN
-
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+Cf2py intent(out) :: IERR, ERRMSG
+      IERR = 0
 C       Set up some things before solution loop
 C    Compute the solar transmission in DIRFLUX.
       IF (SRCTYPE .NE. 'T') THEN
@@ -303,7 +306,9 @@ C           Initialize the source function from the radiance field
      .         LEGEN, IPHASE(:NPTS,:), PLANCK(:NPTS,:), DIRFLUX, SHACC,
      .         MAXIV, RSHPTR,RADIANCE,SHPTR,SOURCE, OSHPTR,DELSOURCE,
      .         .TRUE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
-     .          NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS))
+     .          NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR,
+     .         ERRMSG)
+          IF (IERR .NE. 0) RETURN
       ENDIF
       IF (ACCELFLAG) THEN
         OSHPTR(1:NPTS+1) = SHPTR(1:NPTS+1)
@@ -328,9 +333,9 @@ C            bottom grid points.
         IF (UNIFORM_SFC_BRDF) THEN
           IF (NSTOKES*(NMU/2)*NPHI0MAX .GT.
      .         SQRT(1.0*HUGE(NMU)/KIND(NMU))) THEN
-            IERR = 1
+            IERR2 = 1
           ELSE
-            IERR=0
+            IERR2=0
 C           In SHDOM IERR was an error code returned by an allocate command for
 C           SFC_BRDF_DO, it returned 0 if it succeeded.
 C           allocatable arrays are removed as not compatible with f2py.
@@ -340,7 +345,7 @@ C           (it is assigned size above)
 C           Here it is changed so that it is set to 0 as long as the above
 C           inequality holds.
           ENDIF
-          IF (IERR .EQ. 0) THEN
+          IF (IERR2 .EQ. 0) THEN
             CALL MAKE_SFC_BRDF_DO_MATRIX (SFCTYPE, WAVELEN,
      .                      NXSFC, NYSFC, NSFCPAR, SFCPARMS, NSTOKES,
      .                      NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
@@ -643,7 +648,8 @@ C              the solution criterion, and dot products for acceleration.
      .         IPHASE(:NPTS,:), PLANCK(:NPTS,:), DIRFLUX, SHACC,
      .         MAXIV, RSHPTR, RADIANCE, SHPTR,SOURCE, OSHPTR,DELSOURCE,
      .         .FALSE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
-     .         NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS))
+     .         NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR, ERRMSG)
+        IF (IERR .NE. 0) RETURN
 
 C           Calculate the acceleration parameter and solution criterion
 C            from all the processors
@@ -807,7 +813,7 @@ C       from the radiance vector in genSH.
      .             IPHASE, PLANCK, DIRFLUX, SHACC, MAXIV,
      .             RSHPTR, RADIANCE, SHPTR, SOURCE, OSHPTR, DELSOURCE,
      .             FIRST,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
-     .             NPART, EXTINCT, TOTAL_EXT)
+     .             NPART, EXTINCT, TOTAL_EXT, IERR, ERRMSG)
 C       Computes the source function (SOURCE) in spherical harmonic space
 C     for all the grid points.  The thermal source and/or solar
 C     pseudo-source (in PLANCK or DIRFLUX) is added to the scattering source
@@ -855,6 +861,8 @@ Cf2py intent(in) :: RADIANCE
 Cf2py intent(in, out) :: SOURCE, DELSOURCE
       CHARACTER SRCTYPE*1
 Cf2py intent(in) :: SRCTYPE
+      INTEGER IERR
+      CHARACTER ERRMSG*600
       INTEGER IS, ISO, IR, I, IPH, J, JS, K, L, LS, M, MS, ME, NS, NR
       INTEGER IPA
       INTEGER, ALLOCATABLE :: LOFJ(:)
@@ -1057,9 +1065,11 @@ C             Use all the m's for the last l for the source function.
           SHPTR(I) = IS
         ENDIF
         IF (IS+NS .GT. MAXIV) THEN
-          WRITE (6,*) 'COMPUTE_SOURCE: MAXIV exceeded',MAXIV
-          WRITE (6,*) 'Out of memory for more spherical harmonic terms.'
-          STOP
+          IERR = 2
+          WRITE (ERRMSG,*) 'COMPUTE_SOURCE: MAXIV exceeded',MAXIV
+          WRITE (ERRMSG,*) 'Out of memory for more spherical ',
+     .        'harmonic terms.'
+          RETURN
         ENDIF
 C           Transfer the new source function
         DO J = 1, NS
@@ -1078,7 +1088,7 @@ C           Transfer the new source function
      .             NSTOKES, ML, MM, NSTLEG, NLEG, NUMPHASE,
      .             NPTS, ALBEDO, LEGEN, IPHASE, SHPTR, RADIANCE,
      .             MAXIR, FIXSH, SHACC, RSHPTR, NPART, EXTINCT,
-     .             TOTAL_EXT)
+     .             TOTAL_EXT, IERR, ERRMSG)
 C       Computes the next radiance spherical harmonic series truncation
 C     to use based on the current source function truncation and the
 C     scattering properties.  The radiance truncation is the smaller
@@ -1105,6 +1115,8 @@ C     unless HIGHORDERRAD is on, in which case all terms are kept.
       INTEGER, ALLOCATABLE :: LOFJ(:)
       LOGICAL NOTEND
       REAL    RADMIN, EXT, RAD, W
+      INTEGER IERR
+      CHARACTER ERRMSG*600
 
       IF (FIXSH)  GOTO 190
 
@@ -1206,10 +1218,11 @@ C           just set the radiance truncation to that of the source.
         ENDIF
         IR = IR + NR
         IF (IR .GT. MAXIR) THEN
-          WRITE (6,*) 'RADIANCE_TRUNCATION: Really out of memory ',
+          IERR = 2
+          WRITE (ERRMSG,*) 'RADIANCE_TRUNCATION: Really out of memory ',
      .      'for more radiance terms.'
-          WRITE (6,*) 'Increase MAXIV.'
-          STOP
+          WRITE (ERRMSG,*) 'Increase MAXIV.'
+          RETURN
         ENDIF
         RSHPTR(I+1) = IR
       ENDDO

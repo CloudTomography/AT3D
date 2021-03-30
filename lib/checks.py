@@ -287,5 +287,11 @@ def check_sensor(dataset):
         raise ValueError("'use_subpixel_rays' variable should have a single value shape=(1,).")
 
 def check_errcode(ierr, errmsg):
-    if ierr != 0:
+    if ierr == 1:
         raise pyshdom.exceptions.SHDOMError(errmsg.decode('utf8'))
+    elif ierr == 2:
+        raise pyshdom.exceptions.SHDOMERror(
+            errmsg.decode('utf8') + \
+            "The desired SHDOM solution simply takes more memory (spherical harmonics) "
+            "than was allocated. Increase the adapt_grid_factor and/or spherical_harmonics_factor"
+            "to fix this.")

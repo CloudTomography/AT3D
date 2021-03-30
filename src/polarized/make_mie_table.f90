@@ -376,7 +376,7 @@ END SUBROUTINE GET_REFRACT_INDEX
 SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
                                 PARTYPE, WAVELENCEN, RINDEX, NSIZE, RADII, &
                                 MAXLEG, EXTINCT1, SCATTER1, NLEG1, LEGCOEF1,&
-				 VERBOSE)
+				 VERBOSE, IERR, ERRMSG)
  ! Does a Mie computation for each particle radius in RADII and returns the
  ! optical properties in arrays EXTINCT1, SCATTER1, NLEG1, and LEGCOEF1.
  ! For AVGFLAG='C' the computation is done at a single wavelength (WAVELENCEN),
@@ -399,13 +399,18 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
   INTEGER, INTENT(OUT) :: NLEG1(NSIZE)
   REAL,    INTENT(OUT) :: EXTINCT1(NSIZE), SCATTER1(NSIZE)
   REAL,    INTENT(OUT) :: LEGCOEF1(6,0:MAXLEG,NSIZE)
+  INTEGER,  INTENT(OUT) :: IERR
+  CHARACTER(LEN=600), INTENT(OUT) :: ERRMSG
   CHARACTER(LEN=6) :: TABLE_TYPE
   INTEGER :: I, NL
   REAL    :: WAVECEN, WAVE, BBTEMP, PLANCK, SUMP, A
   REAL    :: MRE, MIM, EXT, SCAT, COEF(6,0:MAXLEG)
   COMPLEX :: REFIND
-
-  WRITE(*,*) 'Computing mie scattering for all sizes, this may take a while...'
+  IERR = 0
+  IF (VERBOSE) THEN
+    WRITE(*,*) 'Computing mie scattering for all sizes, &
+      this may take a while...'
+  ENDIF
   TABLE_TYPE = 'VECTOR'
   IF (AVGFLAG == 'C') THEN
      ! For using one central wavelength: just call Mie routine for each radius
@@ -414,7 +419,9 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
         WRITE(*,*) 'Computing mie for radius: ', RADII(I), ' microns'
       ENDIF
       CALL MIE_ONE (WAVELENCEN, RINDEX, RADII(I), MAXLEG, &
-                    EXTINCT1(I), SCATTER1(I), NLEG1(I), LEGCOEF1(1,0,I) )
+                    EXTINCT1(I), SCATTER1(I), NLEG1(I), LEGCOEF1(1,0,I),&
+                     IERR, ERRMSG)
+      IF (IERR .NE. 0) RETURN
     ENDDO
 
   ELSE
@@ -451,7 +458,9 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
           WRITE(*,*) 'Computing mie for radius: ', RADII(I), &
                   ' microns [wavelength = ', WAVE, 'microns]'
         ENDIF
-        CALL MIE_ONE (WAVE, REFIND, RADII(I), MAXLEG, EXT, SCAT, NL, COEF)
+        CALL MIE_ONE (WAVE, REFIND, RADII(I), MAXLEG, EXT, SCAT, NL, COEF, &
+                IERR, ERRMSG)
+        IF (IERR .NE. 0) RETURN
         EXTINCT1(I) = EXTINCT1(I) + PLANCK*EXT
         SCATTER1(I) = SCATTER1(I) + PLANCK*SCAT
         NLEG1(I) = MAX(NLEG1(I),NL)
