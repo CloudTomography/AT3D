@@ -21,7 +21,7 @@ C     - JRLoveridge 2021/02/22
      .             YSTART, ZLEVELS, TEMPP, EXTINCTP, NBPTS, ALBEDOP,
      .             LEGENP, IPHASEP, NZCKD, ZCKD, GASABS,
      .             NPART, TOTAL_EXT, EXTMIN, SCATMIN, ALBMAX, NSTLEG,
-     .             INTERPMETHOD)
+     .             INTERPMETHOD, IERR, ERRMSG)
 Cf2py threadsafe
       IMPLICIT NONE
 
@@ -70,7 +70,11 @@ Cf2py intent(in) :: NZCKD
 Cf2py intent(in) :: ZCKD, GASABS
       CHARACTER INTERPMETHOD*2
 Cf2py intent(in) :: INTERPMETHOD
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+Cf2py intent(out) :: IERR, ERRMSG
 
+      IERR = 0
 C       Set up some things before solution loop
 C           Transfer the medium properties to the internal grid and add gas abs
       ALBMAX = 0.0
@@ -80,7 +84,8 @@ C           Transfer the medium properties to the internal grid and add gas abs
      .        DELX, DELY, XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .        ALBEDOP, LEGENP, IPHASEP, NZCKD, ZCKD, GASABS,
      .        EXTMIN, SCATMIN, NPART, TOTAL_EXT(:NPTS), NBPTS,
-     .        INTERPMETHOD)
+     .        INTERPMETHOD, IERR, ERRMSG)
+      IF (IERR .NE. 0) RETURN
 
 C         If Delta-M then scale the extinction, albedo, and Legendre terms.
 C         Put the Planck blackbody source in PLANCK.
@@ -378,7 +383,7 @@ C           inequality holds.
      .               DELYD, ALBMAX, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .               FFTFLAG, CMU1, CMU2, WTMU, CPHI1, CPHI2, WPHISAVE,
      .               WORK, WORK1, WORK2, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
-     .               ITERFIXSH, INTERPMETHOD)
+     .               ITERFIXSH, INTERPMETHOD, IERR, ERRMSG)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -498,6 +503,9 @@ Cf2py intent(in, out) :: ITER
       LOGICAL UNIFORM_SFC_BRDF
       REAL    SFC_BRDF_DO(NSTOKES,NMU/2,NPHI0MAX,NSTOKES,NMU/2,NPHI0MAX)
 Cf2py intent(in) :: UNIFORM_SFC_BRDF, SFC_BRDF_DO
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+Cf2py intent(out) :: IERR, ERRMSG
 
       REAL A
       INTEGER SP, STACK(50)
@@ -510,6 +518,7 @@ Cf2py intent(in) :: UNIFORM_SFC_BRDF, SFC_BRDF_DO
       REAL    STARTADAPTSOL, ENDADAPTSOL, ADAPTRANGE, SPLITCRIT
       REAL    STARTSPLITACC, CURSPLITACC, AVGSOLCRIT, BETA, ACCELPAR
 
+      IERR = 0
 
 C         Starting values for the adaptive cell splitting controlling method.
 C         The splitting accuracy used at a particular iteration is CURSPLITACC,
@@ -585,7 +594,8 @@ C           Make sure all processors are going to split cells if any want to
      .             ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV,
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
-     .             NBPTS, TOTAL_EXT, INTERPMETHOD)
+     .             NBPTS, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG)
+            IF (IERR .NE. 0) RETURN
             IF (SOLCRIT .GT. STARTADAPTSOL)  STARTSPLITACC = SPLITCRIT
           ENDIF
 C           Find the maximum splitting criterion over all processors
@@ -3895,7 +3905,7 @@ C             do first and put the second child on the stack.
      .             ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV,
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
-     .             NBPTS, TOTAL_EXT, INTERPMETHOD)
+     .             NBPTS, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG)
 C       Splits the cells that have a cell dividing criterion greater than
 C     CURSPLITACC if DOSPLIT is true.  The current splitting criterion
 C     achieved is returned in SPLITCRIT.  If we are at the end of the
@@ -3924,6 +3934,8 @@ C     by MAXIG, MAXIC, MAXIV, MAXIDO) then the OUTOFMEM flag is returned true.
       INTEGER MAXCELLS, MAXPTS, MAXWORK, MAXSH, MAXRAD
       LOGICAL OUTOFMEM0
       REAL    ADAPT(3), FRAC
+      INTEGER IERR
+      CHARACTER ERRMSG*600
 
       INTEGER NPX, NPY, NPZ
       REAL DELX, DELY, XSTART, YSTART
@@ -4003,7 +4015,9 @@ C                 Interpolate the medium properties, radiance, and source
      .            ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ,
      .            CXINV, CYINV,CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .            DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .            NPART,MAXIG, NBPTS, TOTAL_EXT, INTERPMETHOD)
+     .            NPART,MAXIG, NBPTS, TOTAL_EXT, INTERPMETHOD, IERR,
+     .            ERRMSG)
+              IF (IERR .NE. 0) RETURN
             ENDIF
             I = I + 1
           ENDDO
@@ -4047,7 +4061,9 @@ C                   Interpolate the medium properties, radiance, and source
      .               ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ,
      .               CXINV, CYINV,CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .               DELYD,XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .               NPART,MAXIG, NBPTS, TOTAL_EXT, INTERPMETHOD)
+     .               NPART,MAXIG, NBPTS, TOTAL_EXT, INTERPMETHOD,
+     .               IERR, ERRMSG)
+              IF (IERR .NE. 0) RETURN
               ENDIF
             ENDIF
             I = I + 1
@@ -4101,7 +4117,7 @@ C         Find the max adaptive cell criterion after the cell divisions
      .       ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV,
      .       CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .       XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
-     .       MAXIG, NBPTS, TOTAL_EXT, INTERPMETHOD)
+     .       MAXIG, NBPTS, TOTAL_EXT, INTERPMETHOD,IERR,ERRMSG)
 C       Interpolates the medium properties, radiance, and source function for
 C     new grid points (specified in NEWPOINTS).  The medium properties are
 C     interpolated from the property grid, since interpolating from the
@@ -4135,7 +4151,8 @@ C     function for the new points.
       REAL    UNIFZLEV, XO, YO, ZO, DIRPATH, EXT, W
       INTEGER, ALLOCATABLE :: LOFJ(:)
       REAL, ALLOCATABLE :: SOURCET(:,:)
-
+      INTEGER IERR
+      CHARACTER ERRMSG*600
       INTEGER NPX, NPY, NPZ
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
@@ -4189,7 +4206,7 @@ C             Interpolate the medium properties from the property grid
      .             XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP(:,IPA),
      .             ALBEDOP(:,IPA), LEGENP, IPHASEP(:,IPA),
      .             NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
-     .             INTERPMETHOD)
+     .             INTERPMETHOD, IERR, ERRMSG)
 C             Do the Delta-M scaling of extinction and albedo for this point
 	        IF (DELTAM) THEN
 	          IF (NUMPHASE .GT. 0) THEN

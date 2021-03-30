@@ -13,7 +13,7 @@ C     -JRLoveridge 2021/02/22
       SUBROUTINE UPDATE_COSTFUNCTION (STOKESOUT, RAYGRAD_PIXEL,
      .             GRADOUT,COST, UNCERTAINTIES, COSTFUNC, NSTOKES,
      .             NBPTS, NUMDER, NCOST, NGRAD, MEASUREMENT,
-     .             NUNCERTAINTY)
+     .             NUNCERTAINTY, IERR, ERRMSG)
 C    Updates the cost function (COST) and its gradient (GRADOUT)
 C    with the contribution from one pixel using the forward modeled StokesVector
 C    (STOKESOUT), and the Frechet derivative for that pixel (RAYGRAD_PIXEL)
@@ -36,10 +36,13 @@ Cf2py intent(in) :: RAYGRAD_PIXEL
 Cf2py intent(in) :: STOKESOUT, MEASUREMENT
       DOUBLE PRECISION UNCERTAINTIES(NUNCERTAINTY,NUNCERTAINTY)
 Cf2py intetn(in) :: UNCERTAINTIES
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+Cf2py intent(out) :: IERR, ERRMSG
 
       DOUBLE PRECISION PIXEL_ERROR
       INTEGER I, J
-
+      IERR = 0
       IF (COSTFUNC .EQ. 'L2') THEN
 C       A weighted least squares on each of the stokes components.
         DO I=1,NSTOKES
@@ -78,7 +81,11 @@ C       e.g. Dubovik et al. 2011 https://doi.org/10.5194/amt-4-975-2011.
      .      STOKESOUT(3)*RAYGRAD_PIXEL(3,:,:))/
      .      (STOKESOUT(2)**2 + STOKESOUT(3)**2)
         ENDIF
-
+      ELSE
+        IERR = 1
+        WRITE(ERRMSG,*) 'UPDATE_COSTFUNCTION: Bad cost function',
+     .    COSTFUNC
+        RETURN
       ENDIF
       RETURN
       END
@@ -95,7 +102,8 @@ C       e.g. Dubovik et al. 2011 https://doi.org/10.5194/amt-4-975-2011.
      .                   EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
      .                   FLUXES, SHPTR, SOURCE, CAMX, CAMY, CAMZ, CAMMU,
      .                   CAMPHI, NPIX, NPART, TOTAL_EXT, STOKES,
-     .                   NSCATANGLE, YLMSUN, PHASETAB, NSTPHASE)
+     .                   NSCATANGLE, YLMSUN, PHASETAB, NSTPHASE,
+     .                  IERR, ERRMSG)
 C    Calculates the Stokes Vector at the given directions (CAMMU, CAMPHI)
 C    and positions CAMX,CAMY,CAMZ by integrating the source function.
 
@@ -145,7 +153,9 @@ Cf2py intent(out) :: STOKES
 Cf2py intent(in) :: SRCTYPE, SFCTYPE, UNITS
       REAL YLMSUN(NSTLEG, NLM), PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
 Cf2py intent(in) :: YLMSUN, PHASETAB
-
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+Cf2py intent(out) :: IERR, ERRMSG
       INTEGER I, J, L, SIDE
       INTEGER IVIS
       LOGICAL VALIDRAD
@@ -155,7 +165,7 @@ Cf2py intent(in) :: YLMSUN, PHASETAB
       DOUBLE PRECISION XE,YE,ZE, TRANSMIT, VISRAD(NSTOKES)
 
       REAL  MEAN, STD1, STD2
-
+      IERR = 0
 C         Make the isotropic radiances for the top boundary
       CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
      .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
@@ -193,8 +203,9 @@ C             Extrapolate ray to domain top if above
           Y0 = Y0 + R*SQRT(1-MURAY**2)*SIN(PHIRAY)
           Z0 = ZGRID(NZ)
         ELSE IF (Z0 .LT. ZGRID(1)) THEN
-          WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
-          STOP
+          IERR = 1
+          WRITE (ERRMSG,*) 'RENDER: Level below domain'
+          RETURN
         ENDIF
 
 C         Integrate the extinction and source function along this ray
@@ -214,7 +225,8 @@ C         to calculate the Stokes radiance vector for this pixel
      .                       SFCTYPE, NSFCPAR, SFCGRIDPARMS,
      .                       MU2, PHI2, X0,Y0,Z0,
      .                       XE,YE,ZE, SIDE, TRANSMIT, VISRAD, VALIDRAD,
-     .   	                 TOTAL_EXT, NPART)
+     .   	                 TOTAL_EXT, NPART, IERR,ERRMSG)
+      IF (IERR .NE. 0) RETURN
 900   CONTINUE
 
 
@@ -245,7 +257,7 @@ C         to calculate the Stokes radiance vector for this pixel
      .           JACOBIANPTR, NUM_JACOBIAN_PTS, RAYS_PER_PIXEL,
      .           RAY_WEIGHTS, STOKES_WEIGHTS, DIPHASEIND,
      .           COSTFUNC, NCOST, NGRAD, NUNCERTAINTY, PLANCK,
-     .           LONGRADIANCE, USELONGRAD, TAUTOL, NODIFFUSE)
+     .           TAUTOL, NODIFFUSE, IERR, ERRMSG)
 C    Calculates the cost function and its gradient using the Levis approximation
 C    to the Frechet derivatives of the radiative transfer equation.
 C    Calculates the Stokes Vector at the given directions (CAMMU, CAMPHI)
@@ -319,10 +331,6 @@ Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE, RADIANCE
 Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
       INTEGER  NPIX
 Cf2py intent(in) :: NPIX
-      REAL LONGRADIANCE(NSTOKES,NPTS)
-Cf2py intent(in) :: LONGRADIANCE
-      CHARACTER USELONGRAD
-Cf2py intent(in) :: USELONGRAD
       REAL   MEASUREMENTS(NSTOKES,*), DLEG(NSTLEG,0:NLEG,DNUMPHASE)
       REAL   DEXT(NBPTS,NUMDER), DALB(NBPTS,NUMDER)
       INTEGER DIPHASE(NBPTS,NUMDER)
@@ -362,6 +370,10 @@ Cf2py intent(in) :: RAY_WEIGHTS, STOKES_WEIGHTS
 Cf2py intent(in) :: TAUTOL
       LOGICAL NODIFFUSE
 Cf2py intent(in) :: NODIFFUSE
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+Cf2py intent(out) :: IERR, ERRMSG
+
 
       DOUBLE PRECISION WEIGHT
       DOUBLE PRECISION PIXEL_ERROR
@@ -378,7 +390,7 @@ Cf2py intent(in) :: NODIFFUSE
 
       INTEGER, ALLOCATABLE :: LOFJ(:)
       ALLOCATE (LOFJ(NLM))
-
+      IERR = 0
       GRADOUT = 0.0D0
       STOKESOUT = 0.0D0
 
@@ -434,8 +446,9 @@ C             Extrapolate ray to domain top if above
             Y0 = Y0 + R*SQRT(1-MURAY**2)*SIN(PHIRAY)
             Z0 = ZGRID(NZ)
           ELSE IF (Z0 .LT. ZGRID(1)) THEN
-            WRITE (6,*) 'LEVISAPPROX_GRADIENT: Level below domain'
-            STOP
+            IERR = 1
+            WRITE (ERRMSG,*) 'LEVISAPPROX_GRADIENT: Level below domain'
+            RETURN
           ENDIF
 C         Integrate the extinction and source function along this ray
 C         to calculate the Stokes radiance vector for this pixel.
@@ -461,8 +474,9 @@ C         while traversing the SHDOM grid.
      .             NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER, DIPHASEIND, PLANCK,
-     .             LONGRADIANCE, USELONGRAD, TAUTOL, NODIFFUSE,
-     .             GNDALBEDO)
+     .             TAUTOL, NODIFFUSE,
+     .             GNDALBEDO, IERR, ERRMSG)
+          IF (IERR .NE. 0) RETURN
   900     CONTINUE
           DO NS=1,NSTOKES
             STOKESOUT(NS,IPIX) = STOKESOUT(NS,IPIX) + VISRAD(NS)*
@@ -474,7 +488,9 @@ C         while traversing the SHDOM grid.
         CALL UPDATE_COSTFUNCTION(DBLE(STOKESOUT(:,IPIX)), RAYGRAD_PIXEL,
      .             GRADOUT, COST, UNCERTAINTIES(:,:,IPIX), COSTFUNC,
      .             NSTOKES, NBPTS, NUMDER, NCOST, NGRAD,
-     .             DBLE(MEASUREMENTS(:,IPIX)), NUNCERTAINTY)
+     .             DBLE(MEASUREMENTS(:,IPIX)), NUNCERTAINTY, IERR,
+     .              ERRMSG)
+        IF (IERR .NE. 0) RETURN
 
         IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
           DO JI = 1,NUM_JACOBIAN_PTS
@@ -503,8 +519,8 @@ C         while traversing the SHDOM grid.
      .             NPX, NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
      .             EXACT_SINGLE_SCATTER, DIPHASEIND, PLANCK,
-     .             LONGRADIANCE, USELONGRAD, TAUTOL, NODIFFUSE,
-     .             GNDALBEDO)
+     .              TAUTOL, NODIFFUSE,
+     .             GNDALBEDO, IERR, ERRMSG)
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
 C     radiance (RADOUT) at the point X0,Y0,Z0.
@@ -570,8 +586,6 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
       DOUBLE PRECISION OBASEADAPTINTERP(8,8)
       REAL GRAD0(NSTOKES,8,NUMDER), GRAD1(NSTOKES,8,NUMDER)
       REAL    SRCGRAD(NSTOKES,8,NUMDER), SRCSINGSCAT(NSTOKES,8)
-      REAL    LONGRADIANCE(NSTOKES,NPTS)
-      CHARACTER USELONGRAD
       REAL    DPATH(8*(NPX+NPY+NPZ),*), DEXTM, SECMU0
       INTEGER DPTR(8*(NPX+NPY+NPZ),*), N
       DOUBLE PRECISION PI, CX, CY, CZ, CXINV, CYINV, CZINV
@@ -588,6 +602,8 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
       DOUBLE PRECISION :: DIRRAD(NSTOKES,4), BOUNDINTERP(4)
       INTEGER :: BOUNDPTS(4), IB,IP
       REAL :: GNDALBEDO
+      INTEGER IERR
+      CHARACTER ERRMSG*600
 
       INTEGER, ALLOCATABLE :: PASSEDPOINTS(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: PASSEDRAD(:,:)
@@ -759,9 +775,10 @@ C         Loop until reach a Z boundary or transmission is very small
 
 C           Make sure current cell is valid
         IF (ICELL .LE. 0) THEN
-          WRITE (6,*)'GRAD_INTEGRATE_1RAY: ICELL=',ICELL,
+          IERR = 1
+          WRITE (ERRMSG,*)'GRAD_INTEGRATE_1RAY: ICELL=',ICELL,
      .                MU2,PHI2,XE,YE,ZE
-          STOP
+          RETURN
         ENDIF
         NGRID = NGRID + 1
 
@@ -793,7 +810,7 @@ C     scattering kernel/emission/solar source.
      .            LOFJ, CELLFLAGS, PARTDER, NUMDER,
      .            DNUMPHASE, DEXT, DALB, DIPHASE, DLEG, NBPTS, BCELL,
      .            DSINGSCAT, SINGSCAT8, OSINGSCAT8, DIPHASEIND,
-     .            PLANCK, LONGRADIANCE, USELONGRAD, NODIFFUSE,
+     .            PLANCK, NODIFFUSE,
      .            GRAD8, OGRAD8, BASEADAPTINTERP,
      .            OBASEADAPTINTERP, GRIDPOS)
 
@@ -880,9 +897,10 @@ C             (always need to deal with the cell that is wrapped)
         SOZ = (GRIDPOS(3,IOPP)-ZE)*CZINV
         SO = MIN(SOX,SOY,SOZ)
         IF (SO .LT. -EPS) THEN
-          WRITE (6,*) 'GRAD_INTEGRATE_1RAY: SO<0  ',
+          IERR = 1
+          WRITE (ERRMSG,*) 'GRAD_INTEGRATE_1RAY: SO<0  ',
      .      MU2,PHI2,XE,YE,ZE,SO,ICELL
-          STOP
+          RETURN
         ENDIF
         XN = XE + SO*CX
         YN = YE + SO*CY
@@ -1149,7 +1167,6 @@ C         solar beam.
 C     Add in the gradient components due to the radiance that is now
 C     fully calculated using the saved properties from each
 C     subgrid integration interval.
-      IF (USELONGRAD .EQ. 'Q') THEN
       DO IDR=1,NUMDER
         IPA = PARTDER(IDR)
         DO KK=1,NPASSED-1
@@ -1183,7 +1200,6 @@ C     subgrid integration interval.
 
         ENDDO
       ENDDO
-      ENDIF
       DEALLOCATE (PASSEDPOINTS, PASSEDRAD,PASSEDINTERP0,
      .            PASSEDINTERP1, PASSEDDELS, PASSEDABSCELL,
      .            PASSEDTRANSMIT)
@@ -1200,7 +1216,7 @@ C     subgrid integration interval.
      .             RADIANCE, LOFJ, CELLFLAGS, PARTDER,
      .             NUMDER, DNUMPHASE, DEXT, DALB, DIPHASE, DLEG, NBPTS,
      .             BCELL, DSINGSCAT, SINGSCAT8, OSINGSCAT8,DIPHASEIND,
-     .             PLANCK, LONGRADIANCE, USELONGRAD, NODIFFUSE,
+     .             PLANCK, NODIFFUSE,
      .             GRAD8,OGRAD8, BASEADAPTINTERP,
      .             OBASEADAPTINTERP, GRIDPOS)
 C       Computes the source function times extinction for gridpoints
@@ -1377,7 +1393,35 @@ C             Add the single scatter contribution to the source.
                   WRITE(*,*) 'NUMPHASE=', NUMPHASE, ' NOT SUPPORTED'
                   STOP
                 ENDIF
+              ELSEIF (SRCTYPE .NE. 'T') THEN
+                DA = ALBEDO(IP,IPA)*DIRFLUX(IP)*SECMU0*W
+                J = 1
+                DO L = 0, ML
+                  ME = MIN(L,MM)
+                  MS = -ME
+                  A1 = DA*LEGEN(1,L,K)
+                  B1 = DA*LEGEN(5,L,K)
+                  IF (J .LE. NS) THEN
+                    JT = J
+                    DO M = MS, ME
+                      SOURCET(1) =SOURCET(1) +
+     .                  A1*YLMDIR(1,J)*YLMSUN(1,J)
+                      J = J + 1
+                    ENDDO
+                    IF (NSTOKES .GT. 1) THEN
+                      J = JT
+                      DO M = MS, ME
+                        SOURCET(2)=SOURCET(2) +
+     .                    B1*YLMDIR(2,J)*YLMSUN(1,J)
+                        SOURCET(3)=SOURCET(3) +
+     .                    B1*YLMDIR(6,J)*YLMSUN(1,J)
+                        J = J + 1
+                      ENDDO
+                    ENDIF
+                  ENDIF
+                ENDDO
               ENDIF
+
               SOURCET(1) = MAX(0.0, SOURCET(1))
               DO NB=1,8
                 IB = GRIDPTR(NB,BCELL)
@@ -2324,7 +2368,8 @@ Cf2py intent(out) ::  TABLE_TYPE
 
       SUBROUTINE PRECOMPUTE_PHASE_CHECK(NSCATANGLE, NUMPHASE, NSTPHASE,
      .                              NSTOKES, ML, NLM, NSTLEG, NLEG,
-     .                              LEGEN, PHASETAB, DELTAM, NEGCHECK)
+     .                              LEGEN, PHASETAB, DELTAM, NEGCHECK,
+     .                              ERRMSG,IERR)
 C       Precomputes the phase matrix elements I-I and I-Q as a function
 C     of scattering angle for solar direct scattering for all the
 C     tabulated phase functions. Output is in PHASETAB.
@@ -2339,11 +2384,15 @@ Cf2py intent(in) :: LEGEN
 Cf2py intent(out) :: PHASETAB
       LOGICAL DELTAM, NEGCHECK
 Cf2py intent(in) :: DELTAM, NEGCHECK
+      CHARACTER ERRMSG*600
+Cf2py intent(out) :: ERRMSG
+      INTEGER IERR
+Cf2py intent(out) :: IERR
       INTEGER IPH, I, J, L
       DOUBLE PRECISION  PI, OFOURPI, COSSCAT, FCT, F, X, A1, B1
       DOUBLE PRECISION, ALLOCATABLE :: UNSCLEGEN(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: DMM1(:), DMM2(:)
-
+      IERR = 0
       ALLOCATE (UNSCLEGEN(2,0:NLEG), DMM1(0:NLEG), DMM2(0:NLEG))
       PI = ACOS(-1.0D0)
       OFOURPI = 1.0/(4.0*PI)
@@ -2386,10 +2435,12 @@ C           Sum the first Wigner function series, which is actually a Legendre s
             A1  = A1 + FCT*DBLE(UNSCLEGEN(1,L))*DMM1(L)
           ENDDO
           IF (NEGCHECK .AND. A1 .LE. 0.0) THEN
-            WRITE (6,*) 'PRECOMPUTE_PHASE_CHECK: negative phase ',
+            IERR = 1
+            WRITE (ERRMSG,*) 'PRECOMPUTE_PHASE_CHECK: negative phase ',
      .        'function',
-     .          ' for tabulated phase function: ',IPH, J, A1
-            STOP
+     .          ' for tabulated phase function: ','IPH',IPH,
+     .        'J', J, 'A1', A1
+            RETURN
           ENDIF
           PHASETAB(1,IPH,J) = SNGL(A1*OFOURPI)
 
@@ -2413,7 +2464,8 @@ C           If doing polarization, sum the second Wigner function series
       SUBROUTINE PRECOMPUTE_PHASE_CHECK_GRAD(NSCATANGLE, DNUMPHASE,
      .                              NSTPHASE,
      .                              NSTOKES, ML, NLM, NSTLEG, NLEG,
-     .                              DLEG, DPHASETAB, DELTAM, NEGCHECK)
+     .                              DLEG, DPHASETAB, DELTAM, NEGCHECK,
+     .                            IERR, ERRMSG)
 C       Precomputes the phase matrix elements I-I and I-Q as a function
 C     of scattering angle for solar direct scattering for all the
 C     tabulated phase functions. Output is in PHASETAB.
@@ -2428,11 +2480,15 @@ Cf2py intent(in) :: DLEG
 Cf2py intent(out) :: DPHASETAB
       LOGICAL DELTAM, NEGCHECK
 Cf2py intent(in) :: DELTAM, NEGCHECK
+      CHARACTER ERRMSG*600
+Cf2py intent(out) :: ERRMSG
+      INTEGER IERR
+Cf2py intent(out) :: IERR
       INTEGER IPH, I, J, L
       DOUBLE PRECISION  PI, OFOURPI, COSSCAT, FCT, F, X, A1, B1
       DOUBLE PRECISION, ALLOCATABLE :: UNSCLEGEN(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: DMM1(:), DMM2(:)
-
+      IERR = 0
       ALLOCATE (UNSCLEGEN(2,0:NLEG), DMM1(0:NLEG), DMM2(0:NLEG))
       PI = ACOS(-1.0D0)
       OFOURPI = 1.0/(4.0*PI)
@@ -2475,9 +2531,12 @@ C           Sum the first Wigner function series, which is actually a Legendre s
             A1  = A1 + FCT*DBLE(UNSCLEGEN(1,L))*DMM1(L)
           ENDDO
           IF (NEGCHECK .AND. A1 .LE. 0.0) THEN
-            WRITE (6,*) 'PRECOMPUTE_PHASE_CHECK_GRAD: negative phase ',
-     .         'function for tabulated phase function: ',IPH, J, A1
-            STOP
+            IERR=1
+            WRITE (ERRMSG,*) 'PRECOMPUTE_PHASE_CHECK_GRAD: ',
+     .          'negative phase ',
+     .         'function for tabulated phase function: ',
+     .          'IPH',IPH,'J', J,'A1', A1
+            RETURN
           ENDIF
           DPHASETAB(1,IPH,J) = SNGL(A1*OFOURPI)
 

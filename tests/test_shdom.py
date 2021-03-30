@@ -103,7 +103,7 @@ def solve_prop(solver, filename='data/rico32x36x26w672.prp'):
     solver._pa.legenp = legenp
     #overwrite the main optical properties on grid.
     solver._temp, solver._planck, solver._extinct, solver._albedo, solver._legen, solver._iphase, \
-    solver._total_ext, solver._extmin, solver._scatmin, solver._albmax = pyshdom.core.transfer_pa_to_grid(
+    solver._total_ext, solver._extmin, solver._scatmin, solver._albmax,ierr,errmsg = pyshdom.core.transfer_pa_to_grid(
         interpmethod='NO',
         nstleg=solver._nstleg,
         npart=solver._npart,
@@ -135,10 +135,11 @@ def solve_prop(solver, filename='data/rico32x36x26w672.prp'):
         npz=solver._pa.npz,
         srctype=solver._srctype,
         npts=solver._npts)
+    pyshdom.checks.check_errcode(ierr, errmsg)
     #finally initialize the radiance/source fields based on the optical properties.
     solver._init_solution()
     #solve without redoing init_solution which would undo all the work we did.
-    solver.solve(maxiter=100, init_solution=False, verbose=True)
+    solver.solve(maxiter=100, init_solution=False, verbose=False)
 
 
 class Verify_Solver(TestCase):

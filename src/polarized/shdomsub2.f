@@ -319,7 +319,7 @@ C               Base grid cells have no parents or children
      .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .               ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .               ZCKD, GASABS, EXTMIN, SCATMIN,NPART,
-     .		         TOTAL_EXT, NBPTS, INTERPMETHOD)
+     .		         TOTAL_EXT, NBPTS, INTERPMETHOD, IERR,ERRMSG)
 C       Calls TRILIN_INTERP_PROP to interpolate the input arrays from
 C     the property grid to each internal grid point.
       IMPLICIT NONE
@@ -330,6 +330,8 @@ C     the property grid to each internal grid point.
       REAL    LEGEN(NSTLEG,0:NLEG,*)
       INTEGER IP, IPA
       CHARACTER*2 INTERPMETHOD
+      INTEGER IERR
+      CHARACTER ERRMSG*600
 
       INTEGER NPX, NPY, NPZ
       INTEGER NUMPHASE
@@ -350,7 +352,8 @@ C         Initialize: transfer the tabulated phase functions
      .                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .                      ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .                      ZCKD, GASABS, EXTMIN, SCATMIN,
-     .                      INTERPMETHOD)
+     .                      INTERPMETHOD, IERR,ERRMSG)
+      IF (IERR .NE. 0) RETURN
 
 C         Trilinearly interpolate from the property grid to the adaptive grid
       TOTAL_EXT(:NPTS) = 0.0
@@ -364,7 +367,8 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP(:,IPA),
      .            ALBEDOP(:,IPA), LEGENP, IPHASEP(:,IPA),
      .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
-     .            INTERPMETHOD)
+     .            INTERPMETHOD, IERR, ERRMSG)
+            IF (IERR .NE. 0) RETURN
 	           TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
 	       ENDDO
       ENDDO
@@ -2062,7 +2066,7 @@ C        Choose the best range for the angle of linear polarization (-90 to 90 o
      .                        SFCTYPE, NSFCPAR, SFCGRIDPARMS,
      .                        MU2, PHI2, X0,Y0,Z0,
      .			              XE,YE,ZE, SIDE, TRANSMIT, RADIANCE,
-     .			              VALIDRAD, TOTAL_EXT, NPART)
+     .			              VALIDRAD, TOTAL_EXT, NPART, IERR, ERRMSG)
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
 C     radiance (RADIANCE) at the point X0,Y0,Z0.
@@ -2116,7 +2120,8 @@ C     5=-Z,6=+Z).
       DOUBLE PRECISION COSSCAT
       REAL, ALLOCATABLE :: YLMDIR(:,:), SINGSCAT(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: SUNDIRLEG(:)
-
+      INTEGER IERR
+      CHARACTER ERRMSG*600
       DATA OPPFACE/2,1,4,3,6,5/
       DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
       DATA DONEFACE/0,0,0,0,0,0,0,0, 0,1,0,3,0,5,0,7, 2,0,4,0,6,0,8,0,
@@ -2225,9 +2230,10 @@ C         Loop until reach a Z boundary or transmission is very small
       DO WHILE (.NOT. VALIDRAD .AND. ICELL .GT. 0)
 C           Make sure current cell is valid
         IF (ICELL .LE. 0) THEN
-          WRITE (6,*)'INTEGRATE_1RAY: ICELL=',ICELL,
+          IERR = 1
+          WRITE (ERRMSG,*)'INTEGRATE_1RAY: ICELL=',ICELL,
      .                MU2,PHI2,XE,YE,ZE
-          STOP
+          RETURN
         ENDIF
         NGRID = NGRID + 1
 
@@ -2315,9 +2321,10 @@ C             (always need to deal with the cell that is wrapped)
         SOZ = (GRIDPOS(3,IOPP)-ZE)*CZINV
         SO = MIN(SOX,SOY,SOZ)
         IF (SO .LT. -EPS) THEN
-          WRITE (6,*) 'INTEGRATE_1RAY: SO<0  ',
+          IERR=1
+          WRITE (ERRMSG,*) 'INTEGRATE_1RAY: SO<0  ',
      .      MU2,PHI2,XE,YE,ZE,SO,ICELL
-          STOP
+          RETURN
         ENDIF
         XN = XE + SO*CX
         YN = YE + SO*CY

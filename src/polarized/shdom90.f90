@@ -17,7 +17,8 @@
                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY, &
                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
                      ALBEDOP, LEGENP, IPHASEP, NZCKD, &
-                     ZCKD, GASABS, EXTMIN, SCATMIN, INTERPMETHOD)
+                     ZCKD, GASABS, EXTMIN, SCATMIN, INTERPMETHOD, &
+                     IERR, ERRMSG)
 !      Trilinearly interpolates the quantities on the input property
 !     grid at the single point (X,Y,Z) to get the output TEMP,EXTINCT,
 !     ALBEDO, and LEGEN or IPHASE.  Interpolation is done on the
@@ -37,6 +38,8 @@
       DOUBLE PRECISION SCAT1,SCAT2,SCAT3,SCAT4,SCAT5,SCAT6,SCAT7,SCAT8
       DOUBLE PRECISION SCATTER, MAXSCAT, KG, EXTMIN, SCATMIN
       CHARACTER INTERPMETHOD*2
+      INTEGER IERR
+      CHARACTER ERRMSG*600
 
       INTEGER NPX, NPY, NPZ
       INTEGER NUMPHASE
@@ -79,8 +82,9 @@
       IX = INT((X-XSTART)/DELX) + 1
       IF (ABS(X-XSTART-NPX*DELX) .LT. 0.01*DELX) IX = NPX
       IF (IX .LT. 1 .OR. IX .GT. NPX) THEN
-        WRITE (6,*) 'TRILIN: Beyond X domain',IX,NPX,X,XSTART
-        STOP
+        IERR = 1
+        WRITE (ERRMSG,*) 'TRILIN: Beyond X domain',IX,NPX,X,XSTART
+        RETURN
       ENDIF
       IXP = MOD(IX,NPX) + 1
       U = DBLE(X-XSTART-DELX*(IX-1))/DELX
@@ -90,8 +94,9 @@
       IY = INT((Y-YSTART)/DELY) + 1
       IF (ABS(Y-YSTART-NPY*DELY) .LT. 0.01*DELY) IY = NPY
       IF (IY .LT. 1 .OR. IY .GT. NPY) THEN
-        WRITE (6,*) 'TRILIN: Beyond Y domain',IY,NPY,Y,YSTART
-        STOP
+        IERR = 1
+        WRITE (ERRMSG,*) 'TRILIN: Beyond Y domain',IY,NPY,Y,YSTART
+        RETURN
       ENDIF
       IYP = MOD(IY,NPY) + 1
       V = DBLE(Y-YSTART-DELY*(IY-1))/DELY

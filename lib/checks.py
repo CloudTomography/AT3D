@@ -285,3 +285,7 @@ def check_sensor(dataset):
         raise TypeError("'use_subpixel_rays' variable in sensor dataset should be of boolean type.")
     if dataset.use_subpixel_rays.size != 1:
         raise ValueError("'use_subpixel_rays' variable should have a single value shape=(1,).")
+
+def check_errcode(ierr, errmsg):
+    if ierr != 0:
+        raise pyshdom.exceptions.SHDOMError(errmsg.decode('utf8'))

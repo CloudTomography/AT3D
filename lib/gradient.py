@@ -38,21 +38,21 @@ class LevisApproxGradient:
         self._rte_sensors = None
         self._sensor_mapping = None
 
-        #These are variables that are not used in standard gradient calculations.
-        #They were used to debug the radiance calculation in the gradient
-        #function. They are still in place for tests but are just left
-        #with these defaults. DO NOT CHANGE self._uselongrad unless you know
-        #what you are doing.
+        # These variables were used to debug the radiance contribution to the
+        # gradient. While they are still required inputs, they no longer
+        # do anything.
         self._uselongrad = 'Q'
         self._longradiance = None
         # Turns off the contribution of diffuse radiance to both radiance and
         # gradient calculation (single scatter only). All calculations
-        # are still performed. This is just for checking the single scatter
+        # are still performed so there is little performance
+        # improvement. This is just for checking the single scatter
         # is exact.
         self._nodiffuse = False
         # tautol is the subgrid interval size for the radiance integration.
         # this was added as an option for testing. But it is hardcoded
-        # to the original value used in SHDOM radiance integration of 0.2.
+        # to the value used in the forward model (see INTEGRATE_1RAY in
+        # shdomsub2.f) for consistency between the two methods.
         self._tautol = 0.2
 
         for name, instrument in self.measurements.items():
@@ -202,10 +202,8 @@ class LevisApproxGradient:
                 dtype=np.float32
             )
             jacobian_flag = True
-        if self._longradiance is None:
-            self._longradiance = np.zeros((rte_solver._nstokes, rte_solver._npts), dtype=np.float32,
-                                          order='F')
-        gradient, loss, images, jacobian = pyshdom.core.levisapprox_gradient(
+
+        gradient, loss, images, jacobian, ierr,errmsg = pyshdom.core.levisapprox_gradient(
             camx=camx,
             camy=camy,
             camz=camz,
@@ -227,8 +225,6 @@ class LevisApproxGradient:
             num_jacobian_pts=num_jacobian_pts,
             makejacobian=jacobian_flag,
             nodiffuse=self._nodiffuse,
-            longradiance=self._longradiance,
-            uselongrad=self._uselongrad,
             tautol=self._tautol,
             diphaseind=rte_solver._diphaseind,
             nstphase=rte_solver._nstphase,
@@ -317,7 +313,7 @@ class LevisApproxGradient:
             total_ext=rte_solver._total_ext[:rte_solver._npts],
             planck=rte_solver._planck[:rte_solver._npts]
         )
-
+        pyshdom.checks.check_errcode(ierr, errmsg)
         integrated_rays = sensor.copy(deep=True)
         data = {}
         if rte_solver._nstokes == 1:

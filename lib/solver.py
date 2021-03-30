@@ -131,17 +131,10 @@ class RTE:
         self._nstokes = num_stokes
         self._nstleg = 1 if num_stokes == 1 else 6
 
-        # 'interpmethod' controls the interpolation method to form RTE variables from
-        # property arrays and to form new adaptive grid points.
-        # first character controls the single scatter albedo interpolation.
-        #   'O' is for original SHDOM method.
-        #   'N' is a modified version which forces the base point single scatter
-        #       albedo to match the property grid when right on top of it.
-        #       This is critical to avoid errors in the gradient but the old version
-        #       is included just in case.
-        # The second character will control phase interpolation method
-        # but currently only the original SHDOM method is supported so it
-        # does nothing.
+        # 'interpmethod' doesn't currently do anything it is legacy
+        # variable that was used in debugging. It can be used to
+        # test different interpolation schemes in TRILIN_INTERP_PROP
+        # e.g. for the phase function.
         self._interpmethod = 'OO'
 
         self.source = self._setup_source(source)
@@ -309,7 +302,7 @@ class RTE:
         self._radiance, self._fluxes, self._dirflux, self._uniformzlev, \
         self._pa.extdirp, self._oldnpts, self._total_ext, self._deljdot, \
         self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
-        self._work2 = pyshdom.core.solution_iterations(
+        self._work2, ierr, errmsg = pyshdom.core.solution_iterations(
             verbose=verbose,
             interpmethod=self._interpmethod,
             iterfixsh=self._iterfixsh,
@@ -457,6 +450,7 @@ class RTE:
             ylmsun=self._ylmsun,
             runname=self._name
         )
+        pyshdom.checks.check_errcode(ierr, errmsg)
         nsh = self._shptr[self._npts]
         self._maxmb_out = 4*(self._nmu*(2+2*self._nphi + 2*self._nlm+2*33*32) \
                         + 4.5*self._maxpg + self._maxpgl + self._pa.numphase*(self._nleg + 1) \
@@ -518,7 +512,7 @@ class RTE:
         self.check_solved()
         self._precompute_phase()
 
-        output = pyshdom.core.render(
+        output, ierr, errmsg = pyshdom.core.render(
             nstphase=self._nstphase,
             ylmsun=self._ylmsun,
             phasetab=self._phasetab,
@@ -586,7 +580,7 @@ class RTE:
             units=self._units,
             total_ext=self._total_ext[:self._npts],
             npart=self._npart)
-
+        pyshdom.checks.check_errcode(ierr, errmsg)
         sensor['I'] = xr.DataArray(
             data=output[0],
             dims='nrays',
@@ -1163,7 +1157,7 @@ class RTE:
         #dphasetab holds tabulated values of the phase function derivative
         # ie the inverse legendre transform of dleg evaluated at
         # the same angles that the phase function is calculated.
-        self._dphasetab = pyshdom.core.precompute_phase_check_grad(
+        self._dphasetab, ierr, errmsg = pyshdom.core.precompute_phase_check_grad(
             negcheck=False,
             nstphase=self._nstphase,
             nstleg=self._nstleg,
@@ -1176,6 +1170,7 @@ class RTE:
             dleg=self._dleg, #use the dleg already divided by 1-f if deltam.
             deltam=self._deltam
         )
+        pyshdom.checks.check_errcode(ierr, errmsg)
 
 
         self._dnumphase, self._diphase = dnumphase, diphase
@@ -2021,7 +2016,7 @@ class RTE:
         # functions during the source function calculation.
         self._temp, self._planck, self._extinct, self._albedo, self._legen, \
         self._iphase, self._total_ext, self._extmin, self._scatmin,         \
-        self._albmax = pyshdom.core.transfer_pa_to_grid(
+        self._albmax, ierr, errmsg = pyshdom.core.transfer_pa_to_grid(
             nstleg=self._nstleg,
             npart=self._npart,
             extinctp=self._pa.extinctp,
@@ -2053,6 +2048,7 @@ class RTE:
             srctype=self._srctype,
             npts=self._npts,
             interpmethod=self._interpmethod)
+        pyshdom.checks.check_errcode(ierr, errmsg)
 
         #calculate cell averaged extinctions so that warnings can be raised
         #about optical thickness of cells. High optical thickness across a cell
@@ -2277,7 +2273,7 @@ class RTE:
         Precompute angular scattering for the entire legendre table.
         Perform a negativity check. (negcheck=True).
         """
-        self._phasetab = pyshdom.core.precompute_phase_check(
+        self._phasetab, errmsg,ierr = pyshdom.core.precompute_phase_check(
             negcheck=True,
             nscatangle=self._nscatangle,
             numphase=self._pa.numphase,
@@ -2288,8 +2284,9 @@ class RTE:
             ml=self._ml,
             nlm=self._nlm,
             legen=self._legen,
-            deltam=self._deltam
+            deltam=self._deltam,
         )
+        pyshdom.checks.check_errcode(ierr, errmsg)
 
     def _make_direct(self):
         """

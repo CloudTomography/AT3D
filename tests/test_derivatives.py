@@ -18,7 +18,7 @@ class CostFunctionL2(TestCase):
         stokesout = np.ones(4)*10.0
         stokesout[3] = 0.0
         measurement = np.ones(4)*13.0
-        gradout, cost = pyshdom.core.update_costfunction(
+        gradout, cost, ierr, errmsg = pyshdom.core.update_costfunction(
             cost=cost,
             gradout=gradout,
             stokesout=stokesout,
@@ -27,6 +27,7 @@ class CostFunctionL2(TestCase):
             uncertainties=uncertainties,
             costfunc=costfunc,
         )
+        pyshdom.checks.check_errcode(ierr, errmsg)
         cls.gradout = gradout
         cls.cost = cost
     def test_cost(self):
@@ -51,7 +52,7 @@ class CostFunctionLL(TestCase):
         measurement[1] = 0.25
         measurement[2] = 0.25
 
-        gradout, cost = pyshdom.core.update_costfunction(
+        gradout, cost, ierr, errmsg = pyshdom.core.update_costfunction(
             cost=cost,
             gradout=gradout,
             stokesout=stokesout,
@@ -60,6 +61,7 @@ class CostFunctionLL(TestCase):
             uncertainties=uncertainties,
             costfunc=costfunc,
         )
+        pyshdom.checks.check_errcode(ierr, errmsg)
         cls.gradout = gradout
         cls.cost = cost
     def test_cost(self):
