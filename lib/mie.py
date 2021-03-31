@@ -200,7 +200,7 @@ def _compute_table(particle_type, wavelength_band,
         nsize=nsize
     )
     #compute mie properties
-    extinct, scatter, nleg, legcoef = \
+    extinct, scatter, nleg, legcoef, ierr, errmsg = \
         pyshdom.core.compute_mie_all_sizes(
             nsize=nsize,
             maxleg=maxleg,
@@ -214,6 +214,7 @@ def _compute_table(particle_type, wavelength_band,
             partype=partype,
             verbose=verbose
         )
+    pyshdom.checks.check_errcode(ierr, errmsg)
     #return data as an xarray
     table = xr.Dataset(
         data_vars={

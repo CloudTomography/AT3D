@@ -1705,6 +1705,11 @@ class RTE:
         if (numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0, 1, 4, 5)):
             self._bcflag += 2
 
+        if self._adapt_grid_factor < 5.0:
+            warnings.warn(
+                "There is a bug that may cause segfaults for small values of adapt_grid_factor."
+            )
+
         return numerical_params
 
     def _setup_grid(self, grid):
@@ -1902,7 +1907,16 @@ class RTE:
         #These are the sizes of the main arrays.
         self._maxig = int(self._adapt_grid_factor * self._nbpts)
         self._maxic = int(self._cell_to_point_ratio * self._maxig)
-        self._maxiv = int(self._num_sh_term_factor * self._nlm * self._maxig)
+        maxiv = int(self._num_sh_term_factor * self._nlm * self._maxig)
+        self._maxiv = max(maxiv, self._nbpts*4) #at minimum we need enough to allocate the
+                                                # L=1 radiances on the base grid
+                                                # or we will segfault in COMPUTE_SOURCE
+                                                # as pointers are made in INIT_RADIANCE
+                                                # assuming there is enough room.
+                                                # For balancing of adaptive grid points and
+                                                # spherical harmonics you are on your own but
+                                                # should trigger informative exceptions.
+
         self._maxido = self._maxig * self._nphi0max
 
         #important that these numbers are smaller than sys._max_int32_size or
@@ -2171,7 +2185,7 @@ class RTE:
         self._delyd, self._deljdot, self._deljold, self._deljnew, self._jnorm, \
         self._fftflag, self._cmu1, self._cmu2, self._wtmu, self._cphi1, \
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
-        self._uniform_sfc_brdf, self._sfc_brdf_do = pyshdom.core.init_solution(
+        self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg = pyshdom.core.init_solution(
             work=self._work,
             ndelsource=self._ndelsource,
             work1=self._work1,
@@ -2267,6 +2281,7 @@ class RTE:
             maxsfcpars=self._maxsfcpars,
             nphi0max=self._nphi0max
         )
+        pyshdom.checks.check_errcode(ierr, errmsg)
 
     def _precompute_phase(self):
         """

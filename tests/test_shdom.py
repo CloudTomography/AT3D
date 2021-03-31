@@ -335,7 +335,7 @@ class Parallelization_Subdivide_Rays(TestCase):
                                                  (1122, 1593),
                                                  (0, 323),
                                                  (0, 323)])
-
+# #
 class Parallelization_No_SubpixelRays(TestCase):
     @classmethod
     def setUpClass(cls):

@@ -293,7 +293,6 @@ C        two-stream plane-parallel
      .    TEMP, NUMPHASE, IPHASE(:NPTS,:), SRCTYPE, SOLARFLUX, SOLARMU,
      .    GNDALBEDO, GNDTEMP, SKYRAD, UNITS, WAVENO, WAVELEN, RADIANCE,
      .    NPART, TOTAL_EXT(:NPTS))
-
 C        Interpolate the radiance on the non-base grid points from the
 C          base grid points
          CALL INTERP_RADIANCE (NSTOKES, NBPTS, NPTS, RSHPTR, RADIANCE,
@@ -613,7 +612,9 @@ C            Find the SH truncation to use for the radiance (RSHPTR)
      .           NSTOKES, ML, MM, NSTLEG, NLEG, NUMPHASE,
      .           NPTS, ALBEDO(:NPTS,:), LEGEN, IPHASE(:NPTS,:),
      .           SHPTR, RADIANCE, MAXIV+MAXIG, FIXSH, SHACC, RSHPTR,
-     .           NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS))
+     .           NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR,
+     .           ERRMSG)
+        IF (IERR .NE. 0) RETURN
 
 C           Integrate the source function along discrete ordinates
 C             to compute the radiance field.  The input source function
@@ -671,7 +672,6 @@ C             and average SH truncation.
      .          SPLITCRIT, NPTS, FLOAT(SHPTR(NPTS+1))/NPTS,
      .          FLOAT(SHPTR(NPTS+1))/(NPTS*NLM), '   [', RUNNAME,']'
         ENDIF
-
       ENDDO
 
       IF (VERBOSE) THEN
@@ -688,7 +688,6 @@ c     .           CELLFLAGS, GRIDPOS)
 C          Comment in for output of cell splitting criterion for every cell
 c      CALL OUTPUT_CELL_SPLIT ('cellsplit.dat',GRIDPTR,
 c     .                        GRIDPOS, EXTINCT, SHPTR, SOURCE, NCELLS)
-
       RETURN
       END
 
@@ -1066,8 +1065,11 @@ C             Use all the m's for the last l for the source function.
         ENDIF
         IF (IS+NS .GT. MAXIV) THEN
           IERR = 2
-          WRITE (ERRMSG,*) 'COMPUTE_SOURCE: MAXIV exceeded',MAXIV
-          WRITE (ERRMSG,*) 'Out of memory for more spherical ',
+          WRITE (6,*) 'COMPUTE_SOURCE: MAXIV exceeded',MAXIV,
+     .        'Out of memory for more spherical ',
+     .        'harmonic terms.'
+          WRITE (ERRMSG,*) 'COMPUTE_SOURCE: MAXIV exceeded',MAXIV,
+     .        'Out of memory for more spherical ',
      .        'harmonic terms.'
           RETURN
         ENDIF
@@ -1219,6 +1221,9 @@ C           just set the radiance truncation to that of the source.
         IR = IR + NR
         IF (IR .GT. MAXIR) THEN
           IERR = 2
+          WRITE (6,*) 'RADIANCE_TRUNCATION: Really out of memory ',
+     .      'for more radiance terms.'
+          WRITE (6,*) 'Increase MAXIV.'
           WRITE (ERRMSG,*) 'RADIANCE_TRUNCATION: Really out of memory ',
      .      'for more radiance terms.'
           WRITE (ERRMSG,*) 'Increase MAXIV.'

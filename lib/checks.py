@@ -290,8 +290,10 @@ def check_errcode(ierr, errmsg):
     if ierr == 1:
         raise pyshdom.exceptions.SHDOMError(errmsg.decode('utf8'))
     elif ierr == 2:
-        raise pyshdom.exceptions.SHDOMERror(
-            errmsg.decode('utf8') + \
+        string = errmsg.decode('utf8')
+        end_index = len(string) - next(i for i, j in enumerate(string[::-1]) if j.strip())
+        raise pyshdom.exceptions.SHDOMError(
+            string[:end_index] + " \n" \
             "The desired SHDOM solution simply takes more memory (spherical harmonics) "
-            "than was allocated. Increase the adapt_grid_factor and/or spherical_harmonics_factor"
+            "than was allocated. Increase the adapt_grid_factor and/or spherical_harmonics_factor "
             "to fix this.")
