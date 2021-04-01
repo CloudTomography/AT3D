@@ -319,11 +319,11 @@ C               Base grid cells have no parents or children
      .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .               ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .               ZCKD, GASABS, EXTMIN, SCATMIN,NPART,
-     .		         TOTAL_EXT, NBPTS, INTERPMETHOD, IERR,ERRMSG)
+     .		         TOTAL_EXT, MAXPG, INTERPMETHOD, IERR,ERRMSG)
 C       Calls TRILIN_INTERP_PROP to interpolate the input arrays from
 C     the property grid to each internal grid point.
       IMPLICIT NONE
-      INTEGER NPTS, NSTLEG, NLEG, NPART, NBPTS
+      INTEGER NPTS, NSTLEG, NLEG, NPART, MAXPG
       INTEGER IPHASE(NPTS,NPART)
       REAL    GRIDPOS(3,NPTS), TOTAL_EXT(NPTS)
       REAL    TEMP(*), EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
@@ -337,14 +337,17 @@ C     the property grid to each internal grid point.
       INTEGER NUMPHASE
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
-      REAL TEMPP(*), EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
+      REAL TEMPP(MAXPG), EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG,NPART)
       REAL LEGENP(*)
-      INTEGER IPHASEP(NBPTS,NPART)
+      INTEGER IPHASEP(MAXPG,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
       DOUBLE PRECISION EXTMIN, SCATMIN
 
 C         Initialize: transfer the tabulated phase functions
+C     Note we aren't using EXTINCTP etc in the initialization so
+C     we don't have to make sure they have the correct shape as in
+C     below.
       CALL TRILIN_INTERP_PROP (0.0, 0.0, 0.0, .TRUE., NSTLEG, NLEG,
      .                         TEMP, EXTINCT, ALBEDO,
      .                         LEGEN(1,0,1), IPHASE,
@@ -389,13 +392,13 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .                ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .                CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .                XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		          NPART, NBPTS)
+     .		          NPART, MAXPG)
 C       Makes the direct beam solar flux for the internal base grid.
 C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
       IMPLICIT NONE
-      INTEGER NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, NBPTS
-Cf2py intent(in) :: NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, NBPTS
+      INTEGER NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, MAXPG
+Cf2py intent(in) :: NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, MAXPG
       LOGICAL DELTAM
 Cf2py intent(in) :: DELTAM
       REAL    SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS(3,*)
@@ -405,10 +408,10 @@ Cf2py intent(in) :: NPX, NPY, NPZ, NPART, NUMPHASE
       REAL DELX, DELY, XSTART, YSTART
 Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*), TEMPP(*)
-      REAL EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
+      REAL EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG,NPART)
 Cf2py intent(in) :: ZLEVELS, TEMPP, EXTINCTP, ALBEDOP
       REAL LEGENP(*), ZCKD(*), GASABS(*)
-      INTEGER IPHASEP(NBPTS,NPART), NZCKD
+      INTEGER IPHASEP(MAXPG,NPART), NZCKD
 Cf2py intent(in) :: LEGENP, ZCKD, GASABS, IPHASEP, NZCKD
 
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
@@ -437,7 +440,7 @@ Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .	          NPART, NBPTS)
+     .	          NPART, MAXPG)
       DO IP = 1, NPTS
 C27237,27283
         DIRPATH = 0.0
@@ -452,7 +455,7 @@ C27237,27283
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		  NPART, NBPTS)
+     .		  NPART, MAXPG)
       ENDDO
       RETURN
       END

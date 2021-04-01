@@ -161,7 +161,9 @@ class RTE:
 
         self.numerical_params = self._setup_numerical_params(numerical_params)
         self._setup_grid(self._grid)
+        warnings.warn('HELLO')
         self.surface = self._setup_surface(surface)
+        warnings.warn('HELLO2')
         # atmosphere includes temperature for thermal radiation
         self.atmosphere = self._setup_atmosphere(atmosphere)
 
@@ -179,7 +181,7 @@ class RTE:
         if (self._shacc > 0.0) & (self._shacc > 0.03*flux):
             warnings.warn("spherical_harmonics_accuracy is not a fraction but scales with fluxes."
                           " SHACC/nominal flux = {}".format(self._shacc/flux))
-
+        warnings.warn('{}, {}, {}, {}'.format(self._npts, self._maxig, self._ncells, self._maxic))
         #this is called at initialization so that warnings about the optical
         #thickness across cells in the medium can be called to warn a user
         #before they try to run RTE.solve().
@@ -453,16 +455,16 @@ class RTE:
         pyshdom.checks.check_errcode(ierr, errmsg)
         nsh = self._shptr[self._npts]
         self._maxmb_out = 4*(self._nmu*(2+2*self._nphi + 2*self._nlm+2*33*32) \
-                        + 4.5*self._maxpg + self._maxpgl + self._pa.numphase*(self._nleg + 1) \
+                        + 4.5*self._maxpg + self._maxpgl + self._nstleg*self._pa.numphase*(self._nleg + 1) \
                         + 16.5*self._ncells + self._npts*(28+self._nphi0max*self._nstokes) \
                         + self._nstokes*nsh*self._big_arrays)/(1024**2)
         self._adapt_grid_factor_out = self._npts/self._nbpts
         self._shterm_fac_out = nsh/(self._nlm*self._npts)
         self._cell_point_out = self._ncells/self._npts
-        # if verbose:
-        #     print("Actual MAX_TOTAL_MB: {:.2f}".format(self._maxmb_out))
-        #     print("Actual adapt_grid_factor: {:.4f}".format(self._adapt_grid_factor_out))
-        #     print("Actual cell_point_ratio: {:.4f}".format(self._cell_point_out))
+        if verbose:
+            warnings.warn("Actual MAX_TOTAL_MB: {:.2f}".format(self._maxmb_out))
+            warnings.warn("Actual adapt_grid_factor: {:.4f}".format(self._adapt_grid_factor_out))
+            warnings.warn("Actual cell_point_ratio: {:.4f}".format(self._cell_point_out))
 
     def integrate_to_sensor(self, sensor):
         """Calculates the StokesVector at specified geometry using an RTE solution.
@@ -1765,14 +1767,14 @@ class RTE:
             self._nx1 -= 1
         if self._bcflag & 7 or ibits(self._ipflag, 1, 1):
             self._ny1 -= 1
-        self._nbpts = self._nx * self._ny * self._nz
+        self._nbpts = self._nx1 * self._ny1 * self._nz
 
         # Calculate the number of base grid cells depending on the BCFLAG
         self._nbcells = (self._nz - 1) * (self._nx + ibits(self._bcflag, 0, 1) - \
                                           ibits(self._bcflag, 2, 1)) * \
                                 (self._ny + ibits(self._bcflag, 1, 1) - \
                                 ibits(self._bcflag, 3, 1))
-
+        warnings.warn('{}, {}'.format(self._bcflag, self._nbcells))
         self._xgrid, self._ygrid, self._zgrid = pyshdom.core.new_grids(
             bcflag=self._bcflag,
             gridtype=self._gridtype,
@@ -1789,7 +1791,7 @@ class RTE:
         )
 
         self._setup_memory()
-
+        warnings.warn('2, {}, {}'.format(self._bcflag, self._nbcells))
         self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
         self._treeptr, self._cellflags = pyshdom.core.init_cell_structure(
             maxig=self._maxig,
@@ -1806,7 +1808,7 @@ class RTE:
             zgrid=self._zgrid
         )
         self._nbcells = self._ncells
-
+        warnings.warn('3, {}, {}'.format(self._bcflag, self._nbcells))
     def _setup_memory(self):
         """A utility function to initialize internal memory parameters.
 
@@ -1835,8 +1837,14 @@ class RTE:
             self._nphi0max = self._nphi
         else:
             raise AttributeError
-        self._memword = self._nmu * (2 + 2 * self._nphi + 2 * self._nlm + 2 * 33 * 32)
 
+        #max_legendre and numphase are recalculated
+        max_legendre = max([scatterer.sizes['legendre_index'] for
+                            scatterer in self.medium.values()])
+        numphase = sum([scatterer.sizes['table_index'] for
+                        scatterer in self.medium.values()])
+        self._memword = self._nmu * (2 + 2 * self._nphi + 2 * self._nlm + 2 * 33 * 32) \
+                        + 4.5*self._maxpg + 2*numphase*self._nstleg*max_legendre
         # Guess maximum number of grid points, cells, SH vector size needed
         # but don't let MAX_TOTAL_MB be exceeded
 
@@ -1878,8 +1886,10 @@ class RTE:
         wantmem = self._adapt_grid_factor * self._nbpts * (
             28 + 16.5 * self._cell_to_point_ratio + self._nphi0max * self._nstokes + \
             self._num_sh_term_factor * self._nstokes * self._nlm * self._big_arrays)
-
         reduce = min(1.0, ((self._max_total_mb * 1024 ** 2) / 4 - self._memword) / wantmem)
+        warnings.warn("{}, {}, {}, {}".format((
+            self._max_total_mb * 1024 ** 2) / 4, self._memword, wantmem, reduce)
+            )
         self._adapt_grid_factor *= reduce
         if self._adapt_grid_factor < 1.0:
             raise pyshdom.exceptions.SHDOMError(
@@ -1908,6 +1918,12 @@ class RTE:
         self._maxig = int(self._adapt_grid_factor * self._nbpts)
         self._maxic = int(self._cell_to_point_ratio * self._maxig)
         maxiv = int(self._num_sh_term_factor * self._nlm * self._maxig)
+        if maxiv < self._nbpts*4:
+            warnings.warn("User specified MAXIV={} is smaller than the minimum needed "
+                "to initialize the radiance fields. It has been increased to {}.".format(
+                    maxiv, self._nbpts*4
+                    )
+                )
         self._maxiv = max(maxiv, self._nbpts*4) #at minimum we need enough to allocate the
                                                 # L=1 radiances on the base grid
                                                 # or we will segfault in COMPUTE_SOURCE
@@ -1953,9 +1969,11 @@ class RTE:
         """
 
         # Iterate over all particle types and aggregate the legendre scattering table
-        self._pa.extinctp = np.zeros(shape=[self._nbpts, len(self.medium)], dtype=np.float32)
-        self._pa.albedop = np.zeros(shape=[self._nbpts, len(self.medium)], dtype=np.float32)
-        self._pa.iphasep = np.zeros(shape=[self._nbpts, len(self.medium)], dtype=np.int32)
+
+        # sefl._maxpg is different to self._nbpts as that has the extra boundary points.
+        self._pa.extinctp = np.zeros(shape=[self._maxpg, len(self.medium)], dtype=np.float32)
+        self._pa.albedop = np.zeros(shape=[self._maxpg, len(self.medium)], dtype=np.float32)
+        self._pa.iphasep = np.zeros(shape=[self._maxpg, len(self.medium)], dtype=np.int32)
         for i, scatterer in enumerate(self.medium.values()):
             self._pa.extinctp[:, i] = scatterer.extinction.data.ravel()
             self._pa.albedop[:, i] = scatterer.ssalb.data.ravel()
@@ -2011,11 +2029,11 @@ class RTE:
             self._pa.legenp = legendre_table.data.ravel(order='F').astype(np.float32)
 
         self._maxasym = np.max(legendre_table.isel(stokes_index=0, legendre_index=1).data / 3.0)
-        self._maxpgl = self._maxpg * legendre_table.sizes['legendre_index']
+        self._maxpgl = self._nstleg * self._pa.numphase * (legendre_table.sizes['legendre_index']+1)
 
         if legendre_table.sizes['table_index'] > 0:
-            self._maxigl = legendre_table.sizes['table_index'] * \
-            (legendre_table.sizes['legendre_index'] + 1)
+            self._maxigl = self._nstleg*legendre_table.sizes['table_index'] * \
+            (self._nleg + 1)
         else:
             self._maxigl = self._maxig * (legendre_table.sizes['legendre_index'] + 1)
 
@@ -2046,6 +2064,7 @@ class RTE:
             nzckd=self._pa.nzckd,
             zckd=self._pa.zckd,
             gasabs=self._pa.gasabs,
+            maxpg=self._maxpg,
             ml=self._ml,
             mm=self._mm,
             numphase=self._pa.numphase,

@@ -81,19 +81,32 @@ class SensorsDict(OrderedDict):
             self._add_instrument(instrument)
         self[instrument]['uncertainty_model'] = uncertainty_model
 
-    def add_noise(self, instrument, nstokes):
-        """Add noise to the observables in the sensors for the
-        specified instrument according to the prescribed noise model.
+    def calculate_uncertainties(self, instrument):
+        """Evaluate the uncertainty matrix for each sensor using
+        the instrument's uncertainty model.
 
-        Paramaters
+        Parameters
         ----------
         instrument : Any Type
             The key for the instrument.
-        nstokes : int
-            The number of Stokes Components in the RTE solver.
+        """
+        if 'uncertainty_model' not in self[instrument]:
+            raise KeyError("There is no uncertainty model for instrument '{}'."
+                " please add one.")
+        for sensor in self[instrument]['sensor_list']:
+            self[instrument]['uncertainty_model'].calculate_uncertainties(sensor)
+
+    def add_noise(self, instrument):
+        """Add noise to the observables in the sensors for the
+        specified instrument according to the prescribed noise model.
+
+        Parameters
+        ----------
+        instrument : Any Type
+            The key for the instrument.
         """
         for sensor in self[instrument]['sensor_list']:
-            self[instrument]['uncertainty_model'].add_noise(sensor, nstokes)
+            self[instrument]['uncertainty_model'].add_noise(sensor)
 
     def make_forward_sensors(self):
         """Make a deep copy of self.
