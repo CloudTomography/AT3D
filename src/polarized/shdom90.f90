@@ -260,7 +260,7 @@
                      ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV, &
                      CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD, &
                      XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,&
-                     NBPTS)
+                     MAXPG)
 !       Computes the direct beam flux at point (XI,YI,ZI) by integrating
 !     the extinction through the property grid.  If called with
 !     INIT=1 then the property grid extinction array, solar direction
@@ -285,7 +285,7 @@
 !     3=-Y, 4=+Y).  XE,YE,ZE returns the location of the exitting ray,
 !     and path is the optical path from XI,YI,ZI to the sun.
       IMPLICIT NONE
-      INTEGER INIT, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, SIDE, NBPTS
+      INTEGER INIT, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, SIDE, MAXPG
       LOGICAL DELTAM, VALIDBEAM
       REAL    XI, YI, ZI, SOLARFLUX, SOLARMU, SOLARAZ
       REAL    DIRFLUX, UNIFZLEV, XO, YO, ZO, DIRPATH
@@ -314,9 +314,9 @@
       INTEGER NUMPHASE, NPART
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
-      REAL TEMPP(*), EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
+      REAL TEMPP(*), EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG,NPART)
       REAL LEGENP(*), EXTDIRP(*)
-      INTEGER IPHASEP(NBPTS,NPART)
+      INTEGER IPHASEP(MAXPG,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
 
