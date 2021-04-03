@@ -4392,17 +4392,14 @@ C             Compute the source function for the new points
               W = EXTINCT(IP,IPA)/EXT
             ENDIF
             LEGENT = 0.0
-            IF (PHASEINTERPWT(1,I,IPA) .EQ. 1.0) THEN
-              LEGENT(:,:,1) = LEGEN(:,:,IPHASE(1,I,IPA))
-            ELSE
-              DO Q=1,8
-                LEGENT(:,:,1) = LEGENT(:,:,1) +
-     .            LEGEN(:,:,IPHASE(Q,I,IPA))*
-     .              PHASEINTERPWT(Q,I,IPA)
-              ENDDO
-            ENDIF
-            F = LEGENT(1,ML+1,1)
+            DO Q=1,8
+              LEGENT(:,:,1) = LEGENT(:,:,1) +
+     .          LEGEN(:,:,IPHASE(Q,I,IPA))*
+     .            PHASEINTERPWT(Q,I,IPA)
+            ENDDO
+
             IF (DELTAM) THEN
+              F = LEGENT(1,ML+1,1)
               LEGENT(1,:,:) = (LEGENT(1,:,:) - F)/(1-F)
               IF (NSTLEG .GT. 1) THEN
                 LEGENT(2,:,:) = (LEGENT(2,:,:) - F)/(1-F)
