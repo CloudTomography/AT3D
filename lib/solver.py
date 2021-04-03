@@ -1352,20 +1352,20 @@ class RTE:
             output_dataset['npts'] = self._npts
             output_dataset['ncells'] = self._ncells
             output_dataset['nbcells'] = self._nbcells
-            output_dataset['xgrid'] = (['nx+1'], self._xgrid)
-            output_dataset['ygrid'] = (['ny+1'], self._ygrid)
+            output_dataset['xgrid'] = (['nx1'], self._xgrid)
+            output_dataset['ygrid'] = (['ny1'], self._ygrid)
             output_dataset['zgrid'] = (['nz_dim'], self._zgrid)
             output_dataset['gridpos'] = (['xyz', 'npts_dim'], self._gridpos[:, :self._npts])
             output_dataset['gridptr'] = (['8points', 'ncells_dim'], self._gridptr[:, :self._ncells])
             output_dataset['neighptr'] = (['6neighbours', 'ncells_dim'],
                                           self._neighptr[:, :self._ncells])
-            output_dataset['treeptr'] = (['parent/child', 'ncells_dim'],
+            output_dataset['treeptr'] = (['parent_child', 'ncells_dim'],
                                          self._treeptr[:, :self._ncells])
             output_dataset['cellflags'] = (['ncells_dim'], self._cellflags[:self._ncells])
         if save_radiances:
             output_dataset['fluxes'] = (['updown', 'npts_dim'], self._fluxes[:, :self._npts])
-            output_dataset['shptr'] = (['npts+1'], self._shptr[:self._npts+1])
-            output_dataset['rshptr'] = (['npts+2'], self._rshptr[:self._npts+2])
+            output_dataset['shptr'] = (['nptsand1'], self._shptr[:self._npts+1])
+            output_dataset['rshptr'] = (['nptsand2'], self._rshptr[:self._npts+2])
             output_dataset['source'] = (['nstokes_dim', 'sourcesize'],
                                         self._source[:, :self._shptr[self._npts]])
             output_dataset['radiance'] = (['nstokes_dim', 'radsize'],
