@@ -4401,13 +4401,13 @@ C             Compute the source function for the new points
 
             IF (DELTAM) THEN
               F = LEGENT(1,ML+1,1)
-              LEGENT(1,:,:) = (LEGENT(1,:,:) - F)/(1-F)
+              LEGENT(1,0:ML,1) = (LEGENT(1,0:ML,1) - F)/(1-F)
               IF (NSTLEG .GT. 1) THEN
-                LEGENT(2,:,:) = (LEGENT(2,:,:) - F)/(1-F)
-                LEGENT(3,:,:) = (LEGENT(3,:,:) - F)/(1-F)
-                LEGENT(4,:,:) = (LEGENT(4,:,:) - F)/(1-F)
-                LEGENT(5,:,:) = LEGENT(5,:,:)/(1-F)
-                LEGENT(6,:,:) = LEGENT(6,:,:)/(1-F)
+                LEGENT(2,0:ML,1) = (LEGENT(2,0:ML,1) - F)/(1-F)
+                LEGENT(3,0:ML,1) = (LEGENT(3,0:ML,1) - F)/(1-F)
+                LEGENT(4,0:ML,1) = (LEGENT(4,0:ML,1) - F)/(1-F)
+                LEGENT(5,0:ML,1) = LEGENT(5,0:ML,1)/(1-F)
+                LEGENT(6,0:ML,1) = LEGENT(6,0:ML,1)/(1-F)
               ENDIF
             ENDIF
             IF (NSTOKES .EQ. 1) THEN
