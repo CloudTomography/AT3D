@@ -522,9 +522,6 @@ C      ENDIF
             DO Q=1,8
               F = F + LEGEN(1,ML+1,IPHASE(Q,I,IPA))*
      .          PHASEINTERPWT(Q,I,IPA)
-              PRINT *, I,IPA,Q, IPHASE(Q,I,IPA),
-     .          LEGEN(1,ML+1,IPHASE(Q,I,IPA)),
-     .          PHASEINTERPWT(Q,I,IPA), F
             ENDDO
             EXTINCT(I,IPA) = (1.0-ALBEDO(I,IPA)*F)*EXTINCT(I,IPA)
             ALBEDO(I,IPA) = (1.0-F)*ALBEDO(I,IPA)/
@@ -612,16 +609,12 @@ C           Make layer properties for the Eddington routine
           IF (NUMPHASE .GT. 0) THEN
             LEGENT0 = 0.0
             LEGENT1 = 0.0
-            PRINT *, IZ,I
-            PRINT *, IPHASE(:,IZ,I,1)
-            PRINT *, PHASEINTERPWT(:,IZ,I,1)
             DO Q=1,8
               LEGENT0 = LEGENT0 + LEGEN(1,1,IPHASE(Q,IZ,I,:))*
      .          PHASEINTERPWT(Q,IZ,I,:)
               LEGENT1 = LEGENT1 + LEGEN(1,1,IPHASE(Q,IZ+1,I,:))*
      .          PHASEINTERPWT(Q,IZ+1,I,:)
             ENDDO
-            PRINT *, LEGENT0, LEGENT1
             IF (DELTAM) THEN
               F0 = 0.0
               F1 = 0.0
@@ -634,10 +627,8 @@ C           Make layer properties for the Eddington routine
               LEGENT0 = (LEGENT0 - F0)/(1 - F0)
               LEGENT1 = (LEGENT1 - F1)/(1 - F1)
             ENDIF
-            PRINT *, 'AFTER DELTAM', LEGENT0, LEGENT1
             G0 = SUM(ALBEDO(IZ,I,:)*EXTINCT(IZ,I,:)*LEGENT0)
             G1 = SUM(ALBEDO(IZ+1,I,:)*EXTINCT(IZ+1,I,:)*LEGENT1)
-            PRINT *, 'G', G0, G1
           ELSE
             J = NZ*(I-1)+IZ
             G0 = LEGEN(1,1,J)
