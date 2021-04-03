@@ -692,7 +692,6 @@ C             and average SH truncation.
         WRITE (6,'(1X,A,I6,A,F9.6,A,A,A)') '! Iterations: ',
      .    ITER, '     Final Criterion: ', SOLCRIT, '   [', RUNNAME,']'
       ENDIF
-      CLOSE(18)
 C          Comment in for GLE graphics output of cell structure (see routine)
 c      CALL VISUALIZE_CELLS ('cellfinal.gle', YGRID(1), 1, IPFLAG,
 c     .           NX, XGRID(NX+1)-XGRID(1), ZGRID(NZ)-ZGRID(1),
