@@ -81,7 +81,6 @@ Cf2py intent(out) :: IERR, ERRMSG
 C       Set up some things before solution loop
 C           Transfer the medium properties to the internal grid and add gas abs
       ALBMAX = 0.0
-      PRINT *, 'HELLO'
       CALL INTERP_GRID (NPTS, NSTLEG, NLEG, GRIDPOS,
      .        TEMP(:NPTS), EXTINCT(:NPTS,:), ALBEDO(:NPTS,:),
      .        LEGEN, IPHASE(:,:NPTS,:), NPX, NPY, NPZ, NUMPHASE,
@@ -4058,6 +4057,7 @@ C          Do the cells in batchs, so the newly split cells can be tested
 C            for further splitting
         ICELL1 = 1
         DO WHILE (ICELL1 .LE. NCELLS)
+          PRINT *, ICELL1, NCELLS
 C           For the current batch of cells, compute the adaptive grid
 C             splitting criterion for 3 directions for each cell.
           N = 0
@@ -4086,6 +4086,8 @@ C               for cells split during grid smoothing
 C             Go down the list from highest adaptive cell criterion on down
           OUTOFMEM0 = OUTOFMEM
           I = 1
+          PRINT *, N, CURSPLITACC
+          PRINT *,  ADAPTCRIT(:50)
           DO WHILE (ADAPTCRIT(I) .GT. CURSPLITACC .AND. .NOT. OUTOFMEM0
      .              .AND. I .LE. N)
             IF (NCELLS .GT. MAXCELLS .OR. NPTS .GT. MAXPTS .OR.
@@ -4093,6 +4095,7 @@ C             Go down the list from highest adaptive cell criterion on down
      .          SHPTR(NPTS+1) .GT. MAXSH .OR.
      .          RSHPTR(NPTS+1) .GT. MAXRAD) THEN
               OUTOFMEM0 = .TRUE.
+              PRINT *, 'WENT OUT OF MEMORY'
             ELSE
               ICELL = ADAPTIND(I)/4
               IDIR = IAND(ADAPTIND(I),3)
@@ -4311,16 +4314,10 @@ C             Interpolate the medium properties from the property grid
      .             OPTINTERPWT(:,IP,IPA))
 C             Do the Delta-M scaling of extinction and albedo for this point
 	          IF (DELTAM) THEN
-	             IF (NUMPHASE .GT. 0) THEN
-                 DO Q=1,8
-	                  F = F + LEGEN(1,ML+1,IPHASE(Q,IP,IPA))*
+               F = 0.0
+               DO Q=1,8
+                  F = F + LEGEN(1,ML+1,IPHASE(Q,IP,IPA))*
      .              PHASEINTERPWT(Q,IP,IPA)
-                 ENDDO
-	              ELSE
-	                 F = LEGEN(1,ML+1,IP)
-                ENDIF
-               DO L = 0, ML
-		              LEGEN(1,L,IP) = (LEGEN(1,L,IP) - F)/(1-F)
                ENDDO
                EXTINCT(IP,IPA) = (1.0-ALBEDO(IP,IPA)*F)
      .            *EXTINCT(IP,IPA)
@@ -4358,7 +4355,6 @@ C               Otherwise, calculate the exact direct beam from property grid
      .                  NPART, MAXPG)
             ENDIF
           ENDIF
-
 C             Interpolate the radiance
           IR1 = RSHPTR(IP1)
           IR2 = RSHPTR(IP2)
@@ -4390,22 +4386,21 @@ C             Compute the source function for the new points
           IF (ACCELFLAG)  OSHPTR(IP+1) = OSHPTR(IP)
 	          EXT = TOTAL_EXT(IP)
           DO IPA = 1, NPART
-
             IF (EXT.EQ.0.0) THEN
               W = 1.0
             ELSE
               W = EXTINCT(IP,IPA)/EXT
             ENDIF
             LEGENT = 0.0
-            DO Q=1,8
-              IF (NUMPHASE .GT. 0) THEN
-                IPH = IPHASE(Q,I,IPA)
-              ELSE
-                IPH = I
-              ENDIF
-              LEGENT(:,:,1) = LEGENT(:,:,1) +
-     .          LEGEN(:,:,IPH)*PHASEINTERPWT(Q,I,IPA)
-            ENDDO
+            IF (PHASEINTERPWT(1,I,IPA) .EQ. 1.0) THEN
+              LEGENT(:,:,1) = LEGEN(:,:,IPHASE(1,I,IPA))
+            ELSE
+              DO Q=1,8
+                LEGENT(:,:,1) = LEGENT(:,:,1) +
+     .            LEGEN(:,:,IPHASE(Q,I,IPA))*
+     .              PHASEINTERPWT(Q,I,IPA)
+              ENDDO
+            ENDIF
             F = LEGENT(1,ML+1,1)
             IF (DELTAM) THEN
               LEGENT(1,:,:) = (LEGENT(1,:,:) - F)/(1-F)
