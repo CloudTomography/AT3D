@@ -628,7 +628,6 @@ C            Find the SH truncation to use for the radiance (RSHPTR)
      .           SHPTR, RADIANCE, MAXIV+MAXIG, FIXSH, SHACC, RSHPTR,
      .           NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR,
      .           ERRMSG, PHASEINTERPWT(:,:NPTS,:), DELTAM)
-        RETURN
         IF (IERR .NE. 0) RETURN
 
 C           Integrate the source function along discrete ordinates
