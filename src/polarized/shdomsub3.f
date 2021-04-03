@@ -314,7 +314,6 @@ C          Open the file, figure out the type, and get the grid size
      .                    'Polarized phase function property file'
         STOP
       ENDIF
-      PRINT *, PROPTYPE
       READ (1,*) NPX, NPY, NPZ
       READ (1,*) DELX, DELY, (ZLEVELS, K=1,NPZ)
 
