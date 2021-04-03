@@ -161,9 +161,7 @@ class RTE:
 
         self.numerical_params = self._setup_numerical_params(numerical_params)
         self._setup_grid(self._grid)
-        warnings.warn('HELLO')
         self.surface = self._setup_surface(surface)
-        warnings.warn('HELLO2')
         # atmosphere includes temperature for thermal radiation
         self.atmosphere = self._setup_atmosphere(atmosphere)
 
@@ -181,7 +179,7 @@ class RTE:
         if (self._shacc > 0.0) & (self._shacc > 0.03*flux):
             warnings.warn("spherical_harmonics_accuracy is not a fraction but scales with fluxes."
                           " SHACC/nominal flux = {}".format(self._shacc/flux))
-        warnings.warn('{}, {}, {}, {}'.format(self._npts, self._maxig, self._ncells, self._maxic))
+
         #this is called at initialization so that warnings about the optical
         #thickness across cells in the medium can be called to warn a user
         #before they try to run RTE.solve().
@@ -1707,11 +1705,6 @@ class RTE:
         if (numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0, 1, 4, 5)):
             self._bcflag += 2
 
-        if self._adapt_grid_factor < 5.0:
-            warnings.warn(
-                "There is a bug that may cause segfaults for small values of adapt_grid_factor."
-            )
-
         return numerical_params
 
     def _setup_grid(self, grid):
@@ -1774,7 +1767,7 @@ class RTE:
                                           ibits(self._bcflag, 2, 1)) * \
                                 (self._ny + ibits(self._bcflag, 1, 1) - \
                                 ibits(self._bcflag, 3, 1))
-        warnings.warn('{}, {}'.format(self._bcflag, self._nbcells))
+
         self._xgrid, self._ygrid, self._zgrid = pyshdom.core.new_grids(
             bcflag=self._bcflag,
             gridtype=self._gridtype,
@@ -1791,7 +1784,7 @@ class RTE:
         )
 
         self._setup_memory()
-        warnings.warn('2, {}, {}'.format(self._bcflag, self._nbcells))
+
         self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
         self._treeptr, self._cellflags = pyshdom.core.init_cell_structure(
             maxig=self._maxig,
@@ -1808,7 +1801,7 @@ class RTE:
             zgrid=self._zgrid
         )
         self._nbcells = self._ncells
-        warnings.warn('3, {}, {}'.format(self._bcflag, self._nbcells))
+
     def _setup_memory(self):
         """A utility function to initialize internal memory parameters.
 
@@ -1887,9 +1880,7 @@ class RTE:
             28 + 16.5 * self._cell_to_point_ratio + self._nphi0max * self._nstokes + \
             self._num_sh_term_factor * self._nstokes * self._nlm * self._big_arrays)
         reduce = min(1.0, ((self._max_total_mb * 1024 ** 2) / 4 - self._memword) / wantmem)
-        warnings.warn("{}, {}, {}, {}".format((
-            self._max_total_mb * 1024 ** 2) / 4, self._memword, wantmem, reduce)
-            )
+
         self._adapt_grid_factor *= reduce
         if self._adapt_grid_factor < 1.0:
             raise pyshdom.exceptions.SHDOMError(
@@ -2080,13 +2071,14 @@ class RTE:
             npz=self._pa.npz,
             srctype=self._srctype,
             npts=self._npts,
-            interpmethod=self._interpmethod)
+            interpmethod=self._interpmethod,
+            )
         pyshdom.checks.check_errcode(ierr, errmsg)
 
         #calculate cell averaged extinctions so that warnings can be raised
         #about optical thickness of cells. High optical thickness across a cell
         #leads to lower accuracy for SHDOM.
-        reshaped_ext = self._total_ext[:self._nbpts].reshape(self._nx, self._ny, self._nz)
+        reshaped_ext = self._total_ext[:self._nbpts].reshape(self._nx1, self._ny1, self._nz)
         cell_averaged_extinct = (reshaped_ext[1:, 1:, 1:] + reshaped_ext[1:, 1:, :-1] +   \
                                  reshaped_ext[1:, :-1, 1:] + reshaped_ext[1:, :-1, :-1] + \
                                  reshaped_ext[:-1, 1:, 1:] + reshaped_ext[:-1, 1:, :-1] + \
@@ -2168,7 +2160,8 @@ class RTE:
         self._dirflux = np.zeros((self._maxig), dtype=np.float32, order='F')
         self._work1 = np.zeros((8*self._maxig), dtype=np.int32, order='F')
         self._work = np.zeros((self._maxido*self._nstokes), dtype=np.float32, order='F')
-        self._work2 = np.zeros((self._maxig*self._nstokes), dtype=np.float32, order='F')
+        self._work2_size = max((self._maxig*self._nstokes, self._maxic))
+        self._work2 = np.zeros((self._work2_size), dtype=np.float32, order='F')
         self._bcrad = np.zeros((self._nstokes, self._maxbcrad), dtype=np.float32, order='F')
         self._fluxes = np.zeros((2, self._maxig), dtype=np.float32, order='F')
 
@@ -2206,6 +2199,8 @@ class RTE:
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
         self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg = pyshdom.core.init_solution(
             work=self._work,
+            work2_size=self._work2_size,
+            maxpg=self._maxpg,
             ndelsource=self._ndelsource,
             work1=self._work1,
             work2=self._work2,

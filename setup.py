@@ -126,7 +126,8 @@ F2PY_CORE_API = [
     'output_cell_split',
     'compute_radiance_grid',
     'compute_source_grid',
-    'traverse_grid'
+    'traverse_grid',
+    'read_property_size'
 ]
 
 def _run_command(cmd):

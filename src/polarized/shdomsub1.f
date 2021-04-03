@@ -73,12 +73,12 @@ Cf2py intent(in) :: INTERPMETHOD
       INTEGER IERR
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
-      PRINT *, 'HELLO TRANSFER_PA_TO_GRID'
+
       IERR = 0
 C       Set up some things before solution loop
 C           Transfer the medium properties to the internal grid and add gas abs
       ALBMAX = 0.0
-      PRINT *, 'HELLO INTERP_GRID'
+
       CALL INTERP_GRID (NPTS, NSTLEG, NLEG, GRIDPOS,
      .        TEMP(:NPTS), EXTINCT(:NPTS,:), ALBEDO(:NPTS,:),
      .        LEGEN, IPHASE(:NPTS,:), NPX, NPY, NPZ, NUMPHASE,
@@ -90,7 +90,7 @@ C           Transfer the medium properties to the internal grid and add gas abs
 
 C         If Delta-M then scale the extinction, albedo, and Legendre terms.
 C         Put the Planck blackbody source in PLANCK.
-      PRINT *, 'HELLO PREPARE_PROP'
+
       CALL PREPARE_PROP (ML, MM, NSTLEG, NLEG, NPTS, DELTAM, NUMPHASE,
      .        SRCTYPE, UNITS, WAVENO, WAVELEN, ALBMAX,
      .        EXTINCT(:NPTS,:),  ALBEDO(:NPTS,:), LEGEN, TEMP(:NPTS),
@@ -126,7 +126,8 @@ C       Get the maximum single scattering albedo over all processors
      .             JNORM, NBCELLS,FFTFLAG, CMU1, CMU2, WTMU, CPHI1,
      .             CPHI2, WPHISAVE, MAXSFCPARS, WORK, WORK1, WORK2,
      .             NSTLEG, NSTOKES, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
-     .             INRADFLAG,NDELSOURCE, IERR, ERRMSG, MAXPG)
+     .             INRADFLAG,NDELSOURCE, IERR, ERRMSG, MAXPG,
+     .             WORK2_SIZE)
 Cf2py threadsafe
 C       Initialize the SHDOM solution procedure.
       IMPLICIT NONE
@@ -188,12 +189,14 @@ Cf2py intent(in) :: IPHASEP
 Cf2py intent(in) :: NZCKD
       REAL ZCKD(*), GASABS(*)
 Cf2py intent(in) :: ZCKD, GASABS
+      INTEGER WORK2_SIZE
+Cf2py intent(in) :: WORK2_SIZE
 
 
       INTEGER WORK1(8*MAXIG)
 Cf2py intent(in,out) :: WORK1
       REAL    BCRAD(NSTOKES,MAXBCRAD), WORK(MAXIDO*NSTOKES)
-      REAL    WORK2(MAXIG*NSTOKES)
+      REAL    WORK2(WORK2_SIZE)
 Cf2py intent(in,out) :: BCRAD, WORK, WORK2
       REAL    FLUXES(2,MAXIG)
 Cf2py intent(in,out) :: FLUXES
@@ -217,7 +220,7 @@ Cf2py intent(in) NDELSOURCE
 Cf2py intent(in,out) :: SOURCE, DELSOURCE, RADIANCE, DIRFLUX
       DOUBLE PRECISION UNIFORMZLEV
 Cf2py intent(out) ::  UNIFORMZLEV
-      REAL    YLMSUN(NSTLEG,NLM), EXTDIRP(NBPTS)
+      REAL    YLMSUN(NSTLEG,NLM), EXTDIRP(MAXPG)
 Cf2py intent(out) :: EXTDIRP, YLMSUN
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
 Cf2py intent(out) :: CX, CY, CZ, CXINV, CYINV, CZINV
@@ -245,7 +248,6 @@ Cf2py intent(out) :: IERR, ERRMSG
       IERR = 0
 C       Set up some things before solution loop
 C    Compute the solar transmission in DIRFLUX.
-      PRINT *, 'HELLO INIT_SOLUTION'
       IF (SRCTYPE .NE. 'T') THEN
         IF (BTEST(BCFLAG,2) .OR. BTEST(BCFLAG,3)) THEN
           CALL MAKE_DIRECT_PAR (1,NPTS, BCFLAG, IPFLAG, DELTAM,ML,NLEG,
@@ -258,7 +260,6 @@ C     .      1.0, 1.0, 0.0, DIRFLUX(:NPTS), TOTAL_EXT(:NPTS), NX,NY,NZ,
 C     .      NCELLS, NPTS, CELLFLAGS(:NCELLS), XGRID, YGRID, ZGRID,
 C     .      GRIDPOS(:,:NPTS),
 C     .      GRIDPTR(:,:NCELLS), NEIGHPTR(:,:NCELLS), TREEPTR(:,:NCELLS))
-          PRINT *, 'HELLO MAKE_DIRECT'
           CALL MAKE_DIRECT (NPTS, BCFLAG, IPFLAG, DELTAM,
      .             ML, NSTLEG, NLEG, SOLARFLUX, SOLARMU,
      .             SOLARAZ,  GRIDPOS, DIRFLUX,
@@ -291,7 +292,6 @@ C           Make the Ylm transform coefficients
 C        Initialize the radiance on the base grid using Eddington
 C        two-stream plane-parallel
       IF (INRADFLAG) THEN
-        PRINT *, 'HELLO INIT_RADIANCE'
         CALL INIT_RADIANCE(NSTOKES, NX1*NY1, NZ, NSTLEG, NLEG,
      .    RSHPTR, ZGRID, EXTINCT(:NPTS,:), ALBEDO(:NPTS,:), LEGEN,
      .    TEMP, NUMPHASE, IPHASE(:NPTS,:), SRCTYPE, SOLARFLUX, SOLARMU,
@@ -299,10 +299,8 @@ C        two-stream plane-parallel
      .    NPART, TOTAL_EXT(:NPTS))
 C        Interpolate the radiance on the non-base grid points from the
 C          base grid points
-        PRINT *, 'HELLO INTERP_RADIANCE'
          CALL INTERP_RADIANCE (NSTOKES, NBPTS, NPTS, RSHPTR, RADIANCE,
      .             NBCELLS, NCELLS, TREEPTR, GRIDPTR, GRIDPOS)
-        PRINT *, 'HELLO COMPUTE_SOURCE'
 C           Initialize the source function from the radiance field
           CALL COMPUTE_SOURCE (NSTOKES, ML, MM, NLM,
      .         NSTLEG, NLEG, NUMPHASE, NPTS,
@@ -392,7 +390,7 @@ C           inequality holds.
      .               DELYD, ALBMAX, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .               FFTFLAG, CMU1, CMU2, WTMU, CPHI1, CPHI2, WPHISAVE,
      .               WORK, WORK1, WORK2, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
-     .               ITERFIXSH, INTERPMETHOD, IERR, ERRMSG)
+     .               ITERFIXSH, INTERPMETHOD, IERR, ERRMSG, MAXPG)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -436,18 +434,18 @@ Cf2py intent(in) :: VERBOSE
 Cf2py intent(in) :: RUNNAME
       REAL    YLMSUN(NSTLEG,NLM)
 Cf2py intent(in) :: YLMSUN
-      INTEGER NPX, NPY, NPZ, NPART, NBPTS
-Cf2py intent(in) :: NPX, NPY, NPZ, NPART, NBPTS
+      INTEGER NPX, NPY, NPZ, NPART, NBPTS, MAXPG
+Cf2py intent(in) :: NPX, NPY, NPZ, NPART, NBPTS, MAXPG
       REAL DELX, DELY, XSTART, YSTART
 Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
 Cf2py intent(in) :: ZLEVELS
-      REAL TEMPP(*), EXTINCTP(NBPTS,NPART)
-      REAL ALBEDOP(NBPTS,NPART)
+      REAL TEMPP(*), EXTINCTP(MAXPG,NPART)
+      REAL ALBEDOP(MAXPG,NPART)
 Cf2py intent(in) :: TEMPP, EXTINCTP, ALBEDOP
       REAL LEGENP(*)
 Cf2py intent(in) :: LEGENP
-      INTEGER IPHASEP(NBPTS,NPART)
+      INTEGER IPHASEP(MAXPG,NPART)
 Cf2py intent(in) :: IPHASEP
       INTEGER NZCKD
 Cf2py intent(in) :: NZCKD
@@ -569,9 +567,6 @@ C           is down to the desired level.
      .        .OR. (SPLITCRIT .GT. SPLITACC .AND.
      .              CURSPLITACC .GT. SPLITACC .AND. .NOT. OUTOFMEM)) )
         ITER = ITER + 1
-        PRINT *, ITER
-        PRINT *, MAXIV, MAXVAL(RSHPTR(:NPTS+2)), MAXVAL(SHPTR(:NPTS+1))
-        PRINT *, MAXVAL(GRIDPTR(:,:NPTS)), MAXIG
 C           Don't do the adaptive grid cell splitting stuff unless wanted
         IF (SPLITACC .GT. 0.0) THEN
 C             If in the right solution range then try to split some cells, and
@@ -587,6 +582,7 @@ C           Make sure all processors are going to split cells if any want to
           CURSPLITACC = MIN(CURSPLITACC, MAX(SPLITACC,
      .                 SPLITACC*(AVGSOLCRIT/(3.0*ENDADAPTSOL))**BETA ))
           IF (SOLCRIT .LE. ENDADAPTSOL) CURSPLITACC = SPLITACC
+C          OPEN (UNIT=18, FILE='neighptr.out', STATUS='UNKNOWN')
           IF (SPLITTESTING) THEN
             CALL SPLIT_GRID (MAXIG, MAXIC, MAXIV, MAXIDO, NPHI0MAX,
      .             DOSPLIT,OUTOFMEM, CURSPLITACC, SPLITCRIT,
@@ -605,7 +601,7 @@ C           Make sure all processors are going to split cells if any want to
      .             ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV,
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
-     .             NBPTS, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG)
+     .             MAXPG, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG)
             IF (IERR .NE. 0) RETURN
             IF (SOLCRIT .GT. STARTADAPTSOL)  STARTSPLITACC = SPLITCRIT
           ENDIF
@@ -613,7 +609,6 @@ C           Find the maximum splitting criterion over all processors
           CALL TOTAL_SPLITCRIT_MAX (SPLITCRIT)
           IF (SOLCRIT .LE. ENDADAPTSOL)  SPLITTESTING = .FALSE.
         ENDIF
-        PRINT *, 'HELLO RADIANCE_TRUNCATION'
 C            Find the SH truncation to use for the radiance (RSHPTR)
         CALL RADIANCE_TRUNCATION (HIGHORDERRAD,
      .           NSTOKES, ML, MM, NSTLEG, NLEG, NUMPHASE,
@@ -628,7 +623,6 @@ C             to compute the radiance field.  The input source function
 C             and output radiance are in spherical harmonic expansions,
 C             and the SH/DO transforms are done during the loop over
 C             discrete ordinates.
-        PRINT *, 'HELLO PATH_INTEGRATION'
         CALL PATH_INTEGRATION (NX, NY, NZ, NSTOKES, NSTLEG, ML,MM, NLM,
      .           NMU, NPHI0MAX, NPHI0, NANG, BCFLAG, IPFLAG,
      .           NPTS, NCELLS, XGRID, YGRID, ZGRID, GRIDPOS,
@@ -651,7 +645,6 @@ C              the solution criterion, and dot products for acceleration.
         IF (SOLCRIT .LT. ENDADAPTSOL .OR. ITER .GT. ITERFIXSH) THEN
           FIXSH = .TRUE.
         ENDIF
-        PRINT *, 'HELLO COMPUTE_SOURCE'
         CALL COMPUTE_SOURCE (NSTOKES, ML, MM, NLM,
      .         NSTLEG, NLEG, NUMPHASE, NPTS,
      .         FIXSH, SRCTYPE, SOLARMU, YLMSUN, ALBEDO(:NPTS,:), LEGEN,
@@ -687,7 +680,7 @@ C             and average SH truncation.
         WRITE (6,'(1X,A,I6,A,F9.6,A,A,A)') '! Iterations: ',
      .    ITER, '     Final Criterion: ', SOLCRIT, '   [', RUNNAME,']'
       ENDIF
-
+      CLOSE(18)
 C          Comment in for GLE graphics output of cell structure (see routine)
 c      CALL VISUALIZE_CELLS ('cellfinal.gle', YGRID(1), 1, IPFLAG,
 c     .           NX, XGRID(NX+1)-XGRID(1), ZGRID(NZ)-ZGRID(1),
@@ -1006,7 +999,6 @@ C             Make the source difference vector
         ENDDO
         OSHPTR(NPTS+1) = SHPTR(NPTS+1)
       ENDIF
-
 
 C         Compute the source function in the temporary array.
       IS = 0
@@ -2763,9 +2755,6 @@ C               If going to smaller face then use next face (more accurate)
           I2 = GRIDPTR(GRIDFACE(2,KFACE),IC)
           I3 = GRIDPTR(GRIDFACE(3,KFACE),IC)
           I4 = GRIDPTR(GRIDFACE(4,KFACE),IC)
-          IF (IC.EQ. 13) THEN
-            PRINT *, I1,I2,I3,I4
-          ENDIF
 C             Compute the face interpolation factors
           IF (JFACE .EQ. 1) THEN
             U = (ZE-GRIDPOS(3,I1))/(GRIDPOS(3,I3)-GRIDPOS(3,I1))
@@ -3220,7 +3209,7 @@ C             to stop the tracing and add in the interpolated face radiance.
               RAD = RAD + TRANSMIT*RAD0
             ELSE
               print *, 'BACK_INT_GRID3D: INEXTCELL=0: ', xe,ye,ze,icell
-              print *, iz,joct,mu,phi
+              print *, iz,joct,mu,phi, KFACE, INEXTCELL, IPT
               print '(i7,4(1x,f7.4))', i1,GRIDRAD(I1),
      .                  gridpos(1,i1),gridpos(2,i1),gridpos(3,i1)
               print '(i7,4(1x,f7.4))', i2,GRIDRAD(I2),
@@ -3934,7 +3923,7 @@ C             do first and put the second child on the stack.
      .             ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV,
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
-     .             NBPTS, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG)
+     .             MAXPG, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG)
 C       Splits the cells that have a cell dividing criterion greater than
 C     CURSPLITACC if DOSPLIT is true.  The current splitting criterion
 C     achieved is returned in SPLITCRIT.  If we are at the end of the
@@ -3944,7 +3933,7 @@ C     by MAXIG, MAXIC, MAXIV, MAXIDO) then the OUTOFMEM flag is returned true.
       INTEGER MAXIG, MAXIC, MAXIV, MAXIDO, NPHI0MAX
       INTEGER NPTS, NCELLS, BCFLAG, IPFLAG
       INTEGER NX, NY, NSTOKES, ML, MM, NLM, NSTLEG, NLEG
-      INTEGER NUMPHASE, NPART, NBPTS
+      INTEGER NUMPHASE, NPART, MAXPG
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*), ADAPTIND(*)
       INTEGER*2 CELLFLAGS(*)
@@ -3969,9 +3958,9 @@ C     by MAXIG, MAXIC, MAXIV, MAXIDO) then the OUTOFMEM flag is returned true.
       INTEGER NPX, NPY, NPZ
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
-      REAL TEMPP(*), EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
+      REAL TEMPP(*), EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG,NPART)
       REAL LEGENP(*), EXTDIRP(*)
-      INTEGER IPHASEP(NBPTS,NPART)
+      INTEGER IPHASEP(MAXPG,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
       DOUBLE PRECISION EXTMIN, SCATMIN
@@ -3980,7 +3969,7 @@ C     by MAXIG, MAXIC, MAXIV, MAXIDO) then the OUTOFMEM flag is returned true.
       INTEGER IPDIRECT, DI, DJ, DK
       DOUBLE PRECISION EPSS, EPSZ, XDOMAIN, YDOMAIN
       DOUBLE PRECISION UNIFORMZLEV, DELXD,DELYD
-      PRINT *, 'HELLO SPLIT_GRID', NCELLS, NPTS, DOSPLIT
+
       IF (DOSPLIT) THEN
         OLDNPTS = NPTS
 C          Do the cells in batchs, so the newly split cells can be tested
@@ -4001,7 +3990,6 @@ C               If this is a end node cell then compute adaptive criterion
             ENDIF
           ENDDO
           ICELL1 = NCELLS + 1
-
 C             Sort the adaptive criterion in decreasing order
           CALL SSORT (ADAPTCRIT, ADAPTIND, N, -2)
 
@@ -4015,7 +4003,6 @@ C               for cells split during grid smoothing
           MAXRAD = MAXIV+MAXIG-FRAC*(MAXIV+MAXIG-RSHPTR(NPTS+1))-4*NLM
 C             Go down the list from highest adaptive cell criterion on down
           OUTOFMEM0 = OUTOFMEM
-          PRINT *, OUTOFMEM, OUTOFMEM0
           I = 1
           DO WHILE (ADAPTCRIT(I) .GT. CURSPLITACC .AND. .NOT. OUTOFMEM0
      .              .AND. I .LE. N)
@@ -4044,7 +4031,7 @@ C                 Interpolate the medium properties, radiance, and source
      .            ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ,
      .            CXINV, CYINV,CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .            DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .            NPART,MAXIG, NBPTS, TOTAL_EXT, INTERPMETHOD, IERR,
+     .            NPART,MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD, IERR,
      .            ERRMSG)
               IF (IERR .NE. 0) RETURN
             ENDIF
@@ -4056,7 +4043,6 @@ C                 Interpolate the medium properties, radiance, and source
           MAXWORK = MAXIDO - 4*NPHI0MAX
           MAXSH = MAXIV - 4*NLM
           MAXRAD = MAXIV+MAXIG - 4*NLM
-
 C             Split some more cells to make the adaptive grid "smoother"
           DO WHILE (.NOT. OUTOFMEM .AND. I .LE. N)
             IF (NCELLS .GT. MAXCELLS .OR. NPTS .GT. MAXPTS .OR.
@@ -4090,7 +4076,7 @@ C                   Interpolate the medium properties, radiance, and source
      .               ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ,
      .               CXINV, CYINV,CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .               DELYD,XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .               NPART,MAXIG, NBPTS, TOTAL_EXT, INTERPMETHOD,
+     .               NPART,MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD,
      .               IERR, ERRMSG)
                 IF (IERR .NE. 0) RETURN
               ENDIF
@@ -4105,8 +4091,7 @@ C                   Interpolate the medium properties, radiance, and source
      .     'Further cell splitting requires larger array allocations:',
      .     '  Ncells=',NCELLS, '  Npnts=',NPTS
         ENDIF
-        PRINT *, GRIDPTR(:,12)
-        PRINT *, GRIDPTR(:,13)
+
 C        If in parallel mode, calculate all the direct beam fluxes at once
         IF (SRCTYPE .NE. 'T' .AND.
      .      (BTEST(BCFLAG,2) .OR. BTEST(BCFLAG,3))) THEN
@@ -4147,7 +4132,7 @@ C         Find the max adaptive cell criterion after the cell divisions
      .       ZCKD, GASABS, EXTMIN, SCATMIN, CX, CY, CZ, CXINV,
      .       CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .       XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
-     .       MAXIG, NBPTS, TOTAL_EXT, INTERPMETHOD,IERR,ERRMSG)
+     .       MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD,IERR,ERRMSG)
 C       Interpolates the medium properties, radiance, and source function for
 C     new grid points (specified in NEWPOINTS).  The medium properties are
 C     interpolated from the property grid, since interpolating from the
@@ -4160,7 +4145,7 @@ C     function for the new points.
       IMPLICIT NONE
       INTEGER NEWPOINTS(3,4), NPTS, NPART
       INTEGER NSTOKES, ML, MM, NLM, NSTLEG, NLEG, NUMPHASE
-      INTEGER MAXIG, NBPTS, BCFLAG, IPFLAG
+      INTEGER MAXIG, MAXPG, BCFLAG, IPFLAG
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)
       INTEGER IPHASE(MAXIG,NPART)
       LOGICAL DELTAM, ACCELFLAG

@@ -291,10 +291,11 @@ C     phase function formats, only the header is read, while for the
 C     standard format, the whole file must be read to determine MAXLEG.
       IMPLICIT NONE
       INTEGER NSTLEG, NPX, NPY, NPZ
-Cf2py intent(out) NSTLEG, NPX, NPY, NPZ
+Cf2py intent(out) NPX, NPY, NPZ
       INTEGER NUMPHASE
       INTEGER NLEG, MAXLEG, MAXPGL
 Cf2py intent(out) NUMPHASE, MAXLEG, MAXPGL
+Cf2py intent(in, out) NLEG, NSTLEG
       REAL    DELX, DELY
 Cf2py intent(out) DELX, DELY
       CHARACTER PROPFILE*80
@@ -313,6 +314,7 @@ C          Open the file, figure out the type, and get the grid size
      .                    'Polarized phase function property file'
         STOP
       ENDIF
+      PRINT *, PROPTYPE
       READ (1,*) NPX, NPY, NPZ
       READ (1,*) DELX, DELY, (ZLEVELS, K=1,NPZ)
 
@@ -493,8 +495,10 @@ C             If delta-M then find the largest number of Legendre terms
         ENDIF
         N = NPX*NPY*NPZ
         IF (N .GT. MAXPG)  STOP 'READ_PROPERTIES: MAXPG exceeded'
-        IF (NUMPHASE*(NLEG+1)*NSTLEG .GT. MAXPGL)
-     .    STOP 'READ_PROPERTIES: MAXPGL exceeded'
+        IF (NUMPHASE*(NLEG+1)*NSTLEG .GT. MAXPGL) THEN
+          PRINT *, NUMPHASE, NLEG+1, NSTLEG, MAXPGL
+          STOP 'READ_PROPERTIES: MAXPGL exceeded'
+        ENDIF
         REWIND (1)
         READ (1,*)
         READ (1,*) NPX, NPY, NPZ
