@@ -18,7 +18,7 @@
                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
                      ALBEDOP, LEGENP, IPHASEP, NZCKD, &
                      ZCKD, GASABS, EXTMIN, SCATMIN, INTERPMETHOD, &
-                     IERR, ERRMSG)
+                     IERR, ERRMSG, PHASEINTERPWT, OPTINTERPWT)
 !      Trilinearly interpolates the quantities on the input property
 !     grid at the single point (X,Y,Z) to get the output TEMP,EXTINCT,
 !     ALBEDO, and LEGEN or IPHASE.  Interpolation is done on the
@@ -29,8 +29,9 @@
 !     If INIT=.TRUE. then transfers the tabulated phase functions.
       IMPLICIT NONE
       INTEGER NSTLEG, NLEG
-      INTEGER IPHASE
+      INTEGER IPHASE(8)
       LOGICAL INIT
+      REAL PHASEINTERPWT(8), OPTINTERPWT(8)
       REAL    X, Y, Z,  TEMP, EXTINCT, ALBEDO, LEGEN(NSTLEG,0:NLEG,*)
       INTEGER IX, IXP, IY, IYP, IZ, L, IL, IM, IU, J
       INTEGER I1, I2, I3, I4, I5, I6, I7, I8, I
@@ -143,83 +144,147 @@
         ALBEDO = SCATTER/EXTMIN
       ENDIF
 
-      ! IF (INTERPMETHOD(1:1) .EQ. 'N' .AND. &
-      !     SCATTER .EQ. 0.0) THEN
-      !   IF (ABS(F1-1) .LT.0.001) THEN
-      !     ALBEDO = ALBEDOP(I1)
-      !   ELSEIF (ABS(F2-1) .LT. 0.001) THEN
-      !     ALBEDO = ALBEDOP(I2)
-      !   ELSEIF (ABS(F3-1) .LT. 0.001) THEN
-      !     ALBEDO = ALBEDOP(I3)
-      !   ELSEIF (ABS(F4-1) .LT. 0.001) THEN
-      !     ALBEDO = ALBEDOP(I4)
-      !   ELSEIF (ABS(F5-1) .LT. 0.001) THEN
-      !     ALBEDO = ALBEDOP(I5)
-      !   ELSEIF (ABS(F6-1) .LT. 0.001) THEN
-      !     ALBEDO = ALBEDOP(I6)
-      !   ELSEIF (ABS(F7-1) .LT. 0.001) THEN
-      !     ALBEDO = ALBEDOP(I7)
-      !   ELSEIF (ABS(F8-1) .LT. 0.001) THEN
-      !     ALBEDO = ALBEDOP(I8)
-      !   ENDIF
-      ! ENDIF
+      OPTINTERPWT(1) = F1
+      OPTINTERPWT(2) = F2
+      OPTINTERPWT(3) = F3
+      OPTINTERPWT(4) = F4
+      OPTINTERPWT(5) = F5
+      OPTINTERPWT(6) = F6
+      OPTINTERPWT(7) = F7
+      OPTINTERPWT(8) = F8
 
-!         For tabulated phase functions pick the one we are on top of
-!         or the one with the most scattering weight.
-      IF (NUMPHASE .GT. 0) THEN
+      IPHASE(1) = IPHASEP(I1)
+      IPHASE(2) = IPHASEP(I2)
+      IPHASE(3) = IPHASEP(I3)
+      IPHASE(4) = IPHASEP(I4)
+      IPHASE(5) = IPHASEP(I5)
+      IPHASE(6) = IPHASEP(I6)
+      IPHASE(7) = IPHASEP(I7)
+      IPHASE(8) = IPHASEP(I8)
+
+      IF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+        IF (SCATTER .GE. SCATMIN) THEN
+          PHASEINTERPWT(1) = SCAT1/SCATTER
+          PHASEINTERPWT(2) = SCAT2/SCATTER
+          PHASEINTERPWT(3) = SCAT3/SCATTER
+          PHASEINTERPWT(4) = SCAT4/SCATTER
+          PHASEINTERPWT(5) = SCAT5/SCATTER
+          PHASEINTERPWT(6) = SCAT6/SCATTER
+          PHASEINTERPWT(7) = SCAT7/SCATTER
+          PHASEINTERPWT(8) = SCAT8/SCATTER
+        ELSE
+          PHASEINTERPWT(1) = SCAT1/SCATMIN
+          PHASEINTERPWT(2) = SCAT2/SCATMIN
+          PHASEINTERPWT(3) = SCAT3/SCATMIN
+          PHASEINTERPWT(4) = SCAT4/SCATMIN
+          PHASEINTERPWT(5) = SCAT5/SCATMIN
+          PHASEINTERPWT(6) = SCAT6/SCATMIN
+          PHASEINTERPWT(7) = SCAT7/SCATMIN
+          PHASEINTERPWT(8) = SCAT8/SCATMIN
+        ENDIF
+      ELSEIF (INTERPMETHOD(2:2) .EQ. 'O') THEN
         MAXSCAT = -1.0
         IF (SCAT1 .GT. MAXSCAT .OR. ABS(F1-1) .LT. 0.001) THEN
           MAXSCAT = SCAT1
-          IPHASE = IPHASEP(I1)
+          PHASEINTERPWT(:) = 0.0
+          PHASEINTERPWT(1) = 1.0
         ENDIF
         IF (SCAT2 .GT. MAXSCAT .OR. ABS(F2-1) .LT. 0.001) THEN
           MAXSCAT = SCAT2
-          IPHASE = IPHASEP(I2)
+          PHASEINTERPWT(:) = 0.0
+          PHASEINTERPWT(2) = 1.0
         ENDIF
         IF (SCAT3 .GT. MAXSCAT .OR. ABS(F3-1) .LT. 0.001) THEN
           MAXSCAT = SCAT3
-          IPHASE = IPHASEP(I3)
+          PHASEINTERPWT(:) = 0.0
+          PHASEINTERPWT(3) = 1.0
         ENDIF
         IF (SCAT4 .GT. MAXSCAT .OR. ABS(F4-1) .LT. 0.001) THEN
           MAXSCAT = SCAT4
-          IPHASE = IPHASEP(I4)
+          PHASEINTERPWT(:) = 0.0
+          PHASEINTERPWT(4) = 1.0
         ENDIF
         IF (SCAT5 .GT. MAXSCAT .OR. ABS(F5-1) .LT. 0.001) THEN
           MAXSCAT = SCAT5
-          IPHASE = IPHASEP(I5)
+          PHASEINTERPWT(:) = 0.0
+          PHASEINTERPWT(5) = 1.0
         ENDIF
         IF (SCAT6 .GT. MAXSCAT .OR. ABS(F6-1) .LT. 0.001) THEN
           MAXSCAT = SCAT6
-          IPHASE = IPHASEP(I6)
+          PHASEINTERPWT(:) = 0.0
+          PHASEINTERPWT(6) = 1.0
         ENDIF
         IF (SCAT7 .GT. MAXSCAT .OR. ABS(F7-1) .LT. 0.001) THEN
           MAXSCAT = SCAT7
-          IPHASE = IPHASEP(I7)
+          PHASEINTERPWT(:) = 0.0
+          PHASEINTERPWT(7) = 1.0
         ENDIF
         IF (SCAT8 .GT. MAXSCAT .OR. ABS(F8-1) .LT. 0.001) THEN
           MAXSCAT = SCAT8
-          IPHASE = IPHASEP(I8)
+          PHASEINTERPWT(:) = 0.0
+          PHASEINTERPWT(8) = 1.0
         ENDIF
-      ELSE
-!        Standard property file format: unpolarized
-        LEGEN(1,0,1) = 1.0
-        DO L = 1, NLEG
-          LEGEN(1,L,1) = SCAT1*LEGENP(L+(NLEG+1)*(I1-1)) &
-                    + SCAT2*LEGENP(L+(NLEG+1)*(I2-1)) &
-                    + SCAT3*LEGENP(L+(NLEG+1)*(I3-1)) &
-                    + SCAT4*LEGENP(L+(NLEG+1)*(I4-1)) &
-                    + SCAT5*LEGENP(L+(NLEG+1)*(I5-1)) &
-                    + SCAT6*LEGENP(L+(NLEG+1)*(I6-1)) &
-                    + SCAT7*LEGENP(L+(NLEG+1)*(I7-1)) &
-                    + SCAT8*LEGENP(L+(NLEG+1)*(I8-1))
-          IF (SCATTER .GT. SCATMIN) THEN
-            LEGEN(1,L,1) = LEGEN(1,L,1)/SCATTER
-          ELSE
-            LEGEN(1,L,1) = LEGEN(1,L,1)/SCATMIN
-          ENDIF
-          LEGEN(1,L,1) = LEGEN(1,L,1)/(2*L+1)
-        ENDDO
       ENDIF
+
+!     SHDOM's interpolation scheme below, the tabulated version is covered
+!     by the latter case above.
+!         For tabulated phase functions pick the one we are on top of
+!         or the one with the most scattering weight.
+!       IF (NUMPHASE .GT. 0) THEN
+!         MAXSCAT = -1.0
+!         IF (SCAT1 .GT. MAXSCAT .OR. ABS(F1-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT1
+!           IPHASE = IPHASEP(I1)
+!         ENDIF
+!         IF (SCAT2 .GT. MAXSCAT .OR. ABS(F2-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT2
+!           IPHASE = IPHASEP(I2)
+!         ENDIF
+!         IF (SCAT3 .GT. MAXSCAT .OR. ABS(F3-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT3
+!           IPHASE = IPHASEP(I3)
+!         ENDIF
+!         IF (SCAT4 .GT. MAXSCAT .OR. ABS(F4-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT4
+!           IPHASE = IPHASEP(I4)
+!         ENDIF
+!         IF (SCAT5 .GT. MAXSCAT .OR. ABS(F5-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT5
+!           IPHASE = IPHASEP(I5)
+!         ENDIF
+!         IF (SCAT6 .GT. MAXSCAT .OR. ABS(F6-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT6
+!           IPHASE = IPHASEP(I6)
+!         ENDIF
+!         IF (SCAT7 .GT. MAXSCAT .OR. ABS(F7-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT7
+!           IPHASE = IPHASEP(I7)
+!         ENDIF
+!         IF (SCAT8 .GT. MAXSCAT .OR. ABS(F8-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT8
+!           IPHASE = IPHASEP(I8)
+!         ENDIF
+!       ELSE
+! !        Standard property file format: unpolarized
+!         LEGEN(1,0,1) = 1.0
+!         DO L = 1, NLEG
+!           LEGEN(1,L,1) = SCAT1*LEGENP(L+(NLEG+1)*(I1-1)) &
+!                     + SCAT2*LEGENP(L+(NLEG+1)*(I2-1)) &
+!                     + SCAT3*LEGENP(L+(NLEG+1)*(I3-1)) &
+!                     + SCAT4*LEGENP(L+(NLEG+1)*(I4-1)) &
+!                     + SCAT5*LEGENP(L+(NLEG+1)*(I5-1)) &
+!                     + SCAT6*LEGENP(L+(NLEG+1)*(I6-1)) &
+!                     + SCAT7*LEGENP(L+(NLEG+1)*(I7-1)) &
+!                     + SCAT8*LEGENP(L+(NLEG+1)*(I8-1))
+!           IF (SCATTER .GT. SCATMIN) THEN
+!             LEGEN(1,L,1) = LEGEN(1,L,1)/SCATTER
+!           ELSE
+!             LEGEN(1,L,1) = LEGEN(1,L,1)/SCATMIN
+!           ENDIF
+!           LEGEN(1,L,1) = LEGEN(1,L,1)/(2*L+1)
+!         ENDDO
+!       ENDIF
+
 
 !         Add in the gaseous absorption to extinction and albedo
       IF (NZCKD .GT. 0) THEN

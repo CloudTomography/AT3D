@@ -302,8 +302,11 @@ class RTE:
         self._radiance, self._fluxes, self._dirflux, self._uniformzlev, \
         self._pa.extdirp, self._oldnpts, self._total_ext, self._deljdot, \
         self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
-        self._work2, ierr, errmsg = pyshdom.core.solution_iterations(
+        self._work2, ierr, errmsg, self._phaseinterpwt, self._optinterpwt \
+         = pyshdom.core.solution_iterations(
             verbose=verbose,
+            phaseinterpwt=self._phaseinterpwt,
+            optinterpwt=self._optinterpwt,
             interpmethod=self._interpmethod,
             iterfixsh=self._iterfixsh,
             iter=self._iters,
@@ -1053,9 +1056,9 @@ class RTE:
         self._num_derivatives = np.array(num_derivatives, dtype=np.int32)
         unknown_scatterer_indices = []
 
-        dext = np.zeros(shape=[self._nbpts, num_derivatives], dtype=np.float32)
-        dalb = np.zeros(shape=[self._nbpts, num_derivatives], dtype=np.float32)
-        diphase = np.zeros(shape=[self._nbpts, num_derivatives], dtype=np.int32)
+        dext = np.zeros(shape=[self._maxpg, num_derivatives], dtype=np.float32)
+        dalb = np.zeros(shape=[self._maxpg, num_derivatives], dtype=np.float32)
+        diphase = np.zeros(shape=[self._maxpg, num_derivatives], dtype=np.int32)
 
         #one loop through to find max_legendre and unkonwn_scatterer_indices
         max_legendre = []
@@ -1184,7 +1187,7 @@ class RTE:
             npy=self._pa.npy,
             npz=self._pa.npz,
             npts=self._npts,
-            nbpts=self._nbpts,
+            maxpg=self._maxpg,
             numphase=self._pa.numphase,
             delx=self._pa.delx,
             dely=self._pa.dely,
@@ -1731,6 +1734,10 @@ class RTE:
         self._pa.npx = grid.dims['x']
         self._pa.npy = grid.dims['y']
         self._pa.npz = grid.dims['z']
+        #All grids start from 0.0, xstart should be used only
+        #for MPI as each worker will have different starting positions.
+        assert np.allclose(grid.x[0], 0.0), 'X-dimension of property grid should start from 0.0'
+        assert np.allclose(grid.y[0], 0.0), 'Y-dimension of property grid should start from 0.0'
         self._pa.xstart = grid.x[0]
         self._pa.ystart = grid.y[0]
 
@@ -1739,6 +1746,7 @@ class RTE:
         self._pa.zlevels = grid.z.data
 
         # Initialize shdom internal grid sizes to property array grid
+        # If SHDOM grid sizes aren't specified differently from
         self._nx = self._pa.npx
         self._ny = self._pa.npy
         self._nz = self._pa.npz
@@ -2039,7 +2047,8 @@ class RTE:
         # functions during the source function calculation.
         self._temp, self._planck, self._extinct, self._albedo, self._legen, \
         self._iphase, self._total_ext, self._extmin, self._scatmin,         \
-        self._albmax, ierr, errmsg = pyshdom.core.transfer_pa_to_grid(
+        self._albmax, ierr, errmsg, self._phaseinterpwt,                    \
+        self._optinterpwt = pyshdom.core.transfer_pa_to_grid(
             nstleg=self._nstleg,
             npart=self._npart,
             extinctp=self._pa.extinctp,
@@ -2197,7 +2206,9 @@ class RTE:
         self._delyd, self._deljdot, self._deljold, self._deljnew, self._jnorm, \
         self._fftflag, self._cmu1, self._cmu2, self._wtmu, self._cphi1, \
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
-        self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg = pyshdom.core.init_solution(
+        self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg \
+         = pyshdom.core.init_solution(
+            phaseinterpwt=self._phaseinterpwt,
             work=self._work,
             work2_size=self._work2_size,
             maxpg=self._maxpg,
@@ -2302,7 +2313,7 @@ class RTE:
         Precompute angular scattering for the entire legendre table.
         Perform a negativity check. (negcheck=True).
         """
-        self._phasetab, errmsg,ierr = pyshdom.core.precompute_phase_check(
+        self._phasetab, errmsg, ierr = pyshdom.core.precompute_phase_check(
             negcheck=True,
             nscatangle=self._nscatangle,
             numphase=self._pa.numphase,

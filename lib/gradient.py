@@ -213,7 +213,13 @@ class LevisApproxGradient:
                 "`rte_solver` must be of type pyshdom.solver.RTE for this gradient"
                 "calculation. "
             )
-
+        if rte_solver._bcflag != 3:
+            raise ValueError(
+                "Gradient calculations are not currently supported for solvers with "
+                "periodic boundary conditions. This requires a separate treatment of SHDOM's "
+                "base grid and property grid, which are not identical when periodic "
+                " boundary conditions are used."
+            )
         if not isinstance(sensor, xr.Dataset):
             raise TypeError("`sensor` should be an xr.Dataset not "
                             "of type '{}''".format(type(sensor)))
@@ -266,7 +272,7 @@ class LevisApproxGradient:
             )
             jacobian_flag = True
 
-        gradient, loss, images, jacobian, ierr,errmsg = pyshdom.core.levisapprox_gradient(
+        gradient, loss, images, jacobian, ierr, errmsg = pyshdom.core.levisapprox_gradient(
             camx=camx,
             camy=camy,
             camz=camz,
@@ -322,7 +328,7 @@ class LevisApproxGradient:
             bcflag=rte_solver._bcflag,
             ipflag=rte_solver._ipflag,
             npts=rte_solver._npts,
-            nbpts=rte_solver._nbpts,
+            maxpg=rte_solver._maxpg,
             ncells=rte_solver._ncells,
             nbcells=rte_solver._nbcells,
             ml=rte_solver._ml,

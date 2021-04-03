@@ -319,12 +319,15 @@ C               Base grid cells have no parents or children
      .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .               ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .               ZCKD, GASABS, EXTMIN, SCATMIN,NPART,
-     .		         TOTAL_EXT, MAXPG, INTERPMETHOD, IERR,ERRMSG)
+     .		         TOTAL_EXT, MAXPG, INTERPMETHOD, IERR,ERRMSG,
+     .             PHASEINTERPWT, OPTINTERPWT)
 C       Calls TRILIN_INTERP_PROP to interpolate the input arrays from
 C     the property grid to each internal grid point.
       IMPLICIT NONE
       INTEGER NPTS, NSTLEG, NLEG, NPART, MAXPG
-      INTEGER IPHASE(NPTS,NPART)
+      INTEGER IPHASE(8,NPTS,NPART)
+      REAL    PHASEINTERPWT(8,NPTS,NPART)
+      REAL    OPTINTERPWT(8,NPTS,NPART)
       REAL    GRIDPOS(3,NPTS), TOTAL_EXT(NPTS)
       REAL    TEMP(*), EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL    LEGEN(NSTLEG,0:NLEG,*)
@@ -355,7 +358,8 @@ C     below.
      .                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .                      ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .                      ZCKD, GASABS, EXTMIN, SCATMIN,
-     .                      INTERPMETHOD, IERR,ERRMSG)
+     .                      INTERPMETHOD, IERR,ERRMSG,PHASEINTERPWT,
+     .                      OPTINTERPWT)
       IF (IERR .NE. 0) RETURN
 
 C         Trilinearly interpolate from the property grid to the adaptive grid
@@ -365,12 +369,15 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
 	          CALL TRILIN_INTERP_PROP
      .          (GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP),
      .           .FALSE., NSTLEG, NLEG, TEMP(IP), EXTINCT(IP,IPA),
-     .            ALBEDO(IP,IPA), LEGEN(1,0,IP), IPHASE(IP,IPA),
+     .            ALBEDO(IP,IPA), LEGEN(1,0,IP),
+     .            IPHASE(:,IP,IPA),
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP(:,IPA),
      .            ALBEDOP(:,IPA), LEGENP, IPHASEP(:,IPA),
      .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
-     .            INTERPMETHOD, IERR, ERRMSG)
+     .            INTERPMETHOD, IERR, ERRMSG,
+     .            PHASEINTERPWT(:,IP,IPA),
+     .            OPTINTERPWT(:,IP,IPA))
             IF (IERR .NE. 0) RETURN
 	           TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
 	       ENDDO
@@ -467,7 +474,7 @@ C27237,27283
       SUBROUTINE PREPARE_PROP (ML, MM, NSTLEG, NLEG, NPTS, DELTAM,
      .              NUMPHASE, SRCTYPE, UNITS, WAVENO, WAVELEN, ALBMAX,
      .              EXTINCT, ALBEDO, LEGEN, TEMP, PLANCK, IPHASE,
-     .		         NPART, TOTAL_EXT)
+     .		         NPART, TOTAL_EXT, PHASEINTERPWT)
 C       Prepares the grid arrays for the iterative solution process.
 C       If doing Delta-M scaling then the extinction, albedo, and Legendre
 C       terms are scaled first; only the 0 to ML LEGEN terms are scaled.
@@ -476,59 +483,60 @@ C       the Planck function (meaning depends on UNITS).
 C       TEMP array is unchanged.
       IMPLICIT NONE
       INTEGER ML, MM, NSTLEG, NLEG, NPTS, NUMPHASE
-      INTEGER IPHASE(NPTS,NPART), NPART
+      INTEGER IPHASE(8,NPTS,NPART), NPART
+      REAL PHASEINTERPWT(8,NPTS,NPART)
       LOGICAL DELTAM
       REAL  WAVENO(2), WAVELEN, ALBMAX, TOTAL_EXT(NPTS)
       REAL  EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL  LEGEN(NSTLEG,0:NLEG,*), TEMP(NPTS), PLANCK(NPTS,NPART)
       CHARACTER*1 SRCTYPE, UNITS
-      INTEGER I, IPH, L, IPA
+      INTEGER I, IPH, L, IPA, Q
       REAL    F, BB
 
       ALBMAX = 0.0
 
-      IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
-        DO IPH = 1, NUMPHASE
-          F = LEGEN(1,ML+1,IPH)
-          DO L = 0, ML
-C            Scale the diagonal and off-diagonal phase matrix elements differently
-            LEGEN(1,L,IPH) = (LEGEN(1,L,IPH) - F)/(1-F)
-            IF (NSTLEG .GT. 1) THEN
-              LEGEN(2,L,IPH) = (LEGEN(2,L,IPH) - F)/(1-F)
-              LEGEN(3,L,IPH) = (LEGEN(3,L,IPH) - F)/(1-F)
-              LEGEN(4,L,IPH) = (LEGEN(4,L,IPH) - F)/(1-F)
-              LEGEN(5,L,IPH) = LEGEN(5,L,IPH)/(1-F)
-              LEGEN(6,L,IPH) = LEGEN(6,L,IPH)/(1-F)
-            ENDIF
-          ENDDO
-        ENDDO
-      ENDIF
+C     DELTAM scaling is now done at runtime, as we are linearly mixing
+C     phase functions from the property grid onto the medium grid.
+C      IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
+C        DO IPH = 1, NUMPHASE
+C          F = LEGEN(1,ML+1,IPH)
+C          DO L = 0, ML
+CC            Scale the diagonal and off-diagonal phase matrix elements differently
+C            LEGEN(1,L,IPH) = (LEGEN(1,L,IPH) - F)/(1-F)
+C            IF (NSTLEG .GT. 1) THEN
+C              LEGEN(2,L,IPH) = (LEGEN(2,L,IPH) - F)/(1-F)
+C              LEGEN(3,L,IPH) = (LEGEN(3,L,IPH) - F)/(1-F)
+C              LEGEN(4,L,IPH) = (LEGEN(4,L,IPH) - F)/(1-F)
+C              LEGEN(5,L,IPH) = LEGEN(5,L,IPH)/(1-F)
+C              LEGEN(6,L,IPH) = LEGEN(6,L,IPH)/(1-F)
+C            ENDIF
+C          ENDDO
+C        ENDDO
+C      ENDIF
 
       IF (DELTAM) TOTAL_EXT(:NPTS) = 0.0
       DO IPA = 1, NPART
-      DO I = 1, NPTS
-        IF (DELTAM) THEN
-          IF (NUMPHASE .GT. 0) THEN
-            F = LEGEN(1,ML+1,IPHASE(I,IPA))
-          ELSE
-C             NUMPHASE=0 is standard property format, which is unpolarized
-            F = LEGEN(1,ML+1,I)
-            DO L = 0, ML
-              LEGEN(1,L,I) = (LEGEN(1,L,I) - F)/(1-F)
+        DO I = 1, NPTS
+          IF (DELTAM) THEN
+            F = 0.0
+            DO Q=1,8
+              F = F + LEGEN(1,ML+1,IPHASE(Q,I,IPA))*
+     .          PHASEINTERPWT(Q,I,IPA)
+              PRINT *, I,IPA,Q, IPHASE(Q,I,IPA),
+     .          LEGEN(1,ML+1,IPHASE(Q,I,IPA)),
+     .          PHASEINTERPWT(Q,I,IPA), F
             ENDDO
+            EXTINCT(I,IPA) = (1.0-ALBEDO(I,IPA)*F)*EXTINCT(I,IPA)
+            ALBEDO(I,IPA) = (1.0-F)*ALBEDO(I,IPA)/
+     .			   (1.0-ALBEDO(I,IPA)*F)
+            TOTAL_EXT(I) = TOTAL_EXT(I) + EXTINCT(I,IPA)
           ENDIF
-          EXTINCT(I,IPA) = (1.0-ALBEDO(I,IPA)*F)*EXTINCT(I,IPA)
-	  ALBEDO(I,IPA) = (1.0-F)*ALBEDO(I,IPA)/
-     .			  (1.0-ALBEDO(I,IPA)*F)
-          TOTAL_EXT(I) = TOTAL_EXT(I) + EXTINCT(I,IPA)
-        ENDIF
-	  ALBMAX = MAX(ALBMAX, ALBEDO(I,IPA))
-	  IF (SRCTYPE .NE. 'S') THEN
-	    CALL PLANCK_FUNCTION (TEMP(I), UNITS,WAVENO,WAVELEN,BB)
-	    PLANCK(I,IPA) = (1.0-ALBEDO(I,IPA))*BB
-
-	  ENDIF
-	ENDDO
+	        ALBMAX = MAX(ALBMAX, ALBEDO(I,IPA))
+	        IF (SRCTYPE .NE. 'S') THEN
+	           CALL PLANCK_FUNCTION (TEMP(I), UNITS,WAVENO,WAVELEN,BB)
+	            PLANCK(I,IPA) = (1.0-ALBEDO(I,IPA))*BB
+          ENDIF
+	      ENDDO
       ENDDO
       RETURN
       END
@@ -542,7 +550,7 @@ C             NUMPHASE=0 is standard property format, which is unpolarized
      .             EXTINCT, ALBEDO, LEGEN, TEMP, NUMPHASE, IPHASE,
      .             SRCTYPE, SOLARFLUX, SOLARMU, GNDALBEDO, GNDTEMP,
      .             SKYRAD, UNITS, WAVENO, WAVELEN,  RADIANCE, NPART,
-     .		       TOTAL_EXT)
+     .		       TOTAL_EXT, PHASEINTERPWT, DELTAM, ML)
 C       Initializes radiance field by solving plane-parallel two-stream.
 C     Solves the L=1 M=0 SH system by transforming the pentadiagonal
 C     system to tridiagonal and calling solver.
@@ -550,7 +558,8 @@ C     Does the initialization for the NXY columns of the base grid.
 C     Only the I Stokes parameter is initialized, the rest are zeroed.
       IMPLICIT NONE
       INTEGER NSTOKES, NXY, NZ, NSTLEG, NLEG, NUMPHASE, RSHPTR(*)
-      INTEGER IPHASE(NZ,NXY,NPART), NPART
+      INTEGER IPHASE(8,NZ,NXY,NPART), NPART, ML
+      REAL    PHASEINTERPWT(8,NZ,NXY,NPART)
       REAL    GNDALBEDO, GNDTEMP, SKYRAD, SOLARFLUX, SOLARMU
       REAL    WAVENO(2), WAVELEN
       REAL    ZGRID(NZ), TOTAL_EXT(NZ,NXY)
@@ -561,17 +570,21 @@ C     Only the I Stokes parameter is initialized, the rest are zeroed.
       CHARACTER SRCTYPE*1, UNITS*1
       INTEGER NLAYER, I, IZ, IR, J, K, L
       LOGICAL DELTAM
-      REAL    PI, C0, C1
+      REAL    PI, C0, C1, F0(NPART), F1(NPART), LEGENT0(NPART)
       REAL    EXT0, EXT1, SCAT0, SCAT1, G0, G1, GNDEMIS
+      REAL    LEGENT1(NPART)
       REAL, ALLOCATABLE :: OPTDEPTHS(:), ALBEDOS(:), ASYMMETRIES(:)
       REAL, ALLOCATABLE :: TEMPS(:), FLUXES(:,:)
       CHARACTER SRCT*1
+      INTEGER Q
 
       ALLOCATE (OPTDEPTHS(NZ), ALBEDOS(NZ), ASYMMETRIES(NZ))
       ALLOCATE (TEMPS(NZ), FLUXES(3,NZ))
 
       NLAYER = NZ-1
-      DELTAM=.FALSE.
+C      DELTAM=.FALSE. This is now hardcoded to False when input to
+C     to EDDRTF as we need DELTAM to apply the scaling to the phase function.
+C     JRLoveridge -03/04/2021
       SRCT = SRCTYPE
       IF (SRCT .EQ. 'B') SRCT='T'
       PI = ACOS(-1.0)
@@ -584,6 +597,7 @@ C         Loop over all the columns in the base grid
       DO I = 1, NXY
 C           Make layer properties for the Eddington routine
         DO IZ = 1, NLAYER
+
           L = NZ-IZ
           EXT0 = TOTAL_EXT(IZ,I)
           EXT1 = TOTAL_EXT(IZ+1,I)
@@ -596,11 +610,34 @@ C           Make layer properties for the Eddington routine
             ALBEDOS(L) = 0.0
           ENDIF
           IF (NUMPHASE .GT. 0) THEN
-
-	    G0 = SUM(ALBEDO(IZ,I,:)*EXTINCT(IZ,I,:)*
-     .			LEGEN(1,1,IPHASE(IZ,I,:)))
-	    G1 = SUM(ALBEDO(IZ+1,I,:)*EXTINCT(IZ+1,I,:)*
-     .			LEGEN(1,1,IPHASE(IZ+1,I,:)))
+            LEGENT0 = 0.0
+            LEGENT1 = 0.0
+            PRINT *, IZ,I
+            PRINT *, IPHASE(:,IZ,I,1)
+            PRINT *, PHASEINTERPWT(:,IZ,I,1)
+            DO Q=1,8
+              LEGENT0 = LEGENT0 + LEGEN(1,1,IPHASE(Q,IZ,I,:))*
+     .          PHASEINTERPWT(Q,IZ,I,:)
+              LEGENT1 = LEGENT1 + LEGEN(1,1,IPHASE(Q,IZ+1,I,:))*
+     .          PHASEINTERPWT(Q,IZ+1,I,:)
+            ENDDO
+            PRINT *, LEGENT0, LEGENT1
+            IF (DELTAM) THEN
+              F0 = 0.0
+              F1 = 0.0
+              DO Q=1,8
+                F0 = F0 + LEGEN(1,ML+1,IPHASE(Q,IZ,I,:))*
+     .            PHASEINTERPWT(Q,IZ,I,:)
+                F1 = F1 + LEGEN(1,ML+1,IPHASE(Q,IZ+1,I,:))*
+     .            PHASEINTERPWT(Q,IZ+1,I,:)
+              ENDDO
+              LEGENT0 = (LEGENT0 - F0)/(1 - F0)
+              LEGENT1 = (LEGENT1 - F1)/(1 - F1)
+            ENDIF
+            PRINT *, 'AFTER DELTAM', LEGENT0, LEGENT1
+            G0 = SUM(ALBEDO(IZ,I,:)*EXTINCT(IZ,I,:)*LEGENT0)
+            G1 = SUM(ALBEDO(IZ+1,I,:)*EXTINCT(IZ+1,I,:)*LEGENT1)
+            PRINT *, 'G', G0, G1
           ELSE
             J = NZ*(I-1)+IZ
             G0 = LEGEN(1,1,J)
@@ -617,7 +654,7 @@ C           Make layer properties for the Eddington routine
         GNDEMIS = 1.0-GNDALBEDO
 C           Call the Eddington flux routine
         CALL EDDRTF (NLAYER, OPTDEPTHS, ALBEDOS, ASYMMETRIES,
-     .              TEMPS, DELTAM, SRCTYPE, SOLARFLUX, SOLARMU,
+     .              TEMPS, .FALSE., SRCTYPE, SOLARFLUX, SOLARMU,
      .              GNDTEMP, GNDEMIS, SKYRAD, UNITS, WAVENO,WAVELEN,
      .              FLUXES)
 C           Convert fluxes to first two moments of spherical harmonics
