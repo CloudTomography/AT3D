@@ -1099,7 +1099,7 @@ C         Compute the source function in the temporary array.
      .           PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
      .           NR, RADIANCE(1,IR+1), SOURCET1)
           ENDIF
-          SOURCET = SOURCET + W * SOURCET1 * PHASEINTERPWT(Q,I,IPA)
+          SOURCET = SOURCET + W * SOURCET1
         ENDDO
 
           IF (FIXSH) THEN
