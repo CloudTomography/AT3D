@@ -376,7 +376,7 @@ END SUBROUTINE GET_REFRACT_INDEX
 SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
                                 PARTYPE, WAVELENCEN, RINDEX, NSIZE, RADII, &
                                 MAXLEG, EXTINCT1, SCATTER1, NLEG1, LEGCOEF1,&
-				 VERBOSE, IERR, ERRMSG)
+				                        VERBOSE, IERR, ERRMSG)
  ! Does a Mie computation for each particle radius in RADII and returns the
  ! optical properties in arrays EXTINCT1, SCATTER1, NLEG1, and LEGCOEF1.
  ! For AVGFLAG='C' the computation is done at a single wavelength (WAVELENCEN),
@@ -401,6 +401,8 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
   REAL,    INTENT(OUT) :: LEGCOEF1(6,0:MAXLEG,NSIZE)
   INTEGER,  INTENT(OUT) :: IERR
   CHARACTER(LEN=600), INTENT(OUT) :: ERRMSG
+!f2py intent(out) :: ERRMSG, IERR, EXTINCT1, SCATTER1, LEGCOEF1
+!f2py intent(out) :: NLEG1
   CHARACTER(LEN=6) :: TABLE_TYPE
   INTEGER :: I, NL
   REAL    :: WAVECEN, WAVE, BBTEMP, PLANCK, SUMP, A
