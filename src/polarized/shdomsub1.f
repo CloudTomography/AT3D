@@ -4421,10 +4421,17 @@ C             Compute the source function for the new points
      .               PLANCK(IP,IPA), ALBEDO(IP,IPA), 1, LEGENT,
      .               NR, RADIANCE(1,IR+1), SOURCET)
             ENDIF
+
+            IF (IPA .EQ. 1) THEN
+              DO J=1,NS
+                SOURCE(:,IS+J) = W*SOURCET(:,J)
+              ENDDO
+            ELSE
               DO J=1,NS
                 SOURCE(:,IS+J) = SOURCE(:,IS+J) +
      .            W*SOURCET(:,J)
               ENDDO
+            ENDIF
           ENDDO
         ENDIF
       ENDDO
