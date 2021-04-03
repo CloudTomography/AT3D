@@ -4385,6 +4385,7 @@ C             Compute the source function for the new points
           SHPTR(IP+1) = IS + NS
           IF (ACCELFLAG)  OSHPTR(IP+1) = OSHPTR(IP)
 	          EXT = TOTAL_EXT(IP)
+          SOURCET=0.0
           DO IPA = 1, NPART
             IF (EXT.EQ.0.0) THEN
               W = 1.0
