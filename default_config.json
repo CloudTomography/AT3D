@@ -1,10 +1,10 @@
 {
   "x_boundary_condition": {
-    "default_value": "periodic",
+    "default_value": "open",
     "description": "1. open - exiting radiance is lost. 2. periodic - exiting radiance returns from the opposite side."
   },
   "y_boundary_condition": {
-    "default_value": "periodic",
+    "default_value": "open",
     "description": "1. open - exiting radiance is lost. 2. periodic - exiting radiance returns from the opposite side."
   },
   "num_mu_bins": {
@@ -42,11 +42,11 @@
     "description": "(SOLACC) solution accuracy - tolerance for solution criterion."
   },
   "max_total_mb": {
-    "default_value": 10.0,
+    "default_value": 10000.0,
     "description": "approximate maximum memory to use (MB for 4 byte reals)"
   },
   "adapt_grid_factor": {
-    "default_value": 1.0,
+    "default_value": 5,
     "description": "(ADAPT_GRID_FACTOR) ratio of total grid points to base grid points"
   },
   "num_sh_term_factor": {
