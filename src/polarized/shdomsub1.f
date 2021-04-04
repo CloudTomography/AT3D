@@ -4086,8 +4086,7 @@ C               for cells split during grid smoothing
 C             Go down the list from highest adaptive cell criterion on down
           OUTOFMEM0 = OUTOFMEM
           I = 1
-          PRINT *, N, CURSPLITACC
-          PRINT *,  ADAPTCRIT(:50)
+          PRINT *, N, CURSPLITACC, ADAPTCRIT(:5)
           DO WHILE (ADAPTCRIT(I) .GT. CURSPLITACC .AND. .NOT. OUTOFMEM0
      .              .AND. I .LE. N)
             IF (NCELLS .GT. MAXCELLS .OR. NPTS .GT. MAXPTS .OR.
