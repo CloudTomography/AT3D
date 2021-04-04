@@ -518,11 +518,15 @@ C      ENDIF
       DO IPA = 1, NPART
         DO I = 1, NPTS
           IF (DELTAM) THEN
-            F = 0.0
-            DO Q=1,8
-              F = F + LEGEN(1,ML+1,IPHASE(Q,I,IPA))*
-     .          PHASEINTERPWT(Q,I,IPA)
-            ENDDO
+            IF (PHASEINTERPWT(1,I,IPA) .GE. 0.999) THEN
+              F = LEGEN(1,ML+1,IPHASE(1,I,IPA))
+            ELSE
+              F = 0.0
+              DO Q=1,8
+                F = F + LEGEN(1,ML+1,IPHASE(Q,I,IPA))*
+     .            PHASEINTERPWT(Q,I,IPA)
+              ENDDO
+            ENDIF
             EXTINCT(I,IPA) = (1.0-ALBEDO(I,IPA)*F)*EXTINCT(I,IPA)
             ALBEDO(I,IPA) = (1.0-F)*ALBEDO(I,IPA)/
      .			   (1.0-ALBEDO(I,IPA)*F)

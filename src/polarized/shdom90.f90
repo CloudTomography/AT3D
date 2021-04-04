@@ -184,45 +184,39 @@
         ENDIF
       ELSEIF (INTERPMETHOD(2:2) .EQ. 'O') THEN
         MAXSCAT = -1.0
+        PHASEINTERPWT(:) = 0.0
+        PHASEINTERPWT(1) = 1.0
         IF (SCAT1 .GT. MAXSCAT .OR. ABS(F1-1) .LT. 0.001) THEN
           MAXSCAT = SCAT1
-          PHASEINTERPWT(:) = 0.0
-          PHASEINTERPWT(1) = 1.0
+          IPHASE(1) = IPHASEP(I1)
         ENDIF
         IF (SCAT2 .GT. MAXSCAT .OR. ABS(F2-1) .LT. 0.001) THEN
           MAXSCAT = SCAT2
-          PHASEINTERPWT(:) = 0.0
-          PHASEINTERPWT(2) = 1.0
+          IPHASE(2) = IPHASEP(I2)
         ENDIF
         IF (SCAT3 .GT. MAXSCAT .OR. ABS(F3-1) .LT. 0.001) THEN
           MAXSCAT = SCAT3
-          PHASEINTERPWT(:) = 0.0
-          PHASEINTERPWT(3) = 1.0
+          IPHASE(3) = IPHASEP(I3)
         ENDIF
         IF (SCAT4 .GT. MAXSCAT .OR. ABS(F4-1) .LT. 0.001) THEN
           MAXSCAT = SCAT4
-          PHASEINTERPWT(:) = 0.0
-          PHASEINTERPWT(4) = 1.0
+          IPHASE(4) = IPHASEP(I4)
         ENDIF
         IF (SCAT5 .GT. MAXSCAT .OR. ABS(F5-1) .LT. 0.001) THEN
           MAXSCAT = SCAT5
-          PHASEINTERPWT(:) = 0.0
-          PHASEINTERPWT(5) = 1.0
+          IPHASE(5) = IPHASEP(I5)
         ENDIF
         IF (SCAT6 .GT. MAXSCAT .OR. ABS(F6-1) .LT. 0.001) THEN
           MAXSCAT = SCAT6
-          PHASEINTERPWT(:) = 0.0
-          PHASEINTERPWT(6) = 1.0
+          IPHASE(6) = IPHASEP(I6)
         ENDIF
         IF (SCAT7 .GT. MAXSCAT .OR. ABS(F7-1) .LT. 0.001) THEN
           MAXSCAT = SCAT7
-          PHASEINTERPWT(:) = 0.0
-          PHASEINTERPWT(7) = 1.0
+          IPHASE(7) = IPHASEP(I7)
         ENDIF
         IF (SCAT8 .GT. MAXSCAT .OR. ABS(F8-1) .LT. 0.001) THEN
           MAXSCAT = SCAT8
-          PHASEINTERPWT(:) = 0.0
-          PHASEINTERPWT(8) = 1.0
+          IPHASE(8) = IPHASEP(I8)
         ENDIF
       ENDIF
 

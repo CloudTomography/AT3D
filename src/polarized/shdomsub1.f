@@ -923,25 +923,25 @@ C             Compute the temporary source function for this point
           ELSE
             W = EXTINCT(I,IPA)/EXT
           ENDIF
-          LEGENT = 0.0
-          DO Q=1,8
-            IF (NUMPHASE .GT. 0) THEN
+          IF (PHASEINTERPWT(1,I,IPA) .GE. 0.999) THEN
+            LEGENT(:,:,1) = LEGEN(:,:,IPHASE(1,I,IPA))
+          ELSE
+            LEGENT = 0.0
+            DO Q=1,8
               IPH = IPHASE(Q,I,IPA)
-            ELSE
-              IPH = I
-            ENDIF
-            LEGENT(:,:,1) = LEGENT(:,:,1) + LEGEN(:,:,IPH)*
-     .        PHASEINTERPWT(Q,I,IPA)
-          ENDDO
+              LEGENT(:,:,1) = LEGENT(:,:,1) + LEGEN(:,:,IPH)*
+     .          PHASEINTERPWT(Q,I,IPA)
+            ENDDO
+          ENDIF
           F = LEGENT(1,ML+1,1)
           IF (DELTAM) THEN
-            LEGENT(1,:,:) = (LEGENT(1,:,:) - F)/(1-F)
+            LEGENT(1,0:ML,1) = (LEGENT(1,0:ML,1) - F)/(1-F)
             IF (NSTLEG .GT. 1) THEN
-              LEGENT(2,:,:) = (LEGENT(2,:,:) - F)/(1-F)
-              LEGENT(3,:,:) = (LEGENT(3,:,:) - F)/(1-F)
-              LEGENT(4,:,:) = (LEGENT(4,:,:) - F)/(1-F)
-              LEGENT(5,:,:) = LEGENT(5,:,:)/(1-F)
-              LEGENT(6,:,:) = LEGENT(6,:,:)/(1-F)
+              LEGENT(2,0:ML,1) = (LEGENT(2,0:ML,1) - F)/(1-F)
+              LEGENT(3,0:ML,1) = (LEGENT(3,0:ML,1) - F)/(1-F)
+              LEGENT(4,0:ML,1) = (LEGENT(4,0:ML,1) - F)/(1-F)
+              LEGENT(5,0:ML,1) = LEGENT(5,0:ML,1)/(1-F)
+              LEGENT(6,0:ML,1) = LEGENT(6,0:ML,1)/(1-F)
             ENDIF
           ENDIF
           IF (NSTOKES .EQ. 1) THEN
@@ -1001,25 +1001,25 @@ C             Compute the temporary source function for this point
             ELSE
               W = EXTINCT(I,IPA)/EXT
             ENDIF
-            LEGENT = 0.0
-            DO Q=1,8
-              IF (NUMPHASE .GT. 0) THEN
+            IF (PHASEINTERPWT(1,I,IPA) .GE. 0.999) THEN
+              LEGENT(:,:,1) = LEGEN(:,:,IPHASE(1,I,IPA))
+            ELSE
+              LEGENT = 0.0
+              DO Q=1,8
                 IPH = IPHASE(Q,I,IPA)
-              ELSE
-                IPH = I
-              ENDIF
-              LEGENT(:,:,1) = LEGENT(:,:,1) + LEGEN(:,:,IPH)*
+                LEGENT(:,:,1) = LEGENT(:,:,1) + LEGEN(:,:,IPH)*
      .            PHASEINTERPWT(Q,I,IPA)
-            ENDDO
+              ENDDO
+            ENDIF
             F = LEGENT(1,ML+1,1)
             IF (DELTAM) THEN
-              LEGENT(1,:,:) = (LEGENT(1,:,:) - F)/(1-F)
+              LEGENT(1,0:ML,1) = (LEGENT(1,0:ML,1) - F)/(1-F)
               IF (NSTLEG .GT. 1) THEN
-                LEGENT(2,:,:) = (LEGENT(2,:,:) - F)/(1-F)
-                LEGENT(3,:,:) = (LEGENT(3,:,:) - F)/(1-F)
-                LEGENT(4,:,:) = (LEGENT(4,:,:) - F)/(1-F)
-                LEGENT(5,:,:) = LEGENT(5,:,:)/(1-F)
-                LEGENT(6,:,:) = LEGENT(6,:,:)/(1-F)
+                LEGENT(2,0:ML,1) = (LEGENT(2,0:ML,1) - F)/(1-F)
+                LEGENT(3,0:ML,1) = (LEGENT(3,0:ML,1) - F)/(1-F)
+                LEGENT(4,0:ML,1) = (LEGENT(4,0:ML,1) - F)/(1-F)
+                LEGENT(5,0:ML,1) = LEGENT(5,0:ML,1)/(1-F)
+                LEGENT(6,0:ML,1) = LEGENT(6,0:ML,1)/(1-F)
               ENDIF
             ENDIF
             IF (NSTOKES .EQ. 1) THEN
@@ -1065,25 +1065,25 @@ C         Compute the source function in the temporary array.
           ELSE
             W = EXTINCT(I,IPA)/EXT
           ENDIF
-          LEGENT=0.0
-          DO Q=1,8
-            IF (NUMPHASE .GT. 0) THEN
+          IF (PHASEINTERPWT(1,I,IPA) .GE. 0.999) THEN
+            LEGENT(:,:,1) = LEGEN(:,:,IPHASE(1,I,IPA))
+          ELSE
+            LEGENT=0.0
+            DO Q=1,8
               IPH = IPHASE(Q,I,IPA)
-            ELSE
-              IPH = I
-            ENDIF
-            LEGENT(:,:,1) = LEGENT(:,:,1) + LEGEN(:,:,IPH)*
-     .        PHASEINTERPWT(Q,I,IPA)
-          ENDDO
+              LEGENT(:,:,1) = LEGENT(:,:,1) +
+     .          LEGEN(:,:,IPH)*PHASEINTERPWT(Q,I,IPA)
+            ENDDO
+          ENDIF
           F = LEGENT(1,ML+1,1)
           IF (DELTAM) THEN
-            LEGENT(1,:,:) = (LEGENT(1,:,:) - F)/(1-F)
+            LEGENT(1,0:ML,1) = (LEGENT(1,0:ML,1) - F)/(1-F)
             IF (NSTLEG .GT. 1) THEN
-              LEGENT(2,:,:) = (LEGENT(2,:,:) - F)/(1-F)
-              LEGENT(3,:,:) = (LEGENT(3,:,:) - F)/(1-F)
-              LEGENT(4,:,:) = (LEGENT(4,:,:) - F)/(1-F)
-              LEGENT(5,:,:) = LEGENT(5,:,:)/(1-F)
-              LEGENT(6,:,:) = LEGENT(6,:,:)/(1-F)
+              LEGENT(2,0:ML,1) = (LEGENT(2,0:ML,1) - F)/(1-F)
+              LEGENT(3,0:ML,1) = (LEGENT(3,0:ML,1) - F)/(1-F)
+              LEGENT(4,0:ML,1) = (LEGENT(4,0:ML,1) - F)/(1-F)
+              LEGENT(5,0:ML,1) = LEGENT(5,0:ML,1)/(1-F)
+              LEGENT(6,0:ML,1) = LEGENT(6,0:ML,1)/(1-F)
             ENDIF
           ENDIF
           IF (NSTOKES .EQ. 1) THEN
@@ -1234,14 +1234,15 @@ C             We don't have radiances for any new points, so don't use them
               ENDIF
               IF (W.EQ.0.0) CYCLE
               LEGENT = 0.0
-              DO Q=1,8
-                IF (NUMPHASE .GT. 0) THEN
+              IF (PHASEINTERPWT(1,I,IPA) .GE. 0.999) THEN
+                LEGENT = LEGEN(1,:,IPHASE(1,I,IPA))
+              ELSE
+                DO Q=1,8
                   K = IPHASE(Q,I,IPA)
-                ELSE
-                  K = I
-                ENDIF
-                LEGENT = LEGENT + LEGEN(1,:,K)*PHASEINTERPWT(Q,I,IPA)
-              ENDDO
+                  LEGENT = LEGENT +
+     .              LEGEN(1,:,K)*PHASEINTERPWT(Q,I,IPA)
+                ENDDO
+              ENDIF
               IF (DELTAM) THEN
                 F = LEGENT(ML+1)
                 LEGENT = (LEGENT - F)/(1-F)
@@ -4313,11 +4314,15 @@ C             Interpolate the medium properties from the property grid
      .             OPTINTERPWT(:,IP,IPA))
 C             Do the Delta-M scaling of extinction and albedo for this point
 	          IF (DELTAM) THEN
-               F = 0.0
-               DO Q=1,8
+              IF (PHASEINTERPWT(1,IP,IPA) .GE. 0.999) THEN
+                F = LEGEN(1,ML+1,IPHASE(1,IP,IPA))
+              ELSE
+                F=0.0
+                DO Q=1,8
                   F = F + LEGEN(1,ML+1,IPHASE(Q,IP,IPA))*
      .              PHASEINTERPWT(Q,IP,IPA)
-               ENDDO
+                ENDDO
+              ENDIF
                EXTINCT(IP,IPA) = (1.0-ALBEDO(IP,IPA)*F)
      .            *EXTINCT(IP,IPA)
    	           ALBEDO(IP,IPA) = (1.0-F)*ALBEDO(IP,IPA) /
@@ -4391,13 +4396,16 @@ C             Compute the source function for the new points
             ELSE
               W = EXTINCT(IP,IPA)/EXT
             ENDIF
-            LEGENT = 0.0
-            DO Q=1,8
-              LEGENT(:,:,1) = LEGENT(:,:,1) +
-     .          LEGEN(:,:,IPHASE(Q,I,IPA))*
-     .            PHASEINTERPWT(Q,I,IPA)
-            ENDDO
-
+            IF (PHASEINTERPWT(1,IP,IPA) .GE. 0.999) THEN
+              LEGENT(:,:,1) = LEGEN(:,:,IPHASE(1,IP,IPA))
+            ELSE
+              LEGENT = 0.0
+              DO Q=1,8
+                LEGENT(:,:,1) = LEGENT(:,:,1) +
+     .            LEGEN(:,:,IPHASE(Q,IP,IPA))*
+     .              PHASEINTERPWT(Q,IP,IPA)
+              ENDDO
+            ENDIF
             IF (DELTAM) THEN
               F = LEGENT(1,ML+1,1)
               LEGENT(1,0:ML,1) = (LEGENT(1,0:ML,1) - F)/(1-F)
