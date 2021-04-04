@@ -43,8 +43,8 @@
       CHARACTER ERRMSG*600
 
       INTEGER NPX, NPY, NPZ
-      INTEGER NUMPHASE
-      REAL DELX, DELY, XSTART, YSTART
+      INTEGER NUMPHASE, Q, INTERPTEMP2
+      REAL DELX, DELY, XSTART, YSTART, INTERPTEMP
       REAL ZLEVELS(*)
       REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
       REAL LEGENP(*)
@@ -182,6 +182,11 @@
           PHASEINTERPWT(7) = SCAT7/SCATMIN
           PHASEINTERPWT(8) = SCAT8/SCATMIN
         ENDIF
+!       Reorder values so that the maximum phase weight
+!       is the first one so we can easily check
+!       if we can neglect the others later.
+        CALL SSORT(PHASEINTERPWT, IPHASE, 8, -2)
+
       ELSEIF (INTERPMETHOD(2:2) .EQ. 'O') THEN
         MAXSCAT = -1.0
         PHASEINTERPWT(:) = 0.0
@@ -192,31 +197,31 @@
         ENDIF
         IF (SCAT2 .GT. MAXSCAT .OR. ABS(F2-1) .LT. 0.001) THEN
           MAXSCAT = SCAT2
-          IPHASE(2) = IPHASEP(I2)
+          IPHASE(1) = IPHASEP(I2)
         ENDIF
         IF (SCAT3 .GT. MAXSCAT .OR. ABS(F3-1) .LT. 0.001) THEN
           MAXSCAT = SCAT3
-          IPHASE(3) = IPHASEP(I3)
+          IPHASE(1) = IPHASEP(I3)
         ENDIF
         IF (SCAT4 .GT. MAXSCAT .OR. ABS(F4-1) .LT. 0.001) THEN
           MAXSCAT = SCAT4
-          IPHASE(4) = IPHASEP(I4)
+          IPHASE(1) = IPHASEP(I4)
         ENDIF
         IF (SCAT5 .GT. MAXSCAT .OR. ABS(F5-1) .LT. 0.001) THEN
           MAXSCAT = SCAT5
-          IPHASE(5) = IPHASEP(I5)
+          IPHASE(1) = IPHASEP(I5)
         ENDIF
         IF (SCAT6 .GT. MAXSCAT .OR. ABS(F6-1) .LT. 0.001) THEN
           MAXSCAT = SCAT6
-          IPHASE(6) = IPHASEP(I6)
+          IPHASE(1) = IPHASEP(I6)
         ENDIF
         IF (SCAT7 .GT. MAXSCAT .OR. ABS(F7-1) .LT. 0.001) THEN
           MAXSCAT = SCAT7
-          IPHASE(7) = IPHASEP(I7)
+          IPHASE(1) = IPHASEP(I7)
         ENDIF
         IF (SCAT8 .GT. MAXSCAT .OR. ABS(F8-1) .LT. 0.001) THEN
           MAXSCAT = SCAT8
-          IPHASE(8) = IPHASEP(I8)
+          IPHASE(1) = IPHASEP(I8)
         ENDIF
       ENDIF
 
