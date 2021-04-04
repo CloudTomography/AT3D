@@ -215,3 +215,33 @@ class Resample_onto_grid_values(TestCase):
         self.assertTrue(np.bitwise_not(np.all(np.isnan(self.grid_3d.reff.data))))
     def test_resample_1d_onto_grid_valid_temp(self):
         self.assertTrue(np.bitwise_not(np.all(np.isnan(self.grid_1d.temperature.data))))
+
+class Adjoint_Linear_Interpolation(TestCase):
+    def dotproduct_test(self):
+
+        np.random.seed(1)
+        xinput = np.random.uniform(size=(2,1,1))
+        yinput = np.random.uniform(size=(30,1,1))
+
+        test = xr.Dataset(data_vars={
+            'h': (['x','y','z'],xinput)
+        },
+                         coords={'x': np.linspace(0.0,1.0,2),
+                                'y': np.array([0.0]),
+                                'z': np.array([0.0])})
+        test2 = test.interp(x = np.linspace(0.0,1.0,30))
+        ytilde = test2.h.data
+
+        xtilde = pyshdom.core.adjoint_linear_interpolation(
+            xgrid=test.x.data,
+            ygrid=test.y.data,
+            zgrid=test.z.data,
+            inxgrid=test2.x.data,
+            inygrid=test2.y.data,
+            inzgrid=test2.z.data,
+            field=yinput
+                                                 )
+
+        dot1 = np.dot(xtilde.ravel(),xinput.ravel())
+        dot2 = np.dot(ytilde.ravel(),yinput.ravel())
+        self.assertTrue(np.allclose(dot1,dot2))

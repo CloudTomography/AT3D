@@ -44,7 +44,7 @@ subroutine adjoint_linear_interpolation(xgrid, ygrid, zgrid, &
 end subroutine adjoint_linear_interpolation
 
 
-subroutine adjoint_interp_point(xgrid, ygrid,
+subroutine adjoint_interp_point(xgrid, ygrid, &
   zgrid, nx,ny,nz, fieldval, x,y, z, output)
 
   implicit none
@@ -112,7 +112,7 @@ subroutine adjoint_interp_point(xgrid, ygrid,
   output(ix,iy,iz) = output(ix,iy,iz) + f1*fieldval
   output(ix+1,iy,iz) = output(ix+1,iy,iz) + f2*fieldval
   output(ix,iy+1,iz) = output(ix,iy+1,iz) + f3*fieldval
-  output(ix+1,iy+1,iz) = output(ix+1,iy+1,iz) + f4fieldval
+  output(ix+1,iy+1,iz) = output(ix+1,iy+1,iz) + f4*fieldval
   output(ix,iy,iz+1) = output(ix,iy,iz+1) + f5*fieldval
   output(ix+1,iy,iz+1) = output(ix+1,iy,iz+1) + f6*fieldval
   output(ix,iy+1,iz+1) = output(ix,iy+1,iz+1) + f7*fieldval
