@@ -577,7 +577,7 @@ C     Only the I Stokes parameter is initialized, the rest are zeroed.
       REAL, ALLOCATABLE :: OPTDEPTHS(:), ALBEDOS(:), ASYMMETRIES(:)
       REAL, ALLOCATABLE :: TEMPS(:), FLUXES(:,:)
       CHARACTER SRCT*1
-      INTEGER Q
+      INTEGER Q, IPA
 
       ALLOCATE (OPTDEPTHS(NZ), ALBEDOS(NZ), ASYMMETRIES(NZ))
       ALLOCATE (TEMPS(NZ), FLUXES(3,NZ))
@@ -610,34 +610,49 @@ C           Make layer properties for the Eddington routine
           ELSE
             ALBEDOS(L) = 0.0
           ENDIF
-          IF (NUMPHASE .GT. 0) THEN
-            LEGENT0 = 0.0
-            LEGENT1 = 0.0
+          LEGENT0 = 0.0
+          LEGENT1 = 0.0
+          IF (PHASEINTERPWT(1,IZ,I,1) .GE. 0.999) THEN
+            LEGENT0(:) = LEGEN(1,1,IPHASE(1,IZ,I,:))
+          ELSE
             DO Q=1,8
               LEGENT0 = LEGENT0 + LEGEN(1,1,IPHASE(Q,IZ,I,:))*
-     .          PHASEINTERPWT(Q,IZ,I,:)
-              LEGENT1 = LEGENT1 + LEGEN(1,1,IPHASE(Q,IZ+1,I,:))*
-     .          PHASEINTERPWT(Q,IZ+1,I,:)
+     .            PHASEINTERPWT(Q,IZ,I,:)
             ENDDO
-            IF (DELTAM) THEN
-              F0 = 0.0
-              F1 = 0.0
+          ENDIF
+          IF (PHASEINTERPWT(1,IZ+1,I,1) .GE. 0.999) THEN
+            LEGENT1(:) = LEGEN(1,1,IPHASE(1,IZ+1,I,:))
+          ELSE
+            DO Q=1,8
+              LEGENT1 = LEGENT1 + LEGEN(1,1,IPHASE(Q,IZ+1,I,:))*
+     .            PHASEINTERPWT(Q,IZ+1,I,:)
+            ENDDO
+          ENDIF
+          IF (DELTAM) THEN
+            F0 = 0.0
+            IF (PHASEINTERPWT(1,IZ,I,1) .GE. 0.999) THEN
+              F0(:) = LEGEN(1,ML+1,IPHASE(1,IZ,I,:))
+            ELSE
               DO Q=1,8
                 F0 = F0 + LEGEN(1,ML+1,IPHASE(Q,IZ,I,:))*
      .            PHASEINTERPWT(Q,IZ,I,:)
+              ENDDO
+            ENDIF
+            LEGENT0 = (LEGENT0 - F0)/(1-F0)
+
+            F1 = 0.0
+            IF (PHASEINTERPWT(1,IZ+1,I,1) .GE. 0.999) THEN
+              F1(:) = LEGEN(1,ML+1,IPHASE(1,IZ+1,I,:))
+            ELSE
+              DO Q=1,8
                 F1 = F1 + LEGEN(1,ML+1,IPHASE(Q,IZ+1,I,:))*
      .            PHASEINTERPWT(Q,IZ+1,I,:)
               ENDDO
-              LEGENT0 = (LEGENT0 - F0)/(1 - F0)
-              LEGENT1 = (LEGENT1 - F1)/(1 - F1)
             ENDIF
-            G0 = SUM(ALBEDO(IZ,I,:)*EXTINCT(IZ,I,:)*LEGENT0)
-            G1 = SUM(ALBEDO(IZ+1,I,:)*EXTINCT(IZ+1,I,:)*LEGENT1)
-          ELSE
-            J = NZ*(I-1)+IZ
-            G0 = LEGEN(1,1,J)
-            G1 = LEGEN(1,1,J+1)
+            LEGENT1 = (LEGENT1- F1)/(1-F1)
           ENDIF
+          G0 = SUM(ALBEDO(IZ,I,:)*EXTINCT(IZ,I,:)*LEGENT0)
+          G1 = SUM(ALBEDO(IZ+1,I,:)*EXTINCT(IZ+1,I,:)*LEGENT1)
           IF (SCAT0+SCAT1 .GT. 0.0) THEN
             ASYMMETRIES(L) = (G0+G1)/(SCAT0+SCAT1)
           ELSE
