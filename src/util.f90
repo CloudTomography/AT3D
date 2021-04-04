@@ -6,6 +6,123 @@
 ! There is also a ray integration routine to allow linear tomography methods
 ! utilizing an SHDOM-type grid.
 
+subroutine adjoint_linear_interpolation(xgrid, ygrid, zgrid, &
+  nx,ny,nz, output, inxgrid, inygrid, inzgrid, innx,inny, &
+  innz, field)
+! This subroutine is written for mapping between two grids with
+! linear interpolation in 3D.
+! If the unknowns are on a coarser resolution
+! grid and linearly interpolated to the property grid for use in SHDOM
+! we need to correctly perform the adjoint of the interpolation
+! to transform the gradients from the property grid back up to the
+! unknowns. This subroutine performs this adjoint interpolation.
+! This subroutine assumes that input has been sanitized and does
+! no error checking.
+
+  implicit none
+  integer nx,ny,nz,innx,inny, innz
+  double precision xgrid(nx), ygrid(ny), zgrid(nz)
+! f2py intent(in) :: xgrid, ygrid, zgrid
+  double precision inxgrid(innx), inygrid(inny), inzgrid(innz)
+! f2py intent(in) :: inxgrid, inygrid, inzgrid
+  double precision output(nx,ny,nz), field(innx,inny,innz)
+!f2py intent(out) :: output
+!f2py intent(in) :: field
+
+  integer i,j,k
+  do k=1,innz
+    do j=1,inny
+      do i=1,innx
+        call adjoint_interp_point(xgrid, ygrid, zgrid, &
+         nx,ny,nz, field(i,j,k), inxgrid(i), inygrid(j), &
+         inzgrid(k), output)
+      enddo
+    enddo
+  enddo
+
+  return
+end subroutine adjoint_linear_interpolation
+
+
+subroutine adjoint_interp_point(xgrid, ygrid,
+  zgrid, nx,ny,nz, fieldval, x,y, z, output)
+
+  implicit none
+  integer nx, ny, nz
+  double precision xgrid(nx), ygrid(ny), zgrid(nz)
+  double precision x,y,z, fieldval
+  double precision output(nx,ny,nz)
+
+  double precision u,v,w,f1,f2,f3,f4,f5,f6
+  double precision f7,f8
+  integer il, iu, im, ix, iy, iz
+! binary searches for the position.
+  il=0
+  iu=nx
+  do while (iu-il .gt. 1)
+    im = (iu+il)/2
+    if (x .ge. xgrid(im)) then
+      il = im
+    else
+      iu=im
+    endif
+  enddo
+  ix = max(il,1)
+  u = (x - xgrid(ix))/(xgrid(ix+1) - xgrid(ix))
+  u = max(min(u, 1.0D0), 0.0D0)
+
+  il=0
+  iu=ny
+  do while (iu-il .gt. 1)
+    im = (iu+il)/2
+    if (x .ge. ygrid(im)) then
+      il = im
+    else
+      iu=im
+    endif
+  enddo
+  iy = max(il,1)
+  v = (y - ygrid(iy))/(ygrid(iy+1) - ygrid(iy))
+  v = max(min(v, 1.0D0), 0.0D0)
+
+  il=0
+  iu=nz
+  do while (iu-il .gt. 1)
+    im = (iu+il)/2
+    if (x .ge. zgrid(im)) then
+      il = im
+    else
+      iu=im
+    endif
+  enddo
+  iz = max(il,1)
+  w = (z - zgrid(iz))/(zgrid(iz+1) - zgrid(iz))
+  w = max(min(w, 1.0D0), 0.0D0)
+! calculate interpolation weights.
+  f1 = (1-u)*(1-v)*(1-w)
+  f2 =    u *(1-v)*(1-w)
+  f3 = (1-u)*   v *(1-w)
+  f4 =    u *   v *(1-w)
+  f5 = (1-u)*(1-v)*   w
+  f6 =    u *(1-v)*   w
+  f7 = (1-u)*   v *   w
+  f8 =    u *   v *   w
+! add to the output field the contributions of the
+! adjoint interpolation.
+  output(ix,iy,iz) = output(ix,iy,iz) + f1*fieldval
+  output(ix+1,iy,iz) = output(ix+1,iy,iz) + f2*fieldval
+  output(ix,iy+1,iz) = output(ix,iy+1,iz) + f3*fieldval
+  output(ix+1,iy+1,iz) = output(ix+1,iy+1,iz) + f4fieldval
+  output(ix,iy,iz+1) = output(ix,iy,iz+1) + f5*fieldval
+  output(ix+1,iy,iz+1) = output(ix+1,iy,iz+1) + f6*fieldval
+  output(ix,iy+1,iz+1) = output(ix,iy+1,iz+1) + f7*fieldval
+  output(ix+1,iy+1,iz+1) = output(ix+1,iy+1,iz+1) + f8*fieldval
+
+  return
+end subroutine adjoint_interp_point
+
+
+
 subroutine average_subpixel_rays (npixels,nrays, weighted_stokes, nstokes, &
                               pixel_index, observables)
 ! Averages over sub-pixel rays to calculate pixel average observables.
