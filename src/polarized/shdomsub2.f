@@ -320,11 +320,11 @@ C               Base grid cells have no parents or children
      .               ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .               ZCKD, GASABS, EXTMIN, SCATMIN,NPART,
      .		         TOTAL_EXT, MAXPG, INTERPMETHOD, IERR,ERRMSG,
-     .             PHASEINTERPWT, OPTINTERPWT)
+     .             PHASEINTERPWT, OPTINTERPWT, NLEGP)
 C       Calls TRILIN_INTERP_PROP to interpolate the input arrays from
 C     the property grid to each internal grid point.
       IMPLICIT NONE
-      INTEGER NPTS, NSTLEG, NLEG, NPART, MAXPG
+      INTEGER NPTS, NSTLEG, NLEG, NPART, MAXPG, NLEGP
       INTEGER IPHASE(8,NPTS,NPART)
       REAL    PHASEINTERPWT(8,NPTS,NPART)
       REAL    OPTINTERPWT(8,NPTS,NPART)
@@ -359,7 +359,7 @@ C     below.
      .                      ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .                      ZCKD, GASABS, EXTMIN, SCATMIN,
      .                      INTERPMETHOD, IERR,ERRMSG,PHASEINTERPWT,
-     .                      OPTINTERPWT)
+     .                      OPTINTERPWT, NLEGP)
       IF (IERR .NE. 0) RETURN
 
 C         Trilinearly interpolate from the property grid to the adaptive grid
@@ -377,7 +377,7 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
      .            INTERPMETHOD, IERR, ERRMSG,
      .            PHASEINTERPWT(:,IP,IPA),
-     .            OPTINTERPWT(:,IP,IPA))
+     .            OPTINTERPWT(:,IP,IPA), NLEGP)
             IF (IERR .NE. 0) RETURN
 	           TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
 	       ENDDO

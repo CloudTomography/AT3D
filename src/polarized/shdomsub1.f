@@ -22,7 +22,7 @@ C     - JRLoveridge 2021/02/22
      .             LEGENP, IPHASEP, NZCKD, ZCKD, GASABS,
      .             NPART, TOTAL_EXT, EXTMIN, SCATMIN, ALBMAX, NSTLEG,
      .             INTERPMETHOD, IERR, ERRMSG, PHASEINTERPWT,
-     .             OPTINTERPWT, PHASEMAX)
+     .             OPTINTERPWT, PHASEMAX, NLEGP)
 Cf2py threadsafe
       IMPLICIT NONE
 
@@ -40,8 +40,8 @@ Cf2py intent(out) :: ALBMAX
       REAL PHASEINTERPWT(8,MAXIG,NPART), OPTINTERPWT(8,MAXIG,NPART)
 Cf2py intent(out) :: PHASEINTERPWT, OPTINTERPWT
 
-      INTEGER  ML, MM, NLEG, NUMPHASE, NSTLEG
-Cf2py intent(in) :: ML, MM, NLEG, NUMPHASE, NSTLEG
+      INTEGER  ML, MM, NLEG, NUMPHASE, NSTLEG, NLEGP
+Cf2py intent(in) :: ML, MM, NLEG, NUMPHASE, NSTLEG, NLEGP
       INTEGER MAXIG
 Cf2py intent(in) :: MAXIG
       INTEGER NPTS
@@ -88,7 +88,7 @@ C           Transfer the medium properties to the internal grid and add gas abs
      .        ALBEDOP, LEGENP, IPHASEP, NZCKD, ZCKD, GASABS,
      .        EXTMIN, SCATMIN, NPART, TOTAL_EXT(:NPTS), MAXPG,
      .        INTERPMETHOD, IERR, ERRMSG, PHASEINTERPWT(:,:NPTS,:),
-     .        OPTINTERPWT(:,:NPTS,:))
+     .        OPTINTERPWT(:,:NPTS,:), NLEGP)
       IF (IERR .NE. 0) RETURN
 
 C         If Delta-M then scale the extinction, albedo, and Legendre terms.
@@ -599,7 +599,6 @@ C           Make sure all processors are going to split cells if any want to
           CURSPLITACC = MIN(CURSPLITACC, MAX(SPLITACC,
      .                 SPLITACC*(AVGSOLCRIT/(3.0*ENDADAPTSOL))**BETA ))
           IF (SOLCRIT .LE. ENDADAPTSOL) CURSPLITACC = SPLITACC
-C          OPEN (UNIT=18, FILE='neighptr.out', STATUS='UNKNOWN')
           IF (SPLITTESTING) THEN
             CALL SPLIT_GRID (MAXIG, MAXIC, MAXIV, MAXIDO, NPHI0MAX,
      .             DOSPLIT,OUTOFMEM, CURSPLITACC, SPLITCRIT,
@@ -954,8 +953,8 @@ C             Compute the temporary source function for this point
               DO Q=1,8
                 IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
                 IPH = IPHASE(Q,I,IPA)
-                LEGENT(:,0:ML+1,1) = LEGENT(:,0:ML+1,1) +
-     .            LEGEN(:,0:ML+1,IPH)*
+                LEGENT(:,:,1) = LEGENT(:,:,1) +
+     .            LEGEN(:,:,IPH)*
      .            PHASEINTERPWT(Q,I,IPA)
               ENDDO
             ENDIF
@@ -1042,8 +1041,8 @@ C             Compute the temporary source function for this point
                 DO Q=1,8
                   IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
                   IPH = IPHASE(Q,I,IPA)
-                  LEGENT(:,0:ML+1,1) = LEGENT(:,0:ML+1,1) +
-     .            LEGEN(:,0:ML+1,IPH)*
+                  LEGENT(:,:,1) = LEGENT(:,:,1) +
+     .            LEGEN(:,:,IPH)*
      .            PHASEINTERPWT(Q,I,IPA)
                 ENDDO
               ENDIF
@@ -1116,8 +1115,8 @@ C         Compute the source function in the temporary array.
               DO Q=1,8
                 IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
                 IPH = IPHASE(Q,I,IPA)
-                LEGENT(:,0:ML+1,1) = LEGENT(:,0:ML+1,1) +
-     .            LEGEN(:,0:ML+1,IPH)*
+                LEGENT(:,:,1) = LEGENT(:,:,1) +
+     .            LEGEN(:,:,IPH)*
      .            PHASEINTERPWT(Q,I,IPA)
               ENDDO
             ENDIF
@@ -1277,7 +1276,7 @@ C         the loop over L indices below.
                 ENDDO
               ENDIF
             ENDDO
-            F = 1/(1-F)
+            F = 1.0/(1-F)
           ENDIF
 
 
@@ -4382,7 +4381,6 @@ C             Do the Delta-M scaling of extinction and albedo for this point
               IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
                 F = LEGEN(1,ML+1,IPHASE(1,IP,IPA))
               ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
-
                 IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
                   F = LEGEN(1,ML+1,IPHASE(1,IP,IPA))
                 ELSE
@@ -4487,8 +4485,8 @@ C             Compute the source function for the new points
                 DO Q=1,8
                   IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
                   IPH = IPHASE(Q,IP,IPA)
-                  LEGENT(:,0:ML+1,1) = LEGENT(:,0:ML+1,1) +
-     .            LEGEN(:,0:ML+1,IPH)*
+                  LEGENT(:,:,1) = LEGENT(:,:,1) +
+     .            LEGEN(:,:,IPH)*
      .            PHASEINTERPWT(Q,IP,IPA)
                 ENDDO
               ENDIF

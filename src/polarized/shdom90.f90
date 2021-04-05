@@ -18,7 +18,7 @@
                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
                      ALBEDOP, LEGENP, IPHASEP, NZCKD, &
                      ZCKD, GASABS, EXTMIN, SCATMIN, INTERPMETHOD, &
-                     IERR, ERRMSG, PHASEINTERPWT, OPTINTERPWT)
+                     IERR, ERRMSG, PHASEINTERPWT, OPTINTERPWT,NLEGP)
 !      Trilinearly interpolates the quantities on the input property
 !     grid at the single point (X,Y,Z) to get the output TEMP,EXTINCT,
 !     ALBEDO, and LEGEN or IPHASE.  Interpolation is done on the
@@ -28,7 +28,7 @@
 !     is that of the maximum weighted scattering property grid point.
 !     If INIT=.TRUE. then transfers the tabulated phase functions.
       IMPLICIT NONE
-      INTEGER NSTLEG, NLEG
+      INTEGER NSTLEG, NLEG, NLEGP
       INTEGER IPHASE(8)
       LOGICAL INIT
       REAL PHASEINTERPWT(8), OPTINTERPWT(8)
@@ -38,12 +38,13 @@
       DOUBLE PRECISION U, V, W, F1, F2, F3, F4, F5, F6, F7, F8, F
       DOUBLE PRECISION SCAT1,SCAT2,SCAT3,SCAT4,SCAT5,SCAT6,SCAT7,SCAT8
       DOUBLE PRECISION SCATTER, MAXSCAT, KG, EXTMIN, SCATMIN
+      INTEGER Q, Q2, CURRENTI
       CHARACTER INTERPMETHOD*2
       INTEGER IERR
       CHARACTER ERRMSG*600
 
       INTEGER NPX, NPY, NPZ
-      INTEGER NUMPHASE, Q, INTERPTEMP2
+      INTEGER NUMPHASE
       REAL DELX, DELY, XSTART, YSTART, INTERPTEMP
       REAL ZLEVELS(*)
       REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
@@ -57,7 +58,7 @@
         DO I = 1, NUMPHASE
           DO L = 0, NLEG
             DO J = 1, NSTLEG
-              LEGEN(J,L,I) = LEGENP(J+NSTLEG*(L+(NLEG+1)*(I-1)))/(2*L+1)
+              LEGEN(J,L,I) = LEGENP(J+NSTLEG*(L+(NLEGP+1)*(I-1)))/(2*L+1)
             ENDDO
           ENDDO
         ENDDO
@@ -182,6 +183,18 @@
           PHASEINTERPWT(7) = SCAT7/SCATMIN
           PHASEINTERPWT(8) = SCAT8/SCATMIN
         ENDIF
+!       Search for non-unique phase function indices and consolidate
+!       weights so we don't waste time mixing phase functions if they
+!       are all the same anyway.
+        DO Q=1,8
+          CURRENTI = IPHASE(Q)
+          DO Q2=Q+1,8
+            IF (CURRENTI .EQ. IPHASE(Q2)) THEN
+              PHASEINTERPWT(Q) = PHASEINTERPWT(Q) + PHASEINTERPWT(Q2)
+              PHASEINTERPWT(Q2) = 0.0
+            ENDIF
+          ENDDO
+        ENDDO
 !       Reorder values so that the maximum phase weight
 !       is the first one so we can easily check
 !       if we can neglect the others later.

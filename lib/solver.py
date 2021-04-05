@@ -2010,7 +2010,7 @@ class RTE:
         # Determine the number of legendre coefficient for a given angular resolution
         self._nleg = self._ml + 1 if self._deltam else self._ml
 
-        self._nleg = max(legendre_table.sizes['legendre_index'] - 1, self._nleg)
+        self._pa.nlegp = max(legendre_table.sizes['legendre_index'] - 1, self._nleg)
         self._nscatangle = max(36, min(721, 2 * self._nleg))
 
         # Check if legendre table needs padding. It will only need
@@ -2054,6 +2054,7 @@ class RTE:
         self._iphase, self._total_ext, self._extmin, self._scatmin,         \
         self._albmax, ierr, errmsg, self._phaseinterpwt,                    \
         self._optinterpwt = pyshdom.core.transfer_pa_to_grid(
+            nlegp=self._pa.nlegp,
             phasemax=self._phasemax,
             nstleg=self._nstleg,
             npart=self._npart,
@@ -2321,6 +2322,13 @@ class RTE:
         Precompute angular scattering for the entire legendre table.
         Perform a negativity check. (negcheck=True).
         """
+        # Use the property phase table as LEGEN is truncated to
+        # only include the L indices needed for the solver
+        # whereas legenp holds the full phase functions.
+        legen_reshape = self._pa.legenp.reshape(
+            (self._nstleg, self._pa.nlegp,self._pa.numphase),
+            order='F'
+        )
         self._phasetab, errmsg, ierr = pyshdom.core.precompute_phase_check(
             negcheck=True,
             nscatangle=self._nscatangle,
@@ -2328,10 +2336,10 @@ class RTE:
             nstphase=self._nstphase,
             nstokes=self._nstokes,
             nstleg=self._nstleg,
-            nleg=self._nleg,
+            nleg=self._pa.nlegp,
             ml=self._ml,
             nlm=self._nlm,
-            legen=self._legen,
+            legen=legen_reshape,
             deltam=self._deltam,
         )
         pyshdom.checks.check_errcode(ierr, errmsg)
