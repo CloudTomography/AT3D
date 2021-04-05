@@ -329,7 +329,7 @@
 
 
       SUBROUTINE DIRECT_BEAM_PROP (INIT, XI, YI, ZI, BCFLAG, IPFLAG, &
-                     DELTAM, ML, NSTLEG, NLEG, SOLARFLUX, SOLARMU, SOLARAZ, &
+                     DELTAM, ML, NSTLEG, NLEGP, SOLARFLUX, SOLARMU, SOLARAZ, &
                      DIRFLUX,  UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM, &
                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY, &
                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
@@ -362,7 +362,7 @@
 !     3=-Y, 4=+Y).  XE,YE,ZE returns the location of the exitting ray,
 !     and path is the optical path from XI,YI,ZI to the sun.
       IMPLICIT NONE
-      INTEGER INIT, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, SIDE, MAXPG
+      INTEGER INIT, BCFLAG, IPFLAG, ML, NSTLEG, NLEGP, SIDE, MAXPG
       LOGICAL DELTAM, VALIDBEAM
       REAL    XI, YI, ZI, SOLARFLUX, SOLARMU, SOLARAZ
       REAL    DIRFLUX, UNIFZLEV, XO, YO, ZO, DIRPATH
@@ -449,7 +449,7 @@
                     IPH = IP
                   ENDIF
                   L = ML+1
-                  F = LEGENP(1+NSTLEG*(L+(NLEG+1)*(IPH-1)))/(2*L+1)
+                  F = LEGENP(1+NSTLEG*(L+(NLEGP+1)*(IPH-1)))/(2*L+1)
                   EXTINCT = (1.0-ALBEDO*F)*EXTINCT
                 ENDIF
                 EXTDIRP(IP) = EXTDIRP(IP) + EXTINCT

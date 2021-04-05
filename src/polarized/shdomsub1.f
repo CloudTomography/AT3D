@@ -132,7 +132,7 @@ C       Get the maximum single scattering albedo over all processors
      .             NSTLEG, NSTOKES, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
      .             INRADFLAG,NDELSOURCE, IERR, ERRMSG, MAXPG,
      .             WORK2_SIZE, PHASEINTERPWT, PHASEMAX,
-     .             INTERPMETHOD)
+     .             INTERPMETHOD, NLEGP)
 Cf2py threadsafe
 C       Initialize the SHDOM solution procedure.
       IMPLICIT NONE
@@ -142,8 +142,8 @@ Cf2py intent(in) ::  NX, NY, NX1, NY1, NZ, NXSFC, NYSFC, NSFCPAR
 Cf2py intent(in) ::  NUMPHASE, NSTLEG, NSTOKES
       INTEGER ML, MM, NCS, NLM, NMU, NPHI, NLEG, MAXSFCPARS
 Cf2py intent(in) :: ML, MM, NCS, NLM, NMU, NPHI, NLEG, MAXSFCPARS
-      INTEGER BCFLAG, IPFLAG, NBCELLS
-Cf2py intent(in) ::  BCFLAG, IPFLAG, NBCELLS
+      INTEGER BCFLAG, IPFLAG, NBCELLS, NLEGP
+Cf2py intent(in) ::  BCFLAG, IPFLAG, NBCELLS, NLEGP
       INTEGER MAXIV, MAXIC, MAXIG, MAXIDO, NPHI0MAX
 Cf2py intent(in) :: MAXIV, MAXIC, MAXIG, MAXIDO, NPHI0MAX
       INTEGER MAXNBC, MAXBCRAD
@@ -270,7 +270,7 @@ C     .      NCELLS, NPTS, CELLFLAGS(:NCELLS), XGRID, YGRID, ZGRID,
 C     .      GRIDPOS(:,:NPTS),
 C     .      GRIDPTR(:,:NCELLS), NEIGHPTR(:,:NCELLS), TREEPTR(:,:NCELLS))
           CALL MAKE_DIRECT (NPTS, BCFLAG, IPFLAG, DELTAM,
-     .             ML, NSTLEG, NLEG, SOLARFLUX, SOLARMU,
+     .             ML, NSTLEG, NLEGP, SOLARFLUX, SOLARMU,
      .             SOLARAZ,  GRIDPOS, DIRFLUX,
      .             NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .             XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
@@ -404,7 +404,7 @@ C           inequality holds.
      .               FFTFLAG, CMU1, CMU2, WTMU, CPHI1, CPHI2, WPHISAVE,
      .               WORK, WORK1, WORK2, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
      .               ITERFIXSH, INTERPMETHOD, IERR, ERRMSG, MAXPG,
-     .               PHASEINTERPWT, OPTINTERPWT, PHASEMAX)
+     .               PHASEINTERPWT, OPTINTERPWT, PHASEMAX, NLEGP)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -418,8 +418,8 @@ Cf2py intent(in) :: NSTOKES, NX, NY, NX1, NY1, NZ, NXSFC, NYSFC, NSFCPAR
 Cf2py intent(in) :: ML, MM, NCS, NLM, NMU, NPHI, NANG, NLEG, NSTLEG, NUMPHASE
       INTEGER NPHI0(NMU), MAXITER, ITER, BCFLAG, IPFLAG, ITERFIXSH
 Cf2py intent(in) :: MAXITER, BCFLAG, IPFLAG, NPHI0, ITERFIXSH
-      INTEGER MAXIV, MAXIC, MAXIG, MAXIDO
-Cf2py intent(in) :: MAXIV, MAXIC, MAXIG, MAXIDO
+      INTEGER MAXIV, MAXIC, MAXIG, MAXIDO, NLEGP
+Cf2py intent(in) :: MAXIV, MAXIC, MAXIG, MAXIDO, NLEGP
       INTEGER MAXNBC, MAXBCRAD
 Cf2py intent(in) :: MAXBCRAD, MAXNBC
       LOGICAL DELTAM, ACCELFLAG, HIGHORDERRAD
@@ -618,7 +618,7 @@ C           Make sure all processors are going to split cells if any want to
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
      .             MAXPG, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG,
-     .             PHASEINTERPWT, OPTINTERPWT, PHASEMAX)
+     .             PHASEINTERPWT, OPTINTERPWT, PHASEMAX, NLEGP)
             IF (IERR .NE. 0) RETURN
             IF (SOLCRIT .GT. STARTADAPTSOL)  STARTSPLITACC = SPLITCRIT
           ENDIF
@@ -724,11 +724,18 @@ C      real generalized spherical harmonics and thermal and/or solar
 C      source information.
       IMPLICIT NONE
       INTEGER NSTOKES, NSTLEG, NLEG, NLM, LOFJ(NLM), IPH, NR
+!f2py intent(in) :: NSTOKES, NSTLEG, NLEG, NLM, LOFJ(NLM)
+!f2py intent(in) :: IPH, NR
       CHARACTER SRCTYPE*1
+!f2py intent(in) :: SRCTYPE
       REAL    FLUX0, YLMSUN(NSTLEG,NLM), PLANCK, ALBEDO
+!f2py intent(in) :: FLUX0, YLMSUN, PLANCK, ALBEDO
       REAL    LEGEN(NSTLEG,0:NLEG,*)
+!f2py intent(in) :: LEGEN
       REAL    RADIANCE(NSTOKES,NR)
+!f2py intent(in) :: RADIANCE
       REAL    SOURCET(NSTOKES,NLM)
+!f2py intent(out) :: SOURCET
       REAL    C
       PARAMETER (C=3.544907703)
       INTEGER J
@@ -1084,6 +1091,9 @@ C         Compute the source function in the temporary array.
         SOURCET = 0.0
         IR = RSHPTR(I)
         NR = RSHPTR(I+1)-IR
+        IF (I .EQ. 1004) THEN
+          PRINT *, IR, NR, I
+        ENDIF
         IF (NR .GT. NLM) THEN
           WRITE (6,*) 'COMPUTE_SOURCE: NR>NLM 3',I,IR,RSHPTR(I+1)
           STOP
@@ -4069,7 +4079,7 @@ C             do first and put the second child on the stack.
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
      .             MAXPG, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG,
-     .             PHASEINTERPWT, OPTINTERPWT, PHASEMAX)
+     .             PHASEINTERPWT, OPTINTERPWT, PHASEMAX, NLEGP)
 C       Splits the cells that have a cell dividing criterion greater than
 C     CURSPLITACC if DOSPLIT is true.  The current splitting criterion
 C     achieved is returned in SPLITCRIT.  If we are at the end of the
@@ -4077,7 +4087,7 @@ C     grid point, grid cell, or spherical harmonic arrays (sizes given
 C     by MAXIG, MAXIC, MAXIV, MAXIDO) then the OUTOFMEM flag is returned true.
       IMPLICIT NONE
       INTEGER MAXIG, MAXIC, MAXIV, MAXIDO, NPHI0MAX
-      INTEGER NPTS, NCELLS, BCFLAG, IPFLAG
+      INTEGER NPTS, NCELLS, BCFLAG, IPFLAG, NLEGP
       INTEGER NX, NY, NSTOKES, ML, MM, NLM, NSTLEG, NLEG
       INTEGER NUMPHASE, NPART, MAXPG
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
@@ -4180,7 +4190,7 @@ C                 Interpolate the medium properties, radiance, and source
      .            CXINV, CYINV,CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .            DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
      .            NPART,MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD, IERR,
-     .            ERRMSG, PHASEINTERPWT, OPTINTERPWT, PHASEMAX)
+     .            ERRMSG, PHASEINTERPWT, OPTINTERPWT, PHASEMAX,NLEGP)
               IF (IERR .NE. 0) RETURN
             ENDIF
             I = I + 1
@@ -4226,7 +4236,7 @@ C                   Interpolate the medium properties, radiance, and source
      .               DELYD,XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
      .               NPART,MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD,
      .               IERR, ERRMSG, PHASEINTERPWT, OPTINTERPWT,
-     .               PHASEMAX)
+     .               PHASEMAX,NLEGP)
                 IF (IERR .NE. 0) RETURN
               ENDIF
             ENDIF
@@ -4282,7 +4292,7 @@ C         Find the max adaptive cell criterion after the cell divisions
      .       CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .       XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
      .       MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD,IERR,ERRMSG,
-     .       PHASEINTERPWT, OPTINTERPWT, PHASEMAX)
+     .       PHASEINTERPWT, OPTINTERPWT, PHASEMAX,NLEGP)
 C       Interpolates the medium properties, radiance, and source function for
 C     new grid points (specified in NEWPOINTS).  The medium properties are
 C     interpolated from the property grid, since interpolating from the
@@ -4293,7 +4303,7 @@ C     recomputed (rather than interpolated).  The radiance is averaged
 C     from the two parent grid points, and used to compute the source
 C     function for the new points.
       IMPLICIT NONE
-      INTEGER NEWPOINTS(3,4), NPTS, NPART
+      INTEGER NEWPOINTS(3,4), NPTS, NPART, NLEGP
       INTEGER NSTOKES, ML, MM, NLM, NSTLEG, NLEG, NUMPHASE
       INTEGER MAXIG, MAXPG, BCFLAG, IPFLAG
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)
@@ -4375,7 +4385,7 @@ C             Interpolate the medium properties from the property grid
      .             ALBEDOP(:,IPA), LEGENP, IPHASEP(:,IPA),
      .             NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
      .             INTERPMETHOD, IERR, ERRMSG, PHASEINTERPWT(:,IP,IPA),
-     .             OPTINTERPWT(:,IP,IPA))
+     .             OPTINTERPWT(:,IP,IPA), NLEGP)
 C             Do the Delta-M scaling of extinction and albedo for this point
 	          IF (DELTAM) THEN
               IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
@@ -4415,7 +4425,7 @@ C                 to the direct flux (for source function calculation below)
 C               Otherwise, calculate the exact direct beam from property grid
               DIRPATH = 0.0
               CALL DIRECT_BEAM_PROP (0, X,Y,Z, BCFLAG, IPFLAG, DELTAM,
-     .                  ML, NSTLEG, NLEG, SOLARFLUX,SOLARMU,SOLARAZ,
+     .                  ML, NSTLEG, NLEGP, SOLARFLUX,SOLARMU,SOLARAZ,
      .                  DIRFLUX(IP),
      .                  UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM,
      .                  NPX, NPY, NPZ, NUMPHASE, DELX, DELY,

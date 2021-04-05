@@ -138,7 +138,7 @@ class RTE:
         # If the second character is 'O' then 'max scattering' interpolation
         # of phase functions occurs. If the second character is 'N' then
         # linear mixing of phase functions occurs.
-        self._interpmethod = 'ON'
+        self._interpmethod = 'OO'
         # phasemax is only used for linear mixing of phase functions
         # and is the threshold for the weight for neglecting the
         # contributions of other phase functions.
@@ -312,6 +312,7 @@ class RTE:
         self._work2, ierr, errmsg, self._phaseinterpwt, self._optinterpwt \
          = pyshdom.core.solution_iterations(
             verbose=verbose,
+            nlegp=self._pa.nlegp,
             phasemax=self._phasemax,
             phaseinterpwt=self._phaseinterpwt,
             optinterpwt=self._optinterpwt,
@@ -2246,6 +2247,7 @@ class RTE:
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
         self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg \
          = pyshdom.core.init_solution(
+            nlegp=self._pa.nlegp,
             phasemax=self._phasemax,
             interpmethod=self._interpmethod,
             phaseinterpwt=self._phaseinterpwt,

@@ -391,7 +391,7 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
 
 
       SUBROUTINE MAKE_DIRECT (NPTS, BCFLAG, IPFLAG, DELTAM,
-     .                ML, NSTLEG, NLEG, SOLARFLUX, SOLARMU,
+     .                ML, NSTLEG, NLEGP, SOLARFLUX, SOLARMU,
      .                SOLARAZ, GRIDPOS, DIRFLUX,
      .                NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .                XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
@@ -404,8 +404,8 @@ C       Makes the direct beam solar flux for the internal base grid.
 C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
       IMPLICIT NONE
-      INTEGER NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, MAXPG
-Cf2py intent(in) :: NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, MAXPG
+      INTEGER NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEGP, MAXPG
+Cf2py intent(in) :: NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEGP, MAXPG
       LOGICAL DELTAM
 Cf2py intent(in) :: DELTAM
       REAL    SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS(3,*)
@@ -438,7 +438,7 @@ Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
 
 
       CALL DIRECT_BEAM_PROP (1, 0.0, 0.0, 0.0, BCFLAG, IPFLAG,
-     .            DELTAM, ML, NSTLEG, NLEG,
+     .            DELTAM, ML, NSTLEG, NLEGP,
      .            SOLARFLUX, SOLARMU, SOLARAZ, DIRFLUX(1),
      .            UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM,
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
@@ -453,7 +453,7 @@ C27237,27283
         DIRPATH = 0.0
         CALL DIRECT_BEAM_PROP
      .           (0, GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP),
-     .            BCFLAG, IPFLAG, DELTAM, ML, NSTLEG, NLEG,
+     .            BCFLAG, IPFLAG, DELTAM, ML, NSTLEG, NLEGP,
      .            SOLARFLUX, SOLARMU, SOLARAZ,   DIRFLUX(IP),
      .            UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM,
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
