@@ -4498,13 +4498,13 @@ C             Compute the source function for the new points
               ENDIF
               IF (NSTOKES .EQ. 1) THEN
                 CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
-     .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
-     .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
+     .            SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
+     .            PLANCK(IP,IPA), ALBEDO(IP,IPA), 1, LEGENT,
      .            NR, RADIANCE(1,IR+1),   SOURCET)
               ELSE
                 CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
-     .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
-     .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
+     .            LOFJ, SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
+     .            PLANCK(IP,IPA), ALBEDO(IP,IPA), 1, LEGENT,
      .            NR, RADIANCE(1,IR+1), SOURCET)
               ENDIF
             ENDIF
