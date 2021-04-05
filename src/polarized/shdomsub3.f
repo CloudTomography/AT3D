@@ -474,7 +474,7 @@ C           Property file type T or P is for tabulated phase function format
       ELSE IF (PROPTYPE .EQ. 'T' .OR. PROPTYPE .EQ. 'P') THEN
         READ (1,*) NUMPHASE
 C             If delta-M then find the largest number of Legendre terms
-        IF (DELTAM) THEN
+C        IF (DELTAM) THEN
           DO I = 1, NUMPHASE
             IF (PROPTYPE .EQ. 'T') THEN
               READ (1,*) NUML, (CHI, L=1,NUML)
@@ -491,7 +491,7 @@ C             If delta-M then find the largest number of Legendre terms
      .         NLEG,' to ',MAXLEG,' Legendre terms.'
           ENDIF
           NLEG = MIN(NLEG,MAXLEG)
-        ENDIF
+C        ENDIF
         N = NPX*NPY*NPZ
         IF (N .GT. MAXPG)  STOP 'READ_PROPERTIES: MAXPG exceeded'
         IF (NUMPHASE*(NLEG+1)*NSTLEG .GT. MAXPGL) THEN
@@ -503,6 +503,7 @@ C             If delta-M then find the largest number of Legendre terms
         READ (1,*) NPX, NPY, NPZ
         READ (1,*) DELX, DELY, (ZLEVELS(K), K=1,NPZ)
         READ (1,*) NUMPHASE
+        PRINT *, NLEG
         MAXASYM = -1.0
         DO I = 1, NUMPHASE
           IL = (NLEG+1)*(I-1)
