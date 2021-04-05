@@ -4467,29 +4467,29 @@ C             Compute the source function for the new points
               W = EXTINCT(IP,IPA)/EXT
             ENDIF
             IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
-              IPH = IPHASE(1,I,IPA)
+              IPH = IPHASE(1,IP,IPA)
               IF (NSTOKES .EQ. 1) THEN
                 CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
-     .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
-     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
+     .            SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
+     .            PLANCK(IP,IPA), ALBEDO(IP,IPA), IPH, LEGEN,
      .            NR, RADIANCE(1,IR+1),   SOURCET)
               ELSE
                 CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
-     .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
-     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
+     .            LOFJ, SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
+     .            PLANCK(IP,IPA), ALBEDO(IP,IPA), IPH, LEGEN,
      .            NR, RADIANCE(1,IR+1), SOURCET)
               ENDIF
             ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
-              IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
-                LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,I,IPA))
+              IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
+                LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,IP,IPA))
               ELSE
                 LEGENT = 0.0
                 DO Q=1,8
-                  IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
-                  IPH = IPHASE(Q,I,IPA)
+                  IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
+                  IPH = IPHASE(Q,IP,IPA)
                   LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1) +
      .            LEGEN(:,0:ML,IPH)*
-     .            PHASEINTERPWT(Q,I,IPA)
+     .            PHASEINTERPWT(Q,IP,IPA)
                 ENDDO
               ENDIF
               IF (DELTAM) THEN
