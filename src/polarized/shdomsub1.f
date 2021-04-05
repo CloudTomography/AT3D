@@ -1091,9 +1091,6 @@ C         Compute the source function in the temporary array.
         SOURCET = 0.0
         IR = RSHPTR(I)
         NR = RSHPTR(I+1)-IR
-        IF (I .EQ. 1004) THEN
-          PRINT *, IR, NR, I
-        ENDIF
         IF (NR .GT. NLM) THEN
           WRITE (6,*) 'COMPUTE_SOURCE: NR>NLM 3',I,IR,RSHPTR(I+1)
           STOP

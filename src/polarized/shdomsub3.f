@@ -503,7 +503,6 @@ C        ENDIF
         READ (1,*) NPX, NPY, NPZ
         READ (1,*) DELX, DELY, (ZLEVELS(K), K=1,NPZ)
         READ (1,*) NUMPHASE
-        PRINT *, NLEG
         MAXASYM = -1.0
         DO I = 1, NUMPHASE
           IL = (NLEG+1)*(I-1)

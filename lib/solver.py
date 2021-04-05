@@ -525,6 +525,9 @@ class RTE:
         self._precompute_phase()
 
         output, ierr, errmsg = pyshdom.core.render(
+            interpmethod=self._interpmethod,
+            phaseinterpwt=self._phaseinterpwt[:,:self._npts,:],
+            phasemax=self._phasemax,
             nstphase=self._nstphase,
             ylmsun=self._ylmsun,
             phasetab=self._phasetab,
@@ -562,7 +565,7 @@ class RTE:
             shptr=self._shptr,
             bcptr=self._bcptr,
             cellflags=self._cellflags,
-            iphase=self._iphase[:self._npts],
+            iphase=self._iphase[:,:self._npts],
             deltam=self._deltam,
             solarmu=self._solarmu,
             solaraz=self._solaraz,
@@ -1795,9 +1798,9 @@ class RTE:
 
         # if single plane or column then force independent pixel mode.
         if self._nx == 1:
-            ipflag = ipflag | (1<<0)
+            self._ipflag = self._ipflag | (1<<0)
         if self._ny == 1:
-            ipflag = ipflag | (1<<1)
+            self._ipflag = self._ipflag | (1<<1)
 
         # Set up base grid point actual size (NX1xNY1xNZ)
         self._nx1, self._ny1 = self._nx + 1, self._ny + 1
@@ -2359,7 +2362,7 @@ class RTE:
         # only include the L indices needed for the solver
         # whereas legenp holds the full phase functions.
         legen_reshape = self._pa.legenp.reshape(
-            (self._nstleg, self._pa.nlegp,self._pa.numphase),
+            (self._nstleg, self._pa.nlegp+1,self._pa.numphase),
             order='F'
         )
         self._phasetab, errmsg, ierr = pyshdom.core.precompute_phase_check(

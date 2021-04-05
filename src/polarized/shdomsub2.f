@@ -2754,10 +2754,8 @@ C             Special case for solar source and Delta-M
      .          PHASEINTERPWT(Q,IP,IPA)
             ENDDO
           ENDIF
-          IF (DELTAM) THEN
-            F = LEGENT(1,ML+1)
-            LEGENT = LEGENT/(1-F)
-          ENDIF
+          F = LEGENT(1,ML+1)
+          LEGENT = LEGENT/(1-F)
         ENDIF
 
 C               First subtract off the truncated single scattering
@@ -2789,7 +2787,16 @@ C               First subtract off the truncated single scattering
 C               Then add in the single scattering contribution for the
 C               original unscaled phase function.
 	      IF (NUMPHASE .GT. 0) THEN
-	        SRCEXT8(:,N) = SRCEXT8(:,N) + DA*SINGSCAT(:,IPH)
+          IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
+            SRCEXT8(:,N) = SRCEXT8(:,N) +
+     .          DA*SINGSCAT(:,IPHASE(1,IP,IPA))
+          ELSE
+            DO Q=1,8
+              IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
+              SRCEXT8(:,N) = SRCEXT8(:,N) +
+     .          DA*SINGSCAT(:,IPHASE(Q,IP,IPA))*PHASEINTERPWT(Q,IP,IPA)
+            ENDDO
+          ENDIF
 	      ELSE IF (NSTOKES .EQ. 1) THEN
           WRITE(6,*) 'NUMPHASE=0 is not supported.'
           STOP
