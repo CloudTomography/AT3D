@@ -119,7 +119,12 @@ def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=Fals
     #inherit attributes.
     optical_properties = optical_properties.assign_attrs(poly_table.attrs)
     optical_properties = optical_properties.assign_attrs(microphysics.attrs)
-    optical_properties['delx'] = microphysics.delx
-    optical_properties['dely'] = microphysics.dely
+
+    #transfer the grid variables. NOTE that delx, dely exist and be passed.
+    # while nx/ny/nz are optional. delx/dely are checked for by check_grid.
+    grid_variables = ('delx', 'dely', 'nx', 'ny', 'nz')
+    for grid_variable in grid_variables:
+        if grid_variable in microphysics.data_vars:
+            optical_properties[grid_variable] = microphysics[grid_variable]
 
     return optical_properties

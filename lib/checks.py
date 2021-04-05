@@ -194,6 +194,14 @@ def check_grid(dataset):
             "Grid dimension 'z' should be positive, strictly increasing and "
             "have 2 or more elements."
             )
+    optional_grid_data = ('nx', 'ny', 'nz')
+    for grid_data in optional_grid_data:
+        if grid_data in dataset.data_vars:
+            if (dataset[grid_data].dtype != np.int) or (dataset[grid_data].dtype < 1):
+                raise pyshdom.exceptions.GridError(
+                    "Optional SHDOM grid spacing {}={} should be an integer and greater "
+                    "or equal to 1".format(grid_data, dataset[grid_data])
+                )
 
 def check_legendre(dataset):
     """

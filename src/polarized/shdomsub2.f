@@ -2147,7 +2147,8 @@ C        Choose the best range for the angle of linear polarization (-90 to 90 o
      .                        SFCTYPE, NSFCPAR, SFCGRIDPARMS,
      .                        MU2, PHI2, X0,Y0,Z0,
      .			              XE,YE,ZE, SIDE, TRANSMIT, RADIANCE,
-     .			              VALIDRAD, TOTAL_EXT, NPART, IERR, ERRMSG)
+     .			              VALIDRAD, TOTAL_EXT, NPART, IERR, ERRMSG,
+     .                    INTERPMETHOD, PHASEINTERPWT, PHASEMAX)
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
 C     radiance (RADIANCE) at the point X0,Y0,Z0.
@@ -2164,7 +2165,9 @@ C     5=-Z,6=+Z).
       INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
       INTEGER SHPTR(NPTS+1)
       INTEGER*2 CELLFLAGS(NCELLS)
-      INTEGER IPHASE(NPTS,NPART)
+      INTEGER IPHASE(8,NPTS,NPART)
+      REAL    PHASEINTERPWT(8,NPTS,NPART), PHASEMAX
+      CHARACTER INTERPMETHOD*2
       INTEGER BCPTR(MAXNBC,2)
       LOGICAL DELTAM, VALIDRAD
       REAL    WTDO(NMU,NPHI0MAX), MU(NMU), PHI(NMU,NPHI0MAX)
@@ -2334,7 +2337,8 @@ C         Compute the source function times extinction in direction (MU2,PHI2)
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
      .             SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
      .             DONETHIS, OLDIPTS, OEXTINCT8, OSRCEXT8,
-     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART)
+     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART,
+     .             INTERPMETHOD, PHASEINTERPWT, PHASEMAX)
         ELSE
           CALL COMPUTE_SOURCE_1CELL (ICELL, GRIDPTR,
      .             NSTOKES, NSTLEG, ML, MM, NLM, NLEG, NUMPHASE,
@@ -2342,7 +2346,8 @@ C         Compute the source function times extinction in direction (MU2,PHI2)
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
      .             SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
      .             DONETHIS, OLDIPTS, OEXTINCT8, OSRCEXT8,
-     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART)
+     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART,
+     .             INTERPMETHOD, PHASEINTERPWT, PHASEMAX)
         ENDIF
 C         Interpolate the source and extinction to the current point
         IPT1 = GRIDPTR(1,ICELL)
@@ -2652,7 +2657,8 @@ C           Do a binary search to locate the bottom boundary point
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
      .             SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
      .             DONETHIS, OLDIPTS, OEXTINCT8, OSRCEXT8,
-     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART)
+     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART,
+     .             INTERPMETHOD,PHASEINTERPWT, PHASEMAX)
 C       Computes the source function times extinction for gridpoints
 C     belonging to cell ICELL in the direction (MU,PHI).  The results
 C     are returned in SRCEXT8 and EXTINCT8.
@@ -2664,7 +2670,8 @@ C     for unscaled untruncated phase function.
       INTEGER ICELL, NSTOKES, NSTLEG, NPTS, ML, MM, NLM, NLEG, NUMPHASE
       INTEGER GRIDPTR(8,*), SHPTR(NPTS+1)
       INTEGER DONETHIS(8), OLDIPTS(8)
-      INTEGER IPHASE(NPTS,NPART), NPART
+      INTEGER IPHASE(8,NPTS,NPART), NPART
+      REAL    PHASEINTERPWT(8,NPTS,NPART), PHASEMAX
       LOGICAL DELTAM
       REAL    SOLARMU
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
@@ -2675,10 +2682,12 @@ C     for unscaled untruncated phase function.
       REAL    OEXTINCT8(8), OSRCEXT8(NSTOKES,8)
       REAL    EXTINCT8(8), SRCEXT8(NSTOKES,8)
       DOUBLE PRECISION SUNDIRLEG(0:NLEG)
-      CHARACTER SRCTYPE*1
+      CHARACTER SRCTYPE*1, INTERPMETHOD*2
 
       INTEGER IP, J, JT, L, M, MS, ME, IPH, IS, NS, N, I,IPA
+      INTEGER Q
       REAL    SECMU0, F, DA, A, A1, B1, EXT, W
+      REAL LEGENT(NSTLEG,0:NLEG)
 
       SECMU0 = 1.0D0/ABS(SOLARMU)
 
@@ -2695,7 +2704,7 @@ C           at the viewing angle from the spherical harmonics source function.
           SRCEXT8(:,N) = SRCEXT8(:,ABS(I))
         ELSE
 
-	  EXT = TOTAL_EXT(IP)
+	        EXT = TOTAL_EXT(IP)
           OLDIPTS(N) = IP
           IS = SHPTR(IP)
           NS = SHPTR(IP+1)-IS
@@ -2722,65 +2731,80 @@ C             of the source function
           ENDIF
 
 C             Special case for solar source and Delta-M
-          IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
+      IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
 	    DO IPA = 1, NPART
 
-
 	      IF (EXT.EQ.0.0) THEN
-		W = 1.0
+		        W = 1.0
 	      ELSE
-		W = EXTINCT(IP,IPA)/EXT
+		        W = EXTINCT(IP,IPA)/EXT
 	      ENDIF
 	      IF (W.EQ.0.0) CYCLE
 
-	      IF (NUMPHASE .GT. 0) THEN
-		IPH = IPHASE(IP,IPA)
-	      ELSE
-		IPH = IP
-	      ENDIF
+        IF (INTERPMETHOD(2:2) .EQ. 'O' ) THEN
+          LEGENT = LEGEN(:,:,IPHASE(1,IP,IPA))
+        ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+          IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
+            LEGENT = LEGEN(:,:,IPHASE(1,IP,IPA))
+          ELSE
+            LEGENT = 0.0
+            DO Q=1,8
+              IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
+              LEGENT = LEGENT + LEGEN(:,:,IPHASE(Q,IP,IPA))*
+     .          PHASEINTERPWT(Q,IP,IPA)
+            ENDDO
+          ENDIF
+          IF (DELTAM) THEN
+            F = LEGENT(1,ML+1)
+            LEGENT = LEGENT/(1-F)
+          ENDIF
+        ENDIF
+
 C               First subtract off the truncated single scattering
 	      DA = ALBEDO(IP,IPA)*DIRFLUX(IP)*SECMU0*W
 	      J = 1
 
 	      DO L = 0, ML
-		ME = MIN(L,MM)
-		MS = -ME
-		A1 = DA*LEGEN(1,L,IPH)
-		B1 = DA*LEGEN(5,L,IPH)
-		IF (J .LE. NS) THEN
-		  JT = J
-		  DO M = MS, ME
-		    SRCEXT8(1,N) =SRCEXT8(1,N)-A1*YLMDIR(1,J)*YLMSUN(1,J)
-		    J = J + 1
-		  ENDDO
-		  IF (NSTOKES .GT. 1) THEN
-		    J = JT
-		    DO M = MS, ME
-		      SRCEXT8(2,N)=SRCEXT8(2,N)-B1*YLMDIR(2,J)*YLMSUN(1,J)
-		      SRCEXT8(3,N)=SRCEXT8(3,N)-B1*YLMDIR(6,J)*YLMSUN(1,J)
-		      J = J + 1
-		    ENDDO
-		  ENDIF
-		ENDIF
+	        ME = MIN(L,MM)
+	        MS = -ME
+	        A1 = DA*LEGENT(1,L)
+	        B1 = DA*LEGENT(5,L)
+	        IF (J .LE. NS) THEN
+	          JT = J
+	          DO M = MS, ME
+	            SRCEXT8(1,N) =SRCEXT8(1,N)-A1*YLMDIR(1,J)*YLMSUN(1,J)
+	            J = J + 1
+            ENDDO
+	          IF (NSTOKES .GT. 1) THEN
+	            J = JT
+              DO M = MS, ME
+	              SRCEXT8(2,N)=SRCEXT8(2,N)-B1*YLMDIR(2,J)*YLMSUN(1,J)
+	              SRCEXT8(3,N)=SRCEXT8(3,N)-B1*YLMDIR(6,J)*YLMSUN(1,J)
+	              J = J + 1
+             ENDDO
+	         ENDIF
+	       ENDIF
 	      ENDDO
 
 C               Then add in the single scattering contribution for the
 C               original unscaled phase function.
 	      IF (NUMPHASE .GT. 0) THEN
-		SRCEXT8(:,N) = SRCEXT8(:,N) + DA*SINGSCAT(:,IPH)
+	        SRCEXT8(:,N) = SRCEXT8(:,N) + DA*SINGSCAT(:,IPH)
 	      ELSE IF (NSTOKES .EQ. 1) THEN
-		F = LEGEN(1,ML+1,IPH)
-		DO L = 0, NLEG
-		  IF (L .LE. ML) THEN
-		    A = DA*(LEGEN(1,L,IPH) + F/(1-F))
-		  ELSE
-		    A = DA*LEGEN(1,L,IPH)/(1-F)
-		  ENDIF
-		  SRCEXT8(1,N) = SRCEXT8(1,N) + A*SUNDIRLEG(L)
-		ENDDO
+          WRITE(6,*) 'NUMPHASE=0 is not supported.'
+          STOP
+          F = LEGEN(1,ML+1,IPH)
+	        DO L = 0, NLEG
+	          IF (L .LE. ML) THEN
+	            A = DA*(LEGEN(1,L,IPH) + F/(1-F))
+            ELSE
+              A = DA*LEGEN(1,L,IPH)/(1-F)
+            ENDIF
+	          SRCEXT8(1,N) = SRCEXT8(1,N) + A*SUNDIRLEG(L)
+         ENDDO
 	      ENDIF
 	    ENDDO
-          ENDIF
+      ENDIF
 
           SRCEXT8(:,N) = SRCEXT8(:,N)*EXT
           EXTINCT8(N) = EXT
@@ -2798,7 +2822,8 @@ C               original unscaled phase function.
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
      .             SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
      .             DONETHIS, OLDIPTS, OEXTINCT8, OSRCEXT8,
-     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART)
+     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART,
+     .             INTERPMETHOD, PHASEINTERPWT, PHASEMAX)
 C       Computes the source function times extinction for gridpoints
 C     belonging to cell ICELL in the direction (MU,PHI).  The results
 C     are returned in SRCEXT8 and EXTINCT8.
@@ -2810,7 +2835,8 @@ C     for unscaled untruncated phase function.
       INTEGER ICELL, NPTS, ML, MM, NLM, NLEG, NUMPHASE
       INTEGER GRIDPTR(8,*), SHPTR(NPTS+1)
       INTEGER DONETHIS(8), OLDIPTS(8)
-      INTEGER IPHASE(NPTS,NPART), NPART
+      INTEGER IPHASE(8,NPTS,NPART), NPART
+      REAL    PHASEINTERPWT(8,NPTS,NPART), PHASEMAX
       LOGICAL DELTAM
       REAL    SOLARMU
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
@@ -2821,10 +2847,12 @@ C     for unscaled untruncated phase function.
       REAL    OEXTINCT8(8), OSRCEXT8(8)
       REAL    EXTINCT8(8), SRCEXT8(8)
       DOUBLE PRECISION SUNDIRLEG(0:NLEG)
-      CHARACTER SRCTYPE*1
+      CHARACTER SRCTYPE*1, INTERPMETHOD*2
 
       INTEGER IP, J, JT, L, M, MS, ME, IPH, IS, NS, N, IPA, I
       REAL    SECMU0, F, DA, A, A1, B1, EXT, W
+      REAL    LEGENT(0:NLEG)
+      INTEGER Q
 
       SECMU0 = 1.0D0/ABS(SOLARMU)
 
@@ -2841,7 +2869,7 @@ C           at the viewing angle from the spherical harmonics source function.
           SRCEXT8(N) = SRCEXT8(ABS(I))
         ELSE
 
-	  EXT = TOTAL_EXT(IP)
+	        EXT = TOTAL_EXT(IP)
           OLDIPTS(N) = IP
           IS = SHPTR(IP)
           NS = SHPTR(IP+1)-IS
@@ -2856,23 +2884,37 @@ C             Special case for solar source and Delta-M
           IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
 	    DO IPA = 1, NPART
 	      IF (EXT.EQ.0.0) THEN
-		W = 1.0
+	        W = 1.0
 	      ELSE
-		W = EXTINCT(IP,IPA)/EXT
+	        W = EXTINCT(IP,IPA)/EXT
 	      ENDIF
 	      IF (W.EQ.0.0) CYCLE
-              IF (NUMPHASE .GT. 0) THEN
-                IPH = IPHASE(IP,IPA)
-              ELSE
-                IPH = IP
-              ENDIF
+
+        IF (INTERPMETHOD(2:2) .EQ. 'O' ) THEN
+          LEGENT = LEGEN(:,IPHASE(1,IP,IPA))
+        ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+          IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
+            LEGENT = LEGEN(:,IPHASE(1,IP,IPA))
+          ELSE
+            LEGENT = 0.0
+            DO Q=1,8
+              IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
+              LEGENT = LEGENT + LEGEN(:,IPHASE(Q,IP,IPA))*
+     .          PHASEINTERPWT(Q,IP,IPA)
+            ENDDO
+          ENDIF
+          IF (DELTAM) THEN
+            F = LEGENT(ML+1)
+            LEGENT = LEGENT/(1-F)
+          ENDIF
+        ENDIF
 C               First subtract off the truncated single scattering
             DA = ALBEDO(IP,IPA)*DIRFLUX(IP)*SECMU0*W
             J = 1
             DO L = 0, ML
               ME = MIN(L,MM)
               MS = -ME
-              A1 = DA*LEGEN(L,IPH)
+              A1 = DA*LEGENT(L)
               IF (J .LE. NS) THEN
                 JT = J
                 DO M = MS, ME
@@ -2886,6 +2928,8 @@ C               original unscaled phase function.
             IF (NUMPHASE .GT. 0) THEN
               SRCEXT8(N) = SRCEXT8(N) + DA*SINGSCAT(IPH)
             ELSE
+              WRITE(6,*) 'NUMPHASE=0 is not supported.'
+              STOP
               F = LEGEN(ML+1,IPH)
               DO L = 0, NLEG
                 IF (L .LE. ML) THEN

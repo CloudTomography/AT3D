@@ -103,7 +103,8 @@ C       e.g. Dubovik et al. 2011 https://doi.org/10.5194/amt-4-975-2011.
      .                   FLUXES, SHPTR, SOURCE, CAMX, CAMY, CAMZ, CAMMU,
      .                   CAMPHI, NPIX, NPART, TOTAL_EXT, STOKES,
      .                   NSCATANGLE, YLMSUN, PHASETAB, NSTPHASE,
-     .                  IERR, ERRMSG)
+     .                  IERR, ERRMSG, INTERPMETHOD, PHASEINTERPWT,
+     .                   PHASEMAX)
 C    Calculates the Stokes Vector at the given directions (CAMMU, CAMPHI)
 C    and positions CAMX,CAMY,CAMZ by integrating the source function.
 
@@ -122,8 +123,12 @@ Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
       INTEGER SHPTR(*), BCPTR(MAXNBC,2)
 Cf2py intent(in) :: SHPTR, BCPTR
       INTEGER*2 CELLFLAGS(*)
-      INTEGER IPHASE(NPTS,NPART)
+      INTEGER IPHASE(8,NPTS,NPART)
 Cf2py intent(in) :: CELLFLAGS, IPHASE
+      REAL PHASEINTERPWT(8,NPTS,NPART), PHASEMAX
+Cf2py intent(in) :: PHASEINTERPWT, PHASEMAX
+      CHARACTER INTERPMETHOD*2
+Cf2py intent(in) :: INTERPMETHOD
       LOGICAL DELTAM
 Cf2py intent(in) :: DELTAM
       REAL    SOLARMU, SOLARAZ
@@ -225,7 +230,8 @@ C         to calculate the Stokes radiance vector for this pixel
      .                       SFCTYPE, NSFCPAR, SFCGRIDPARMS,
      .                       MU2, PHI2, X0,Y0,Z0,
      .                       XE,YE,ZE, SIDE, TRANSMIT, VISRAD, VALIDRAD,
-     .   	                 TOTAL_EXT, NPART, IERR,ERRMSG)
+     .   	                 TOTAL_EXT, NPART, IERR,ERRMSG, INTERPMETHOD,
+     .                     PHASEINTERPWT, PHASEMAX)
       IF (IERR .NE. 0) RETURN
 900   CONTINUE
 
@@ -2410,8 +2416,6 @@ C       for the TMS method. -JRLoveridge 2021/04/05
         DO IPH = 1, NUMPHASE
           F = LEGEN(1,ML+1,IPH)
           DO L = 0, NLEG
-            IF (DELTAM) THEN
-              UNSCLEGEN(1,L) = LEGEN(1,L,IPH)/(1-F)
             IF (L .LE. ML .AND. DELTAM) THEN
               UNSCLEGEN(1,L) = LEGEN(1,L,IPH)/(1-F)
             ELSE IF (DELTAM) THEN

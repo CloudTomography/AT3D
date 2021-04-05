@@ -135,7 +135,10 @@ class RTE:
         # variable that was used in debugging. It can be used to
         # test different interpolation schemes in TRILIN_INTERP_PROP
         # e.g. for the phase function.
-        self._interpmethod = 'OO'
+        # If the second character is 'O' then 'max scattering' interpolation
+        # of phase functions occurs. If the second character is 'N' then
+        # linear mixing of phase functions occurs.
+        self._interpmethod = 'ON'
         # phasemax is only used for linear mixing of phase functions
         # and is the threshold for the weight for neglecting the
         # contributions of other phase functions.
@@ -1751,10 +1754,35 @@ class RTE:
         self._pa.zlevels = grid.z.data
 
         # Initialize shdom internal grid sizes to property array grid
-        # If SHDOM grid sizes aren't specified differently from
-        self._nx = self._pa.npx
-        self._ny = self._pa.npy
-        self._nz = self._pa.npz
+        # If SHDOM grid sizes aren't specified. If they are then the
+        # override.
+        self._nx = self._pa.npx if 'nx' not in grid.data_vars else grid.nx.data
+        self._ny = self._pa.npy if 'ny' not in grid.data_vars else grid.ny.data
+        self._nz = self._pa.npz if 'nz' not in grid.data_vars else grid.nz.data
+
+        # gridtype = 'P': Z levels taken from property file
+        self._gridtype = 'P'
+        # If a vertical resolution is specified we use an equispaced vertical
+        # grid for SHDOM overriding the property grid vertical levels.
+        if 'nz' in grid.data_vars:
+            self._gridtype = 'E'
+
+        if self._nz < self._pa.npz:
+            warnings.warn(
+                "SHDOM vertical resolution nz={}, is less than property grid"
+                " npz={}".format(self._nz, self._pa.npz)
+                )
+        if self._nx < self._pa.npx:
+            warnings.warn(
+                "SHDOM X resolution nz={}, is less than property grid"
+                " npz={}".format(self._nx, self._pa.npx)
+                )
+        if self._ny < self._pa.npy:
+            warnings.warn(
+                "SHDOM Y resolution nz={}, is less than property grid"
+                " npz={}".format(self._ny, self._pa.npy)
+                )
+
         self._maxpg = grid.dims['x'] * grid.dims['y'] * grid.dims['z']
         self._maxnz = grid.dims['z']
 
@@ -1764,8 +1792,11 @@ class RTE:
         self._nx, self._ny, self._nz = \
             max(1, self._nx), max(1, self._ny), max(2, self._nz)
 
-        # gridtype = 'P': Z levels taken from property file
-        self._gridtype = 'P'
+        # if single plane or column then force independent pixel mode.
+        if self._nx == 1:
+            ipflag = ipflag | (1<<0)
+        if self._ny == 1:
+            ipflag = ipflag | (1<<1)
 
         # Set up base grid point actual size (NX1xNY1xNZ)
         self._nx1, self._ny1 = self._nx + 1, self._ny + 1
