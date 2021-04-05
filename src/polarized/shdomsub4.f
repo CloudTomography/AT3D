@@ -2415,6 +2415,9 @@ C       need to divide by 1-f now because extinction is scaled
 C       for the TMS method. -JRLoveridge 2021/04/05
         DO IPH = 1, NUMPHASE
           F = LEGEN(1,ML+1,IPH)/(2*(ML+1)+1)
+          IF (J .EQ. 1) THEN
+            PRINT *, 'HELLO',IPH, F, LEGEN(1,ML+1,IPH)
+          ENDIF
           DO L = 0, NLEG
             IF (L .LE. ML .AND. DELTAM) THEN
               UNSCLEGEN(1,L) = LEGEN(1,L,IPH)/((2*L+1)*(1-F))
@@ -2423,6 +2426,9 @@ C       for the TMS method. -JRLoveridge 2021/04/05
             ELSE
               UNSCLEGEN(1,L) = LEGEN(1,L,IPH)/(2*L+1)
             ENDIF
+            IF (J .EQ. 1) THEN
+              PRINT *, UNSCLEGEN(1,L), LEGEN(1,L,IPH)
+            ENDIF 
             IF (NSTLEG .GT. 1) THEN
               IF (L .LE. ML .AND. DELTAM) THEN
                 UNSCLEGEN(2,L) = LEGEN(5,L,IPH)/((2*L+1)*(1-F))
