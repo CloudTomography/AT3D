@@ -954,8 +954,8 @@ C             Compute the temporary source function for this point
               DO Q=1,8
                 IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
                 IPH = IPHASE(Q,I,IPA)
-                LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1) +
-     .            LEGEN(:,0:ML,IPH)*
+                LEGENT(:,0:ML+1,1) = LEGENT(:,0:ML+1,1) +
+     .            LEGEN(:,0:ML+1,IPH)*
      .            PHASEINTERPWT(Q,I,IPA)
               ENDDO
             ENDIF
@@ -1042,8 +1042,8 @@ C             Compute the temporary source function for this point
                 DO Q=1,8
                   IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
                   IPH = IPHASE(Q,I,IPA)
-                  LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1) +
-     .            LEGEN(:,0:ML,IPH)*
+                  LEGENT(:,0:ML+1,1) = LEGENT(:,0:ML+1,1) +
+     .            LEGEN(:,0:ML+1,IPH)*
      .            PHASEINTERPWT(Q,I,IPA)
                 ENDDO
               ENDIF
@@ -1116,8 +1116,8 @@ C         Compute the source function in the temporary array.
               DO Q=1,8
                 IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
                 IPH = IPHASE(Q,I,IPA)
-                LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1) +
-     .            LEGEN(:,0:ML,IPH)*
+                LEGENT(:,0:ML+1,1) = LEGENT(:,0:ML+1,1) +
+     .            LEGEN(:,0:ML+1,IPH)*
      .            PHASEINTERPWT(Q,I,IPA)
               ENDDO
             ENDIF
@@ -4487,8 +4487,8 @@ C             Compute the source function for the new points
                 DO Q=1,8
                   IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
                   IPH = IPHASE(Q,IP,IPA)
-                  LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1) +
-     .            LEGEN(:,0:ML,IPH)*
+                  LEGENT(:,0:ML+1,1) = LEGENT(:,0:ML+1,1) +
+     .            LEGEN(:,0:ML+1,IPH)*
      .            PHASEINTERPWT(Q,IP,IPA)
                 ENDDO
               ENDIF
