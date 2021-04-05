@@ -136,6 +136,10 @@ class RTE:
         # test different interpolation schemes in TRILIN_INTERP_PROP
         # e.g. for the phase function.
         self._interpmethod = 'OO'
+        # phasemax is only used for linear mixing of phase functions
+        # and is the threshold for the weight for neglecting the
+        # contributions of other phase functions.
+        self._phasemax = 0.999
 
         self.source = self._setup_source(source)
         self.medium, self._grid = self._setup_medium(medium)
@@ -305,6 +309,7 @@ class RTE:
         self._work2, ierr, errmsg, self._phaseinterpwt, self._optinterpwt \
          = pyshdom.core.solution_iterations(
             verbose=verbose,
+            phasemax=self._phasemax,
             phaseinterpwt=self._phaseinterpwt,
             optinterpwt=self._optinterpwt,
             interpmethod=self._interpmethod,
@@ -2049,6 +2054,7 @@ class RTE:
         self._iphase, self._total_ext, self._extmin, self._scatmin,         \
         self._albmax, ierr, errmsg, self._phaseinterpwt,                    \
         self._optinterpwt = pyshdom.core.transfer_pa_to_grid(
+            phasemax=self._phasemax,
             nstleg=self._nstleg,
             npart=self._npart,
             extinctp=self._pa.extinctp,
@@ -2208,6 +2214,8 @@ class RTE:
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
         self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg \
          = pyshdom.core.init_solution(
+            phasemax=self._phasemax,
+            interpmethod=self._interpmethod,
             phaseinterpwt=self._phaseinterpwt,
             work=self._work,
             work2_size=self._work2_size,

@@ -120,6 +120,7 @@ def solve_prop(solver, filename='data/rico32x36x26w672.prp'):
     solver._total_ext, solver._extmin, solver._scatmin, solver._albmax,ierr,errmsg, \
     solver._phaseinterpwt, solver._optinterpwt = pyshdom.core.transfer_pa_to_grid(
         interpmethod='OO',
+        phasemax=solver._phasemax,
         nstleg=solver._nstleg,
         npart=solver._npart,
         extinctp=solver._pa.extinctp,

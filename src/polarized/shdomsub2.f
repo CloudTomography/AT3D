@@ -474,7 +474,8 @@ C27237,27283
       SUBROUTINE PREPARE_PROP (ML, MM, NSTLEG, NLEG, NPTS, DELTAM,
      .              NUMPHASE, SRCTYPE, UNITS, WAVENO, WAVELEN, ALBMAX,
      .              EXTINCT, ALBEDO, LEGEN, TEMP, PLANCK, IPHASE,
-     .		         NPART, TOTAL_EXT, PHASEINTERPWT)
+     .		         NPART, TOTAL_EXT, PHASEINTERPWT, PHASEMAX,
+     .             INTERPMETHOD)
 C       Prepares the grid arrays for the iterative solution process.
 C       If doing Delta-M scaling then the extinction, albedo, and Legendre
 C       terms are scaled first; only the 0 to ML LEGEN terms are scaled.
@@ -484,12 +485,13 @@ C       TEMP array is unchanged.
       IMPLICIT NONE
       INTEGER ML, MM, NSTLEG, NLEG, NPTS, NUMPHASE
       INTEGER IPHASE(8,NPTS,NPART), NPART
-      REAL PHASEINTERPWT(8,NPTS,NPART)
+      REAL PHASEINTERPWT(8,NPTS,NPART), PHASEMAX
       LOGICAL DELTAM
       REAL  WAVENO(2), WAVELEN, ALBMAX, TOTAL_EXT(NPTS)
       REAL  EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL  LEGEN(NSTLEG,0:NLEG,*), TEMP(NPTS), PLANCK(NPTS,NPART)
       CHARACTER*1 SRCTYPE, UNITS
+      CHARACTER INTERPMETHOD*2
       INTEGER I, IPH, L, IPA, Q
       REAL    F, BB
 
@@ -497,28 +499,49 @@ C       TEMP array is unchanged.
 
 C     DELTAM scaling is now done at runtime, as we are linearly mixing
 C     phase functions from the property grid onto the medium grid.
-C      IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
-C        DO IPH = 1, NUMPHASE
-C          F = LEGEN(1,ML+1,IPH)
-C          DO L = 0, ML
-CC            Scale the diagonal and off-diagonal phase matrix elements differently
-C            LEGEN(1,L,IPH) = (LEGEN(1,L,IPH) - F)/(1-F)
-C            IF (NSTLEG .GT. 1) THEN
-C              LEGEN(2,L,IPH) = (LEGEN(2,L,IPH) - F)/(1-F)
-C              LEGEN(3,L,IPH) = (LEGEN(3,L,IPH) - F)/(1-F)
-C              LEGEN(4,L,IPH) = (LEGEN(4,L,IPH) - F)/(1-F)
-C              LEGEN(5,L,IPH) = LEGEN(5,L,IPH)/(1-F)
-C              LEGEN(6,L,IPH) = LEGEN(6,L,IPH)/(1-F)
-C            ENDIF
-C          ENDDO
-C        ENDDO
-C      ENDIF
+C     For old interp method, all points will have
+      IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+        IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
+          DO IPH = 1, NUMPHASE
+            F = LEGEN(1,ML+1,IPH)
+            DO L = 0, ML
+C            Scale the diagonal and off-diagonal phase matrix elements differently
+              LEGEN(1,L,IPH) = (LEGEN(1,L,IPH) - F)/(1-F)
+              IF (NSTLEG .GT. 1) THEN
+                LEGEN(2,L,IPH) = (LEGEN(2,L,IPH) - F)/(1-F)
+                LEGEN(3,L,IPH) = (LEGEN(3,L,IPH) - F)/(1-F)
+                LEGEN(4,L,IPH) = (LEGEN(4,L,IPH) - F)/(1-F)
+                LEGEN(5,L,IPH) = LEGEN(5,L,IPH)/(1-F)
+                LEGEN(6,L,IPH) = LEGEN(6,L,IPH)/(1-F)
+              ENDIF
+            ENDDO
+          ENDDO
+        ENDIF
+C
+      ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+        IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
+          DO IPH = 1, NUMPHASE
+            F = LEGEN(1,ML+1,IPH)
+            DO L = 0, ML
+C            Scale the diagonal and off-diagonal phase matrix elements differently
+              LEGEN(1,L,IPH) = (LEGEN(1,L,IPH) - F)
+              IF (NSTLEG .GT. 1) THEN
+                LEGEN(2,L,IPH) = (LEGEN(2,L,IPH) - F)
+                LEGEN(3,L,IPH) = (LEGEN(3,L,IPH) - F)
+                LEGEN(4,L,IPH) = (LEGEN(4,L,IPH) - F)
+C                LEGEN(5,L,IPH) = LEGEN(5,L,IPH)
+C                LEGEN(6,L,IPH) = LEGEN(6,L,IPH)
+              ENDIF
+            ENDDO
+          ENDDO
+        ENDIF
+      ENDIF
 
       IF (DELTAM) TOTAL_EXT(:NPTS) = 0.0
       DO IPA = 1, NPART
         DO I = 1, NPTS
           IF (DELTAM) THEN
-            IF (PHASEINTERPWT(1,I,IPA) .GE. 0.999) THEN
+            IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
               F = LEGEN(1,ML+1,IPHASE(1,I,IPA))
             ELSE
               F = 0.0
@@ -551,7 +574,8 @@ C      ENDIF
      .             EXTINCT, ALBEDO, LEGEN, TEMP, NUMPHASE, IPHASE,
      .             SRCTYPE, SOLARFLUX, SOLARMU, GNDALBEDO, GNDTEMP,
      .             SKYRAD, UNITS, WAVENO, WAVELEN,  RADIANCE, NPART,
-     .		       TOTAL_EXT, PHASEINTERPWT, DELTAM, ML)
+     .		       TOTAL_EXT, PHASEINTERPWT, DELTAM, ML, PHASEMAX,
+     .           INTERPMETHOD)
 C       Initializes radiance field by solving plane-parallel two-stream.
 C     Solves the L=1 M=0 SH system by transforming the pentadiagonal
 C     system to tridiagonal and calling solver.
@@ -567,8 +591,8 @@ C     Only the I Stokes parameter is initialized, the rest are zeroed.
       REAL    EXTINCT(NZ,NXY,NPART), ALBEDO(NZ,NXY,NPART)
       REAL    LEGEN(NSTLEG,0:NLEG,*)
       REAL    TEMP(NZ,NXY)
-      REAL    RADIANCE(NSTOKES,*)
-      CHARACTER SRCTYPE*1, UNITS*1
+      REAL    RADIANCE(NSTOKES,*), PHASEMAX
+      CHARACTER SRCTYPE*1, UNITS*1, INTERPMETHOD*2
       INTEGER NLAYER, I, IZ, IR, J, K, L
       LOGICAL DELTAM
       REAL    PI, C0, C1, F0(NPART), F1(NPART), LEGENT0(NPART)
@@ -610,49 +634,56 @@ C           Make layer properties for the Eddington routine
           ELSE
             ALBEDOS(L) = 0.0
           ENDIF
-          LEGENT0 = 0.0
-          LEGENT1 = 0.0
-          IF (PHASEINTERPWT(1,IZ,I,1) .GE. 0.999) THEN
-            LEGENT0(:) = LEGEN(1,1,IPHASE(1,IZ,I,:))
-          ELSE
-            DO Q=1,8
-              LEGENT0 = LEGENT0 + LEGEN(1,1,IPHASE(Q,IZ,I,:))*
-     .            PHASEINTERPWT(Q,IZ,I,:)
-            ENDDO
-          ENDIF
-          IF (PHASEINTERPWT(1,IZ+1,I,1) .GE. 0.999) THEN
-            LEGENT1(:) = LEGEN(1,1,IPHASE(1,IZ+1,I,:))
-          ELSE
-            DO Q=1,8
-              LEGENT1 = LEGENT1 + LEGEN(1,1,IPHASE(Q,IZ+1,I,:))*
-     .            PHASEINTERPWT(Q,IZ+1,I,:)
-            ENDDO
-          ENDIF
-          IF (DELTAM) THEN
-            F0 = 0.0
-            IF (PHASEINTERPWT(1,IZ,I,1) .GE. 0.999) THEN
-              F0(:) = LEGEN(1,ML+1,IPHASE(1,IZ,I,:))
+          IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+            G0 = SUM(ALBEDO(IZ,I,:)*EXTINCT(IZ,I,:)*
+     .                LEGEN(1,1,IPHASE(1,IZ,I,:)))
+            G1 = SUM(ALBEDO(IZ+1,I,:)*EXTINCT(IZ+1,I,:)*
+     .            LEGEN(1,1,IPHASE(1,IZ+1,I,:)))
+          ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+            IF (PHASEINTERPWT(1,IZ,I,1) .GE. PHASEMAX) THEN
+              LEGENT0(:) = LEGEN(1,1,IPHASE(1,IZ,I,:))
             ELSE
+              LEGENT0 = 0.0
               DO Q=1,8
-                F0 = F0 + LEGEN(1,ML+1,IPHASE(Q,IZ,I,:))*
+                LEGENT0 = LEGENT0 + LEGEN(1,1,IPHASE(Q,IZ,I,:))*
      .            PHASEINTERPWT(Q,IZ,I,:)
               ENDDO
             ENDIF
-            LEGENT0 = (LEGENT0 - F0)/(1-F0)
+            IF (PHASEINTERPWT(1,IZ+1,I,1) .GE. PHASEMAX) THEN
+              LEGENT1(:) = LEGEN(1,1,IPHASE(1,IZ+1,I,:))
+            ELSE
+              LEGENT1 = 0.0
+              DO Q=1,8
+                LEGENT1 = LEGENT1 + LEGEN(1,1,IPHASE(Q,IZ+1,I,:))*
+     .            PHASEINTERPWT(Q,IZ+1,I,:)
+              ENDDO
+            ENDIF
+            IF (DELTAM) THEN
+              IF (PHASEINTERPWT(1,IZ,I,1) .GE. PHASEMAX) THEN
+                F0 = LEGEN(1,ML+1,IPHASE(1,IZ,I,:))
+              ELSE
+                F0 = 0.0
+                DO Q=1,8
+                  F0 = F0 + LEGEN(1,ML+1,IPHASE(Q,IZ,I,:))*
+     .            PHASEINTERPWT(Q,IZ,I,:)
+                ENDDO
+              ENDIF
+              IF (PHASEINTERPWT(1,IZ+1,I,1) .GE. PHASEMAX) THEN
+                F1(:) = LEGEN(1,ML+1,IPHASE(1,IZ+1,I,:))
+              ELSE
+                F1 = 0.0
+                DO Q=1,8
+                  F1 = F1 + LEGEN(1,1,IPHASE(Q,IZ+1,I,:))*
+     .            PHASEINTERPWT(Q,IZ+1,I,:)
+                ENDDO
+              ENDIF
+              LEGENT0 = LEGENT0/(1-F0)
+              LEGENT1 = LEGENT1/(1-F1)
+            ENDIF
+            G0 = SUM(ALBEDO(IZ,I,:)*EXTINCT(IZ,I,:)*LEGENT0(:))
+            G1 = SUM(ALBEDO(IZ+1,I,:)*EXTINCT(IZ+1,I,:)*LEGENT1(:))
+          ENDIF
 
-            F1 = 0.0
-            IF (PHASEINTERPWT(1,IZ+1,I,1) .GE. 0.999) THEN
-              F1(:) = LEGEN(1,ML+1,IPHASE(1,IZ+1,I,:))
-            ELSE
-              DO Q=1,8
-                F1 = F1 + LEGEN(1,ML+1,IPHASE(Q,IZ+1,I,:))*
-     .            PHASEINTERPWT(Q,IZ+1,I,:)
-              ENDDO
-            ENDIF
-            LEGENT1 = (LEGENT1- F1)/(1-F1)
-          ENDIF
-          G0 = SUM(ALBEDO(IZ,I,:)*EXTINCT(IZ,I,:)*LEGENT0)
-          G1 = SUM(ALBEDO(IZ+1,I,:)*EXTINCT(IZ+1,I,:)*LEGENT1)
           IF (SCAT0+SCAT1 .GT. 0.0) THEN
             ASYMMETRIES(L) = (G0+G1)/(SCAT0+SCAT1)
           ELSE

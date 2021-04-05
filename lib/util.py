@@ -530,3 +530,70 @@ def save_forward_model(file_name, sensors, solvers):
             solver.atmosphere.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'atmosphere', format='NETCDF4',engine='netcdf4')
         for name, med in solver.medium.items():
             med.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'medium/'+str(name), format='NETCDF4',engine='netcdf4')
+
+def adjoint_linear_interpolation(reference_coords, data_array):
+    """
+    Performs the adjoint of linear interpolation for 3D regular
+    grids.
+
+    Parameters
+    ----------
+    reference_coords : xr.Dataset, xr.DataArray
+        A dataset or dataarray which has the coordinates which
+        you want to adjointly interpolate data to. Should have 3D
+        coordinates labeled 'x', 'y', 'z'.
+    data_array : xr.DataArray
+        data on the new coordinates to be interpolated back.
+        Should have 3D coordinates labeled 'x', 'y', 'z'.
+
+    Returns
+    -------
+    interpolated : xr.DataArray
+        The interpolated data on the reference_coords
+    """
+    if not isinstance(reference_coords, (xr.Dataset, xr.DataArray)):
+        raise TypeError(
+            "`reference_coords` should be an xr.Dataset "
+            "or xr.DataArray not of type '{}'".format(type(reference_coords))
+        )
+    if not isinstance(data_array, xr.DataArray):
+        raise TypeError(
+            "`data_array` should be an "
+            "xr.DataArray not of type '{}'".format(type(data_array))
+        )
+    for dim_name in ('x', 'y', 'z'):
+        if dim_name not in reference_coords.coords:
+            raise KeyError(
+                "Expected coordinate name '{}' in `reference_coords`".format(dim_name)
+            )
+        if dim_name not in data_array.coords:
+            raise KeyError(
+                "Expected coordinate name '{}' in `data_array`".format(dim_name)
+            )
+        if data_array[dim_name].min() < reference_coords[dim_name].min() or \
+            data_array[dim_name].max() > reference_coords[dim_name].max():
+            raise ValueError(
+                "`data_array` '{}' coordinate is out of range of `reference_coords`.".format(
+                    dim_name
+                )
+            )
+
+    interpolated_array = pyshdom.core.adjoint_linear_interpolation(
+        xgrid=reference_coords.x.data,
+        ygrid=reference_coords.y.data,
+        zgrid=reference_coords.z.data,
+        inxgrid=data_array.x.data,
+        inygrid=data_array.y.data,
+        inzgrid=data_array.z.data,
+        field=data_array.data
+    )
+    interpolated = xr.DataArray(
+        data=interpolated_array,
+        dims=['x','y','z'],
+        coords={
+            'x': reference_coords.x.data,
+            'y': reference_coords.y.data,
+            'z': reference_coords.z.data
+        }
+    )
+    return interpolated

@@ -22,7 +22,7 @@ C     - JRLoveridge 2021/02/22
      .             LEGENP, IPHASEP, NZCKD, ZCKD, GASABS,
      .             NPART, TOTAL_EXT, EXTMIN, SCATMIN, ALBMAX, NSTLEG,
      .             INTERPMETHOD, IERR, ERRMSG, PHASEINTERPWT,
-     .             OPTINTERPWT)
+     .             OPTINTERPWT, PHASEMAX)
 Cf2py threadsafe
       IMPLICIT NONE
 
@@ -48,8 +48,8 @@ Cf2py intent(in) :: MAXIG
 Cf2py intent(in) :: NPTS
       LOGICAL DELTAM
 Cf2py intent(in) :: DELTAM
-      REAL    WAVENO(2), WAVELEN
-Cf2py intent(in) :: WAVENO, WAVELEN
+      REAL    WAVENO(2), WAVELEN, PHASEMAX
+Cf2py intent(in) :: WAVENO, WAVELEN, PHASEMAX
       REAL    GRIDPOS(3,*)
 Cf2py intent(in) :: GRIDPOS
       CHARACTER SRCTYPE*1, UNITS*1
@@ -97,7 +97,8 @@ C         Put the Planck blackbody source in PLANCK.
      .        SRCTYPE, UNITS, WAVENO, WAVELEN, ALBMAX,
      .        EXTINCT(:NPTS,:),  ALBEDO(:NPTS,:), LEGEN, TEMP(:NPTS),
      .        PLANCK(:NPTS,:), IPHASE(:,:NPTS,:), NPART,
-     .        TOTAL_EXT(:NPTS), PHASEINTERPWT(:,:NPTS,:))
+     .        TOTAL_EXT(:NPTS), PHASEINTERPWT(:,:NPTS,:), PHASEMAX,
+     .        INTERPMETHOD)
 C       Get the maximum single scattering albedo over all processors
       CALL TOTAL_ALBEDO_MAX (ALBMAX)
 
@@ -130,7 +131,8 @@ C       Get the maximum single scattering albedo over all processors
      .             CPHI2, WPHISAVE, MAXSFCPARS, WORK, WORK1, WORK2,
      .             NSTLEG, NSTOKES, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
      .             INRADFLAG,NDELSOURCE, IERR, ERRMSG, MAXPG,
-     .             WORK2_SIZE, PHASEINTERPWT)
+     .             WORK2_SIZE, PHASEINTERPWT, PHASEMAX,
+     .             INTERPMETHOD)
 Cf2py threadsafe
 C       Initialize the SHDOM solution procedure.
       IMPLICIT NONE
@@ -154,8 +156,10 @@ Cf2py intent(in) :: GRIDPTR, TREEPTR, NEIGHPTR
 Cf2py intent(in) CELLFLAGS
       INTEGER  IPHASE(8,MAXIG,NPART)
 Cf2py intent(in) :: IPHASE
-      REAL PHASEINTERPWT(8,MAXIG,NPART)
-Cf2py intent(in) :: PHASEINTERPWT
+      CHARACTER INTERPMETHOD*2
+Cf2py intent(in) :: INTERPMETHOD
+      REAL PHASEINTERPWT(8,MAXIG,NPART), PHASEMAX
+Cf2py intent(in) :: PHASEINTERPWT, PHASEMAX
       LOGICAL DELTAM, ACCELFLAG, INRADFLAG
 Cf2py intent(in) :: DELTAM, ACCELFLAG, INRADFLAG
       REAL    SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD, SHACC
@@ -298,12 +302,12 @@ C        Initialize the radiance on the base grid using Eddington
 C        two-stream plane-parallel
       IF (INRADFLAG) THEN
         CALL INIT_RADIANCE(NSTOKES, NX1*NY1, NZ, NSTLEG, NLEG,
-     .    RSHPTR, ZGRID, EXTINCT(:NPTS,:), ALBEDO(:NPTS,:), LEGEN,
-     .    TEMP, NUMPHASE, IPHASE(:,:NPTS,:), SRCTYPE, SOLARFLUX,
+     .    RSHPTR, ZGRID, EXTINCT(:NBPTS,:), ALBEDO(:NBPTS,:), LEGEN,
+     .    TEMP, NUMPHASE, IPHASE(:,:NBPTS,:), SRCTYPE, SOLARFLUX,
      .    SOLARMU,
      .    GNDALBEDO, GNDTEMP, SKYRAD, UNITS, WAVENO, WAVELEN, RADIANCE,
-     .    NPART, TOTAL_EXT(:NPTS), PHASEINTERPWT(:,:NPTS,:), DELTAM,
-     .    ML)
+     .    NPART, TOTAL_EXT(:NBPTS), PHASEINTERPWT(:,:NBPTS,:), DELTAM,
+     .    ML, PHASEMAX, INTERPMETHOD)
 C        Interpolate the radiance on the non-base grid points from the
 C          base grid points
          CALL INTERP_RADIANCE (NSTOKES, NBPTS, NPTS, RSHPTR, RADIANCE,
@@ -317,7 +321,8 @@ C           Initialize the source function from the radiance field
      .         MAXIV, RSHPTR,RADIANCE,SHPTR,SOURCE, OSHPTR,DELSOURCE,
      .         .TRUE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .          NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR,
-     .         ERRMSG, PHASEINTERPWT(:,:NPTS,:), DELTAM)
+     .         ERRMSG, PHASEINTERPWT(:,:NPTS,:), DELTAM,
+     .         INTERPMETHOD, PHASEMAX)
           IF (IERR .NE. 0) RETURN
       ENDIF
       IF (ACCELFLAG) THEN
@@ -399,7 +404,7 @@ C           inequality holds.
      .               FFTFLAG, CMU1, CMU2, WTMU, CPHI1, CPHI2, WPHISAVE,
      .               WORK, WORK1, WORK2, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
      .               ITERFIXSH, INTERPMETHOD, IERR, ERRMSG, MAXPG,
-     .               PHASEINTERPWT, OPTINTERPWT)
+     .               PHASEINTERPWT, OPTINTERPWT, PHASEMAX)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -487,6 +492,8 @@ Cf2py intent(in, out) :: RSHPTR, SHPTR, OSHPTR
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
 Cf2py intent(in, out) :: GRIDPTR, NEIGHPTR, TREEPTR
       INTEGER*2 CELLFLAGS(*)
+      REAL     PHASEMAX
+Cf2py intent(in) :: PHASEMAX
       INTEGER   IPHASE(8,MAXIG,NPART)
       REAL    PHASEINTERPWT(8,MAXIG,NPART), OPTINTERPWT(8,MAXIG,NPART)
       REAL      SFCGRIDPARMS(*), SOLCRIT
@@ -612,7 +619,7 @@ C          OPEN (UNIT=18, FILE='neighptr.out', STATUS='UNKNOWN')
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
      .             MAXPG, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG,
-     .             PHASEINTERPWT, OPTINTERPWT)
+     .             PHASEINTERPWT, OPTINTERPWT, PHASEMAX)
             IF (IERR .NE. 0) RETURN
             IF (SOLCRIT .GT. STARTADAPTSOL)  STARTSPLITACC = SPLITCRIT
           ENDIF
@@ -626,7 +633,8 @@ C            Find the SH truncation to use for the radiance (RSHPTR)
      .           NPTS, ALBEDO(:NPTS,:), LEGEN, IPHASE(:,:NPTS,:),
      .           SHPTR, RADIANCE, MAXIV+MAXIG, FIXSH, SHACC, RSHPTR,
      .           NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR,
-     .           ERRMSG, PHASEINTERPWT(:,:NPTS,:), DELTAM)
+     .           ERRMSG, PHASEINTERPWT(:,:NPTS,:), DELTAM,
+     .           INTERPMETHOD, PHASEMAX)
         IF (IERR .NE. 0) RETURN
 
 C           Integrate the source function along discrete ordinates
@@ -663,7 +671,7 @@ C              the solution criterion, and dot products for acceleration.
      .         MAXIV, RSHPTR, RADIANCE, SHPTR,SOURCE, OSHPTR,DELSOURCE,
      .         .FALSE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .         NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR, ERRMSG,
-     .         PHASEINTERPWT(:,:NPTS,:), DELTAM)
+     .         PHASEINTERPWT(:,:NPTS,:), DELTAM,INTERPMETHOD, PHASEMAX)
         IF (IERR .NE. 0) RETURN
 
 C           Calculate the acceleration parameter and solution criterion
@@ -826,7 +834,7 @@ C       from the radiance vector in genSH.
      .             RSHPTR, RADIANCE, SHPTR, SOURCE, OSHPTR, DELSOURCE,
      .             FIRST,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .             NPART, EXTINCT, TOTAL_EXT, IERR, ERRMSG,
-     .             PHASEINTERPWT, DELTAM)
+     .             PHASEINTERPWT, DELTAM, INTERPMETHOD, PHASEMAX)
 C       Computes the source function (SOURCE) in spherical harmonic space
 C     for all the grid points.  The thermal source and/or solar
 C     pseudo-source (in PLANCK or DIRFLUX) is added to the scattering source
@@ -859,7 +867,9 @@ Cf2py intent(in) :: DELTAM
 Cf2py intent(in) :: RSHPTR, SHPTR, OSHPTR
       INTEGER IPHASE(8,NPTS,NPART)
       REAL    PHASEINTERPWT(8,NPTS,NPART)
-Cf2py intent(in) :: IPHASE, PHASEINTERPWT
+      CHARACTER INTERPMETHOD*2
+      REAL    PHASEMAX
+Cf2py intent(in) :: IPHASE, PHASEINTERPWT, INTERPMETHOD, PHASEMAX
       LOGICAL FIXSH, FIRST, ACCELFLAG
 Cf2py intent(in) :: FIXSH, FIRST, ACCELFLAG
       REAL    SHACC, YLMSUN(NSTLEG,NLM), SOLARMU
@@ -923,29 +933,38 @@ C             Compute the temporary source function for this point
           ELSE
             W = EXTINCT(I,IPA)/EXT
           ENDIF
-          IF (PHASEINTERPWT(1,I,IPA) .GE. 0.999) THEN
-            LEGENT(:,:,1) = LEGEN(:,:,IPHASE(1,I,IPA))
-          ELSE
-            LEGENT = 0.0
-            DO Q=1,8
-              IPH = IPHASE(Q,I,IPA)
-              LEGENT(:,:,1) = LEGENT(:,:,1) + LEGEN(:,:,IPH)*
-     .          PHASEINTERPWT(Q,I,IPA)
-            ENDDO
-          ENDIF
-          F = LEGENT(1,ML+1,1)
-          IF (DELTAM) THEN
-            LEGENT(1,0:ML,1) = (LEGENT(1,0:ML,1) - F)/(1-F)
-            IF (NSTLEG .GT. 1) THEN
-              LEGENT(2,0:ML,1) = (LEGENT(2,0:ML,1) - F)/(1-F)
-              LEGENT(3,0:ML,1) = (LEGENT(3,0:ML,1) - F)/(1-F)
-              LEGENT(4,0:ML,1) = (LEGENT(4,0:ML,1) - F)/(1-F)
-              LEGENT(5,0:ML,1) = LEGENT(5,0:ML,1)/(1-F)
-              LEGENT(6,0:ML,1) = LEGENT(6,0:ML,1)/(1-F)
+          IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+            IPH = IPHASE(1,I,IPA)
+            IF (NSTOKES .EQ. 1) THEN
+              CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+     .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
+     .            NR, RADIANCE(1,IR+1),   SOURCET1)
+            ELSE
+              CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+     .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
+     .            NR, RADIANCE(1,IR+1), SOURCET1)
             ENDIF
-          ENDIF
-          IF (NSTOKES .EQ. 1) THEN
-            CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+          ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+            IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+              LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,I,IPA))
+            ELSE
+              LEGENT = 0.0
+              DO Q=1,8
+                IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
+                IPH = IPHASE(Q,I,IPA)
+                LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1) +
+     .            LEGEN(:,0:ML,IPH)*
+     .            PHASEINTERPWT(Q,I,IPA)
+              ENDDO
+            ENDIF
+            IF (DELTAM) THEN
+              F = LEGENT(1,ML+1,1)
+              LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1)/(1-F)
+            ENDIF
+            IF (NSTOKES .EQ. 1) THEN
+              CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
      .            NR, RADIANCE(1,IR+1),   SOURCET1)
@@ -955,8 +974,9 @@ C             Compute the temporary source function for this point
      .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
      .            NR, RADIANCE(1,IR+1), SOURCET1)
             ENDIF
-            SOURCET = SOURCET + W * SOURCET1
-          ENDDO
+          ENDIF
+          SOURCET = SOURCET + W * SOURCET1
+         ENDDO
 
 C             Compute the dot product of the new and old source difference,
 C               and the solution criterion (don't use new points for Jnorm).
@@ -1001,37 +1021,47 @@ C             Compute the temporary source function for this point
             ELSE
               W = EXTINCT(I,IPA)/EXT
             ENDIF
-            IF (PHASEINTERPWT(1,I,IPA) .GE. 0.999) THEN
-              LEGENT(:,:,1) = LEGEN(:,:,IPHASE(1,I,IPA))
-            ELSE
-              LEGENT = 0.0
-              DO Q=1,8
-                IPH = IPHASE(Q,I,IPA)
-                LEGENT(:,:,1) = LEGENT(:,:,1) + LEGEN(:,:,IPH)*
-     .            PHASEINTERPWT(Q,I,IPA)
-              ENDDO
-            ENDIF
-            F = LEGENT(1,ML+1,1)
-            IF (DELTAM) THEN
-              LEGENT(1,0:ML,1) = (LEGENT(1,0:ML,1) - F)/(1-F)
-              IF (NSTLEG .GT. 1) THEN
-                LEGENT(2,0:ML,1) = (LEGENT(2,0:ML,1) - F)/(1-F)
-                LEGENT(3,0:ML,1) = (LEGENT(3,0:ML,1) - F)/(1-F)
-                LEGENT(4,0:ML,1) = (LEGENT(4,0:ML,1) - F)/(1-F)
-                LEGENT(5,0:ML,1) = LEGENT(5,0:ML,1)/(1-F)
-                LEGENT(6,0:ML,1) = LEGENT(6,0:ML,1)/(1-F)
+            IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+              IPH = IPHASE(1,I,IPA)
+              IF (NSTOKES .EQ. 1) THEN
+                CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+     .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
+     .            NR, RADIANCE(1,IR+1),   SOURCET1)
+              ELSE
+                CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+     .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
+     .            NR, RADIANCE(1,IR+1), SOURCET1)
               ENDIF
-            ENDIF
-            IF (NSTOKES .EQ. 1) THEN
-              CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
-     .             SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
-     .             PLANCK(I,IPA), ALBEDO(I,IPA), 1,
-     .             LEGENT, NR, RADIANCE(1,IR+1), SOURCET1)
-            ELSE
-              CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
-     .                 LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
-     .                 PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
-     .                 NR, RADIANCE(1,IR+1), SOURCET1)
+            ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+              IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+                LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,I,IPA))
+              ELSE
+                LEGENT = 0.0
+                DO Q=1,8
+                  IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
+                  IPH = IPHASE(Q,I,IPA)
+                  LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1) +
+     .            LEGEN(:,0:ML,IPH)*
+     .            PHASEINTERPWT(Q,I,IPA)
+                ENDDO
+              ENDIF
+              IF (DELTAM) THEN
+                F = LEGENT(1,ML+1,1)
+                LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1)/(1-F)
+              ENDIF
+              IF (NSTOKES .EQ. 1) THEN
+                CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+     .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
+     .            NR, RADIANCE(1,IR+1),   SOURCET1)
+              ELSE
+                CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+     .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
+     .            NR, RADIANCE(1,IR+1), SOURCET1)
+              ENDIF
             ENDIF
             SOURCET = SOURCET + W * SOURCET1
           ENDDO
@@ -1065,37 +1095,47 @@ C         Compute the source function in the temporary array.
           ELSE
             W = EXTINCT(I,IPA)/EXT
           ENDIF
-          IF (PHASEINTERPWT(1,I,IPA) .GE. 0.999) THEN
-            LEGENT(:,:,1) = LEGEN(:,:,IPHASE(1,I,IPA))
-          ELSE
-            LEGENT=0.0
-            DO Q=1,8
-              IPH = IPHASE(Q,I,IPA)
-              LEGENT(:,:,1) = LEGENT(:,:,1) +
-     .          LEGEN(:,:,IPH)*PHASEINTERPWT(Q,I,IPA)
-            ENDDO
-          ENDIF
-          F = LEGENT(1,ML+1,1)
-          IF (DELTAM) THEN
-            LEGENT(1,0:ML,1) = (LEGENT(1,0:ML,1) - F)/(1-F)
-            IF (NSTLEG .GT. 1) THEN
-              LEGENT(2,0:ML,1) = (LEGENT(2,0:ML,1) - F)/(1-F)
-              LEGENT(3,0:ML,1) = (LEGENT(3,0:ML,1) - F)/(1-F)
-              LEGENT(4,0:ML,1) = (LEGENT(4,0:ML,1) - F)/(1-F)
-              LEGENT(5,0:ML,1) = LEGENT(5,0:ML,1)/(1-F)
-              LEGENT(6,0:ML,1) = LEGENT(6,0:ML,1)/(1-F)
+          IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+            IPH = IPHASE(1,I,IPA)
+            IF (NSTOKES .EQ. 1) THEN
+              CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+     .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
+     .            NR, RADIANCE(1,IR+1),   SOURCET1)
+            ELSE
+              CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+     .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
+     .            NR, RADIANCE(1,IR+1), SOURCET1)
             ENDIF
-          ENDIF
-          IF (NSTOKES .EQ. 1) THEN
-            CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
-     .           SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
-     .           PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
-     .           NR, RADIANCE(1,IR+1),SOURCET1)
-          ELSE
-            CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG, LOFJ,
-     .           SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
-     .           PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
-     .           NR, RADIANCE(1,IR+1), SOURCET1)
+          ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+            IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+              LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,I,IPA))
+            ELSE
+              LEGENT = 0.0
+              DO Q=1,8
+                IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
+                IPH = IPHASE(Q,I,IPA)
+                LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1) +
+     .            LEGEN(:,0:ML,IPH)*
+     .            PHASEINTERPWT(Q,I,IPA)
+              ENDDO
+            ENDIF
+            IF (DELTAM) THEN
+              F = LEGENT(1,ML+1,1)
+              LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1)/(1-F)
+            ENDIF
+            IF (NSTOKES .EQ. 1) THEN
+              CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+     .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
+     .            NR, RADIANCE(1,IR+1),   SOURCET1)
+            ELSE
+              CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+     .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
+     .            NR, RADIANCE(1,IR+1), SOURCET1)
+            ENDIF
           ENDIF
           SOURCET = SOURCET + W * SOURCET1
         ENDDO
@@ -1157,7 +1197,7 @@ C           Transfer the new source function
      .             NPTS, ALBEDO, LEGEN, IPHASE, SHPTR, RADIANCE,
      .             MAXIR, FIXSH, SHACC, RSHPTR, NPART, EXTINCT,
      .             TOTAL_EXT, IERR, ERRMSG, PHASEINTERPWT,
-     .             DELTAM)
+     .             DELTAM, INTERPMETHOD, PHASEMAX)
 C       Computes the next radiance spherical harmonic series truncation
 C     to use based on the current source function truncation and the
 C     scattering properties.  The radiance truncation is the smaller
@@ -1179,17 +1219,16 @@ C     unless HIGHORDERRAD is on, in which case all terms are kept.
       REAL    ALBEDO(NPTS,NPART), LEGEN(NSTLEG,0:NLEG,*)
       REAL    EXTINCT(NPTS,NPART), TOTAL_EXT(*)
       REAL    RADIANCE(NSTOKES,*)
-      REAL    SHACC
+      REAL    SHACC, PHASEMAX
       INTEGER IRO, IR, NRO, NR, I, J, K, L, LR, LS, M, MS
       INTEGER ME, NS, NLM, IPA
       INTEGER, ALLOCATABLE :: LOFJ(:)
       LOGICAL NOTEND
-      REAL    RADMIN, EXT, RAD, W, F
+      REAL    RADMIN, EXT, RAD, W, F(NPART)
       INTEGER IERR, Q
+      CHARACTER INTERPMETHOD*2
       CHARACTER ERRMSG*600
-      REAL, ALLOCATABLE :: LEGENT(:)
-
-      ALLOCATE(LEGENT(0:NLEG))
+      REAL    LEGENT
 
       IF (FIXSH)  GOTO 190
 
@@ -1222,9 +1261,31 @@ C             We don't have radiances for any new points, so don't use them
         EXT = TOTAL_EXT(I)
 
         IF (NOTEND) THEN
+C         Make the deltam scaling if we need it.
+C         Only do this once per point, rather than inside
+C         the loop over L indices below.
+          IF (INTERPMETHOD(2:2) .EQ. 'N' .AND. DELTAM) THEN
+            F=0.0
+            DO IPA=1,NPART
+              IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+                F(IPA) = LEGEN(1,ML+1,IPHASE(1,I,IPA))
+              ELSE
+                DO Q=1,8
+                  IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
+                  F(IPA) = F(IPA)+LEGEN(Q,ML+1,IPHASE(Q,I,IPA))*
+     .              PHASEINTERPWT(Q,I,IPA)
+                ENDDO
+              ENDIF
+            ENDDO
+            F = 1/(1-F)
+          ENDIF
+
+
           LR = 1
           DO L = 1, ML
             RAD = 0.0
+C           At the moment this is all done inside the ML
+C           loop which isn't efficient.
             DO IPA = 1, NPART
 
               IF (EXT.EQ.0.0) THEN
@@ -1233,22 +1294,28 @@ C             We don't have radiances for any new points, so don't use them
                 W = EXTINCT(I,IPA)/EXT
               ENDIF
               IF (W.EQ.0.0) CYCLE
-              LEGENT = 0.0
-              IF (PHASEINTERPWT(1,I,IPA) .GE. 0.999) THEN
-                LEGENT = LEGEN(1,:,IPHASE(1,I,IPA))
-              ELSE
-                DO Q=1,8
-                  K = IPHASE(Q,I,IPA)
-                  LEGENT = LEGENT +
-     .              LEGEN(1,:,K)*PHASEINTERPWT(Q,I,IPA)
-                ENDDO
-              ENDIF
-              IF (DELTAM) THEN
-                F = LEGENT(ML+1)
-                LEGENT = (LEGENT - F)/(1-F)
-              ENDIF
-              RAD = RAD + W*ALBEDO(I,IPA)*LEGENT(L)*
+              IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+                RAD = RAD + W*ALBEDO(I,IPA)*
+     .            LEGEN(1,L,IPHASE(1,I,IPA))*
+     .            RADIANCE(1,IRO+1)
+              ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+                IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+                  LEGENT = LEGEN(1,L,IPHASE(1,I,IPA))
+                ELSE
+                  LEGENT = 0.0
+                  DO Q=1,8
+                    IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
+                    LEGENT = LEGENT +
+     .                LEGEN(1,L,IPHASE(Q,I,IPA))*
+     .                PHASEINTERPWT(Q,I,IPA)
+                  ENDDO
+                ENDIF
+                IF (DELTAM) THEN
+                  LEGENT = LEGENT*F(IPA)
+                ENDIF
+                RAD = RAD + W*ALBEDO(I,IPA)*LEGENT*
      .           RADIANCE(1,IRO+1)
+              ENDIF
             ENDDO
 
             IF (RAD .GT. RADMIN) LR = L
@@ -1281,7 +1348,7 @@ C             But if out of memory, use the source function truncation.
         ENDIF
       ENDDO
       RSHPTR(NPTS+2) = IR
-      DEALLOCATE (LOFJ, LEGENT)
+      DEALLOCATE (LOFJ)
       RETURN
 
 C         If out of memory or the SH truncation is fixed then
@@ -4003,7 +4070,7 @@ C             do first and put the second child on the stack.
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
      .             MAXPG, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG,
-     .             PHASEINTERPWT, OPTINTERPWT)
+     .             PHASEINTERPWT, OPTINTERPWT, PHASEMAX)
 C       Splits the cells that have a cell dividing criterion greater than
 C     CURSPLITACC if DOSPLIT is true.  The current splitting criterion
 C     achieved is returned in SPLITCRIT.  If we are at the end of the
@@ -4019,6 +4086,7 @@ C     by MAXIG, MAXIC, MAXIV, MAXIDO) then the OUTOFMEM flag is returned true.
       INTEGER*2 CELLFLAGS(*)
       INTEGER IPHASE(*)
       REAL    PHASEINTERPWT(*), OPTINTERPWT(*)
+      REAL    PHASEMAX
       LOGICAL DELTAM, ACCELFLAG, DOSPLIT, OUTOFMEM
       REAL    CURSPLITACC, SPLITCRIT
       REAL    SOLARFLUX, SOLARMU, SOLARAZ, YLMSUN(NSTLEG,NLM)
@@ -4057,7 +4125,6 @@ C          Do the cells in batchs, so the newly split cells can be tested
 C            for further splitting
         ICELL1 = 1
         DO WHILE (ICELL1 .LE. NCELLS)
-          PRINT *, ICELL1, NCELLS
 C           For the current batch of cells, compute the adaptive grid
 C             splitting criterion for 3 directions for each cell.
           N = 0
@@ -4086,7 +4153,6 @@ C               for cells split during grid smoothing
 C             Go down the list from highest adaptive cell criterion on down
           OUTOFMEM0 = OUTOFMEM
           I = 1
-          PRINT *, N, CURSPLITACC, ADAPTCRIT(:5)
           DO WHILE (ADAPTCRIT(I) .GT. CURSPLITACC .AND. .NOT. OUTOFMEM0
      .              .AND. I .LE. N)
             IF (NCELLS .GT. MAXCELLS .OR. NPTS .GT. MAXPTS .OR.
@@ -4094,7 +4160,6 @@ C             Go down the list from highest adaptive cell criterion on down
      .          SHPTR(NPTS+1) .GT. MAXSH .OR.
      .          RSHPTR(NPTS+1) .GT. MAXRAD) THEN
               OUTOFMEM0 = .TRUE.
-              PRINT *, 'WENT OUT OF MEMORY'
             ELSE
               ICELL = ADAPTIND(I)/4
               IDIR = IAND(ADAPTIND(I),3)
@@ -4116,7 +4181,7 @@ C                 Interpolate the medium properties, radiance, and source
      .            CXINV, CYINV,CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .            DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
      .            NPART,MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD, IERR,
-     .            ERRMSG, PHASEINTERPWT, OPTINTERPWT)
+     .            ERRMSG, PHASEINTERPWT, OPTINTERPWT, PHASEMAX)
               IF (IERR .NE. 0) RETURN
             ENDIF
             I = I + 1
@@ -4161,7 +4226,8 @@ C                   Interpolate the medium properties, radiance, and source
      .               CXINV, CYINV,CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .               DELYD,XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
      .               NPART,MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD,
-     .               IERR, ERRMSG, PHASEINTERPWT, OPTINTERPWT)
+     .               IERR, ERRMSG, PHASEINTERPWT, OPTINTERPWT,
+     .               PHASEMAX)
                 IF (IERR .NE. 0) RETURN
               ENDIF
             ENDIF
@@ -4217,7 +4283,7 @@ C         Find the max adaptive cell criterion after the cell divisions
      .       CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .       XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
      .       MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD,IERR,ERRMSG,
-     .       PHASEINTERPWT, OPTINTERPWT)
+     .       PHASEINTERPWT, OPTINTERPWT, PHASEMAX)
 C       Interpolates the medium properties, radiance, and source function for
 C     new grid points (specified in NEWPOINTS).  The medium properties are
 C     interpolated from the property grid, since interpolating from the
@@ -4234,7 +4300,7 @@ C     function for the new points.
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)
       INTEGER IPHASE(8,MAXIG,NPART)
       REAL    PHASEINTERPWT(8,MAXIG,NPART)
-      REAL    OPTINTERPWT(8,MAXIG,NPART)
+      REAL    OPTINTERPWT(8,MAXIG,NPART), PHASEMAX
       LOGICAL DELTAM, ACCELFLAG
       REAL    SOLARFLUX, SOLARMU, SOLARAZ, YLMSUN(NSTLEG,NLM)
       REAL    WAVENO(2), WAVELEN
@@ -4313,14 +4379,19 @@ C             Interpolate the medium properties from the property grid
      .             OPTINTERPWT(:,IP,IPA))
 C             Do the Delta-M scaling of extinction and albedo for this point
 	          IF (DELTAM) THEN
-              IF (PHASEINTERPWT(1,IP,IPA) .GE. 0.999) THEN
+              IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
                 F = LEGEN(1,ML+1,IPHASE(1,IP,IPA))
-              ELSE
-                F=0.0
-                DO Q=1,8
-                  F = F + LEGEN(1,ML+1,IPHASE(Q,IP,IPA))*
-     .              PHASEINTERPWT(Q,IP,IPA)
-                ENDDO
+              ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+
+                IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
+                  F = LEGEN(1,ML+1,IPHASE(1,IP,IPA))
+                ELSE
+                  F=0.0
+                  DO Q=1,8
+                    F = F + LEGEN(1,ML+1,IPHASE(Q,IP,IPA))*
+     .                PHASEINTERPWT(Q,IP,IPA)
+                  ENDDO
+                ENDIF
               ENDIF
                EXTINCT(IP,IPA) = (1.0-ALBEDO(IP,IPA)*F)
      .            *EXTINCT(IP,IPA)
@@ -4395,37 +4466,47 @@ C             Compute the source function for the new points
             ELSE
               W = EXTINCT(IP,IPA)/EXT
             ENDIF
-            IF (PHASEINTERPWT(1,IP,IPA) .GE. 0.999) THEN
-              LEGENT(:,:,1) = LEGEN(:,:,IPHASE(1,IP,IPA))
-            ELSE
-              LEGENT = 0.0
-              DO Q=1,8
-                LEGENT(:,:,1) = LEGENT(:,:,1) +
-     .            LEGEN(:,:,IPHASE(Q,IP,IPA))*
-     .              PHASEINTERPWT(Q,IP,IPA)
-              ENDDO
-            ENDIF
-            IF (DELTAM) THEN
-              F = LEGENT(1,ML+1,1)
-              LEGENT(1,0:ML,1) = (LEGENT(1,0:ML,1) - F)/(1-F)
-              IF (NSTLEG .GT. 1) THEN
-                LEGENT(2,0:ML,1) = (LEGENT(2,0:ML,1) - F)/(1-F)
-                LEGENT(3,0:ML,1) = (LEGENT(3,0:ML,1) - F)/(1-F)
-                LEGENT(4,0:ML,1) = (LEGENT(4,0:ML,1) - F)/(1-F)
-                LEGENT(5,0:ML,1) = LEGENT(5,0:ML,1)/(1-F)
-                LEGENT(6,0:ML,1) = LEGENT(6,0:ML,1)/(1-F)
+            IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+              IPH = IPHASE(1,I,IPA)
+              IF (NSTOKES .EQ. 1) THEN
+                CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+     .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
+     .            NR, RADIANCE(1,IR+1),   SOURCET)
+              ELSE
+                CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+     .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
+     .            NR, RADIANCE(1,IR+1), SOURCET)
               ENDIF
-            ENDIF
-            IF (NSTOKES .EQ. 1) THEN
-              CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
-     .          SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
-     .          PLANCK(IP,IPA), ALBEDO(IP,IPA), 1, LEGENT,
-     .          NR, RADIANCE(1,IR+1), SOURCET)
-            ELSE
-              CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG, LOFJ,
-     .               SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
-     .               PLANCK(IP,IPA), ALBEDO(IP,IPA), 1, LEGENT,
-     .               NR, RADIANCE(1,IR+1), SOURCET)
+            ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+              IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+                LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,I,IPA))
+              ELSE
+                LEGENT = 0.0
+                DO Q=1,8
+                  IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
+                  IPH = IPHASE(Q,I,IPA)
+                  LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1) +
+     .            LEGEN(:,0:ML,IPH)*
+     .            PHASEINTERPWT(Q,I,IPA)
+                ENDDO
+              ENDIF
+              IF (DELTAM) THEN
+                F = LEGENT(1,ML+1,1)
+                LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1)/(1-F)
+              ENDIF
+              IF (NSTOKES .EQ. 1) THEN
+                CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+     .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
+     .            NR, RADIANCE(1,IR+1),   SOURCET)
+              ELSE
+                CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+     .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
+     .            NR, RADIANCE(1,IR+1), SOURCET)
+              ENDIF
             ENDIF
 
             IF (IPA .EQ. 1) THEN
