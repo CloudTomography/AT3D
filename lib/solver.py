@@ -2046,16 +2046,16 @@ class RTE:
         self._nleg = self._ml + 1 if self._deltam else self._ml
 
         self._pa.nlegp = max(legendre_table.sizes['legendre_index'] - 1, self._nleg)
-        self._nscatangle = max(36, min(721, 2 * self._nleg))
+        self._nscatangle = max(36, min(721, 2 * self._pa.nlegp))
 
         # Check if legendre table needs padding. It will only need
         # padding if angular resolution is larger than the number of
         # non-zero phase function legendre coefficients. That is a
         # rare occurrence so it may not have been properly tested.
-        if self._nleg > legendre_table.sizes['legendre_index']:
+        if self._pa.nlegp > legendre_table.sizes['legendre_index']:
             legendre_table = legendre_table.pad(
                 {'legendre_index':
-                 (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])
+                 (0, 1 + self._pa.nlegp - legendre_table.sizes['legendre_index'])
                 }, constant_values=0.0
             )
 
@@ -2072,7 +2072,7 @@ class RTE:
 
         if legendre_table.sizes['table_index'] > 0:
             self._maxigl = self._nstleg*legendre_table.sizes['table_index'] * \
-            (self._nleg + 1)
+            (self._pa.nlegp + 1)
         else:
             self._maxigl = self._maxig * (legendre_table.sizes['legendre_index'] + 1)
 
