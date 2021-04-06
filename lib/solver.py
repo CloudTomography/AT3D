@@ -138,7 +138,7 @@ class RTE:
         # If the second character is 'O' then 'max scattering' interpolation
         # of phase functions occurs. If the second character is 'N' then
         # linear mixing of phase functions occurs.
-        self._interpmethod = 'OO'
+        self._interpmethod = 'ON'
         # phasemax is only used for linear mixing of phase functions
         # and is the threshold for the weight for neglecting the
         # contributions of other phase functions.
