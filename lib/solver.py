@@ -471,10 +471,10 @@ class RTE:
         self._adapt_grid_factor_out = self._npts/self._nbpts
         self._shterm_fac_out = nsh/(self._nlm*self._npts)
         self._cell_point_out = self._ncells/self._npts
-        if verbose:
-            warnings.warn("Actual MAX_TOTAL_MB: {:.2f}".format(self._maxmb_out))
-            warnings.warn("Actual adapt_grid_factor: {:.4f}".format(self._adapt_grid_factor_out))
-            warnings.warn("Actual cell_point_ratio: {:.4f}".format(self._cell_point_out))
+        # if verbose:
+        #     warnings.warn("Actual MAX_TOTAL_MB: {:.2f}".format(self._maxmb_out))
+        #     warnings.warn("Actual adapt_grid_factor: {:.4f}".format(self._adapt_grid_factor_out))
+        #     warnings.warn("Actual cell_point_ratio: {:.4f}".format(self._cell_point_out))
 
     def integrate_to_sensor(self, sensor):
         """Calculates the StokesVector at specified geometry using an RTE solution.
