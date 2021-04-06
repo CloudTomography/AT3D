@@ -88,7 +88,7 @@ def solve_prop(solver, filename='data/rico32x36x26w672.prp'):
     solver._maxleg = maxleg
     solver._pa.delx = delx
     solver._pa.dely = dely
-    npx, npy, npz, maxleg, nlegp, proptype, delx, dely, \
+    npx, npy, npz, maxleg, nleg, proptype, delx, dely, \
     zout, maxasym, tempp, extinctp, albedop, \
     legenp, numphase, iphasep \
      = pyshdom.core.read_properties(propfile=filename,
@@ -106,8 +106,9 @@ def solve_prop(solver, filename='data/rico32x36x26w672.prp'):
     #overwrite some things that were set during the solver._init_solution.
     #this is done to account for the differences in selected phase functions.
     solver._maxasym = maxasym
-    solver._pa.nlegp = nlegp
-    solver._nscatangle = max(36, min(721, 2 * solver._nleg))
+    solver._pa.nlegp = maxleg
+    solver._nleg = solver._ml + 1 if solver._deltam else solver._ml
+    solver._nscatangle = max(36, min(721, 2 * solver._pa.nlegp))
     solver._maxigl = maxpgl
     solver._nstphase = min(solver._nstleg, 2)
     solver._pa.tempp = tempp
@@ -157,7 +158,7 @@ def solve_prop(solver, filename='data/rico32x36x26w672.prp'):
     #finally initialize the radiance/source fields based on the optical properties.
     solver._init_solution()
     #solve without redoing init_solution which would undo all the work we did.
-    solver.solve(maxiter=100, init_solution=False, verbose=True)
+    solver.solve(maxiter=100, init_solution=False, verbose=False)
 
 
 class Verify_Solver(TestCase):

@@ -1765,11 +1765,9 @@ class RTE:
         self._nz = self._pa.npz if 'nz' not in grid.data_vars else grid.nz.data
 
         # gridtype = 'P': Z levels taken from property file
-        self._gridtype = 'P'
+        self._gridtype = 'E' if 'nz' in grid.data_vars else 'P'
         # If a vertical resolution is specified we use an equispaced vertical
         # grid for SHDOM overriding the property grid vertical levels.
-        if 'nz' in grid.data_vars:
-            self._gridtype = 'E'
 
         if self._nz < self._pa.npz:
             warnings.warn(
@@ -1798,9 +1796,9 @@ class RTE:
 
         # if single plane or column then force independent pixel mode.
         if self._nx == 1:
-            self._ipflag = self._ipflag | (1<<0)
+            self._ipflag = self._ipflag | (1<<0) #first bit for X-dim.
         if self._ny == 1:
-            self._ipflag = self._ipflag | (1<<1)
+            self._ipflag = self._ipflag | (1<<1) # second bit for Y-dim.
 
         # Set up base grid point actual size (NX1xNY1xNZ)
         self._nx1, self._ny1 = self._nx + 1, self._ny + 1
