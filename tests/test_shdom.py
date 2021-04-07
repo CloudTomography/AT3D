@@ -1,10 +1,10 @@
 from unittest import TestCase
 from collections import OrderedDict
+import warnings
 import numpy as np
 import xarray as xr
 import pyshdom
 
-import warnings
 warnings.filterwarnings('ignore')
 
 def parse_shdom_output(filename, comment='*'):

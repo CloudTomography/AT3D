@@ -129,6 +129,7 @@ F2PY_CORE_API = [
     'traverse_grid',
     'read_property_size',
     'adjoint_linear_interpolation',
+    'get_shadow'
 ]
 
 def _run_command(cmd):

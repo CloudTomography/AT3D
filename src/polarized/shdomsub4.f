@@ -2412,7 +2412,10 @@ Cf2py intent(out) :: IERR
         ENDIF
 C       We are changed to using an un-scaled input so actually we just
 C       need to divide by 1-f now because extinction is scaled
-C       for the TMS method. -JRLoveridge 2021/04/05
+C       for the TMS method. -JRLoveridge 2021/04/05'
+
+C       Why are we unscaling LEGEN for each scat angle????
+C       Isn't this a waste of time?
         DO IPH = 1, NUMPHASE
           F = LEGEN(1,ML+1,IPH)/(2*(ML+1)+1)
 C          IF (J .EQ. 1) THEN
