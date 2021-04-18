@@ -79,16 +79,19 @@ def table_to_grid(microphysics, poly_table, exact_table=False, inverse_mode=Fals
                 "Microphysical coordinate '{}' is not"
                 " within the range of the mie table.".format(interp_coord)
                 )
-    interp_method = 'nearest' if exact_table else 'linear'
+    interp_method = 'linear'
     ssalb = poly_table.ssalb.interp(interp_coords, method=interp_method)
-    assert not np.any(np.isnan(ssalb.data)), 'Unexpected NaN in ssalb'
     extinction_efficiency = poly_table.extinction.interp(interp_coords, method=interp_method)
 
     if not inverse_mode:
         extinction = extinction_efficiency * microphysics.density
     else:
         extinction = extinction_efficiency
+
+    assert not np.any(np.isnan(ssalb.data)), 'Unexpected NaN in ssalb'
     assert not np.any(np.isnan(extinction.data)), 'Unexpected NaN in extinction'
+
+    # Different method for phase functions / indices.
     extinction.name = 'extinction'
     table_index = poly_table.coords['table_index'].interp(
         coords=interp_coords, method='nearest'

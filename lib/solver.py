@@ -1054,7 +1054,7 @@ class RTE:
         ----------
         table_to_grid_method : callable
             An interpolation for mapping the derivatives from `table_data` onto the spatial
-            grid. See medium.py &
+            grid. See medium.py.
         table_data : xr.Dataset
             Contains the partial derivatives as a function of microphysical properties
             this is the derivative analogue of a look up table of optical properties
@@ -1114,10 +1114,10 @@ class RTE:
 
         # Concatenate all legendre tables into one table
         legendre_table = xr.concat(padded_legcoefs, dim='table_index')
-        if self._nleg > legendre_table.sizes['legendre_index']:
+        if self._pa.nlegp > legendre_table.sizes['legendre_index']:
             legendre_table = legendre_table.pad(
                 {'legendre_index':
-                 (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])
+                 (0, 1 + self._pa.nlegp - legendre_table.sizes['legendre_index'])
                 }, constant_values=0.0
             )
         dnumphase = legendre_table.sizes['table_index']
@@ -1126,7 +1126,7 @@ class RTE:
         # zero the first term of the first component of the phase function
         # gradient. Pre-scale the legendre moments by 1/(2*l+1) which
         # is done in the forward problem in TRILIN_INTERP_PROP
-        scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0, self._nleg+1)]))
+        scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0, self._pa.nlegp+1)]))
         dleg[0, 0, :] = 0.0
         dleg = dleg[:self._nstleg] / scaling_factor
 
@@ -1134,7 +1134,7 @@ class RTE:
             deriv_ind = self._unknown_scatterer_indices - 1
             albs = self._pa.albedop[:, deriv_ind]
             exts = self._pa.extinctp[:, deriv_ind]
-            legs = self._pa.legenp.reshape((self._nstleg, self._nleg+1, self._pa.numphase), order='F')/scaling_factor
+            legs = self._pa.legenp.reshape((self._nstleg, self._pa.nlegp+1, self._pa.numphase), order='F')/scaling_factor
 
             # f (the delta-M scaling factor) is sensitive to changes in microphysics.
             # note that the index for 'F' is ml+1 the same as in Fortran because
@@ -1186,7 +1186,6 @@ class RTE:
             deltam=self._deltam
         )
         pyshdom.checks.check_errcode(ierr, errmsg)
-
 
         self._dnumphase, self._diphase = dnumphase, diphase
 

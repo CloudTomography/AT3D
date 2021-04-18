@@ -4764,10 +4764,12 @@ C                 the ACM, 12, 3 (1969), pp. 185-187.
 C***END PROLOGUE  SSORT
 C     .. Scalar Arguments ..
       INTEGER KFLAG, N
+Cf2py intent(in) KFLAG, N
 C     .. Array Arguments ..
 c      REAL X(*), Y(*)
       REAL X(*)
       INTEGER Y(*)
+Cf2py intent(in,out) X, Y
 C     .. Local Scalars ..
 c      REAL R, T, TT, TTY, TY
       REAL R, T, TT
@@ -5002,6 +5004,316 @@ C     Begin again on another portion of the unsorted array
       IF (T .LT. X(K)) GO TO 180
       X(K+1) = T
       Y(K+1) = TY
+      GO TO 170
+
+C     Clean up
+  190 IF (KFLAG .LE. -1) THEN
+         DO 200 I=1,NN
+            X(I) = -X(I)
+  200    CONTINUE
+      ENDIF
+      RETURN
+      END
+
+      SUBROUTINE QUICKSORT_NEW (X, Y, YI, N, KFLAG)
+C     THIS IS MODIFIED FROM SSORT ABOVE TO SORT INTEGER ARRAY X
+C     AND TO CARRY ALONG REAL Y, AND INTEGER YI.
+C     I did not change the documentation below
+C     to reflect this. - JRLoveridge 2021/4/18.
+C
+C***BEGIN PROLOGUE  SSORT
+C***PURPOSE  Sort an array and optionally make the same interchanges in
+C            an auxiliary array.  The array may be sorted in increasing
+C            or decreasing order.  A slightly modified QUICKSORT
+C            algorithm is used.
+C***LIBRARY   SLATEC
+C***CATEGORY  N6A2B
+C***TYPE      SINGLE PRECISION (SSORT-S, DSORT-D, ISORT-I)
+C***KEYWORDS  SINGLETON QUICKSORT, SORT, SORTING
+C***AUTHOR  Jones, R. E., (SNLA)
+C           Wisniewski, J. A., (SNLA)
+C***DESCRIPTION
+C
+C   SSORT sorts array X and optionally makes the same interchanges in
+C   array Y.  The array X may be sorted in increasing order or
+C   decreasing order.  A slightly modified quicksort algorithm is used.
+C
+C   Description of Parameters
+C      X - array of values to be sorted   (usually abscissas)
+C      Y - array to be (optionally) carried along
+C      N - number of values in array X to be sorted
+C      KFLAG - control parameter
+C            =  2  means sort X in increasing order and carry Y along.
+C            =  1  means sort X in increasing order (ignoring Y)
+C            = -1  means sort X in decreasing order (ignoring Y)
+C            = -2  means sort X in decreasing order and carry Y along.
+C
+C***REFERENCES  R. C. Singleton, Algorithm 347, An efficient algorithm
+C                 for sorting with minimal storage, Communications of
+C                 the ACM, 12, 3 (1969), pp. 185-187.
+C***END PROLOGUE  SSORT
+C     .. Scalar Arguments ..
+      INTEGER KFLAG, N
+Cf2py intent(in) :: KFLAG, N
+C     .. Array Arguments ..
+c      REAL X(*), Y(*)
+      INTEGER X(*), YI(*)
+      REAL Y(*)
+Cf2py intent(in, out) :: X, YI, Y
+C     .. Local Scalars ..
+c      REAL R, T, TT, TTY, TY
+      REAL R
+      INTEGER T, TT, TYI, TTYI
+      REAL TY, TTY
+      INTEGER I, IJ, J, K, KK, L, M, NN
+C     .. Local Arrays ..
+      INTEGER IL(51), IU(51)
+C     .. External Subroutines ..
+C     .. Intrinsic Functions ..
+      INTRINSIC ABS, INT
+C***First executable statement  SSORT
+      NN = N
+      IF (NN .LT. 1) THEN
+         STOP 'The number of values to be sorted is not positive.'
+      ENDIF
+
+      KK = ABS(KFLAG)
+      IF (KK.NE.1 .AND. KK.NE.2) THEN
+        STOP 'The sort control parameter, K, is not 2, 1, -1, or -2.'
+      ENDIF
+
+C     Alter array X to get decreasing order if needed
+      IF (KFLAG .LE. -1) THEN
+         DO 10 I=1,NN
+            X(I) = -X(I)
+   10    CONTINUE
+      ENDIF
+
+      IF (KK .EQ. 2) GO TO 100
+
+C     Sort X only
+      M = 1
+      I = 1
+      J = NN
+      R = 0.375E0
+
+   20 IF (I .EQ. J) GO TO 60
+      IF (R .LE. 0.5898437E0) THEN
+         R = R+3.90625E-2
+      ELSE
+         R = R-0.21875E0
+      ENDIF
+
+   30 K = I
+
+C     Select a central element of the array and save it in location T
+      IJ = I + INT((J-I)*R)
+      T = X(IJ)
+
+C     If first element of array is greater than T, interchange with T
+      IF (X(I) .GT. T) THEN
+         X(IJ) = X(I)
+         X(I) = T
+         T = X(IJ)
+      ENDIF
+      L = J
+
+C     If last element of array is less than than T, interchange with T
+      IF (X(J) .LT. T) THEN
+         X(IJ) = X(J)
+         X(J) = T
+         T = X(IJ)
+
+C        If first element of array is greater than T, interchange with T
+         IF (X(I) .GT. T) THEN
+            X(IJ) = X(I)
+            X(I) = T
+            T = X(IJ)
+         ENDIF
+      ENDIF
+
+C     Find an element in the second half of the array which is smaller
+C     than T
+   40 L = L-1
+      IF (X(L) .GT. T) GO TO 40
+
+C     Find an element in the first half of the array which is greater
+C     than T
+   50 K = K+1
+      IF (X(K) .LT. T) GO TO 50
+
+C     Interchange these elements
+      IF (K .LE. L) THEN
+         TT = X(L)
+         X(L) = X(K)
+         X(K) = TT
+         GO TO 40
+      ENDIF
+
+C     Save upper and lower subscripts of the array yet to be sorted
+      IF (L-I .GT. J-K) THEN
+         IL(M) = I
+         IU(M) = L
+         I = K
+         M = M+1
+      ELSE
+         IL(M) = K
+         IU(M) = J
+         J = L
+         M = M+1
+      ENDIF
+      GO TO 70
+
+C     Begin again on another portion of the unsorted array
+   60 M = M-1
+      IF (M .EQ. 0) GO TO 190
+      I = IL(M)
+      J = IU(M)
+
+   70 IF (J-I .GE. 1) GO TO 30
+      IF (I .EQ. 1) GO TO 20
+      I = I-1
+
+   80 I = I+1
+      IF (I .EQ. J) GO TO 60
+      T = X(I+1)
+      IF (X(I) .LE. T) GO TO 80
+      K = I
+
+   90 X(K+1) = X(K)
+      K = K-1
+      IF (T .LT. X(K)) GO TO 90
+      X(K+1) = T
+      GO TO 80
+
+C     Sort X and carry Y along
+  100 M = 1
+      I = 1
+      J = NN
+      R = 0.375E0
+
+  110 IF (I .EQ. J) GO TO 150
+      IF (R .LE. 0.5898437E0) THEN
+         R = R+3.90625E-2
+      ELSE
+         R = R-0.21875E0
+      ENDIF
+C
+  120 K = I
+
+C     Select a central element of the array and save it in location T
+      IJ = I + INT((J-I)*R)
+      T = X(IJ)
+      TY = Y(IJ)
+      TYI = YI(IJ)
+
+
+C     If first element of array is greater than T, interchange with T
+      IF (X(I) .GT. T) THEN
+         X(IJ) = X(I)
+         X(I) = T
+         T = X(IJ)
+         Y(IJ) = Y(I)
+         Y(I) = TY
+         TY = Y(IJ)
+         YI(IJ) = YI(I)
+         YI(I) = TYI
+         TYI = YI(IJ)
+
+      ENDIF
+      L = J
+
+C     If last element of array is less than T, interchange with T
+      IF (X(J) .LT. T) THEN
+         X(IJ) = X(J)
+         X(J) = T
+         T = X(IJ)
+         Y(IJ) = Y(J)
+         Y(J) = TY
+         TY = Y(IJ)
+         YI(IJ) = YI(J)
+         YI(J) = TYI
+         TYI = YI(IJ)
+
+C        If first element of array is greater than T, interchange with T
+         IF (X(I) .GT. T) THEN
+            X(IJ) = X(I)
+            X(I) = T
+            T = X(IJ)
+            Y(IJ) = Y(I)
+            Y(I) = TY
+            TY = Y(IJ)
+            YI(IJ) = YI(I)
+            YI(I) = TYI
+            TYI = YI(IJ)
+
+         ENDIF
+      ENDIF
+
+C     Find an element in the second half of the array which is smaller
+C     than T
+  130 L = L-1
+      IF (X(L) .GT. T) GO TO 130
+
+C     Find an element in the first half of the array which is greater
+C     than T
+  140 K = K+1
+      IF (X(K) .LT. T) GO TO 140
+
+C     Interchange these elements
+      IF (K .LE. L) THEN
+         TT = X(L)
+         X(L) = X(K)
+         X(K) = TT
+         TTY = Y(L)
+         Y(L) = Y(K)
+         Y(K) = TTY
+         TTYI = YI(L)
+         YI(L) = YI(K)
+         YI(K) = TTYI
+         GO TO 130
+      ENDIF
+
+C     Save upper and lower subscripts of the array yet to be sorted
+      IF (L-I .GT. J-K) THEN
+         IL(M) = I
+         IU(M) = L
+         I = K
+         M = M+1
+      ELSE
+         IL(M) = K
+         IU(M) = J
+         J = L
+         M = M+1
+      ENDIF
+      GO TO 160
+
+C     Begin again on another portion of the unsorted array
+  150 M = M-1
+      IF (M .EQ. 0) GO TO 190
+      I = IL(M)
+      J = IU(M)
+
+  160 IF (J-I .GE. 1) GO TO 120
+      IF (I .EQ. 1) GO TO 110
+      I = I-1
+
+  170 I = I+1
+      IF (I .EQ. J) GO TO 150
+      T = X(I+1)
+      TY = Y(I+1)
+      TYI = YI(I+1)
+      IF (X(I) .LE. T) GO TO 170
+      K = I
+
+  180 X(K+1) = X(K)
+      Y(K+1) = Y(K)
+      YI(K+1) = YI(K)
+      K = K-1
+      IF (T .LT. X(K)) GO TO 180
+      X(K+1) = T
+      Y(K+1) = TY
+      YI(K+1) = TYI
       GO TO 170
 
 C     Clean up

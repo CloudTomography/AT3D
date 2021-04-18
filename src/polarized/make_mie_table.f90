@@ -479,7 +479,7 @@ END SUBROUTINE COMPUTE_MIE_ALL_SIZES
 
 
 SUBROUTINE MAKE_MULTI_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA,&
-				GAMMA, ND, NDIST)
+				GAMMA, ND, NDIST, IERR, ERRMSG)
  ! Calculates the number concentrations (ND in cm^-3) for the NSIZE
  ! discrete particle radii (micron) of a gamma or lognormal size distribution
  ! with an effective radius of REFF (micron), gamma shape parameter or
@@ -489,19 +489,23 @@ SUBROUTINE MAKE_MULTI_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA,&
   INTEGER, INTENT(IN)  :: NSIZE, NDIST
   REAL,    INTENT(IN)  :: RADII(NSIZE), REFF(NDIST), ALPHA(NDIST), GAMMA, PARDENS
   REAL,    INTENT(OUT) :: ND(NSIZE, NDIST)
+  CHARACTER(LEN=600), INTENT(OUT) :: ERRMSG
+  INTEGER, INTENT(OUT) :: IERR
   CHARACTER(LEN=1), INTENT(IN) :: DISTFLAG
   INTEGER :: K
-
+  IERR = 0
   DO K = 1, NDIST
     CALL MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF(K), ALPHA(K),&
-   			GAMMA, ND(1,K))
+   			GAMMA, ND(1,K), IERR, ERRMSG)
+    IF (IERR .NE. 0) RETURN
   ENDDO
 END SUBROUTINE MAKE_MULTI_SIZE_DIST
 
 
 
 
-SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, ND)
+SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, ND,&
+                          IERR, ERRMSG)
  ! Calculates the number concentrations (ND in cm^-3) for the NSIZE
  ! discrete particle radii (micron) of a gamma or lognormal size distribution
  ! with an effective radius of REFF (micron), gamma shape parameter or
@@ -512,6 +516,8 @@ SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, N
   REAL,    INTENT(IN)  :: RADII(NSIZE), REFF, ALPHA, GAMMA, PARDENS
   REAL,    INTENT(OUT) :: ND(NSIZE)
   CHARACTER(LEN=1), INTENT(IN) :: DISTFLAG
+  CHARACTER(LEN=600) :: ERRMSG
+  INTEGER :: IERR
   REAL, PARAMETER :: TOL=0.001  ! fractional tolerance in achieving Reff
   INTEGER :: I
   REAL    :: TRUERE, F, REHI, RELO, REMID
@@ -534,8 +540,10 @@ SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, N
                          NSIZE, RADII, ND, TRUERE)
     ENDDO
     IF (TRUERE <= REFF) THEN
-      PRINT *, 'MAKE_SIZE_DIST: effective radius cannot be achieved',REFF,TRUERE,ALPHA
-      STOP
+      IERR = 1
+      WRITE(ERRMSG, *) 'MAKE_SIZE_DIST: effective radius cannot be achieved', &
+          REFF,TRUERE,ALPHA
+      RETURN
     ENDIF
   ELSE
     ! Find Reff that gives true Reff below desired value
@@ -550,8 +558,12 @@ SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, N
                          NSIZE, RADII, ND, TRUERE)
     ENDDO
     IF (TRUERE >= REFF) THEN
-      PRINT *, 'MAKE_SIZE_DIST: effective radius cannot be achieved',REFF,TRUERE,ALPHA
-      STOP
+      IERR = 1
+      WRITE(ERRMSG, *) 'MAKE_SIZE_DIST: effective radius cannot be achieved', &
+          REFF,TRUERE,ALPHA
+      RETURN
+      ! PRINT *, 'MAKE_SIZE_DIST: effective radius cannot be achieved',REFF,TRUERE,ALPHA
+      ! STOP
     ENDIF
   ENDIF
   ! Do bisection to get correct effective radius

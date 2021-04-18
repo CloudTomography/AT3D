@@ -254,6 +254,8 @@ Cf2py intent(out) ::  UNIFORM_SFC_BRDF, SFC_BRDF_DO
       INTEGER IERR
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
+
+      INTEGER I, J
       IERR = 0
 C       Set up some things before solution loop
 C    Compute the solar transmission in DIRFLUX.
@@ -263,12 +265,20 @@ C    Compute the solar transmission in DIRFLUX.
      .                         SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS,
      .                         NX, XGRID, NY, YGRID, DIRFLUX)
         ELSE
-C          PRINT *, '?'
-C          CALL PENCIL_BEAM_PROP(0.25D0, 0.25D0,2.0D0, BCFLAG, IPFLAG,
+C          PRINT *, 'DOING HARD CODED ADJOINT SOURCE.'
+C          DIRFLUX = 0.0
+C          DO I=1,NX1
+C            DO J=1,NY1
+C
+C              CALL PENCIL_BEAM_PROP(DBLE(XGRID(I)),
+C     .          DBLE(YGRID(J)),DBLE(ZGRID(NZ)), BCFLAG,
+C     .          IPFLAG,
 C     .      1.0, 1.0, 0.0, DIRFLUX(:NPTS), TOTAL_EXT(:NPTS), NX,NY,NZ,
 C     .      NCELLS, NPTS, CELLFLAGS(:NCELLS), XGRID, YGRID, ZGRID,
 C     .      GRIDPOS(:,:NPTS),
 C     .      GRIDPTR(:,:NCELLS), NEIGHPTR(:,:NCELLS), TREEPTR(:,:NCELLS))
+C            ENDDO
+C          ENDDO
           CALL MAKE_DIRECT (NPTS, BCFLAG, IPFLAG, DELTAM,
      .             ML, NSTLEG, NLEGP, SOLARFLUX, SOLARMU,
      .             SOLARAZ,  GRIDPOS, DIRFLUX,

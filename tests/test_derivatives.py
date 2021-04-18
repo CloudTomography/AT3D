@@ -716,3 +716,126 @@ class SolarJacobianThinNoSurface(TestCase):
 
     def test_jacobian(self):
         self.assertTrue(np.allclose(self.jacobian.ravel(), self.jacobian_reference.ravel(), atol=5.52e-6))
+
+class AdjointSource(TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        np.random.seed(1)
+
+        nx=npx=10
+        ny=npy=24
+        npz=nz=30
+        xstart=0.0
+        ystart=0.0
+        bcflag=0
+        gridtype='P'
+        ipflag=0
+        delx=0.02
+        dely=0.02
+        zlevels=np.linspace(0.0,1.0,nz)
+
+        def ibits(val, bit, ret_val):
+            if val & 2 ** bit:
+                return ret_val
+            return 0
+
+        nx1, ny1 = nx + 1, ny + 1
+        if bcflag & 5 or ibits(ipflag, 0, 1):
+            nx1 -= 1
+        if bcflag & 7 or ibits(ipflag, 1, 1):
+            ny1 -= 1
+        nbpts = nx1 * ny1 * nz
+
+        xgrid, ygrid, zgrid = pyshdom.core.new_grids(
+            bcflag=bcflag,
+            gridtype=gridtype,
+            npx=npx,
+            npy=npy,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            xstart=xstart,
+            ystart=ystart,
+            delxp=delx,
+            delyp=dely,
+            zlevels=zlevels
+        )
+
+        npts, ncells, gridpos, gridptr, neighptr, \
+        treeptr, cellflags = pyshdom.core.init_cell_structure(
+            maxig=2.0*nbpts,
+            maxic=2.0*2*nbpts,
+            bcflag=bcflag,
+            ipflag=ipflag,
+            nx=nx,
+            ny=ny,
+            nz=nz,
+            nx1=nx1,
+            ny1=ny1,
+            xgrid=xgrid,
+            ygrid=ygrid,
+            zgrid=zgrid
+        )
+        number_tests = 500
+        lefts = np.zeros(number_tests)
+        rights = np.zeros(number_tests)
+        for i in range(number_tests):
+            x0=np.random.uniform(low=0.0, high=xgrid.max())
+            y0=np.random.uniform(low=0.0, high=ygrid.max())
+            z0=np.random.uniform(low=0.2, high=zgrid.max())
+            mu=np.random.uniform(low=-1.0, high=1.0)
+            phi=np.random.uniform(low=0.0, high=np.pi)
+            adjoint_magnitude=np.random.uniform(low=0.0,high=1.0)
+            total_ext = np.random.uniform(low=0.0,high=40.0,size=npts)
+            field = np.random.uniform(low=0.0,high=40.0, size=npts)
+
+            adjoint_source = pyshdom.core.pencil_beam_prop(x0=x0,y0=y0,z0=z0,
+                                         bcflag=bcflag,
+                                         ipflag=ipflag,
+                                         magnitude=adjoint_magnitude,
+                                         mu2=mu,
+                                         phi2=phi,
+                                         total_ext=total_ext,
+                                         nx=nx,
+                                         ny=ny,
+                                         nz=nz,
+                                         ncells=ncells,
+                                         npts=npts,
+                                         cellflags=cellflags[:ncells],
+                                         xgrid=xgrid,
+                                         ygrid=ygrid,
+                                         zgrid=zgrid,
+                                         gridpos=gridpos[:,:npts],
+                                         gridptr=gridptr[:,:ncells],
+                                         neighptr=neighptr[:,:ncells],
+                                         treeptr=treeptr[:,:ncells])
+
+            magnitude = pyshdom.core.transmission_integral(x0=x0,y0=y0,z0=z0,
+                                         bcflag=bcflag,
+                                         ipflag=ipflag,
+                                         mu2=mu,
+                                         phi2=phi,
+                                         field=field,
+                                         nx=nx,
+                                         ny=ny,
+                                         nz=nz,
+                                         ncells=ncells,
+                                         total_ext=total_ext,
+                                         npts=npts,
+                                         cellflags=cellflags[:ncells],
+                                         xgrid=xgrid,
+                                         ygrid=ygrid,
+                                         zgrid=zgrid,
+                                         gridpos=gridpos[:,:npts],
+                                         gridptr=gridptr[:,:ncells],
+                                         neighptr=neighptr[:,:ncells],
+                                         treeptr=treeptr[:,:ncells]
+                                              )
+            lefts[i] = magnitude*adjoint_magnitude
+            rights[i] = np.dot(adjoint_source, field*total_ext)
+        cls.lefts = lefts
+        cls.rights = rights
+    def dot_product_test(self):
+        self.assertTrue(np.allclose(self.lefts, self.rights))
