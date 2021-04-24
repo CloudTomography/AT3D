@@ -269,9 +269,11 @@ def get_optical_properties(microphysics, mie_mono_tables, size_distribution_func
         # make the set of phase indices and interpolation weights.
         # when only exact phase functinos are used.
         # and specify the exact microphysical variables to calculate optical properties for.
-        for i, (name, variable_data) in enumerate(zip(interp_coords, microphysics_data)):
+        unique_exact, phase_indices = np.unique(microphysics_data, axis=1, return_inverse=True)
+
+        for name, variable_data in zip(interp_coords, unique_exact):
             parameter_dict[name] = variable_data
-        phase_indices = np.arange(microphysics_data.shape[1])[np.newaxis, :]
+        phase_indices = phase_indices[np.newaxis, ...]
         interpolation_weights = np.ones(phase_indices.shape)
     else:
         # lower_upper_flags contains -1,0 for finding the indices of lower and upper bounds
@@ -385,13 +387,13 @@ def get_optical_properties(microphysics, mie_mono_tables, size_distribution_func
         size_dist_attrs['distribution_type'] = size_distribution_function.__name__
         size_dist_attrs['radius_units'] = number_density_grid.radius_units
         coords = {'radius': mie_mono_table.radius.data}
-        coords['microphysics_index'] = pd.MultiIndex.from_arrays(
+        coords['table_index'] = pd.MultiIndex.from_arrays(
             [parameter_dict[name] for name in parameter_dict],
             names=list(parameter_dict)
             )
 
         size_dist_grid = xr.Dataset(
-            data_vars={'number_density': (['radius', 'microphysics_index'], number_density_raveled)},
+            data_vars={'number_density': (['radius', 'table_index'], number_density_raveled)},
             coords=coords,
             attrs=size_dist_attrs
         )

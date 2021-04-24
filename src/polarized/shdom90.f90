@@ -339,7 +339,7 @@
                      ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV, &
                      CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD, &
                      XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,&
-                     MAXPG)
+                     MAXPG, PHASEWTP, MAXNMICRO)
 !       Computes the direct beam flux at point (XI,YI,ZI) by integrating
 !     the extinction through the property grid.  If called with
 !     INIT=1 then the property grid extinction array, solar direction
@@ -368,8 +368,9 @@
       LOGICAL DELTAM, VALIDBEAM
       REAL    XI, YI, ZI, SOLARFLUX, SOLARMU, SOLARAZ
       REAL    DIRFLUX, UNIFZLEV, XO, YO, ZO, DIRPATH
+      INTEGER MAXNMICRO
 
-      INTEGER IX, IY, IZ, JZ, IL, IM, IU
+      INTEGER IX, IY, IZ, JZ, IL, IM, IU, Q
       INTEGER I, J, K, L, IPH, IP, JP, I1, I2, I3, I4, IPA
       INTEGER IPDIRECT, DI, DJ, DK
       LOGICAL CONSTX, CONSTY, HITBOUNDARY, BTEST
@@ -395,7 +396,8 @@
       REAL ZLEVELS(*)
       REAL TEMPP(*), EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG,NPART)
       REAL LEGENP(*), EXTDIRP(*)
-      INTEGER IPHASEP(MAXPG,NPART)
+      INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
+      REAL PHASEWTP(MAXNMICRO,MAXPG,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
 
@@ -445,13 +447,13 @@
                 ENDIF
 !                 Do the Delta-M scaling if needed
                 IF (DELTAM) THEN
-                  IF (NUMPHASE .GT. 0) THEN
-                    IPH = IPHASEP(IP,IPA)
-                  ELSE
-                    IPH = IP
-                  ENDIF
                   L = ML+1
-                  F = LEGENP(1+NSTLEG*(L+(NLEGP+1)*(IPH-1)))/(2*L+1)
+                  F = 0.0D0
+                  DO Q=1,MAXNMICRO
+                    IPH = IPHASEP(Q,IP,IPA)
+                    F = F + PHASEWTP(Q,IP,IPA)* &
+                      LEGENP(1+NSTLEG*(L+(NLEGP+1)*(IPH-1)))/(2*L+1)
+                  ENDDO
                   EXTINCT = (1.0-ALBEDO*F)*EXTINCT
                 ENDIF
                 EXTDIRP(IP) = EXTDIRP(IP) + EXTINCT

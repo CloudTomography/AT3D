@@ -141,10 +141,6 @@ class RTE:
         self._nstokes = num_stokes
         self._nstleg = 1 if num_stokes == 1 else 6
 
-        # 'interpmethod' doesn't currently do anything it is legacy
-        # variable that was used in debugging. It can be used to
-        # test different interpolation schemes in TRILIN_INTERP_PROP
-        # e.g. for the phase function.
         # If the second character is 'O' then 'max scattering' interpolation
         # of phase functions occurs. If the second character is 'N' then
         # linear mixing of phase functions occurs.
@@ -153,7 +149,7 @@ class RTE:
         # and is the threshold for the weight for neglecting the
         # contributions of other phase functions.
         self._phasemax = 0.999
-        self._adjflag = False
+        self._adjflag = False # Used for testing the adjoint source.
 
         self.source = self._setup_source(source)
         self.medium, self._grid = self._setup_medium(medium)
@@ -320,13 +316,14 @@ class RTE:
         self._radiance, self._fluxes, self._dirflux, self._uniformzlev, \
         self._pa.extdirp, self._oldnpts, self._total_ext, self._deljdot, \
         self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
-        self._work2, ierr, errmsg, self._phaseinterpwt, self._optinterpwt \
+        self._work2, ierr, errmsg, self._phaseinterpwt \
          = pyshdom.core.solution_iterations(
             verbose=verbose,
+            maxnmicro=self._pa.max_num_micro,
+            phasewtp=self._pa.phasewtp,
             nlegp=self._pa.nlegp,
             phasemax=self._phasemax,
             phaseinterpwt=self._phaseinterpwt,
-            optinterpwt=self._optinterpwt,
             interpmethod=self._interpmethod,
             iterfixsh=self._iterfixsh,
             iter=self._iters,
@@ -2025,7 +2022,6 @@ class RTE:
         as well as the arrays that will be used in the solution of SHDOM.
         The SHDOM optical properties includes adaptive points and may be delta-M scaled.
         """
-
         # Iterate over all particle types and aggregate the legendre scattering table
 
         # sefl._maxpg is different to self._nbpts as that has the extra boundary points.
@@ -2123,6 +2119,13 @@ class RTE:
         # have shape=(npts, nparticles) as the relative contribution of each
         # particle to the total extinction is needed for the mixing of the phase
         # functions during the source function calculation.
+        # Note that this is not perfectly optimized in terms of space. Especially
+        # the phaseinterpwt and iphase.
+        # Technically, the albedo/extinct of each
+        # species is only needed for the source computation and could be absorbed
+        # into the phaseinterpwt which would remove the need for a 'particle' dimension
+        # and wasted space when some 'particles' have much more micro dimensions
+        # than others. Important thing is making sure the derivatives work similarly.
         self._temp, self._planck, self._extinct, self._albedo, self._legen, \
         self._iphase, self._total_ext, self._extmin, self._scatmin,         \
         self._albmax, ierr, errmsg, self._phaseinterpwt                  \
@@ -2179,7 +2182,7 @@ class RTE:
         number_thick_cells = np.sum(cell_tau_approx >= 2.0)
 
         if number_thick_cells > 0:
-            warnings.warn("Number of property grid cells with optical depth greater than 2: '{}'. "
+            warnings.warn("Number of SHDOM grid cells with optical depth greater than 2: '{}'. "
                           "Max cell optical depth: '{}'".format(
                               number_thick_cells, np.max(cell_tau_approx)
                               )
@@ -2290,6 +2293,8 @@ class RTE:
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
         self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg \
          = pyshdom.core.init_solution(
+            phasewtp=self._pa.phasewtp,
+            maxnmicro=self._pa.max_num_micro,
             adjflag=self._adjflag,
             nlegp=self._pa.nlegp,
             phasemax=self._phasemax,

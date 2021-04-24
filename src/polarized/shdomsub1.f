@@ -133,14 +133,15 @@ C       Get the maximum single scattering albedo over all processors
      .             NSTLEG, NSTOKES, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
      .             INRADFLAG,NDELSOURCE, IERR, ERRMSG, MAXPG,
      .             WORK2_SIZE, PHASEINTERPWT, PHASEMAX,
-     .             INTERPMETHOD, NLEGP, ADJFLAG)
+     .             INTERPMETHOD, NLEGP, ADJFLAG, MAXNMICRO,
+     .             PHASEWTP)
 Cf2py threadsafe
 C       Initialize the SHDOM solution procedure.
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NX1, NY1, NXSFC, NYSFC, NSFCPAR, NUMPHASE
-      INTEGER NSTLEG, NSTOKES
+      INTEGER NSTLEG, NSTOKES, MAXNMICRO
 Cf2py intent(in) ::  NX, NY, NX1, NY1, NZ, NXSFC, NYSFC, NSFCPAR
-Cf2py intent(in) ::  NUMPHASE, NSTLEG, NSTOKES
+Cf2py intent(in) ::  NUMPHASE, NSTLEG, NSTOKES, MAXNMICRO
       INTEGER ML, MM, NCS, NLM, NMU, NPHI, NLEG, MAXSFCPARS
 Cf2py intent(in) :: ML, MM, NCS, NLM, NMU, NPHI, NLEG, MAXSFCPARS
       INTEGER BCFLAG, IPFLAG, NBCELLS, NLEGP
@@ -155,11 +156,11 @@ Cf2py intent(in) :: NPTS, NCELLS
 Cf2py intent(in) :: GRIDPTR, TREEPTR, NEIGHPTR
       INTEGER*2 CELLFLAGS(*)
 Cf2py intent(in) CELLFLAGS
-      INTEGER  IPHASE(8,MAXIG,NPART)
+      INTEGER  IPHASE(8*MAXNMICRO,MAXIG,NPART)
 Cf2py intent(in) :: IPHASE
       CHARACTER INTERPMETHOD*2
 Cf2py intent(in) :: INTERPMETHOD
-      REAL PHASEINTERPWT(8,MAXIG,NPART), PHASEMAX
+      REAL PHASEINTERPWT(8*MAXNMICRO,MAXIG,NPART), PHASEMAX
 Cf2py intent(in) :: PHASEINTERPWT, PHASEMAX
       LOGICAL DELTAM, ACCELFLAG, INRADFLAG
 Cf2py intent(in) :: DELTAM, ACCELFLAG, INRADFLAG
@@ -191,9 +192,9 @@ Cf2py intent(in) :: ZLEVELS
       REAL TEMPP(MAXPG), EXTINCTP(MAXPG,NPART)
       REAL ALBEDOP(MAXPG,NPART)
 Cf2py intent(in) :: TEMPP, EXTINCTP, ALBEDOP
-      REAL LEGENP(*)
-Cf2py intent(in) :: LEGENP
-      INTEGER IPHASEP(MAXPG,NPART)
+      REAL LEGENP(*), PHASEWTP(MAXNMICRO,MAXPG,NPART)
+Cf2py intent(in) :: LEGENP, PHASEWTP
+      INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
 Cf2py intent(in) :: IPHASEP
       INTEGER NZCKD
 Cf2py intent(in) :: NZCKD
@@ -309,7 +310,7 @@ C          ENDDO
      .             ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .             CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		       NPART, MAXPG)
+     .		       NPART, MAXPG, PHASEWTP, MAXNMICRO)
           ENDIF
         ENDIF
       ENDIF
@@ -339,7 +340,8 @@ C        two-stream plane-parallel
      .    SOLARMU,
      .    GNDALBEDO, GNDTEMP, SKYRAD, UNITS, WAVENO, WAVELEN, RADIANCE,
      .    NPART, TOTAL_EXT(:NBPTS), PHASEINTERPWT(:,:NBPTS,:), DELTAM,
-     .    ML, PHASEMAX, INTERPMETHOD)
+     .    ML, PHASEMAX, INTERPMETHOD, MAXNMICRO)
+
 C        Interpolate the radiance on the non-base grid points from the
 C          base grid points
          CALL INTERP_RADIANCE (NSTOKES, NBPTS, NPTS, RSHPTR, RADIANCE,
@@ -354,7 +356,7 @@ C           Initialize the source function from the radiance field
      .         .TRUE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .          NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR,
      .         ERRMSG, PHASEINTERPWT(:,:NPTS,:), DELTAM,
-     .         INTERPMETHOD, PHASEMAX)
+     .         INTERPMETHOD, PHASEMAX, MAXNMICRO)
           IF (IERR .NE. 0) RETURN
       ENDIF
       IF (ACCELFLAG) THEN
@@ -436,7 +438,8 @@ C           inequality holds.
      .               FFTFLAG, CMU1, CMU2, WTMU, CPHI1, CPHI2, WPHISAVE,
      .               WORK, WORK1, WORK2, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
      .               ITERFIXSH, INTERPMETHOD, IERR, ERRMSG, MAXPG,
-     .               PHASEINTERPWT, OPTINTERPWT, PHASEMAX, NLEGP)
+     .               PHASEINTERPWT, PHASEMAX, NLEGP,
+     .               MAXNMICRO, PHASEWTP)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -450,8 +453,8 @@ Cf2py intent(in) :: NSTOKES, NX, NY, NX1, NY1, NZ, NXSFC, NYSFC, NSFCPAR
 Cf2py intent(in) :: ML, MM, NCS, NLM, NMU, NPHI, NANG, NLEG, NSTLEG, NUMPHASE
       INTEGER NPHI0(NMU), MAXITER, ITER, BCFLAG, IPFLAG, ITERFIXSH
 Cf2py intent(in) :: MAXITER, BCFLAG, IPFLAG, NPHI0, ITERFIXSH
-      INTEGER MAXIV, MAXIC, MAXIG, MAXIDO, NLEGP
-Cf2py intent(in) :: MAXIV, MAXIC, MAXIG, MAXIDO, NLEGP
+      INTEGER MAXIV, MAXIC, MAXIG, MAXIDO, NLEGP, MAXNMICRO
+Cf2py intent(in) :: MAXIV, MAXIC, MAXIG, MAXIDO, NLEGP, MAXNMICRO
       INTEGER MAXNBC, MAXBCRAD
 Cf2py intent(in) :: MAXBCRAD, MAXNBC
       LOGICAL DELTAM, ACCELFLAG, HIGHORDERRAD
@@ -489,9 +492,9 @@ Cf2py intent(in) :: ZLEVELS
       REAL TEMPP(*), EXTINCTP(MAXPG,NPART)
       REAL ALBEDOP(MAXPG,NPART)
 Cf2py intent(in) :: TEMPP, EXTINCTP, ALBEDOP
-      REAL LEGENP(*)
-Cf2py intent(in) :: LEGENP
-      INTEGER IPHASEP(MAXPG,NPART)
+      REAL LEGENP(*), PHASEWTP(MAXNMICRO,MAXPG,NPART)
+Cf2py intent(in) :: LEGENP, PHASEWTP
+      INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
 Cf2py intent(in) :: IPHASEP
       INTEGER NZCKD
 Cf2py intent(in) :: NZCKD
@@ -526,10 +529,10 @@ Cf2py intent(in, out) :: GRIDPTR, NEIGHPTR, TREEPTR
       INTEGER*2 CELLFLAGS(*)
       REAL     PHASEMAX
 Cf2py intent(in) :: PHASEMAX
-      INTEGER   IPHASE(8,MAXIG,NPART)
-      REAL    PHASEINTERPWT(8,MAXIG,NPART), OPTINTERPWT(8,MAXIG,NPART)
+      INTEGER   IPHASE(8*MAXNMICRO,MAXIG,NPART)
+      REAL    PHASEINTERPWT(8*MAXNMICRO,MAXIG,NPART)
       REAL      SFCGRIDPARMS(*), SOLCRIT
-Cf2py intent(in, out) :: CELLFLAGS, IPHASE, PHASEINTERPWT, OPTINTERPWT
+Cf2py intent(in, out) :: CELLFLAGS, IPHASE, PHASEINTERPWT
 Cf2py intent(in, out) :: SFCGRIDPARMS
 Cf2py intent(in, out) :: SOLCRIT
       REAL    TEMP(*), PLANCK(MAXIG,NPART)
@@ -650,7 +653,8 @@ C           Make sure all processors are going to split cells if any want to
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
      .             MAXPG, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG,
-     .             PHASEINTERPWT, OPTINTERPWT, PHASEMAX, NLEGP)
+     .             PHASEINTERPWT,PHASEMAX, NLEGP, MAXNMICRO,
+     .             PHASEWTP)
             IF (IERR .NE. 0) RETURN
             IF (SOLCRIT .GT. STARTADAPTSOL)  STARTSPLITACC = SPLITCRIT
           ENDIF
@@ -665,7 +669,7 @@ C            Find the SH truncation to use for the radiance (RSHPTR)
      .           SHPTR, RADIANCE, MAXIV+MAXIG, FIXSH, SHACC, RSHPTR,
      .           NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR,
      .           ERRMSG, PHASEINTERPWT(:,:NPTS,:), DELTAM,
-     .           INTERPMETHOD, PHASEMAX)
+     .           INTERPMETHOD, PHASEMAX, MAXNMICRO)
         IF (IERR .NE. 0) RETURN
 
 C           Integrate the source function along discrete ordinates
@@ -702,7 +706,8 @@ C              the solution criterion, and dot products for acceleration.
      .         MAXIV, RSHPTR, RADIANCE, SHPTR,SOURCE, OSHPTR,DELSOURCE,
      .         .FALSE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .         NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR, ERRMSG,
-     .         PHASEINTERPWT(:,:NPTS,:), DELTAM,INTERPMETHOD, PHASEMAX)
+     .         PHASEINTERPWT(:,:NPTS,:), DELTAM,INTERPMETHOD, PHASEMAX,
+     .         MAXNMICRO)
         IF (IERR .NE. 0) RETURN
 
 C           Calculate the acceleration parameter and solution criterion
@@ -872,7 +877,8 @@ C       from the radiance vector in genSH.
      .             RSHPTR, RADIANCE, SHPTR, SOURCE, OSHPTR, DELSOURCE,
      .             FIRST,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .             NPART, EXTINCT, TOTAL_EXT, IERR, ERRMSG,
-     .             PHASEINTERPWT, DELTAM, INTERPMETHOD, PHASEMAX)
+     .             PHASEINTERPWT, DELTAM, INTERPMETHOD, PHASEMAX,
+     .             MAXNMICRO)
 C       Computes the source function (SOURCE) in spherical harmonic space
 C     for all the grid points.  The thermal source and/or solar
 C     pseudo-source (in PLANCK or DIRFLUX) is added to the scattering source
@@ -900,11 +906,11 @@ C     source function fields normalized by the RMS of the field).
 Cf2py intent(in) :: NSTOKES, NPTS, ML, MM, NLM, NLEG, NSTLEG, MAXIV
       LOGICAL DELTAM
 Cf2py intent(in) :: DELTAM
-      INTEGER NUMPHASE, NPART
+      INTEGER NUMPHASE, NPART, MAXNMICRO
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)
 Cf2py intent(in) :: RSHPTR, SHPTR, OSHPTR
-      INTEGER IPHASE(8,NPTS,NPART)
-      REAL    PHASEINTERPWT(8,NPTS,NPART)
+      INTEGER IPHASE(8*MAXNMICRO,NPTS,NPART)
+      REAL    PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART)
       CHARACTER INTERPMETHOD*2
       REAL    PHASEMAX
 Cf2py intent(in) :: IPHASE, PHASEINTERPWT, INTERPMETHOD, PHASEMAX
@@ -989,7 +995,7 @@ C             Compute the temporary source function for this point
               LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,I,IPA))
             ELSE
               LEGENT = 0.0
-              DO Q=1,8
+              DO Q=1,8*MAXNMICRO
                 IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
                 IPH = IPHASE(Q,I,IPA)
                 LEGENT(:,:,1) = LEGENT(:,:,1) +
@@ -1077,7 +1083,7 @@ C             Compute the temporary source function for this point
                 LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,I,IPA))
               ELSE
                 LEGENT = 0.0
-                DO Q=1,8
+                DO Q=1,8*MAXNMICRO
                   IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
                   IPH = IPHASE(Q,I,IPA)
                   LEGENT(:,:,1) = LEGENT(:,:,1) +
@@ -1151,7 +1157,7 @@ C         Compute the source function in the temporary array.
               LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,I,IPA))
             ELSE
               LEGENT = 0.0
-              DO Q=1,8
+              DO Q=1,8*MAXNMICRO
                 IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
                 IPH = IPHASE(Q,I,IPA)
                 LEGENT(:,:,1) = LEGENT(:,:,1) +
@@ -1235,7 +1241,7 @@ C           Transfer the new source function
      .             NPTS, ALBEDO, LEGEN, IPHASE, SHPTR, RADIANCE,
      .             MAXIR, FIXSH, SHACC, RSHPTR, NPART, EXTINCT,
      .             TOTAL_EXT, IERR, ERRMSG, PHASEINTERPWT,
-     .             DELTAM, INTERPMETHOD, PHASEMAX)
+     .             DELTAM, INTERPMETHOD, PHASEMAX, MAXNMICRO)
 C       Computes the next radiance spherical harmonic series truncation
 C     to use based on the current source function truncation and the
 C     scattering properties.  The radiance truncation is the smaller
@@ -1251,8 +1257,8 @@ C     unless HIGHORDERRAD is on, in which case all terms are kept.
       INTEGER NPTS, NSTOKES, ML, MM, NSTLEG,NLEG, NUMPHASE, MAXIR
 
       INTEGER SHPTR(NPTS+1), RSHPTR(NPTS+2), NPART
-      INTEGER IPHASE(8,NPTS,NPART)
-      REAL    PHASEINTERPWT(8,NPTS,NPART)
+      INTEGER IPHASE(8*MAXNMICRO,NPTS,NPART), MAXNMICRO
+      REAL    PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART)
       LOGICAL HIGHORDERRAD, FIXSH, DELTAM
       REAL    ALBEDO(NPTS,NPART), LEGEN(NSTLEG,0:NLEG,*)
       REAL    EXTINCT(NPTS,NPART), TOTAL_EXT(*)
@@ -1308,7 +1314,7 @@ C         the loop over L indices below.
               IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
                 F(IPA) = LEGEN(1,ML+1,IPHASE(1,I,IPA))
               ELSE
-                DO Q=1,8
+                DO Q=1,8*MAXNMICRO
                   IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
                   F(IPA) = F(IPA)+LEGEN(Q,ML+1,IPHASE(Q,I,IPA))*
      .              PHASEINTERPWT(Q,I,IPA)
@@ -1341,7 +1347,7 @@ C           loop which isn't efficient.
                   LEGENT = LEGEN(1,L,IPHASE(1,I,IPA))
                 ELSE
                   LEGENT = 0.0
-                  DO Q=1,8
+                  DO Q=1,8*MAXNMICRO
                     IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
                     LEGENT = LEGENT +
      .                LEGEN(1,L,IPHASE(Q,I,IPA))*
@@ -4108,7 +4114,8 @@ C             do first and put the second child on the stack.
      .             CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
      .             MAXPG, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG,
-     .             PHASEINTERPWT, OPTINTERPWT, PHASEMAX, NLEGP)
+     .             PHASEINTERPWT, PHASEMAX, NLEGP, MAXNMICRO,
+     .             PHASEWTP)
 C       Splits the cells that have a cell dividing criterion greater than
 C     CURSPLITACC if DOSPLIT is true.  The current splitting criterion
 C     achieved is returned in SPLITCRIT.  If we are at the end of the
@@ -4122,8 +4129,8 @@ C     by MAXIG, MAXIC, MAXIV, MAXIDO) then the OUTOFMEM flag is returned true.
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*), ADAPTIND(*)
       INTEGER*2 CELLFLAGS(*)
-      INTEGER IPHASE(*)
-      REAL    PHASEINTERPWT(*), OPTINTERPWT(*)
+      INTEGER IPHASE(*), MAXNMICRO
+      REAL    PHASEINTERPWT(*)
       REAL    PHASEMAX
       LOGICAL DELTAM, ACCELFLAG, DOSPLIT, OUTOFMEM
       REAL    CURSPLITACC, SPLITCRIT
@@ -4147,7 +4154,8 @@ C     by MAXIG, MAXIC, MAXIV, MAXIDO) then the OUTOFMEM flag is returned true.
       REAL ZLEVELS(*)
       REAL TEMPP(*), EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG,NPART)
       REAL LEGENP(*), EXTDIRP(*)
-      INTEGER IPHASEP(MAXPG,NPART)
+      INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
+      REAL PHASEWTP(MAXNMICRO,MAXPG,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
       DOUBLE PRECISION EXTMIN, SCATMIN
@@ -4219,7 +4227,8 @@ C                 Interpolate the medium properties, radiance, and source
      .            CXINV, CYINV,CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .            DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
      .            NPART,MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD, IERR,
-     .            ERRMSG, PHASEINTERPWT, OPTINTERPWT, PHASEMAX,NLEGP)
+     .            ERRMSG, PHASEINTERPWT, PHASEMAX,NLEGP, MAXNMICRO,
+     .            PHASEWTP)
               IF (IERR .NE. 0) RETURN
             ENDIF
             I = I + 1
@@ -4264,8 +4273,8 @@ C                   Interpolate the medium properties, radiance, and source
      .               CXINV, CYINV,CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .               DELYD,XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
      .               NPART,MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD,
-     .               IERR, ERRMSG, PHASEINTERPWT, OPTINTERPWT,
-     .               PHASEMAX,NLEGP)
+     .               IERR, ERRMSG, PHASEINTERPWT,
+     .               PHASEMAX,NLEGP, MAXNMICRO, PHASEWTP)
                 IF (IERR .NE. 0) RETURN
               ENDIF
             ENDIF
@@ -4321,7 +4330,7 @@ C         Find the max adaptive cell criterion after the cell divisions
      .       CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .       XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
      .       MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD,IERR,ERRMSG,
-     .       PHASEINTERPWT, OPTINTERPWT, PHASEMAX,NLEGP)
+     .       PHASEINTERPWT,PHASEMAX,NLEGP, MAXNMICRO,PHASEWTP)
 C       Interpolates the medium properties, radiance, and source function for
 C     new grid points (specified in NEWPOINTS).  The medium properties are
 C     interpolated from the property grid, since interpolating from the
@@ -4334,11 +4343,11 @@ C     function for the new points.
       IMPLICIT NONE
       INTEGER NEWPOINTS(3,4), NPTS, NPART, NLEGP
       INTEGER NSTOKES, ML, MM, NLM, NSTLEG, NLEG, NUMPHASE
-      INTEGER MAXIG, MAXPG, BCFLAG, IPFLAG
+      INTEGER MAXIG, MAXPG, BCFLAG, IPFLAG, MAXNMICRO
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)
-      INTEGER IPHASE(8,MAXIG,NPART)
-      REAL    PHASEINTERPWT(8,MAXIG,NPART)
-      REAL    OPTINTERPWT(8,MAXIG,NPART), PHASEMAX
+      INTEGER IPHASE(8*MAXNMICRO,MAXIG,NPART)
+      REAL    PHASEINTERPWT(8*MAXNMICRO,MAXIG,NPART)
+      REAL    PHASEMAX
       LOGICAL DELTAM, ACCELFLAG
       REAL    SOLARFLUX, SOLARMU, SOLARAZ, YLMSUN(NSTLEG,NLM)
       REAL    WAVENO(2), WAVELEN
@@ -4364,7 +4373,8 @@ C     function for the new points.
       REAL ZLEVELS(*)
       REAL TEMPP(*), EXTINCTP(MAXPG,NPART)
       REAL LEGENP(*), EXTDIRP(*), ALBEDOP(MAXPG,NPART)
-      INTEGER IPHASEP(MAXPG,NPART)
+      INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
+      REAL PHASEWTP(MAXNMICRO,MAXPG,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
       DOUBLE PRECISION  EXTMIN, SCATMIN
@@ -4411,10 +4421,10 @@ C             Interpolate the medium properties from the property grid
      .             ALBEDO(IP,IPA), LEGEN(1,0,IP), IPHASE(:,IP,IPA),
      .             NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .             XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP(:,IPA),
-     .             ALBEDOP(:,IPA), LEGENP, IPHASEP(:,IPA),
+     .             ALBEDOP(:,IPA), LEGENP, IPHASEP(:,:,IPA),
      .             NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
      .             INTERPMETHOD, IERR, ERRMSG, PHASEINTERPWT(:,IP,IPA),
-     .             OPTINTERPWT(:,IP,IPA), NLEGP)
+     .             NLEGP, MAXNMICRO, PHASEWTP)
 C             Do the Delta-M scaling of extinction and albedo for this point
 	          IF (DELTAM) THEN
               IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
@@ -4424,7 +4434,7 @@ C             Do the Delta-M scaling of extinction and albedo for this point
                   F = LEGEN(1,ML+1,IPHASE(1,IP,IPA))
                 ELSE
                   F=0.0
-                  DO Q=1,8
+                  DO Q=1,8*MAXNMICRO
                     F = F + LEGEN(1,ML+1,IPHASE(Q,IP,IPA))*
      .                PHASEINTERPWT(Q,IP,IPA)
                   ENDDO
@@ -4463,7 +4473,7 @@ C               Otherwise, calculate the exact direct beam from property grid
      .                  ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .                  CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .                  XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .                  NPART, MAXPG)
+     .                  NPART, MAXPG, PHASEWTP, MAXNMICRO)
             ENDIF
           ENDIF
 C             Interpolate the radiance
@@ -4521,7 +4531,7 @@ C             Compute the source function for the new points
                 LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,IP,IPA))
               ELSE
                 LEGENT = 0.0
-                DO Q=1,8
+                DO Q=1,8*MAXNMICRO
                   IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
                   IPH = IPHASE(Q,IP,IPA)
                   LEGENT(:,:,1) = LEGENT(:,:,1) +

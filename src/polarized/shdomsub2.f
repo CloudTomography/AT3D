@@ -399,7 +399,7 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .                ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .                CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .                XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		          NPART, MAXPG)
+     .		          NPART, MAXPG, PHASEWTP, MAXNMICRO)
 C       Makes the direct beam solar flux for the internal base grid.
 C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
@@ -410,15 +410,15 @@ Cf2py intent(in) :: NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEGP, MAXPG
 Cf2py intent(in) :: DELTAM
       REAL    SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS(3,*)
 Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS
-      INTEGER NPX, NPY, NPZ, NPART, NUMPHASE
-Cf2py intent(in) :: NPX, NPY, NPZ, NPART, NUMPHASE
+      INTEGER NPX, NPY, NPZ, NPART, NUMPHASE,MAXNMICRO
+Cf2py intent(in) :: NPX, NPY, NPZ, NPART, NUMPHASE, MAXNMICRO
       REAL DELX, DELY, XSTART, YSTART
 Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
-      REAL ZLEVELS(*), TEMPP(*)
+      REAL ZLEVELS(*), TEMPP(*), PHASEWTP(MAXNMICRO,MAXPG,NPART)
       REAL EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG,NPART)
 Cf2py intent(in) :: ZLEVELS, TEMPP, EXTINCTP, ALBEDOP
       REAL LEGENP(*), ZCKD(*), GASABS(*)
-      INTEGER IPHASEP(MAXPG,NPART), NZCKD
+      INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART), NZCKD
 Cf2py intent(in) :: LEGENP, ZCKD, GASABS, IPHASEP, NZCKD
 
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
@@ -447,7 +447,7 @@ Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .	          NPART, MAXPG)
+     .	          NPART, MAXPG, PHASEWTP, MAXNMICRO)
       DO IP = 1, NPTS
 C27237,27283
         DIRPATH = 0.0
@@ -462,7 +462,7 @@ C27237,27283
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		  NPART, MAXPG)
+     .		  NPART, MAXPG, PHASEWTP, MAXNMICRO)
       ENDDO
       RETURN
       END
@@ -575,7 +575,7 @@ C                LEGEN(6,L,IPH) = LEGEN(6,L,IPH)
      .             SRCTYPE, SOLARFLUX, SOLARMU, GNDALBEDO, GNDTEMP,
      .             SKYRAD, UNITS, WAVENO, WAVELEN,  RADIANCE, NPART,
      .		       TOTAL_EXT, PHASEINTERPWT, DELTAM, ML, PHASEMAX,
-     .           INTERPMETHOD)
+     .           INTERPMETHOD, MAXNMICRO)
 C       Initializes radiance field by solving plane-parallel two-stream.
 C     Solves the L=1 M=0 SH system by transforming the pentadiagonal
 C     system to tridiagonal and calling solver.
@@ -583,8 +583,8 @@ C     Does the initialization for the NXY columns of the base grid.
 C     Only the I Stokes parameter is initialized, the rest are zeroed.
       IMPLICIT NONE
       INTEGER NSTOKES, NXY, NZ, NSTLEG, NLEG, NUMPHASE, RSHPTR(*)
-      INTEGER IPHASE(8,NZ,NXY,NPART), NPART, ML
-      REAL    PHASEINTERPWT(8,NZ,NXY,NPART)
+      INTEGER IPHASE(8*MAXNMICRO,NZ,NXY,NPART), NPART, ML
+      REAL    PHASEINTERPWT(8*MAXNMICRO,NZ,NXY,NPART)
       REAL    GNDALBEDO, GNDTEMP, SKYRAD, SOLARFLUX, SOLARMU
       REAL    WAVENO(2), WAVELEN
       REAL    ZGRID(NZ), TOTAL_EXT(NZ,NXY)
@@ -593,6 +593,8 @@ C     Only the I Stokes parameter is initialized, the rest are zeroed.
       REAL    TEMP(NZ,NXY)
       REAL    RADIANCE(NSTOKES,*), PHASEMAX
       CHARACTER SRCTYPE*1, UNITS*1, INTERPMETHOD*2
+      INTEGER MAXNMICRO
+
       INTEGER NLAYER, I, IZ, IR, J, K, L
       LOGICAL DELTAM
       REAL    PI, C0, C1, F0(NPART), F1(NPART), LEGENT0(NPART)
@@ -644,7 +646,7 @@ C           Make layer properties for the Eddington routine
               LEGENT0(:) = LEGEN(1,1,IPHASE(1,IZ,I,:))
             ELSE
               LEGENT0 = 0.0
-              DO Q=1,8
+              DO Q=1,8*MAXNMICRO
                 LEGENT0 = LEGENT0 + LEGEN(1,1,IPHASE(Q,IZ,I,:))*
      .            PHASEINTERPWT(Q,IZ,I,:)
               ENDDO
@@ -653,7 +655,7 @@ C           Make layer properties for the Eddington routine
               LEGENT1(:) = LEGEN(1,1,IPHASE(1,IZ+1,I,:))
             ELSE
               LEGENT1 = 0.0
-              DO Q=1,8
+              DO Q=1,8*MAXNMICRO
                 LEGENT1 = LEGENT1 + LEGEN(1,1,IPHASE(Q,IZ+1,I,:))*
      .            PHASEINTERPWT(Q,IZ+1,I,:)
               ENDDO
@@ -663,7 +665,7 @@ C           Make layer properties for the Eddington routine
                 F0 = LEGEN(1,ML+1,IPHASE(1,IZ,I,:))
               ELSE
                 F0 = 0.0
-                DO Q=1,8
+                DO Q=1,8*MAXNMICRO
                   F0 = F0 + LEGEN(1,ML+1,IPHASE(Q,IZ,I,:))*
      .            PHASEINTERPWT(Q,IZ,I,:)
                 ENDDO
@@ -672,7 +674,7 @@ C           Make layer properties for the Eddington routine
                 F1(:) = LEGEN(1,ML+1,IPHASE(1,IZ+1,I,:))
               ELSE
                 F1 = 0.0
-                DO Q=1,8
+                DO Q=1,8*MAXNMICRO
                   F1 = F1 + LEGEN(1,1,IPHASE(Q,IZ+1,I,:))*
      .            PHASEINTERPWT(Q,IZ+1,I,:)
                 ENDDO
