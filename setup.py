@@ -133,7 +133,9 @@ F2PY_CORE_API = [
     'transmission_integral',
     'quicksort_new',
     'construct_ptr',
-    'ssort'
+    'ssort',
+    'compute_dir_source',
+    'pencil_beam_prop2',
 ]
 
 def _run_command(cmd):

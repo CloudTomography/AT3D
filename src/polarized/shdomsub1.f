@@ -22,7 +22,7 @@ C     - JRLoveridge 2021/02/22
      .             LEGENP, IPHASEP, NZCKD, ZCKD, GASABS,
      .             NPART, TOTAL_EXT, EXTMIN, SCATMIN, ALBMAX, NSTLEG,
      .             INTERPMETHOD, IERR, ERRMSG, PHASEINTERPWT,
-     .             OPTINTERPWT, PHASEMAX, NLEGP)
+     .             PHASEMAX, NLEGP, PHASEWTP, MAXNMICRO)
 Cf2py threadsafe
       IMPLICIT NONE
 
@@ -31,19 +31,19 @@ Cf2py intent(out) :: TEMP, PLANCK
       REAL    EXTINCT(MAXIG,NPART), ALBEDO(MAXIG,NPART)
       REAL    LEGEN(NSTLEG,0:NLEG,NUMPHASE), TOTAL_EXT(MAXIG)
 Cf2py intent(out) :: EXTINCT, ALBEDO, LEGEN, TOTAL_EXT
-      INTEGER  IPHASE(8,MAXIG,NPART)
+      INTEGER  IPHASE(8*MAXNMICRO,MAXIG,NPART)
 Cf2py intent(out) :: IPHASE
       DOUBLE PRECISION EXTMIN, SCATMIN
 Cf2py intent(out) :: EXTMIN, SCATMIN
       REAL    ALBMAX
 Cf2py intent(out) :: ALBMAX
-      REAL PHASEINTERPWT(8,MAXIG,NPART), OPTINTERPWT(8,MAXIG,NPART)
-Cf2py intent(out) :: PHASEINTERPWT, OPTINTERPWT
+      REAL PHASEINTERPWT(8*MAXNMICRO,MAXIG,NPART)
+Cf2py intent(out) :: PHASEINTERPWT
 
       INTEGER  ML, MM, NLEG, NUMPHASE, NSTLEG, NLEGP
 Cf2py intent(in) :: ML, MM, NLEG, NUMPHASE, NSTLEG, NLEGP
-      INTEGER MAXIG
-Cf2py intent(in) :: MAXIG
+      INTEGER MAXIG, MAXNMICRO
+Cf2py intent(in) :: MAXIG, MAXNMICRO
       INTEGER NPTS
 Cf2py intent(in) :: NPTS
       LOGICAL DELTAM
@@ -65,8 +65,9 @@ Cf2py intent(in) :: ZLEVELS
 Cf2py intent(in) :: TEMPP, EXTINCTP, ALBEDOP
       REAL LEGENP(*)
 Cf2py intent(in) :: LEGENP
-      INTEGER IPHASEP(MAXPG,NPART)
-Cf2py intent(in) :: IPHASEP
+      INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
+      REAL PHASEWTP(MAXNMICRO,MAXPG,NPART)
+Cf2py intent(in) :: IPHASEP, PHASEWTP
       INTEGER NZCKD
 Cf2py intent(in) :: NZCKD
       REAL ZCKD(*), GASABS(*)
@@ -88,7 +89,7 @@ C           Transfer the medium properties to the internal grid and add gas abs
      .        ALBEDOP, LEGENP, IPHASEP, NZCKD, ZCKD, GASABS,
      .        EXTMIN, SCATMIN, NPART, TOTAL_EXT(:NPTS), MAXPG,
      .        INTERPMETHOD, IERR, ERRMSG, PHASEINTERPWT(:,:NPTS,:),
-     .        OPTINTERPWT(:,:NPTS,:), NLEGP)
+     .        NLEGP, MAXNMICRO, PHASEWTP)
       IF (IERR .NE. 0) RETURN
 
 C         If Delta-M then scale the extinction, albedo, and Legendre terms.
@@ -98,7 +99,7 @@ C         Put the Planck blackbody source in PLANCK.
      .        EXTINCT(:NPTS,:),  ALBEDO(:NPTS,:), LEGEN, TEMP(:NPTS),
      .        PLANCK(:NPTS,:), IPHASE(:,:NPTS,:), NPART,
      .        TOTAL_EXT(:NPTS), PHASEINTERPWT(:,:NPTS,:), PHASEMAX,
-     .        INTERPMETHOD)
+     .        INTERPMETHOD, MAXNMICRO)
 C       Get the maximum single scattering albedo over all processors
       CALL TOTAL_ALBEDO_MAX (ALBMAX)
 
@@ -132,7 +133,7 @@ C       Get the maximum single scattering albedo over all processors
      .             NSTLEG, NSTOKES, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
      .             INRADFLAG,NDELSOURCE, IERR, ERRMSG, MAXPG,
      .             WORK2_SIZE, PHASEINTERPWT, PHASEMAX,
-     .             INTERPMETHOD, NLEGP)
+     .             INTERPMETHOD, NLEGP, ADJFLAG)
 Cf2py threadsafe
 C       Initialize the SHDOM solution procedure.
       IMPLICIT NONE
@@ -200,6 +201,8 @@ Cf2py intent(in) :: NZCKD
 Cf2py intent(in) :: ZCKD, GASABS
       INTEGER WORK2_SIZE
 Cf2py intent(in) :: WORK2_SIZE
+      LOGICAL ADJFLAG
+Cf2py intent(in) :: ADJFLAG
 
 
       INTEGER WORK1(8*MAXIG)
@@ -255,8 +258,10 @@ Cf2py intent(out) ::  UNIFORM_SFC_BRDF, SFC_BRDF_DO
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
 
-      INTEGER I, J
+      INTEGER I, J, SIDE
+      DOUBLE PRECISION XE, YE,ZE, TRANSMIT, PI
       IERR = 0
+      PI = ACOS(-1.0D0)
 C       Set up some things before solution loop
 C    Compute the solar transmission in DIRFLUX.
       IF (SRCTYPE .NE. 'T') THEN
@@ -265,6 +270,22 @@ C    Compute the solar transmission in DIRFLUX.
      .                         SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS,
      .                         NX, XGRID, NY, YGRID, DIRFLUX)
         ELSE
+          IF (ADJFLAG) THEN
+            TRANSMIT = 1.0D0
+            DIRFLUX = 0.0
+            CALL PENCIL_BEAM_PROP(0.5D0, 0.5D0, DBLE(ZGRID(NZ)),
+     .        BCFLAG, IPFLAG,
+     .        1.0, 1.0D0, 0.0D0,
+     .        DIRFLUX(:NPTS),TOTAL_EXT(:NPTS),
+     .        NX,NY,NZ,
+     .        NCELLS, NPTS, CELLFLAGS(:NCELLS), XGRID, YGRID, ZGRID,
+     .        GRIDPOS(:,:NPTS),
+     .        GRIDPTR(:,:NCELLS), NEIGHPTR(:,:NCELLS),
+     .        TREEPTR(:,:NCELLS),
+     .        SIDE, XE,YE,ZE, TRANSMIT, 0.2D0, IERR, ERRMSG)
+            IF (IERR .NE. 0) RETURN
+           ELSE
+
 C          PRINT *, 'DOING HARD CODED ADJOINT SOURCE.'
 C          DIRFLUX = 0.0
 C          DO I=1,NX1
@@ -289,6 +310,7 @@ C          ENDDO
      .             CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
      .		       NPART, MAXPG)
+          ENDIF
         ENDIF
       ENDIF
 

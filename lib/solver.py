@@ -72,6 +72,13 @@ class ShdomPropertyArrays(object):
         correlated-k distribution z levels.
     gasabs: np.ndarray, shape=(npz,)
         Gas absorption extinction on vertical levels.
+    nlegp: int
+        Number of legendre moments in full phase functio expansions (legenp)
+    max_num_micro: int
+        The maximum number of phase functions to mix per grid point across
+        all scattering species.
+    phasewtp: np.ndarray
+        interpolation weights for mixtures of phase functions.
     """
     def __init__(self):
         self.npx = None
@@ -92,6 +99,9 @@ class ShdomPropertyArrays(object):
         self.nzckd = None
         self.zckd = None
         self.gasabs = None
+        self.nlegp = None
+        self.max_num_micro = None
+        self.phasewtp = None
 
 class RTE:
     """
@@ -143,6 +153,7 @@ class RTE:
         # and is the threshold for the weight for neglecting the
         # contributions of other phase functions.
         self._phasemax = 0.999
+        self._adjflag = False
 
         self.source = self._setup_source(source)
         self.medium, self._grid = self._setup_medium(medium)
@@ -860,13 +871,13 @@ class RTE:
         sh_out_dataset = xr.Dataset(
             data_vars={
                 'mean_intensity': (['x', 'y', 'z'], self._shterms[0, :self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 'Fx': (['x', 'y', 'z'], self._shterms[1, :self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 'Fy': (['x', 'y', 'z'], self._shterms[2, :self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 'Fz': (['x', 'y', 'z'], self._shterms[3, :self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 },
             coords={'x': self._grid.x,
                     'y': self._grid.y,
@@ -913,11 +924,11 @@ class RTE:
         fluxes = xr.Dataset(
             data_vars={
                 'flux_down': (['x', 'y', 'z'], self._fluxes[0, :self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 'flux_up': (['x', 'y', 'z'], self._fluxes[1, :self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 'flux_direct': (['x', 'y', 'z'], self._dirflux[:self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 },
             coords={'x': self._grid.x,
                     'y': self._grid.y,
@@ -969,7 +980,7 @@ class RTE:
         netfluxdiv_dataset = xr.Dataset(
             data_vars={
                 'net_flux_div':(['x', 'y', 'z'], self._netfluxdiv[:self._nbpts].reshape(
-                    self._nx, self._ny, self._nz))
+                    self._nx1, self._ny1, self._nz))
                 },
             coords={'x': self._grid.x,
                     'y': self._grid.y,
@@ -1434,9 +1445,16 @@ class RTE:
                 raise type(err)(str(err).replace('"', "") + \
                 " for scatterer '{}' in `medium`.".format(
                     name)).with_traceback(sys.exc_info()[2])
-            for var_name in ('extinction', 'ssalb', 'table_index'):
+            for var_name in ('extinction', 'ssalb', 'table_index', 'phase_weights'):
                 try:
                     pyshdom.checks.check_hasdim(dataset, **{var_name: ('x', 'y', 'z')})
+                except (KeyError, pyshdom.exceptions.MissingDimensionError) as err:
+                    raise type(err)(str(err).replace('"', "") + \
+                    " for scatterer '{}' in `medium`.".format(
+                        name)).with_traceback(sys.exc_info()[2])
+            for var_name in ('table_index', 'phase_weights'):
+                try:
+                    pyshdom.checks.check_hasdim(dataset, **{var_name: ('num_micro')})
                 except (KeyError, pyshdom.exceptions.MissingDimensionError) as err:
                     raise type(err)(str(err).replace('"', "") + \
                     " for scatterer '{}' in `medium`.".format(
@@ -1511,7 +1529,7 @@ class RTE:
             Contains temperature and possibly gas absorption data. Should be consistent
             with any rayleigh scatterer that is added.
         """
-        self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32) + 273.0
+        self._pa.tempp = np.zeros(shape=(self._maxpg,), dtype=np.float32) + 273.0
         if atmosphere is None:
             if self._srctype in ('T', 'B'):
                 raise KeyError("'temperature' variable was not specified in "
@@ -1554,8 +1572,12 @@ class RTE:
                                 'extinction': (['x', 'y', 'z'], atmosphere.gas_absorption.data),
                                 'ssalb': (['x', 'y', 'z'],
                                            np.zeros(atmosphere.gas_absorption.shape)),
-                                'table_index': (['x', 'y', 'z'],
-                                                np.zeros(atmosphere.gas_absorption.shape)),
+                                'table_index': (['num_micro', 'x', 'y', 'z'],
+                                                np.zeros((1,)+atmosphere.gas_absorption.shape,
+                                                dtype=np.int)),
+                                'phase_weights': (['num_micro', 'x', 'y', 'z'],
+                                                np.ones((1,)+atmosphere.gas_absorption.shape,
+                                                dtype=np.float32)),
                                 'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
                                             np.zeros((6, 0, 0)))
                             },
@@ -2009,11 +2031,30 @@ class RTE:
         # sefl._maxpg is different to self._nbpts as that has the extra boundary points.
         self._pa.extinctp = np.zeros(shape=[self._maxpg, len(self.medium)], dtype=np.float32)
         self._pa.albedop = np.zeros(shape=[self._maxpg, len(self.medium)], dtype=np.float32)
-        self._pa.iphasep = np.zeros(shape=[self._maxpg, len(self.medium)], dtype=np.int32)
+
+        # find maximum number of phase pointers across all species.
+        self._pa.max_num_micro = max(
+            [scatterer.num_micro.size for scatterer in self.medium.values()]
+        )
+
+        self._pa.iphasep = np.zeros(
+            shape=[self._pa.max_num_micro, self._maxpg, len(self.medium)],
+            dtype=np.int32
+        )
+        self._pa.phasewtp = np.zeros(
+            shape=[self._pa.max_num_micro, self._maxpg, len(self.medium)],
+            dtype=np.float32
+        )
+
         for i, scatterer in enumerate(self.medium.values()):
             self._pa.extinctp[:, i] = scatterer.extinction.data.ravel()
             self._pa.albedop[:, i] = scatterer.ssalb.data.ravel()
-            self._pa.iphasep[:, i] = scatterer.table_index.data.ravel() + self._pa.iphasep.max()
+            self._pa.iphasep[..., i] = scatterer.table_index.pad(
+                {'num_micro': (0, self._pa.max_num_micro-1)}, constant_values=1
+                ).data.reshape(self._pa.max_num_micro, -1) + self._pa.iphasep.max()
+            self._pa.phasewtp[..., i] = scatterer.phase_weights.pad(
+                {'num_micro': (0, self._pa.max_num_micro-1)}, constant_values=0.0
+                ).data.reshape(self._pa.max_num_micro, -1)
 
         #In regions which are not covered by any optical scatterer they have an iphasep of 0.
         #In original SHDOM these would be pointed to the rayleigh phase function
@@ -2084,8 +2125,10 @@ class RTE:
         # functions during the source function calculation.
         self._temp, self._planck, self._extinct, self._albedo, self._legen, \
         self._iphase, self._total_ext, self._extmin, self._scatmin,         \
-        self._albmax, ierr, errmsg, self._phaseinterpwt,                    \
-        self._optinterpwt = pyshdom.core.transfer_pa_to_grid(
+        self._albmax, ierr, errmsg, self._phaseinterpwt                  \
+         = pyshdom.core.transfer_pa_to_grid(
+            phasewtp=self._pa.phasewtp,
+            maxnmicro=self._pa.max_num_micro,
             nlegp=self._pa.nlegp,
             phasemax=self._phasemax,
             nstleg=self._nstleg,
@@ -2247,6 +2290,7 @@ class RTE:
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
         self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg \
          = pyshdom.core.init_solution(
+            adjflag=self._adjflag,
             nlegp=self._pa.nlegp,
             phasemax=self._phasemax,
             interpmethod=self._interpmethod,

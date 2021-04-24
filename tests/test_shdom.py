@@ -114,14 +114,18 @@ def solve_prop(solver, filename='data/rico32x36x26w672.prp'):
     solver._pa.tempp = tempp
     solver._pa.extinctp = extinctp
     solver._pa.numphase = numphase
-    solver._pa.iphasep = iphasep
+    solver._pa.iphasep = iphasep[np.newaxis, ...]
     solver._pa.albedop = albedop
     solver._pa.legenp = legenp
+    max_num_micro = 1
+    solver._pa.phasewtp = np.ones(solver._pa.iphasep.shape)
     #overwrite the main optical properties on grid.
     solver._temp, solver._planck, solver._extinct, solver._albedo, solver._legen, solver._iphase, \
     solver._total_ext, solver._extmin, solver._scatmin, solver._albmax,ierr,errmsg, \
-    solver._phaseinterpwt, solver._optinterpwt = pyshdom.core.transfer_pa_to_grid(
+    solver._phaseinterpwt = pyshdom.core.transfer_pa_to_grid(
         interpmethod='OO',
+        maxnmicro=max_num_micro,
+        phasewtp=solver._pa.phasewtp,
         nlegp=solver._pa.nlegp,
         phasemax=solver._phasemax,
         nstleg=solver._nstleg,
@@ -417,8 +421,7 @@ class Parallelization_No_SubpixelRays(TestCase):
                                 'spacing': 'linear', 'units': 'unitless'}
                                 )
             poly_table = pyshdom.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
-            optical_properties = pyshdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table,
-                                                                             exact_table=False)
+            optical_properties = pyshdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
             optical_properties['ssalb'][:,:,:] = 1.0
             extinction = np.zeros(optical_properties.extinction.shape)
             np.random.seed(1)
@@ -526,8 +529,7 @@ class Parallelization_SubpixelRays(TestCase):
                                 'spacing': 'linear', 'units': 'unitless'}
                                 )
             poly_table = pyshdom.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
-            optical_properties = pyshdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table,
-                                                                             exact_table=False)
+            optical_properties = pyshdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
             optical_properties['ssalb'][:,:,:] = 1.0
             extinction = np.zeros(optical_properties.extinction.shape)
             np.random.seed(1)

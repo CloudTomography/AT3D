@@ -320,14 +320,13 @@ C               Base grid cells have no parents or children
      .               ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .               ZCKD, GASABS, EXTMIN, SCATMIN,NPART,
      .		         TOTAL_EXT, MAXPG, INTERPMETHOD, IERR,ERRMSG,
-     .             PHASEINTERPWT, OPTINTERPWT, NLEGP)
+     .             PHASEINTERPWT, NLEGP, MAXNMICRO, PHASEWTP)
 C       Calls TRILIN_INTERP_PROP to interpolate the input arrays from
 C     the property grid to each internal grid point.
       IMPLICIT NONE
       INTEGER NPTS, NSTLEG, NLEG, NPART, MAXPG, NLEGP
-      INTEGER IPHASE(8,NPTS,NPART)
-      REAL    PHASEINTERPWT(8,NPTS,NPART)
-      REAL    OPTINTERPWT(8,NPTS,NPART)
+      INTEGER IPHASE(8*MAXNMICRO,NPTS,NPART), MAXNMICRO
+      REAL    PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART)
       REAL    GRIDPOS(3,NPTS), TOTAL_EXT(NPTS)
       REAL    TEMP(*), EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL    LEGEN(NSTLEG,0:NLEG,*)
@@ -342,7 +341,8 @@ C     the property grid to each internal grid point.
       REAL ZLEVELS(*)
       REAL TEMPP(MAXPG), EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG,NPART)
       REAL LEGENP(*)
-      INTEGER IPHASEP(MAXPG,NPART)
+      REAL PHASEWTP(MAXNMICRO,MAXPG,NPART)
+      INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
       DOUBLE PRECISION EXTMIN, SCATMIN
@@ -359,7 +359,7 @@ C     below.
      .                      ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .                      ZCKD, GASABS, EXTMIN, SCATMIN,
      .                      INTERPMETHOD, IERR,ERRMSG,PHASEINTERPWT,
-     .                      OPTINTERPWT, NLEGP)
+     .                      NLEGP, MAXNMICRO, PHASEWTP)
       IF (IERR .NE. 0) RETURN
 
 C         Trilinearly interpolate from the property grid to the adaptive grid
@@ -373,11 +373,11 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .            IPHASE(:,IP,IPA),
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP(:,IPA),
-     .            ALBEDOP(:,IPA), LEGENP, IPHASEP(:,IPA),
+     .            ALBEDOP(:,IPA), LEGENP, IPHASEP(:,:,IPA),
      .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
      .            INTERPMETHOD, IERR, ERRMSG,
      .            PHASEINTERPWT(:,IP,IPA),
-     .            OPTINTERPWT(:,IP,IPA), NLEGP)
+     .            NLEGP, MAXNMICRO, PHASEWTP(:,:,IPA))
             IF (IERR .NE. 0) RETURN
 	           TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
 	       ENDDO
@@ -475,7 +475,7 @@ C27237,27283
      .              NUMPHASE, SRCTYPE, UNITS, WAVENO, WAVELEN, ALBMAX,
      .              EXTINCT, ALBEDO, LEGEN, TEMP, PLANCK, IPHASE,
      .		         NPART, TOTAL_EXT, PHASEINTERPWT, PHASEMAX,
-     .             INTERPMETHOD)
+     .             INTERPMETHOD, MAXNMICRO)
 C       Prepares the grid arrays for the iterative solution process.
 C       If doing Delta-M scaling then the extinction, albedo, and Legendre
 C       terms are scaled first; only the 0 to ML LEGEN terms are scaled.
@@ -483,9 +483,9 @@ C       Outputs PLANCK with (1-omega)*B(T) for thermal source, where B(T) is
 C       the Planck function (meaning depends on UNITS).
 C       TEMP array is unchanged.
       IMPLICIT NONE
-      INTEGER ML, MM, NSTLEG, NLEG, NPTS, NUMPHASE
-      INTEGER IPHASE(8,NPTS,NPART), NPART
-      REAL PHASEINTERPWT(8,NPTS,NPART), PHASEMAX
+      INTEGER ML, MM, NSTLEG, NLEG, NPTS, NUMPHASE, MAXNMICRO
+      INTEGER IPHASE(8*MAXNMICRO,NPTS,NPART), NPART
+      REAL PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART), PHASEMAX
       LOGICAL DELTAM
       REAL  WAVENO(2), WAVELEN, ALBMAX, TOTAL_EXT(NPTS)
       REAL  EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
@@ -545,7 +545,7 @@ C                LEGEN(6,L,IPH) = LEGEN(6,L,IPH)
               F = LEGEN(1,ML+1,IPHASE(1,I,IPA))
             ELSE
               F = 0.0
-              DO Q=1,8
+              DO Q=1,8*MAXNMICRO
                 F = F + LEGEN(1,ML+1,IPHASE(Q,I,IPA))*
      .            PHASEINTERPWT(Q,I,IPA)
               ENDDO
@@ -2175,7 +2175,7 @@ C     5=-Z,6=+Z).
       REAL    SFCGRIDPARMS(NSFCPAR,NBOTPTS), BCRAD(*)
       REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
-      REAL    LEGEN(NSTLEG,0:NLEG,NPTS)
+      REAL    LEGEN(NSTLEG,0:NLEG,NUMPHASE)
       REAL    DIRFLUX(NPTS), SOURCE(NSTOKES,*), TOTAL_EXT(NPTS)
       REAL    YLMSUN(NSTLEG,NLM)
       REAL    PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
@@ -2675,7 +2675,7 @@ C     for unscaled untruncated phase function.
       LOGICAL DELTAM
       REAL    SOLARMU
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
-      REAL    LEGEN(NSTLEG,0:NLEG,NPTS), TOTAL_EXT(NPTS)
+      REAL    LEGEN(NSTLEG,0:NLEG,*), TOTAL_EXT(NPTS)
       REAL    DIRFLUX(NPTS), SOURCE(NSTOKES,*)
       REAL    YLMDIR(NSTLEG,NLM), YLMSUN(NSTLEG,NLM)
       REAL    SINGSCAT(NSTOKES,NUMPHASE)
