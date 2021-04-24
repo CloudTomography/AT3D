@@ -173,7 +173,8 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
                 points to sample along this dimension.
            'units': string
                The units of the microphysical dimension.
-
+        Alternatively, if a 1D numpy array is specified it will be interpreted as
+        the 'coord' argument.
     Returns
     -------
     size_dist_grid: xarray.Dataset
@@ -218,11 +219,14 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
             radius_units:       radius units [micron]
 
     """
+
     coord_list = []
     name_list = []
     for name, parameter in size_distribution_parameters.items():
-
-        if 'coord' in parameter:
+        if isinstance(parameter, np.ndarray):
+            if parameter.ndim == 1:
+                coord_list.append(parameter)
+        elif 'coord' in parameter:
             coord_list.append(parameter['coord'])
         else:
             if parameter['spacing'] == 'logarithmic':

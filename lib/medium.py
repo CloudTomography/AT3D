@@ -136,9 +136,10 @@ def table_to_grid(microphysics, poly_table, inverse_mode=False):
 
     return optical_properties
 
+
 def get_optical_properties(microphysics, mie_mono_tables, size_distribution_function,
-                           size_distribution_grid_parameters, particle_density=1.0,
-                           maxnphase=None):
+                           particle_density=1.0, maxnphase=None,
+                           **size_distribution_grid_parameters):
     """
     Calculates optical properties from microphysical properties either exactly
     or by specifying linear mixtures that are combined 'just-in-time' during the
@@ -179,6 +180,8 @@ def get_optical_properties(microphysics, mie_mono_tables, size_distribution_func
                 points to sample along this dimension.
            'units': string
                The units of the microphysical dimension.
+        Alternatively, if a 1D numpy array is specified it will be interpreted as
+        the 'coord' argument.
     maxnphase : int
         Sets the maximum number of unique phase functions that can be used.
         Default is None, in which case the maximum size is the total number
@@ -214,7 +217,10 @@ def get_optical_properties(microphysics, mie_mono_tables, size_distribution_func
             "microphysics dataset is missing variables "
             "for interpolation of table onto grid.", *list(missing)
             )
-
+    for variable_name, parameters in size_distribution_grid_parameters.items():
+        if isinstance(parameters, np.ndarray):
+            if parameters.ndim == 1:
+                size_distribution_grid_parameters[variable_name] = {'coords': parameters}
     # make the grid of size distributions. This is only utilized for the computation of the
     # coordinates so this could be sped up by isolating that code instead.
     number_density_grid = pyshdom.size_distribution.get_size_distribution_grid(
