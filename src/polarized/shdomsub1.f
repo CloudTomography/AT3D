@@ -4199,6 +4199,7 @@ C               for cells split during grid smoothing
 C             Go down the list from highest adaptive cell criterion on down
           OUTOFMEM0 = OUTOFMEM
           I = 1
+
           DO WHILE (ADAPTCRIT(I) .GT. CURSPLITACC .AND. .NOT. OUTOFMEM0
      .              .AND. I .LE. N)
             IF (NCELLS .GT. MAXCELLS .OR. NPTS .GT. MAXPTS .OR.
@@ -4213,6 +4214,7 @@ C                 Create the new grid points and make pointers
               CALL DIVIDE_CELL (NPTS, NCELLS, GRIDPTR, NEIGHPTR,
      .               TREEPTR,CELLFLAGS,GRIDPOS,ICELL,IDIR, NEWPOINTS)
 C                 Interpolate the medium properties, radiance, and source
+
               CALL INTERPOLATE_POINT (NEWPOINTS, NPTS,
      .            NSTOKES, ML, MM, NLM, NSTLEG,NLEG, NUMPHASE,
      .            DELTAM, BCFLAG, IPFLAG, ACCELFLAG, GRIDPOS,
@@ -4229,6 +4231,7 @@ C                 Interpolate the medium properties, radiance, and source
      .            NPART,MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD, IERR,
      .            ERRMSG, PHASEINTERPWT, PHASEMAX,NLEGP, MAXNMICRO,
      .            PHASEWTP)
+
               IF (IERR .NE. 0) RETURN
             ENDIF
             I = I + 1
@@ -4259,6 +4262,7 @@ C                   Create the new grid points and make pointers
                 CALL DIVIDE_CELL (NPTS, NCELLS, GRIDPTR, NEIGHPTR,
      .               TREEPTR,CELLFLAGS,GRIDPOS,ICELL,IDIR, NEWPOINTS)
 C                   Interpolate the medium properties, radiance, and source
+
                 CALL INTERPOLATE_POINT (NEWPOINTS, NPTS,
      .               NSTOKES, ML, MM, NLM, NSTLEG,NLEG, NUMPHASE,
      .               DELTAM, BCFLAG, IPFLAG, ACCELFLAG, GRIDPOS,
@@ -4275,6 +4279,7 @@ C                   Interpolate the medium properties, radiance, and source
      .               NPART,MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD,
      .               IERR, ERRMSG, PHASEINTERPWT,
      .               PHASEMAX,NLEGP, MAXNMICRO, PHASEWTP)
+
                 IF (IERR .NE. 0) RETURN
               ENDIF
             ENDIF
@@ -4424,7 +4429,7 @@ C             Interpolate the medium properties from the property grid
      .             ALBEDOP(:,IPA), LEGENP, IPHASEP(:,:,IPA),
      .             NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
      .             INTERPMETHOD, IERR, ERRMSG, PHASEINTERPWT(:,IP,IPA),
-     .             NLEGP, MAXNMICRO, PHASEWTP)
+     .             NLEGP, MAXNMICRO, PHASEWTP(:,:,IPA))
 C             Do the Delta-M scaling of extinction and albedo for this point
 	          IF (DELTAM) THEN
               IF (INTERPMETHOD(2:2) .EQ. 'O') THEN

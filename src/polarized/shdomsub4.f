@@ -104,7 +104,7 @@ C       e.g. Dubovik et al. 2011 https://doi.org/10.5194/amt-4-975-2011.
      .                   CAMPHI, NPIX, NPART, TOTAL_EXT, STOKES,
      .                   NSCATANGLE, YLMSUN, PHASETAB, NSTPHASE,
      .                  IERR, ERRMSG, INTERPMETHOD, PHASEINTERPWT,
-     .                   PHASEMAX)
+     .                   PHASEMAX, MAXNMICRO)
 C    Calculates the Stokes Vector at the given directions (CAMMU, CAMPHI)
 C    and positions CAMX,CAMY,CAMZ by integrating the source function.
 
@@ -114,8 +114,8 @@ Cf2py threadsafe
 Cf2py intent(in) :: NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
       INTEGER ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
 Cf2py intent(in) :: ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
-      INTEGER NMU, NPHI0MAX, NPHI0(*)
-Cf2py intent(in) :: NMU, NPHI0MAX, NPHI0
+      INTEGER NMU, NPHI0MAX, NPHI0(*), MAXNMICRO
+Cf2py intent(in) :: NMU, NPHI0MAX, NPHI0, MAXNMICRO
       INTEGER MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
 Cf2py intent(in) :: MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
@@ -123,9 +123,9 @@ Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
       INTEGER SHPTR(*), BCPTR(MAXNBC,2)
 Cf2py intent(in) :: SHPTR, BCPTR
       INTEGER*2 CELLFLAGS(*)
-      INTEGER IPHASE(8,NPTS,NPART)
+      INTEGER IPHASE(8*MAXNMICRO,NPTS,NPART)
 Cf2py intent(in) :: CELLFLAGS, IPHASE
-      REAL PHASEINTERPWT(8,NPTS,NPART), PHASEMAX
+      REAL PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART), PHASEMAX
 Cf2py intent(in) :: PHASEINTERPWT, PHASEMAX
       CHARACTER INTERPMETHOD*2
 Cf2py intent(in) :: INTERPMETHOD
@@ -231,7 +231,7 @@ C         to calculate the Stokes radiance vector for this pixel
      .                       MU2, PHI2, X0,Y0,Z0,
      .                       XE,YE,ZE, SIDE, TRANSMIT, VISRAD, VALIDRAD,
      .   	                 TOTAL_EXT, NPART, IERR,ERRMSG, INTERPMETHOD,
-     .                     PHASEINTERPWT, PHASEMAX)
+     .                     PHASEINTERPWT, PHASEMAX,MAXNMICRO)
       IF (IERR .NE. 0) RETURN
 900   CONTINUE
 

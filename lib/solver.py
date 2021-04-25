@@ -533,6 +533,7 @@ class RTE:
         self._precompute_phase()
 
         output, ierr, errmsg = pyshdom.core.render(
+            maxnmicro=self._pa.max_num_micro,
             interpmethod=self._interpmethod,
             phaseinterpwt=self._phaseinterpwt[:,:self._npts,:],
             phasemax=self._phasemax,
@@ -1731,12 +1732,8 @@ class RTE:
         if self._ipflag not in np.arange(8):
             raise ValueError("numerical_params.ip_flag should be an integer "
                              "in (0, 1, 2, 3, 4, 5, 6, 7, 8) not '{}'".format(self._ipflag))
-
-        self._bcflag = 0
-        if (numerical_params.x_boundary_condition == 'open') & (self._ipflag in (0, 2, 4, 6)):
-            self._bcflag += 1
-        if (numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0, 1, 4, 5)):
-            self._bcflag += 2
+        # bcflag is set in _setup_grid and ipflag may be modified there to handle the
+        # nx/ny = 1 special case.
 
         return numerical_params
 
@@ -1817,6 +1814,13 @@ class RTE:
             self._ipflag = self._ipflag | (1<<0) #first bit for X-dim.
         if self._ny == 1:
             self._ipflag = self._ipflag | (1<<1) # second bit for Y-dim.
+
+        # set boundary condition flag based on updated information about ipflag.
+        self._bcflag = 0
+        if (self.numerical_params.x_boundary_condition == 'open') & (self._ipflag in (0, 2, 4, 6)):
+            self._bcflag += 1
+        if (self.numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0, 1, 4, 5)):
+            self._bcflag += 2
 
         # Set up base grid point actual size (NX1xNY1xNZ)
         self._nx1, self._ny1 = self._nx + 1, self._ny + 1
@@ -2046,10 +2050,12 @@ class RTE:
             self._pa.extinctp[:, i] = scatterer.extinction.data.ravel()
             self._pa.albedop[:, i] = scatterer.ssalb.data.ravel()
             self._pa.iphasep[..., i] = scatterer.table_index.pad(
-                {'num_micro': (0, self._pa.max_num_micro-1)}, constant_values=1
+                {'num_micro': (0, self._pa.max_num_micro-scatterer.num_micro.size)},
+                 constant_values=1
                 ).data.reshape(self._pa.max_num_micro, -1) + self._pa.iphasep.max()
             self._pa.phasewtp[..., i] = scatterer.phase_weights.pad(
-                {'num_micro': (0, self._pa.max_num_micro-1)}, constant_values=0.0
+                {'num_micro': (0, self._pa.max_num_micro-scatterer.num_micro.size)},
+                constant_values=0.0
                 ).data.reshape(self._pa.max_num_micro, -1)
 
         #In regions which are not covered by any optical scatterer they have an iphasep of 0.
