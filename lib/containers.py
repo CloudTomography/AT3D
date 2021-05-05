@@ -813,7 +813,7 @@ class UnknownScatterers(OrderedDict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def add_unknown(self, scatterer_name, variable_name_list, dataset_generator, optical_property_generator=None):
+    def add_unknown(self, scatterer_name, variable_name_list, dataset_generator):
         """
         Adds the variable names to calculate derivatives for each scatterer in an
         solver.RTE object and the correct table of optical properties as a function
@@ -839,35 +839,37 @@ class UnknownScatterers(OrderedDict):
         --------
         pyshdom.solver.RTE.calculate_microphysical_partial_derivatives
         """
-        # tests on optical_property_generator
         optical_derivative_generator = pyshdom.medium.OpticalDerivativeGenerator()
-
-        optical_property_generators = OrderedDict()
         for variable_name in variable_name_list:
-            if optical_derivative_generator.test_valid_names(variable_name):
-                optical_property_generators[variable_name] = optical_derivative_generator
-            else:
-                if optical_property_generator is None:
+
+            if isinstance(dataset_generator, pyshdom.medium.OpticalGenerator):
+                if not optical_derivative_generator.test_valid_names(variable_name):
                     raise ValueError(
-                    "An `optical_property_generator` must be supplied to differentiate "
-                    "variable '{}' as this is not a valid optical property.".format(
-                        variable_name)
+                        "Variables to retrieve for must all be optical or microphysical, "
+                        "not a mixture. To jointly retrieve extinction with microphysical"
+                        " information look at the normalization options for the density "
+                        "variable in the OpticalPropertyGenerator."
                     )
-                if ((scatterer_name != optical_property_generator.scatterer_name) &
-                    (optical_property_generator.scatterer_name is not None)):
-                    raise ValueError(
-                    "The `scatterer_name` '{}' does not match that of the supplied "
-                    "`optical_property_generator` '{}'".format(
-                        scatterer_name, optical_property_generator.scatterer_name)
-                    )
-                if not optical_property_generator.test_valid_names(variable_name):
+
+            elif isinstance(dataset_generator, pyshdom.medium.MicrophysicsGenerator):
+                if not dataset_generator.optical_property_generator.test_valid_names(variable_name):
                     raise ValueError(
                     "The variable name supplied to differentiate '{}' is not "
                     "supported by the supplied `optical_property_generator` "
                     "which supports only '{}' or 'density'".format(
                         variable_name,
-                        optical_property_generator.size_distribution_parameters.keys())
+                        dataset_generator.optical_property_generator.size_distribution_parameters.keys())
                     )
-                optical_property_generators[variable_name] = optical_property_generator
 
-        self[scatterer_name] = optical_property_generators
+            else:
+                raise TypeError(
+                    "`dataset_generator` should be of types '{}'".format(
+                        (pyshdom.medium.OpticalGenerator,
+                        pyshdom.medium.MicrophysicsGenerator)
+                    )
+                )
+
+        self[scatterer_name] = {
+            'variable_name_list': variable_name_list,
+            'dataset_generator': dataset_generator
+            }
