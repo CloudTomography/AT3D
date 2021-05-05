@@ -550,6 +550,15 @@ class OpticalDerivativeGenerator:
 
 class OpticalPropertyGenerator:
 
+    # TODO.
+    # turn this into three different objects.
+    # One does 'nearest', other does 'linear/table'
+    # The other does exact and inherits from the other one.
+    # and will use some of the methods defined for 'linear/table'
+    # The 'linear/table' takes poly_tables like 'nearest' which
+    # opens up for generalization to optical properties for which
+    # we don't have single scattering properties.
+
     def __init__(self, monodisperse_tables, size_distribution_function,
                  scatterer_name,
                  particle_density=1.0, maxnphase=None,
@@ -604,6 +613,10 @@ class OpticalPropertyGenerator:
     @property
     def scatterer_name(self):
         return self._scatterer_name
+
+    @property
+    def size_distribution_parameters(self):
+        return self._size_distribution_parameters
 
     @property
     def size_distribution_grids(self):
@@ -1433,6 +1446,7 @@ class DataGenerator:
             self._fixed_dataset.z.size
         )
     def __call__(self, **variable_data):
+        dataset = self._fixed_dataset.copy(deep=True)
 
         for name, data in variable_data.items():
             if not isinstance(data, np.ndarray):
@@ -1447,12 +1461,12 @@ class DataGenerator:
                         self._rte_grid_shape, data.shape
                     )
                 )
-            self._fixed_dataset[name] = (['x', 'y', 'z'], data)
-        self._checks()
-        return self._fixed_dataset
+            dataset[name] = (['x', 'y', 'z'], data)
+        self._checks(dataset)
+        return dataset
 
-    def _checks(self):
-        pyshdom.checks.check_grid(self._fixed_dataset)
+    def _checks(self, dataset):
+        pyshdom.checks.check_grid(dataset)
 
 class MicrophysicsGenerator(DataGenerator):
 
@@ -1474,20 +1488,20 @@ class MicrophysicsGenerator(DataGenerator):
         optical_properties = self._optical_property_generator(microphysics_data)
         return optical_properties
 
-    def _checks(self):
+    def _checks(self, dataset):
 
-        pyshdom.checks.check_grid(self._fixed_dataset)
+        pyshdom.checks.check_grid(dataset)
         # use the optical_property_generator to verify that all the
         # necssary variables are present for the generation of optical properties.
         # this is done anyway when the same optical property generator is used.
-        if 'density' not in self._fixed_dataset.data_vars:
+        if 'density' not in dataset.data_vars:
             raise ValueError(
                 "variable name 'density' is required to use this to generate "
                 "optical properties. Please specify it at initialization or "
                 "when calling this MicrophysicsGenerator."
             )
-        for variable in self._optical_property_generator.size_distribution_parameters():
-            if variable not in self._fixed_dataset:
+        for variable in self._optical_property_generator.size_distribution_parameters:
+            if variable not in dataset:
                 raise ValueError(
                     "variable '{}' is needed in order to use this to generate "
                     "optical properties. Please specify it at initialization or "
@@ -1499,10 +1513,10 @@ class OpticalGenerator(MicrophysicsGenerator):
     def __init__(self, rte_grid, *fixed_data_arrays):
         super().__init__(rte_grid, OpticalDerivativeGenerator(), *fixed_data_arrays)
 
-    def _checks(self):
-        pyshdom.checks.check_grid(self._fixed_dataset)
+    def _checks(self, dataset):
+        pyshdom.checks.check_grid(dataset)
         # checks for optical properties are easy.
-        pyshdom.checks.check_optical_properties(self._fixed_dataset)
+        pyshdom.checks.check_optical_properties(dataset)
 
     def calculate_optical_properties(self, **variable_data):
         # the optical_derivative_generator doesn't even do anything
@@ -1556,7 +1570,7 @@ class StateGenerator:
                         "supplied `state_to_grid` object".format(scatterer_name)
                     )
                 for variable_name in variable_data['variable_name_list']:
-                    if variable_name not in state_to_grid.transforms[scatterer_name].keys():
+                    if variable_name not in state_to_grid.transforms[scatterer_name]:
                         raise ValueError(
                             "Unknown variable '{}' for scatterer '{}' is not found "
                             "in supplied `state_to_grid` object".format(
@@ -1566,7 +1580,7 @@ class StateGenerator:
 
         elif isinstance(state_to_grid, np.ndarray):
             # assume that this is a mask to use for all variables.
-            if (state_to_grid.shape == self._grid_shape):
+            if state_to_grid.shape == self._grid_shape:
                 mask = state_to_grid.astype(np.bool)
                 self._state_to_grid = pyshdom.transforms.StateToGridMask()
                 # add all unknown names here.
@@ -1583,7 +1597,9 @@ class StateGenerator:
         # process state_representation
         if state_representation is None:
             # make it from state_to_grid transfrom.
-            self._state_representation = pyshdom.transforms.StateRepresentation(state_to_grid, rte_grid)
+            self._state_representation = pyshdom.transforms.StateRepresentation(
+                state_to_grid, rte_grid
+                )
         elif isinstance(state_representation, pyshdom.transforms.StateRepresentation):
             for scatterer_name, variable_data in self._unknown_scatterers.items():
                 if scatterer_name not in state_representation.start_end_points:
@@ -1592,7 +1608,7 @@ class StateGenerator:
                         "supplied `state_representation` object".format(scatterer_name)
                     )
                 for variable_name in variable_data['variable_name_list']:
-                    if variable_name not in state_representation.start_end_points[scatterer_name].keys():
+                    if variable_name not in state_representation.start_end_points[scatterer_name]:
                         raise ValueError(
                             "Unknown variable '{}' for scatterer '{}' is not found "
                             "in supplied `state_representation` object".format(
@@ -1622,7 +1638,7 @@ class StateGenerator:
                         "supplied `state_representation` object".format(scatterer_name)
                     )
                 for variable_name in variable_data['variable_name_list']:
-                    if variable_name not in state_transform.transforms[scatterer_name].keys():
+                    if variable_name not in state_transform.transforms[scatterer_name]:
                         raise ValueError(
                             "Unknown variable '{}' for scatterer '{}' is not found "
                             "in supplied `state_representation` object".format(
@@ -1682,10 +1698,10 @@ class StateGenerator:
                         if not isinstance(value, xr.Dataset):
                             raise TypeError(
                                 "Each entry in `{}` should be of type '{}'".format(
-                                name, xr.Dataset
+                                    name, xr.Dataset
                                 )
                             )
-        
+
         self._sources = sources
         self._num_stokes = num_stokes
         self._surfaces = surfaces
@@ -1693,12 +1709,31 @@ class StateGenerator:
         self._background_optical_scatterers = background_optical_scatterers
         self._names = names
 
+        for scatterer_name, scatterer_data in self._unknown_scatterers.items():
+            if isinstance(scatterer_data['data_generator'], pyshdom.medium.OpticalPropertyGenerator):
+                if len(self._sources) != 1:
+                    raise ValueError(
+                    "Optical property unknowns are not supported for multi-spectral data. "
+                    "for similar effect - try forming a 'microphysics' representation. "
+                    )
+
 
     def get_state(self):
         """
         Extract the state vector from the solvers_dict.
         """
-        state = None
+        state = np.zeros(self._state_representation.number_of_unknowns)
+        solver = list(self._solvers_dict.values())[0]
+        for scatterer_name, variable_data in self._unknown_scatterers.items():
+            for variable_name in variable_data['variable_name_list']:
+                unknown_data = solver.mediums[scatterer_name][variable_name].data
+                state_vector = self._state_to_grid.inverse(
+                    unknown_data, scatterer_name, variable_name
+                    )
+                state = self._state_representation.update_state_vector(
+                    state, scatterer_name, variable_name, state_vector
+                )
+        state = self._state_transform.inverse(state)
         return state
 
     def __call__(self, state):
@@ -1716,7 +1751,7 @@ class StateGenerator:
                 selected_state = self._state_representation.select_variable(
                     state_in_physical_coordinates, scatterer_name, variable_name
                     )
-                gridded_state_data[variable_name] = self._state_to_grid[scatterer_name](
+                gridded_state_data[variable_name] = self._state_to_grid(
                     selected_state, scatterer_name, variable_name
                     )
 
@@ -1745,5 +1780,35 @@ class StateGenerator:
             self._solvers_dict[wavelength] = solver
 
 
-    def project_gradient_to_state(self, gradient):
-        pass
+    def project_gradient_to_state(self, state, gradient_dset):
+        """
+        Project the gradient to the abstract state.
+
+        Parameters
+        ----------
+        state : np.array, ndim=1
+            The abstract state.
+        gradient_dset : xr.Dataset
+            gridded derivatives with respect to physical unknowns.
+            See pyshdom.gradient.make_gradient_dataset.
+
+        Returns
+        -------
+        gradient : np.array
+            Same shape as `state`. This is the gradient for the
+            abstract state instead of the gridded physical ones.
+        """
+        gradient = np.zeros(self._state_representation.number_of_unknowns)
+        for scatterer_name, variable_data in self._unknown_scatterers.items():
+            for variable_name in variable_data['variable_name_list']:
+                gradient_variable = gradient_dset.gradient.sel(
+                    scatterer_name=scatterer_name, variable_name=variable_name
+                    )
+                gradient_vector = self._state_to_grid.calc_derivative(
+                    gradient_variable, scatterer_name, variable_name
+                    )
+                self._state_representation.update_state_vector(
+                    gradient, scatterer_name, variable_name, gradient_vector
+                )
+        gradient = self._state_transform.calc_derivative(state, gradient)
+        return gradient

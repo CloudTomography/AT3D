@@ -98,23 +98,27 @@ class StateToGridNull(IndependentTransform):
         self._gradient_transforms[scatterer_name][variable_name] = inverse_mapping
 
 class StateRepresentation:
-
+    """
+    This only represents the physical coordinates.
+    In abstract/general coordinates, there is not necessarily any
+    separation by physical variable name.
+    """
     def __init__(self, state_to_grid, rte_grid):
 
         # based on rte_grid we can produce faux input of the correct shape
         # and from state_to_grid.inverse we can define how large each contribution
         # to the state vector is.
         grid_shape = (rte_grid.x.size, rte_grid.y.size, rte_grid.z.size)
-        total_length = 0
+        self._total_length = 0
+
         self._start_end_points = OrderedDict()
         for scatterer_name, variable_name_data in state_to_grid.transforms.items():
-            variable_names = variable_name_data.keys()
             start_end_scatterer = OrderedDict()
-            for variable_name in variable_names:
+            for variable_name in variable_name_data['variable_name_list']:
                 test_gridded_data = np.zeros(grid_shape)
                 abstract_state = state_to_grid.inverse(test_gridded_data, scatterer_name, variable_name)
-                start_end_scatterer[variable_name] = (total_length, total_length+len(abstract_state)+1)
-                total_length += abstract_state
+                start_end_scatterer[variable_name] = (self._total_length, self._total_length+len(abstract_state)+1)
+                self._total_length += abstract_state
             self._start_end_points[scatterer_name] = start_end_scatterer
 
     def update_state_vector(self, state, scatterer_name, variable_name, data_to_update):
@@ -128,6 +132,10 @@ class StateRepresentation:
 
     @property
     def start_end_points(self):
+        return self._start_end_points
+
+    @property
+    def number_of_unknowns(self):
         return self._start_end_points
 
 class StateTransform:
@@ -177,7 +185,7 @@ class IndependentStateTransform(IndependentTransform):
     def __call__(self, state):
 
         for scatterer_name, variable_name_data in self._transforms.items():
-            for variable_name in variable_name_data.keys():
+            for variable_name in variable_name_data:
                 state_vector_portion = self._state_representation.select_variable(state, scatterer_name, variable_name)
                 state = self._state_representation.update_state_vector(
                     state,
@@ -190,7 +198,7 @@ class IndependentStateTransform(IndependentTransform):
     def inverse(self, state):
 
         for scatterer_name, variable_name_data in self._transforms.items():
-            for variable_name in variable_name_data.keys():
+            for variable_name in variable_name_data:
                 state_vector_portion = self._state_representation.select_variable(state, scatterer_name, variable_name)
                 state = self._state_representation.update_state_vector(
                     state,
@@ -203,7 +211,7 @@ class IndependentStateTransform(IndependentTransform):
     def calc_derivative(self, state, gradient):
 
         for scatterer_name, variable_name_data in self._transforms.items():
-            for variable_name in variable_name_data.keys():
+            for variable_name in variable_name_data:
                 state_vector_portion = self._state_representation.select_variable(state, scatterer_name, variable_name)
                 gradient_vector_portion = self._state_representation.select_variable(gradient, scatterer_name, variable_name)
                 gradient = self._state_representation.update_state_vector(
