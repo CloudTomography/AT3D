@@ -29,6 +29,7 @@ from joblib import Parallel, delayed
 import numpy as np
 import xarray as xr
 import warnings
+import typing
 
 import pyshdom.core
 import pyshdom.gradient
@@ -812,16 +813,7 @@ class UnknownScatterers(OrderedDict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        #currently only this slight adaptation of pyshdom.medium.table_to_grid is possible.
-        #The API must be updated to accomodate more flexibility if more
-        #methods become avaialble.
-        def regular_grid(scatterer, table_data):
-            return pyshdom.medium.table_to_grid(scatterer, table_data, inverse_mode=True)
-
-        self._table_to_grid_method = regular_grid
-        self.table_data = None
-
-    def add_unknown(self, scatterer_name, variable_name_list, table_data):
+    def add_unknown(self, scatterer_name, variable_name_list, dataset_generator, optical_property_generator=None):
         """
         Adds the variable names to calculate derivatives for each scatterer in an
         solver.RTE object and the correct table of optical properties as a function
@@ -836,105 +828,46 @@ class UnknownScatterers(OrderedDict):
             List of strings of microphysical names or optical property names to
             calculate derivatives for.
             Valid optical variables may be 'extinction', 'ssalb', 'legendre_x_y'
-            where x is the stokes index from 1-6 and y is the legendre_index.
-            Valid microphysical names must be in `table_data.`
-            There are also a few special names e.g. 'reff_no_ext' or 'reff_phase_only'.
-            To add other special cases you will need to modify self.create_derivative_tables.
-        table_data : OrderedDict
-            Each key is a solver key, e.g. a float wavelength. Each entry is a table
-            of optical properties as a function of microphysical properties.
-            See the output of pyshdom.mie.get_poly_table(size_distribution, mie_mono_table).
+            where x is the stokes index from 0-5 and y is the legendre_index.
+            Valid microphysical names must be accepted by the supplied
+            `optical_property_generator`.
+        optical_property_generator : pyshdom.medium.OpticalPropertyGenerator
+            Generates optical properties from microphysical properties as well
+            as their corresponding derivatives.
 
         See Also
         --------
         pyshdom.solver.RTE.calculate_microphysical_partial_derivatives
         """
-        if self._table_to_grid_method.__name__ == 'regular_grid':
-            self[scatterer_name] = {'variable_name_list': np.atleast_1d(variable_name_list),
-                                    'table_data_input': table_data}
-        else:
-            raise NotImplementedError
+        # tests on optical_property_generator
+        optical_derivative_generator = pyshdom.medium.OpticalDerivativeGenerator()
 
-    def create_derivative_tables(self):
-        """
-        Prepares the derivative look-up-tables for the specified unknowns
-        (see self.add_unknown).
-        Should be called once all unknowns have been added.
+        optical_property_generators = OrderedDict()
+        for variable_name in variable_name_list:
+            if optical_derivative_generator.test_valid_names(variable_name):
+                optical_property_generators[variable_name] = optical_derivative_generator
+            else:
+                if optical_property_generator is None:
+                    raise ValueError(
+                    "An `optical_property_generator` must be supplied to differentiate "
+                    "variable '{}' as this is not a valid optical property.".format(
+                        variable_name)
+                    )
+                if ((scatterer_name != optical_property_generator.scatterer_name) &
+                    (optical_property_generator.scatterer_name is not None)):
+                    raise ValueError(
+                    "The `scatterer_name` '{}' does not match that of the supplied "
+                    "`optical_property_generator` '{}'".format(
+                        scatterer_name, optical_property_generator.scatterer_name)
+                    )
+                if not optical_property_generator.test_valid_names(variable_name):
+                    raise ValueError(
+                    "The variable name supplied to differentiate '{}' is not "
+                    "supported by the supplied `optical_property_generator` "
+                    "which supports only '{}' or 'density'".format(
+                        variable_name,
+                        optical_property_generator.size_distribution_parameters.keys())
+                    )
+                optical_property_generators[variable_name] = optical_property_generator
 
-        See Also
-        --------
-        pyshdom.solver.RTE.calculate_microphysical_partial_derivatives
-        """
-        #for legacy reasons, rearrange the information in `self` into this format.
-        inputs = [(scatterer_name, self[scatterer_name]['table_data_input'],
-                   self[scatterer_name]['variable_name_list'])
-                  for scatterer_name in self]
-
-        partial_derivative_tables = OrderedDict()
-        for key in inputs[0][1].keys(): #keys are the wavelengths in the poly tables.
-            partial_derivative_dict = OrderedDict()
-            for unknown_scatterer, tables, variable_names in inputs:
-                table = tables[key]
-                variable_names = np.atleast_1d(variable_names)
-                #For each unknown_scatterer compute the tables of derivatives
-                valid_microphysics_coords = {name:table[name] for name in table.coords if name not in ('table_index', 'stokes_index')}
-                derivatives_tables = OrderedDict()
-                for variable_name in variable_names:
-
-                    if variable_name in valid_microphysics_coords.keys():
-                        differentiated = table.differentiate(coord=variable_name)
-
-                    elif variable_name == 'reff_phase_only':
-                        differentiated = table.differentiate(coord='reff')
-                        differentiated['extinction'][:] = np.zeros(table.extinction.shape)
-                        differentiated['ssalb'][:] = np.zeros(table.ssalb.shape)
-                    elif variable_name == 'veff_phase_only':
-                        differentiated = table.differentiate(coord='veff')
-                        differentiated['extinction'][:] = np.zeros(table.extinction.shape)
-                        differentiated['ssalb'][:] = np.zeros(table.ssalb.shape)
-                    elif variable_name == 'reff_no_ext':
-                        differentiated = table.differentiate(coord='reff')
-                        differentiated['extinction'][:] = np.zeros(table.extinction.shape)
-                    elif variable_name == 'veff_no_ext':
-                        differentiated = table.differentiate(coord='veff')
-                        differentiated['extinction'][:] = np.zeros(table.extinction.shape)
-                    elif variable_name == 'extinction':
-                        differentiated = table.copy(data={
-                            'extinction': np.ones(table.extinction.shape),
-                            'legcoef': np.zeros(table.legcoef.shape),
-                            'ssalb': np.zeros(table.ssalb.shape)
-                        })
-                    elif variable_name == 'ssalb':
-                        differentiated = table.copy(data={
-                            'extinction': np.zeros(table.extinction.shape),
-                            'legcoef': np.zeros(table.legcoef.shape),
-                            'ssalb': np.ones(table.ssalb.shape)
-                        })
-                    elif 'legendre_' in variable_name:
-                        leg_index = int(variable_name[len('legendre_X_'):])
-                        stokes_index = int(variable_name[len('legendre_')])
-                        legcoef = np.zeros(table.legcoef.shape)
-                        legcoef[stokes_index, leg_index, ...] = 1.0
-                        differentiated = table.copy(data={
-                            'extinction': np.zeros(table.extinction.shape),
-                            'legcoef': legcoef,
-                            'ssalb': np.zeros(table.ssalb.shape)
-                        })
-                    elif variable_name == 'density':
-                        differentiated = table.copy(data={
-                            'extinction': table.extinction,
-                            'legcoef': np.zeros(table.legcoef.shape),
-                            'ssalb': np.zeros(table.ssalb.shape)
-                        })
-                    else:
-                        raise ValueError('Invalid unknown scatterer name', variable_name)
-
-                    derivatives_tables[variable_name] = differentiated
-                partial_derivative_dict[unknown_scatterer] = derivatives_tables
-            partial_derivative_tables[key] = partial_derivative_dict
-
-        self.table_data = partial_derivative_tables
-
-    @property
-    def table_to_grid_method(self):
-        return self._table_to_grid_method
+        self[scatterer_name] = optical_property_generators

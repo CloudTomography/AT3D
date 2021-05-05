@@ -3527,3 +3527,90 @@ C             boundary then prepare for next cell
 
       RETURN
       END
+
+      SUBROUTINE PHASEFUNC_FROM_WIGNER(NANGLES, NLEG, LEGCOEF,
+     .                                 PHASE, NSTPHASE, IERR,
+     .    ERRMSG, NEGCHECK, NSTLEG)
+      IMPLICIT NONE
+      LOGICAL, INTENT(IN) :: NEGCHECK
+      INTEGER, INTENT(IN) :: NANGLES, NLEG, NSTLEG, NSTPHASE
+      REAL,    INTENT(IN) :: LEGCOEF(NSTLEG,0:NLEG)
+      REAL,    INTENT(OUT) :: PHASE(NSTPHASE, NANGLES)
+      CHARACTER ERRMSG*600
+      INTEGER IERR
+
+      INTEGER J, L
+      DOUBLE PRECISION  PI, OFOURPI, COSSCAT, FCT, F, X, A1, B1
+      DOUBLE PRECISION, ALLOCATABLE :: DMM1(:), DMM2(:)
+      ALLOCATE (DMM1(0:NLEG), DMM2(0:NLEG))
+
+      PI = ACOS(-1.0D0)
+      OFOURPI = 1.0/(4.0*PI)
+      IERR = 0
+
+
+
+      DO J = 1, NANGLES
+        COSSCAT = COS(PI*DFLOAT(J-1)/(NANGLES-1))
+        X = DBLE(COSSCAT)
+        CALL WIGNERFCT (X, NLEG, 0, 0, DMM1)
+        CALL WIGNERFCT (X, NLEG, 2, 0, DMM2)
+
+C           Sum the first Wigner function series, which is actually a Legendre series
+        A1 = 0.0D0
+        DO L = 0, NLEG
+          FCT = 1.0D0
+!2.0D0*L + 1.0D0
+          A1  = A1 + FCT*DBLE(LEGCOEF(1,L))*DMM1(L)
+        ENDDO
+        IF (NEGCHECK .AND. A1 .LE. 0.0) THEN
+          IERR=1
+          WRITE (ERRMSG,*) 'PHASEFUNC_FROM_WIGNER: ',
+     .          'negative phase ',
+     .         'function'
+          RETURN
+        ENDIF
+        PHASE(1,J) = SNGL(A1*OFOURPI)
+
+        B1 = 0.0D0
+        DO L = 0, NLEG
+          FCT = 1.0D0
+!2.0D0*L + 1.0D0
+          B1  = B1 - FCT*DBLE(LEGCOEF(5,L))*DMM2(L)
+        ENDDO
+        PHASE(2,J) = SNGL(B1*OFOURPI)
+
+      ENDDO
+      DEALLOCATE (DMM1, DMM2)
+      RETURN
+      END
+
+      SUBROUTINE PHASEFUNC_FROM_LEGENDRE (NANGLES, NCOEF, LEGCOEF,
+     .                                    PHASE)
+       ! Calculates the phase function at NANGLES equally spaced angles
+       ! from the Legendres series expansion in LEGCOEF.  The scalar (I,I)
+       ! element of the phase matrix is expanded in Wigner d^l_{0,0} functions,
+       ! which are the same as Legendre polynomials in \cos\Theta.
+        IMPLICIT NONE
+        INTEGER, INTENT(IN) :: NANGLES, NCOEF
+        REAL,    INTENT(IN) :: LEGCOEF(0:NCOEF)
+        REAL,    INTENT(OUT) :: PHASE(NANGLES)
+        INTEGER :: J, L
+        REAL(8) :: RD, MU, SUM, PL, PL1, PL2
+
+        RD = ACOS(-1.0D0)/180.D0
+        DO J = 1, NANGLES
+          MU = COS(RD*J*180.D0/NANGLES)
+          SUM = 0.0
+            ! Use upward recurrence to find Legendre polynomials
+          PL1 = 1.0
+          PL = 1.0
+          DO L = 0, NCOEF
+            IF (L .GT. 0) PL = (2*L-1)*MU*PL1/L-(L-1)*PL2/L
+            SUM = SUM + LEGCOEF(L)*PL
+            PL2 = PL1
+            PL1 = PL
+          ENDDO
+          PHASE(J) = SUM
+        ENDDO
+      END SUBROUTINE PHASEFUNC_FROM_LEGENDRE

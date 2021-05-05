@@ -775,13 +775,21 @@ C                                   FLUXES(3,L) is downwelling direct,
 C                                   L=1 is top, L=NUML+1 is bottom
       IMPLICIT NONE
       INTEGER   NLAYER
+Cf2py intent(in) :: NLAYER
       LOGICAL   DELTAM
+Cf2py intent(in) :: DELTAM
       REAL      TEMPS(*)
+Cf2py intent(in) :: TEMPS
       REAL      OPTDEPTHS(*), ALBEDOS(*), ASYMMETRIES(*)
+Cf2py intent(in) :: OPTDEPTHS, ALBEDOS, ASYMMETRIES
       REAL      GNDTEMP, GNDEMIS, SKYRAD, SOLARFLUX, SOLARMU
+Cf2py intent(in) :: GNDTEMP, GNDEMIS, SKYRAD, SOLARFLUX, SOLARMU
       REAL      WAVENO(2), WAVELEN
+Cf2py intent(in) ::WAVENO, WAVELEN
       CHARACTER*1 SRCTYPE, UNITS
-      REAL      FLUXES(3,*)
+Cf2py intent(in) :: SRCTYPE, UNITS
+      REAL      FLUXES(3,NLAYER+1)
+Cf2py intent(out) :: FLUXES
 
       INTEGER   N, L, I
       DOUBLE PRECISION DELTAU, G, OMEGA, F

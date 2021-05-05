@@ -2801,62 +2801,105 @@ C          ENDIF
       RETURN
       END
 
-      SUBROUTINE PREPARE_DIPHASEIND(GRIDPOS, DIPHASEIND,
-     .                     NPX, NPY, NPZ, NPTS, MAXPG, NUMPHASE, DELX,
-     .                      DELY, XSTART, YSTART, ZLEVELS, EXTINCTP,
-     .                      ALBEDOP, NPART, NUMDER)
-CPrepares the DIPHASEIND for use in the gradient calculation.
-CThis holds the pointer to the property grid point from which the
-C(adaptive) grid point's phase function comes from.
+
+
+      SUBROUTINE PREPARE_DERIV_INTERPS(GRIDPOS, NPTS, NUMDER,
+     .    NPX, NPY, NPZ, MAXPG, DELX, DELY, XSTART, YSTART,
+     .    ZLEVELS, EXTINCTP, ALBEDOP, IPHASEP, PHASEWTP,
+     .    PARTDER, OPTINTERPWT, DIPHASE,
+     .    DPHASEINTERPWT, MAXNMICRO, NPART)
+
         IMPLICIT NONE
-        INTEGER NPTS, NUMDER, NPART, MAXPG
-Cf2py intent(in) :: NPTS, NUMDER, NPART, MAXPG
-        INTEGER NPX, NPY, NPZ, NUMPHASE
-Cf2py intent(in) :: NPX, NPY, NPZ, NUMPHASE
+        INTEGER NPTS, NUMDER, NPART, MAXPG, MAXNMICRO
+Cf2py intent(in) :: NPTS, NUMDER, NPART, MAXPG, MAXNMICRO
+        INTEGER NPX, NPY, NPZ, NUMPHASE, PARTDER(NUMDER)
+Cf2py intent(in) :: NPX, NPY, NPZ, NUMPHASE, PARTDER
         REAL GRIDPOS(3, NPTS)
 Cf2py intent(in) :: GRIDPOS
-        INTEGER DIPHASEIND(NPTS,NUMDER)
-Cf2py intent(out) :: DIPHASEIND
+        INTEGER DIPHASE(8*MAXNMICRO, NPTS, NPART)
+Cf2py intent(out) :: DIPHASE
+        REAL DPHASEINTERPWT(8*MAXNMICRO, NPTS, NPART)
+Cf2py intent(out) :: DPHASEINTERPWT
+        REAL OPTINTERPWT(8, NPTS, NUMDER)
+Cf2py intent(out) :: OPTINTERPWT
+        INTEGER INTERPPTR(8,NPTS,NUMDER)
+Cf2py intent(out) :: INTERPPTR
         REAL ALBEDOP(MAXPG, NPART), EXTINCTP(MAXPG, NPART)
 Cf2py intent(in) :: ALBEDOP, EXTINCTP
+        INTEGER IPHASEP(MAXNMICRO, MAXPG,NPART)
+        REAL PHASEWTP(MAXNMICRO,MAXPG, NPART)
+Cf2py intent(in) :: IPHASEP, PHASEWTP
         REAL DELX, DELY, XSTART, YSTART
 Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
         REAL ZLEVELS(*)
 Cf2py intent(in) :: ZLEVELS
+        DOUBLE PRECISION SCATMIN, EXTMIN
+Cf2py intent(in) :: SCATMIN, EXTMIN
+        CHARACTER INTERPMETHOD*2
+Cf2py intent(in) :: INTERPMETHOD
+        INTEGER IERR
+        CHARACTER ERRMSG*600
+Cf2py intent(out) :: IERR, ERRMSG
 
-        INTEGER IP, IPA
 
-        DO IPA=1,NUMDER
+        INTEGER IP, IPA, IDR
+
+        IERR = 0
+
+        DO IDR=1,NUMDER
+          IPA = PARTDER(IDR)
           DO IP=1,NPTS
-            CALL GET_PHASE_INTERP_INDS(GRIDPOS(1,IP), GRIDPOS(2,IP),
+            CALL GET_DERIV_INTERP(GRIDPOS(1,IP), GRIDPOS(2,IP),
      .         GRIDPOS(3,IP), NPX, NPY, NPZ, NUMPHASE, DELX,
      .         DELY, XSTART, YSTART, ZLEVELS, EXTINCTP(:,IPA),
-     .         ALBEDOP(:,IPA), DIPHASEIND(IP,IPA))
+     .         ALBEDOP(:,IPA), IPHASEP(:,:,IPA), PHASEWTP(:,:,IPA),
+     .         EXTMIN, SCATMIN, INTERPMETHOD, IERR, ERRMSG,
+     .         DPHASEINTERPWT(:,IP,IPA), MAXNMICRO,
+     .         OPTINTERPWT(:,IP,IDR), INTERPPTR(:,IP,IDR),
+     .         DIPHASE(:,IP,IPA)
+     .         )
+            IF (IERR .NE. 0) RETURN
           ENDDO
         ENDDO
         RETURN
       END
 
-      SUBROUTINE GET_PHASE_INTERP_INDS (X, Y, Z,
-     .                 NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
-     .                 XSTART, YSTART, ZLEVELS, EXTINCTP,
-     .                 ALBEDOP, DIPHASEIND)
-C    Adapated from TRILIN_INTERP_PROP - JRLoveridge 2021/02/10
+      SUBROUTINE GET_DERIV_INTERP (X, Y, Z,
+     .      NPX, NPY, NPZ, DELX, DELY,
+     .      XSTART, YSTART, ZLEVELS, EXTINCTP,
+     .      ALBEDOP, IPHASEP, PHASEWTP,
+     .      EXTMIN, SCATMIN, INTERPMETHOD, IERR, ERRMSG,
+     .      PHASEINTERPWT, MAXNMICRO, OPTINTERPWT,
+     .      INTERPPTR, IPHASE)
+C      Trilinearly interpolates the quantities on the input property
+C     grid at the single point (X,Y,Z) to get the output TEMP,EXTINCT,
+C     ALBEDO, and LEGEN or IPHASE.  Interpolation is done on the
+C     volume coefficients.  Also adds in the separate gaseous absorption.
+C     Divides the phase function Legendre coefficients LEGEN by 2*l+1.
+C     The phase function pointer IPHASE (for tabulated phase functions)
+C     is that of the maximum weighted scattering property grid point.
+C     If INIT=.TRUE. then transfers the tabulated phase functions.
       IMPLICIT NONE
-      INTEGER DIPHASE
-      REAL    X, Y, Z,  DEXT, DALB, DSCAT
-      INTEGER IX, IXP, IY, IYP, IZ, IL, IM, IU, J
+      INTEGER MAXNMICRO
+      INTEGER IPHASE(8*MAXNMICRO), INTERPPTR(8)
+      REAL PHASEINTERPWT(8*MAXNMICRO), OPTINTERPWT(8)
+      REAL    X, Y, Z,  EXTINCT, ALBEDO
+      INTEGER IX, IXP, IY, IYP, IZ, L, IL, IM, IU, J
       INTEGER I1, I2, I3, I4, I5, I6, I7, I8, I
       DOUBLE PRECISION U, V, W, F1, F2, F3, F4, F5, F6, F7, F8, F
       DOUBLE PRECISION SCAT1,SCAT2,SCAT3,SCAT4,SCAT5,SCAT6,SCAT7,SCAT8
-      DOUBLE PRECISION SCATTER, MAXSCAT
+      DOUBLE PRECISION SCATTER, MAXSCAT, EXTMIN, SCATMIN
+      CHARACTER INTERPMETHOD*2
+      INTEGER IERR
+      CHARACTER ERRMSG*600
 
       INTEGER NPX, NPY, NPZ
-      INTEGER NUMPHASE, DIPHASEIND
-      REAL DELX, DELY, XSTART, YSTART
+      INTEGER NUMPHASE
+      REAL DELX, DELY, XSTART, YSTART, INTERPTEMP
       REAL ZLEVELS(*)
       REAL EXTINCTP(*), ALBEDOP(*)
-      REAL  EXTINCT, ALBEDO
+      INTEGER IPHASEP(MAXNMICRO, *)
+      REAL PHASEWTP(MAXNMICRO, *)
 
 C         Find the grid location and compute the interpolation factors
       IL=0
@@ -2875,8 +2918,9 @@ C         Find the grid location and compute the interpolation factors
       IX = INT((X-XSTART)/DELX) + 1
       IF (ABS(X-XSTART-NPX*DELX) .LT. 0.01*DELX) IX = NPX
       IF (IX .LT. 1 .OR. IX .GT. NPX) THEN
-        WRITE (6,*) 'INTERP_DERIVS: Beyond X domain',IX,NPX,X,XSTART
-        STOP
+        IERR = 1
+        WRITE (ERRMSG,*) 'TRILIN: Beyond X domain',IX,NPX,X,XSTART
+        RETURN
       ENDIF
       IXP = MOD(IX,NPX) + 1
       U = DBLE(X-XSTART-DELX*(IX-1))/DELX
@@ -2886,8 +2930,9 @@ C         Find the grid location and compute the interpolation factors
       IY = INT((Y-YSTART)/DELY) + 1
       IF (ABS(Y-YSTART-NPY*DELY) .LT. 0.01*DELY) IY = NPY
       IF (IY .LT. 1 .OR. IY .GT. NPY) THEN
-        WRITE (6,*) 'INTERP_DERIVS: Beyond Y domain',IY,NPY,Y,YSTART
-        STOP
+        IERR = 1
+        WRITE (ERRMSG,*) 'TRILIN: Beyond Y domain',IY,NPY,Y,YSTART
+        RETURN
       ENDIF
       IYP = MOD(IY,NPY) + 1
       V = DBLE(Y-YSTART-DELY*(IY-1))/DELY
@@ -2912,6 +2957,30 @@ C         Find the grid location and compute the interpolation factors
       I7 = I3+1
       I8 = I4+1
 
+      INTERPPTR(1) = I1
+      INTERPPTR(2) = I2
+      INTERPPTR(3) = I3
+      INTERPPTR(4) = I4
+      INTERPPTR(5) = I5
+      INTERPPTR(6) = I6
+      INTERPPTR(7) = I7
+      INTERPPTR(8) = I8
+
+      OPTINTERPWT(1) = F1
+      OPTINTERPWT(2) = F2
+      OPTINTERPWT(3) = F3
+      OPTINTERPWT(4) = F4
+      OPTINTERPWT(5) = F5
+      OPTINTERPWT(6) = F6
+      OPTINTERPWT(7) = F7
+      OPTINTERPWT(8) = F8
+
+C         Trilinearly interpolate the extinction, scattering
+C     purely so we can get the phase interpolation weights.
+
+      EXTINCT = F1*EXTINCTP(I1) + F2*EXTINCTP(I2) + F3*EXTINCTP(I3)
+     .          + F4*EXTINCTP(I4) + F5*EXTINCTP(I5) + F6*EXTINCTP(I6)
+     .          + F7*EXTINCTP(I7) + F8*EXTINCTP(I8)
       SCAT1 = F1*EXTINCTP(I1)*ALBEDOP(I1)
       SCAT2 = F2*EXTINCTP(I2)*ALBEDOP(I2)
       SCAT3 = F3*EXTINCTP(I3)*ALBEDOP(I3)
@@ -2922,47 +2991,156 @@ C         Find the grid location and compute the interpolation factors
       SCAT8 = F8*EXTINCTP(I8)*ALBEDOP(I8)
       SCATTER = SCAT1+SCAT2+SCAT3+SCAT4+SCAT5+SCAT6+SCAT7+SCAT8
 
-C         For tabulated phase functions pick the one we are on top of
-C         or the one with the most scattering weight.
+      IF (EXTINCT .GT. EXTMIN) THEN
+        ALBEDO = SCATTER/EXTINCT
+      ELSE
+        ALBEDO = SCATTER/EXTMIN
+      ENDIF
 
-      IF (NUMPHASE .GT. 0) THEN
+      IPHASE(1:MAXNMICRO) = IPHASEP(:,I1)
+      IPHASE(MAXNMICRO+1:2*MAXNMICRO) = IPHASEP(:,I2)
+      IPHASE(2*MAXNMICRO+1:3*MAXNMICRO) = IPHASEP(:,I3)
+      IPHASE(3*MAXNMICRO+1:4*MAXNMICRO) = IPHASEP(:,I4)
+      IPHASE(4*MAXNMICRO+1:5*MAXNMICRO) = IPHASEP(:,I5)
+      IPHASE(5*MAXNMICRO+1:6*MAXNMICRO) = IPHASEP(:,I6)
+      IPHASE(6*MAXNMICRO+1:7*MAXNMICRO) = IPHASEP(:,I7)
+      IPHASE(7*MAXNMICRO+1:) = IPHASEP(:,I8)
+
+      IF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+        IF (SCATTER .GE. SCATMIN) THEN
+          PHASEINTERPWT(1:MAXNMICRO) = PHASEWTP(:,I1)*SCAT1/SCATTER
+          PHASEINTERPWT(MAXNMICRO+1:2*MAXNMICRO) = PHASEWTP(:,I2)
+     .      *SCAT2/SCATTER
+          PHASEINTERPWT(2*MAXNMICRO+1:3*MAXNMICRO) = PHASEWTP(:,I3)
+     .      *SCAT3*SCAT2/SCATTER
+          PHASEINTERPWT(3*MAXNMICRO+1:4*MAXNMICRO) = PHASEWTP(:,I4)
+     .      *SCAT4/SCATTER
+          PHASEINTERPWT(4*MAXNMICRO+1:5*MAXNMICRO) = PHASEWTP(:,I5)
+     .      *SCAT5/SCATTER
+          PHASEINTERPWT(5*MAXNMICRO+1:6*MAXNMICRO) = PHASEWTP(:,I6)
+     .      *SCAT6/SCATTER
+          PHASEINTERPWT(6*MAXNMICRO+1:7*MAXNMICRO) = PHASEWTP(:,I7)
+     .      *SCAT7/SCATTER
+          PHASEINTERPWT(7*MAXNMICRO+1:) = PHASEWTP(:,I8)
+     .      *SCAT8/SCATTER
+        ELSE
+          PHASEINTERPWT(:MAXNMICRO) = PHASEWTP(:,I1)*SCAT1/SCATMIN
+          PHASEINTERPWT(MAXNMICRO+1:2*MAXNMICRO) = PHASEWTP(:,I2)
+     .      *SCAT2/SCATMIN
+          PHASEINTERPWT(2*MAXNMICRO+1:3*MAXNMICRO) = PHASEWTP(:,I3)
+     .      *SCAT3/SCATMIN
+          PHASEINTERPWT(3*MAXNMICRO+1:4*MAXNMICRO) = PHASEWTP(:,I4)
+     .      *SCAT4/SCATMIN
+          PHASEINTERPWT(4*MAXNMICRO+1:5*MAXNMICRO) = PHASEWTP(:,I5)
+     .      *SCAT5/SCATMIN
+          PHASEINTERPWT(5*MAXNMICRO+1:6*MAXNMICRO) = PHASEWTP(:,I6)
+     .      *SCAT6/SCATMIN
+          PHASEINTERPWT(6*MAXNMICRO+1:7*MAXNMICRO) = PHASEWTP(:,I7)
+     .      *SCAT7/SCATMIN
+          PHASEINTERPWT(7*MAXNMICRO+1:) = PHASEWTP(:,I8)
+     .      *SCAT8/SCATMIN
+        ENDIF
+C
+C     Unlike TRILIN_INTERP_PROP, we don't consolidate weights here so we can
+C     use these for derivatives more easily.
+C
+      ELSEIF (INTERPMETHOD(2:2) .EQ. 'O') THEN
         MAXSCAT = -1.0
+        PHASEINTERPWT(:) = 0.0
+        PHASEINTERPWT(1) = 1.0
         IF (SCAT1 .GT. MAXSCAT .OR. ABS(F1-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I1), IPHASEP(:,I1), MAXNMICRO, -2)
           MAXSCAT = SCAT1
-          DIPHASEIND = I1
+          IPHASE(1) = IPHASEP(1,I1)
         ENDIF
         IF (SCAT2 .GT. MAXSCAT .OR. ABS(F2-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I2), IPHASEP(:,I2), MAXNMICRO, -2)
           MAXSCAT = SCAT2
-          DIPHASEIND = I2
+          IPHASE(1) = IPHASEP(1,I2)
         ENDIF
         IF (SCAT3 .GT. MAXSCAT .OR. ABS(F3-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I3), IPHASEP(:,I3), MAXNMICRO, -2)
           MAXSCAT = SCAT3
-          DIPHASEIND = I3
+          IPHASE(1) = IPHASEP(1,I3)
         ENDIF
         IF (SCAT4 .GT. MAXSCAT .OR. ABS(F4-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I4), IPHASEP(:,I4), MAXNMICRO, -2)
           MAXSCAT = SCAT4
-          DIPHASEIND = I4
+          IPHASE(1) = IPHASEP(1,I4)
         ENDIF
         IF (SCAT5 .GT. MAXSCAT .OR. ABS(F5-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I5), IPHASEP(:,I5), MAXNMICRO, -2)
           MAXSCAT = SCAT5
-          DIPHASEIND = I5
+          IPHASE(1) = IPHASEP(1,I5)
         ENDIF
         IF (SCAT6 .GT. MAXSCAT .OR. ABS(F6-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I6), IPHASEP(:,I6), MAXNMICRO, -2)
           MAXSCAT = SCAT6
-          DIPHASEIND = I6
+          IPHASE(1) = IPHASEP(1,I6)
         ENDIF
         IF (SCAT7 .GT. MAXSCAT .OR. ABS(F7-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I7), IPHASEP(:,I7), MAXNMICRO, -2)
           MAXSCAT = SCAT7
-          DIPHASEIND = I7
+          IPHASE(1) = IPHASEP(1,I7)
         ENDIF
         IF (SCAT8 .GT. MAXSCAT .OR. ABS(F8-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I8), IPHASEP(:,I8), MAXNMICRO, -2)
           MAXSCAT = SCAT8
-          DIPHASEIND = I8
+          IPHASE(1) = IPHASEP(1,I8)
+        ENDIF
+      ENDIF
+
+      RETURN
+      END
+
+
+
+      SUBROUTINE PLANCK_DERIVATIVE (TEMP, UNITS, WAVENO, WAVELEN,
+     .                              PLANCK)
+C        Calculates the derivative of the Planck blackbody radiance with
+C      respect to temperature. Derivative is returned in PLANCK.
+C      -JRLoveridge 2021/04/21.
+C     If UNITS='T' then
+C     using brightness temperature units and the temperature is simply
+C     returned. If UNITS='B' then doing a band integration and the
+C     Planck blackbody radiance in [Watts /(meter^2 ster)] over a
+C     wavenumber range [cm^-1] is returned. Otherwise, the Planck
+C     blackbody radiance in [Watts /(meter^2 ster micron)] for a
+C     temperature in [Kelvins] at a wavelength in [microns] is returned.
+      IMPLICIT NONE
+      REAL  TEMP, WAVENO(2), WAVELEN, PLANCK
+      CHARACTER*1  UNITS
+      DOUBLE PRECISION X1, X2, F, P1, P2, T
+
+      IF (UNITS .EQ. 'T') THEN
+        PLANCK = 1
+      ELSE IF (UNITS .EQ. 'B') THEN
+        IF (TEMP .GT. 0.0) THEN
+C         Use central difference for derivative, hopefully the integration scheme
+C         is stable enough for this step size. Untested.
+          T = TEMP - 1.0D-4
+          X1 = 1.4388D0*WAVENO(1)/T
+          X2 = 1.4388D0*WAVENO(2)/T
+          CALL INTEGRATE_PLANCK (X1, X2, F)
+          P1= 1.1911D-8*(T/1.4388D0)**4 *F
+
+          T = TEMP + 1.0D-4
+          X1 = 1.4388D0*WAVENO(1)/T
+          X2 = 1.4388D0*WAVENO(2)/T
+          CALL INTEGRATE_PLANCK (X1, X2, F)
+          P2= 1.1911D-8*(T/1.4388D0)**4 *F
+          PLANCK = (P2 - P1) / (2.0D-4)
+        ELSE
+          PLANCK = 0.0
         ENDIF
       ELSE
-        WRITE (6,*) 'PHASE_INTERP_INDS: Gridded phase',
-     .                 'is not supported in pyshdom.'
-        STOP
+        IF (TEMP .GT. 0.0) THEN
+          PLANCK = 1.1911E8 / WAVELEN**6 *
+     .      EXP(1.4388E4/(WAVELEN*TEMP)) /
+     .      (TEMP*TEMP*(EXP(1.4388E4/(WAVELEN*TEMP)) - 1)**2)
+        ELSE
+          PLANCK = 0.0
+        ENDIF
       ENDIF
       RETURN
       END

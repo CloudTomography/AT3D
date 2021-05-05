@@ -121,7 +121,6 @@ F2PY_CORE_API = [
     'check_property_input',
     'nearest_binary',
     'cell_average',
-    'prepare_diphaseind',
     'update_costfunction',
     'output_cell_split',
     'compute_radiance_grid',
@@ -136,6 +135,8 @@ F2PY_CORE_API = [
     'ssort',
     'compute_dir_source',
     'pencil_beam_prop2',
+    'eddrtf',
+    'phase_function_mixing'
 ]
 
 def _run_command(cmd):

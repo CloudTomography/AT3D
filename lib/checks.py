@@ -9,8 +9,10 @@ want to create their own workflow rather than relying on some of the methods
 in pyshdom these checks are provided to help catch unexpected inputs.
 """
 import typing
+import sys
 
 import numpy as np
+import xarray as xr
 
 import pyshdom.exceptions
 
@@ -305,3 +307,75 @@ def check_errcode(ierr, errmsg):
             "The desired SHDOM solution simply takes more memory (spherical harmonics) "
             "than was allocated. Increase the adapt_grid_factor and/or spherical_harmonics_factor "
             "to fix this.")
+
+def check_grid_consistency(*datasets, names=None):
+    """
+    Checks for consistency across grid the spatial grids of several different
+    data sets.
+    """
+
+    first_scatterer = datasets[0]
+    failed_list = []
+    for name, gridded in enumerate(datasets):
+        pyshdom.checks.check_grid(gridded)
+        if np.any(gridded.coords['x'] != first_scatterer.coords['x']) | \
+            np.any(gridded.coords['y'] != first_scatterer.coords['y']) | \
+            np.any(gridded.coords['z'] != first_scatterer.coords['z']) |\
+            (gridded.delx != first_scatterer.delx) | \
+            (gridded.dely != first_scatterer.dely):
+            failed_list.append(name)
+    if names is not None:
+        for i, fail in enumerate(failed_list):
+            failed_list[i] = names[fail]
+    if failed_list:
+        raise pyshdom.exceptions.GridError("Scatterers do "
+                                           "not all have consistent grids.",
+                                   *failed_list)
+
+
+def check_optical_properties(dataset, name=1):
+    """
+    Check whether there is a
+    """
+    if not isinstance(dataset, xr.Dataset):
+        raise TypeError("scatterer '{}' in `medium` is not an xr.Dataset".format(name))
+    try:
+        pyshdom.checks.check_range(dataset, ssalb=(0.0, 1.0))
+    except (KeyError, pyshdom.exceptions.OutOfRangeError) as err:
+        raise type(err)(str(err).replace('"', "") + \
+        " for scatterer '{}' in `medium`.".format(
+            name)).with_traceback(sys.exc_info()[2])
+    try:
+        pyshdom.checks.check_positivity(dataset, 'extinction')
+    except (KeyError, pyshdom.exceptions.NegativeValueError) as err:
+        raise type(err)(str(err).replace('"', "") + \
+        " for scatterer '{}' in `medium`.".format(
+            name)).with_traceback(sys.exc_info()[2])
+    for var_name in ('extinction', 'ssalb', 'table_index', 'phase_weights'):
+        try:
+            pyshdom.checks.check_hasdim(dataset, **{var_name: ('x', 'y', 'z')})
+        except (KeyError, pyshdom.exceptions.MissingDimensionError) as err:
+            raise type(err)(str(err).replace('"', "") + \
+            " for scatterer '{}' in `medium`.".format(
+                name)).with_traceback(sys.exc_info()[2])
+    for var_name in ('table_index', 'phase_weights'):
+        try:
+            pyshdom.checks.check_hasdim(dataset, **{var_name: ('num_micro')})
+        except (KeyError, pyshdom.exceptions.MissingDimensionError) as err:
+            raise type(err)(str(err).replace('"', "") + \
+            " for scatterer '{}' in `medium`.".format(
+                name)).with_traceback(sys.exc_info()[2])
+    try:
+        pyshdom.checks.check_legendre(dataset)
+    except (KeyError, pyshdom.exceptions.MissingDimensionError,
+            pyshdom.exceptions.LegendreTableError) as err:
+        raise type(err)(str(err).replace('"', "") + \
+        " for scatterer '{}' in `medium`.".format(
+            name)).with_traceback(sys.exc_info()[2])
+    try:
+        pyshdom.checks.check_grid(dataset)
+    except (KeyError, pyshdom.exceptions.MissingDimensionError,
+            pyshdom.exceptions.GridError) as err:
+        raise type(err)(str(err).replace('"', "") + \
+        " for scatterer '{}' in `medium`.".format(
+            name)).with_traceback(sys.exc_info()[2])

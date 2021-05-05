@@ -147,9 +147,8 @@ def _compute_table(particle_type, wavelength_band,
         raise ValueError('wavelen1 must be <= wavelen2')
 
     avgflag = 'C'
-    if wavelen1 == wavelen2:
-        deltawave = -1
-    elif wavelength_averaging:
+    deltawave = -1
+    if wavelength_averaging:
         avgflag = 'A'
         deltawave = wavelength_resolution
 

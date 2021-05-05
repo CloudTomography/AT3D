@@ -1429,64 +1429,15 @@ class RTE:
                             "of xr.Dataset or an xr.Dataset")
 
         for name, dataset in medium_dict.items():
-            if not isinstance(dataset, xr.Dataset):
-                raise TypeError("scatterer '{}' in `medium` is not an xr.Dataset".format(name))
-            try:
-                pyshdom.checks.check_range(dataset, ssalb=(0.0, 1.0))
-            except (KeyError, pyshdom.exceptions.OutOfRangeError) as err:
-                raise type(err)(str(err).replace('"', "") + \
-                " for scatterer '{}' in `medium`.".format(
-                    name)).with_traceback(sys.exc_info()[2])
-            try:
-                pyshdom.checks.check_positivity(dataset, 'extinction')
-            except (KeyError, pyshdom.exceptions.NegativeValueError) as err:
-                raise type(err)(str(err).replace('"', "") + \
-                " for scatterer '{}' in `medium`.".format(
-                    name)).with_traceback(sys.exc_info()[2])
-            for var_name in ('extinction', 'ssalb', 'table_index', 'phase_weights'):
-                try:
-                    pyshdom.checks.check_hasdim(dataset, **{var_name: ('x', 'y', 'z')})
-                except (KeyError, pyshdom.exceptions.MissingDimensionError) as err:
-                    raise type(err)(str(err).replace('"', "") + \
-                    " for scatterer '{}' in `medium`.".format(
-                        name)).with_traceback(sys.exc_info()[2])
-            for var_name in ('table_index', 'phase_weights'):
-                try:
-                    pyshdom.checks.check_hasdim(dataset, **{var_name: ('num_micro')})
-                except (KeyError, pyshdom.exceptions.MissingDimensionError) as err:
-                    raise type(err)(str(err).replace('"', "") + \
-                    " for scatterer '{}' in `medium`.".format(
-                        name)).with_traceback(sys.exc_info()[2])
-            try:
-                pyshdom.checks.check_legendre(dataset)
-            except (KeyError, pyshdom.exceptions.MissingDimensionError,
-                    pyshdom.exceptions.LegendreTableError) as err:
-                raise type(err)(str(err).replace('"', "") + \
-                " for scatterer '{}' in `medium`.".format(
-                    name)).with_traceback(sys.exc_info()[2])
-            try:
-                pyshdom.checks.check_grid(dataset)
-            except (KeyError, pyshdom.exceptions.MissingDimensionError,
-                    pyshdom.exceptions.GridError) as err:
-                raise type(err)(str(err).replace('"', "") + \
-                " for scatterer '{}' in `medium`.".format(
-                    name)).with_traceback(sys.exc_info()[2])
+            pyshdom.checks.check_optical_properties(dataset, name=name)
 
         #check that all scatterers are on the same grid
-        first_scatterer = list(medium_dict.values())[0]
-        failed_list = []
-        for name, gridded in medium_dict.items():
-            if np.all(gridded.coords['x'] != first_scatterer.coords['x']) | \
-                np.all(gridded.coords['y'] != first_scatterer.coords['y']) | \
-                np.all(gridded.coords['z'] != first_scatterer.coords['z']) |\
-                (gridded.delx != first_scatterer.delx) | \
-                (gridded.dely != first_scatterer.dely):
-                failed_list.append(name)
-        if failed_list:
-            raise pyshdom.exceptions.GridError("Scatterers in `medium` do "
-                                               "not all have consistent grids.",
-                                               *failed_list)
+        pyshdom.checks.check_grid_consistency(
+            *medium_dict.values(),
+            names=list(medium_dict.keys())
+        )
 
+        first_scatterer = list(medium_dict.values())[0]
         grid = xr.Dataset({'x': first_scatterer.coords['x'],
                            'y': first_scatterer.coords['y'],
                            'z': first_scatterer.coords['z'],
@@ -2090,8 +2041,7 @@ class RTE:
 
         # Check if legendre table needs padding. It will only need
         # padding if angular resolution is larger than the number of
-        # non-zero phase function legendre coefficients. That is a
-        # rare occurrence so it may not have been properly tested.
+        # non-zero phase function legendre coefficients.
         if self._pa.nlegp > legendre_table.sizes['legendre_index']:
             legendre_table = legendre_table.pad(
                 {'legendre_index':

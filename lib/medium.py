@@ -8,6 +8,7 @@ This method is also used to map partial derivatives of optical properties
 from the Look-Up-Table onto the SHDOM grid.
 """
 import itertools
+import re
 from collections import OrderedDict
 import pandas as pd
 import numpy as np
@@ -435,3 +436,1181 @@ def get_optical_properties(microphysics, mie_mono_tables, size_distribution_func
         optical_properties[key] = poly_table
 
     return optical_properties
+
+
+class OpticalDerivativeGenerator:
+
+    def __init__(self):
+        pass
+
+    def test_valid_names(self, name):
+
+        valid = False
+        if variable_name in ('extinction', 'ssalb'):
+            valid = True
+        elif 'legendre_X' in variable_name:
+            leg_index = int(variable_name[len('legendre_X_'):])
+            stokes_index = int(variable_name[len('legendre_')])
+            if ((stokes_index >= 0) & (stokes_index <= 5) &
+                (leg_index >= 0)):
+                valid = True
+        return valid
+
+    def calculate_derivatives(self, variable_names, optical_properties)
+
+        derivatives = OrderedDict()
+
+        for variable_name in variable_names:
+            if variable_name == 'extinction':
+                differentiated = xr.Dataset(
+                    data_vars={
+                        'extinction': (['x', 'y', 'z'],
+                            np.ones(optical_properties.extinction.shape)),
+                        'ssalb': (['x', 'y', 'z'],
+                            np.zeros(optical_properties.ssalb.shape)),
+                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+                            np.zeros(optical_properties.legcoef.shape)),
+                        'table_index': optical_properties.table_index,
+                        'phase_weights': optical_properties.phase_weights,
+                        'delx': optical_properties.delx,
+                        'dely': optical_properties.dely
+                    },
+                    coords={
+                        'x': optical_properties.x,
+                        'y': optical_properties.y,
+                        'z': optical_properties.z,
+                        'stokes_index': optical_properties.stokes_index
+                    }
+                )
+            elif variable_name == 'ssalb':
+                differentiated = xr.Dataset(
+                    data_vars={
+                        'extinction': (['x', 'y', 'z'],
+                            np.zeros(optical_properties.extinction.shape)),
+                        'ssalb': (['x', 'y', 'z'],
+                            np.ones(optical_properties.ssalb.shape)),
+                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+                            np.zeros(optical_properties.legcoef.shape)),
+                        'table_index': optical_properties.table_index,
+                        'phase_weights': optical_properties.phase_weights,
+                        'delx': optical_properties.delx,
+                        'dely': optical_properties.dely
+                    },
+                    coords={
+                        'x': optical_properties.x,
+                        'y': optical_properties.y,
+                        'z': optical_properties.z,
+                        'stokes_index': optical_properties.stokes_index
+                    }
+                )
+            elif 'legendre_' in variable_name:
+                leg_index = int(variable_name[len('legendre_X_'):])
+                stokes_index = int(variable_name[len('legendre_')])
+                legcoef = np.zeros(optical_properties.legcoef.shape)
+                if not ((stokes_index >= 0) & (stokes_index <= 5) &
+                    (leg_index <= legcoef.shape[1]) & (leg_index >= 0)):
+                    raise ValueError(
+                        "Invalid phase component and legendre index for variable name "
+                        "'{}'".format(variable_name))
+                legcoef[stokes_index, leg_index, ...] = 1.0
+                differentiated = xr.Dataset(
+                    data_vars={
+                        'extinction': (['x', 'y', 'z'],
+                            np.zeros(optical_properties.extinction.shape)),
+                        'ssalb': (['x', 'y', 'z'],
+                            np.ones(optical_properties.ssalb.shape)),
+                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+                            legcoef),
+                        'table_index': optical_properties.table_index,
+                        'phase_weights': optical_properties.phase_weights,
+                        'delx': optical_properties.delx,
+                        'dely': optical_properties.dely
+                    },
+                    coords={
+                        'x': optical_properties.x,
+                        'y': optical_properties.y,
+                        'z': optical_properties.z,
+                        'stokes_index': optical_properties.stokes_index
+                    }
+                )
+            else:
+                raise ValueError(
+                    "variable name is not supported for derivative calculation "
+                    "by this generator.'{}'".format(variable_name)
+                    )
+
+            derivatives[variable_name] = differentiated
+        return derivatives
+
+class OpticalPropertyGenerator:
+
+    def __init__(self, monodisperse_tables, size_distribution_function,
+                 scatterer_name,
+                 particle_density=1.0, maxnphase=None,
+                 interpolation_mode='exact', **size_distribution_parameters):
+
+        self._valid_interpolation_modes = ('exact', 'nearest')
+        if interpolation_mode not in self._valid_interpolation_modes:
+            raise ValueError(
+                "`interpolation_mode` must be in '{}' not '{}'".format(
+                    self._valid_interpolation_modes, interpolation_mode)
+                )
+        self._interpolation_mode = interpolation_mode
+        self._size_distribution_function = size_distribution_function
+        self._particle_density = particle_density
+        self._maxnphase = maxnphase
+        self._scatterer_name = scatterer_name
+
+        for variable_name, parameters in size_distribution_parameters.items():
+            if isinstance(parameters, np.ndarray):
+                if parameters.ndim == 1:
+                    size_distribution_parameters[variable_name] = {'coords': parameters}
+
+        self._monodisperse_tables = monodisperse_tables
+        self._poly_tables = OrderedDict()
+        self._diff_poly_tables = OrderedDict()
+
+        self._cached_microphysics = None
+        self._cached_optical_properties = OrderedDict()
+
+        self._size_distribution_parameters = size_distribution_parameters
+
+        self._size_distribution_grids = OrderedDict()
+        for key, monodisperse_table in self._monodisperse_tables.items():
+            self._size_distribution_grids[key] = pyshdom.size_distribution.get_size_distribution_grid(
+                monodisperse_table.radius,
+                size_distribution_function=self._size_distribution_function,
+                particle_density=self._particle_density,
+                radius_units='micron',
+                **self._size_distribution_parameters
+            )
+
+        # cached values for exact size distributions to facilitate efficient derivative calculations.
+        self._table_variable_names = self._exact_size_distribution_parameters = \
+        self._interpolation_weights = self._phase_indices = None
+
+        # if no max number of phase functions is specified then we set it to the total number of table
+        # entries specified.
+        if self._maxnphase is None:
+            self._maxnphase = list(self._size_distribution_grids.values())[0].number_density.size / \
+                list(self._size_distribution_grids.values())[0].radius.size
+
+    @property
+    def scatterer_name(self):
+        return self._scatterer_name
+
+    @property
+    def size_distribution_grids(self):
+        return self._size_distribution_grids
+
+    @proeprty
+    def interpolation_mode(self):
+        return self._interpolation_mode
+
+    @property
+    def size_distribution_function(self):
+        return self._size_distribution_function
+
+    def __call__(self, microphysics):
+
+        interp_coords = self._check_input(microphysics)
+        optical_properties = OrderedDict()
+
+        # if we are called again on the same microphysics we can just return the same
+        # cached optical properties. (Maybe need to perform deep copying? Need to test.)
+        # really we cache to save time when calculating derivatives afterwards.
+        if microphysics.equals(self._cached_microphysics):
+            optical_properties = self._cached_optical_properties
+
+        else:
+            # cache poly tables for the nearest interpolation mode to save time
+            # for subsequent calculations of forward / inverse derivatives.
+            if self._interpolation_mode == 'nearest' and not self._poly_tables:
+                for key, table in self._monodisperse_tables.items():
+                    # make sure this worked.
+                    poly_table = pyshdom.mie.get_poly_table(self._size_distribution_grids[key], table)
+                    pyshdom.checks.check_legendre(poly_table)
+                    self._poly_tables[key] = poly_table
+
+            if self._interpolation_mode == 'nearest':
+                for key, poly_table in self._poly_tables.items():
+                    single_optical_properties = self._nearest_optical_properties(
+                        microphysics, poly_table, interp_coords, inverse_mode=False, interp_method='linear'
+                        )
+                    optical_properties[key] = self._postprocess_optical_properties(microphysics, single_optical_properties)
+
+            elif self._interpolation_mode == 'exact':
+                self._exact_size_distribution_parameters, self._interpolation_weights, self._phase_indices, \
+                self._table_variable_names = self._exact_forward_size_distributions(interp_coords)
+                for key, table in self._monodisperse_tables.items():
+                    single_optical_properties, self._poly_tables[key] = self._exact_forward_optical_properties(
+                        microphysics,
+                        table,
+                        self._exact_size_distribution_parameters,
+                        self._interpolation_weights,
+                        self._phase_indices,
+                        interp_coords
+                    )
+                    optical_properties[key] = self._postprocess_optical_properties(microphysics, single_optical_properties)
+
+        self._cached_optical_properties = optical_properties
+        self._cached_microphysics = microphysics
+        return optical_properties
+
+    def test_valid_names(self, name):
+        valid = name in self._size_distribution_parameters
+        if name == 'density':
+            valid = True
+        return valid
+
+    def calculate_derivatives(self, variable_names, microphysics, rel_step=0.01):
+
+        interp_coords = self._check_input(microphysics)
+        optical_derivatives = OrderedDict()
+
+        if self._interpolation_mode == 'nearest' and not self._poly_tables:
+            for key, table in self._monodisperse_tables.items():
+                poly_table = pyshdom.mie.get_poly_table(self._size_distribution_grids[key], table)
+                # make sure this worked.
+                pyshdom.checks.check_legendre(poly_table)
+                self._poly_tables[key] = poly_table
+
+        # cache differentiated poly tables for the nearest interpolation mode to save time
+        # for subsequent calculations of forward / inverse derivatives.
+        if self._interpolation_mode == 'nearest' and not self._diff_poly_tables:
+            for key in self._poly_tables:
+                self._diff_poly_tables[key] = self._differentiate_nearest(
+                    self._poly_tables[key], interp_coords, variable_names
+                    )
+
+        if self._interpolation_mode == 'nearest':
+            for key, poly_table in self._diff_poly_tables.items():
+                variable_optical_properties = OrderedDict()
+                for name in variable_names:
+                    single_optical_properties = self._nearest_optical_properties(
+                        microphysics, poly_table[name],
+                        interp_coords,
+                        inverse_mode=name == 'density',
+                        interp_method='linear'
+                    )
+                    variable_optical_properties[name] = self._postprocess_optical_properties(
+                        microphysics, single_optical_properties
+                        )
+                optical_derivatives[key] = variable_optical_properties
+
+        elif self._interpolation_mode == 'exact':
+            # if we have previously processed the microphysics (e.g. for the forward problem)
+            # we can make use of the exactly processed optical properties to
+            # calculate the derivatives without too much extra fuss.
+            # Otherwise, we have to redo the possibly expensive calculations.
+            optical_properties = self._cached_optical_properties
+            if not microphysics.equals(self._cached_microphysics):
+                optical_properties = OrderedDict()
+                self._exact_size_distribution_parameters, self._interpolation_weights,\
+                self._phase_indices, self._table_variable_names = \
+                    self._exact_forward_size_distributions(interp_coords)
+
+                for key, table in self._monodisperse_tables.items():
+                    single_optical_properties, self._poly_tables[key] = \
+                    self._exact_forward_optical_properties(
+                        microphysics,
+                        table,
+                        self._exact_size_distribution_parameters,
+                        self._interpolation_weights,
+                        self._phase_indices,
+                        interp_coords
+                    )
+                    optical_properties[key] = self._postprocess_optical_properties(
+                        microphysics, single_optical_properties
+                        )
+                self._cached_optical_properties = optical_properties
+
+            for key in self._monodisperse_tables:
+                optical_derivatives[key] = self._differentiate_exact(
+                    microphysics, key, variable_names, interp_coords, rel_step
+                    )
+
+        return optical_derivatives
+
+    def _differentiate_exact(self, microphysics, key, variable_names, interp_coords, rel_step=0.01):
+
+        optical_derivatives = OrderedDict()
+
+        for var_name in variable_names:
+            # for an exact optical to microphysical relation we perform finite differencing
+            # along the variable.
+            if var_name not in self._table_variable_names:
+                exact_size_distribution_parameters = {}
+                # step size for forward difference.
+                step = rel_step * np.sign(self._exact_size_distribution_parameters[var_name]) * \
+                    np.maximum(0.05, np.abs(self._exact_size_distribution_parameters[var_name]))
+                exact_size_distribution_parameters[var_name] = step + \
+                    self._exact_size_distribution_parameters[var_name]
+                for name in self._exact_size_distribution_parameters:
+                    if name != var_name:
+                        exact_size_distribution_parameters[name] = \
+                            self._exact_size_distribution_parameters[name]
+
+                optical_properties_above, poly_table_above = self._exact_forward_optical_properties(
+                    microphysics,
+                    self._monodisperse_tables[key],
+                    exact_size_distribution_parameters,
+                    self._interpolation_weights,
+                    self._phase_indices,
+                    interp_coords
+                )
+
+                step_big = np.sum(
+                    self._interpolation_weights*step[self._phase_indices], axis=0
+                    ).reshape(microphysics.density.shape)
+
+                dext = (optical_properties_above.extinction -
+                        self._cached_optical_properties[key].extinction)/step_big
+                dalb = (optical_properties_above.ssalb -
+                        self._cached_optical_properties[key].ssalb)/step_big
+                dleg = (optical_properties_above.legcoef -
+                        self._cached_optical_properties[key].legcoef)/step[None, None, :]
+                dleg[0, 0] = 0.0
+
+                single_optical_derivative = xr.merge(
+                    [dext, dalb, dleg, self._cached_optical_properties[key].phase_weights]
+                    )
+                single_optical_derivative['derivative_method'] = 'exact'
+
+                # this is a table variable so we have to find the derivatives
+                # based on the table nodes.
+            else:
+
+                micro_data = interp_coords[var_name].data.ravel()
+                micro_data_bin = self._size_distribution_grids[key][var_name].data
+                digitized_micro_data = np.digitize(micro_data, bins=micro_data_bin)
+
+                step = micro_data_bin[digitized_micro_data] - micro_data_bin[digitized_micro_data-1]
+                diff = micro_data - micro_data_bin[digitized_micro_data-1]
+                interp1 = diff/step
+
+
+                lower_upper_flags = np.array(
+                    [i for i in itertools.product(*[np.arange(-1, 1)]* \
+                     len(self._table_variable_names))]
+                    )
+                flag_index = np.where(np.array(self._table_variable_names) == var_name)[0][0]
+
+                derivative_interpolation_weights = np.zeros(
+                    (self._interpolation_weights.shape[0]//2, self._interpolation_weights.shape[-1])
+                    )
+                derivative_interpolation_indices = np.zeros(
+                    (2, self._interpolation_weights.shape[0]//2,
+                     self._interpolation_weights.shape[-1]),
+                    dtype=np.int
+                    )
+
+                derivative_interpolation_weights = self._interpolation_weights[
+                    np.where(lower_upper_flags[:, flag_index] == 0), :
+                    ] / (step*interp1)
+
+                derivative_interpolation_indices[0] = self._phase_indices[
+                    np.where(lower_upper_flags[:, flag_index] == -1), :
+                    ]
+                derivative_interpolation_indices[1] = self._phase_indices[
+                    np.where(lower_upper_flags[:, flag_index] == 0), :
+                    ]
+
+                # dleg has to be mixed at each point using derivative_interpolation_weights and indices.
+                # rather than calculated here.
+                dext = np.sum(self._poly_tables[key].extinction.data[derivative_interpolation_indices[1]]* \
+                              derivative_interpolation_weights, axis=(0, 1)) - \
+                       np.sum(self._poly_tables[key].extinction.data[derivative_interpolation_indices[0]]* \
+                              derivative_interpolation_weights, axis=(0, 1))
+
+                dalb = np.sum(self._poly_tables[key].ssalb.data[derivative_interpolation_indices[1]]* \
+                              derivative_interpolation_weights, axis=(0, 1)) - \
+                       np.sum(self._poly_tables[key].ssalb.data[derivative_interpolation_indices[0]]* \
+                              derivative_interpolation_weights, axis=(0, 1))
+
+                single_optical_derivative = xr.Dataset(
+                    data_vars={
+                        'extinction': microphysics.density * dext.reshape(microphysics.density.shape),
+                        'ssalb': (['x', 'y', 'z'], dalb.reshape(microphysics.density.shape)),
+                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'], # no differentiated legcoef required.
+                                    np.zeros((6, 0, 0))),
+                        'phase_weights': (['num_micro', 'x', 'y', 'z'],
+                            derivative_interpolation_weights[0].reshape(
+                                (-1,)+microphysics.density.shape)),
+                        'table_index': (['upper_lower', 'num_micro', 'x', 'y', 'z'],
+                            1+derivative_interpolation_indices.reshape(
+                                (2,-1)+microphysics.density.shape))
+                    }
+                )
+                single_optical_derivative['derivative_method'] = 'table'
+
+            single_optical_derivative['derivative_variable'] = var_name
+            optical_derivatives[var_name] = single_optical_derivative
+
+        return optical_derivatives
+
+    def _check_input(self, microphysics):
+
+        pyshdom.checks.check_positivity(microphysics, 'density')
+        pyshdom.checks.check_grid(microphysics)
+
+        interp_names = set([name for name in self._size_distribution_parameters])
+        microphysics_names = set([name for name in microphysics.variables.keys()
+                                  if name not in 'density'])
+        missing = interp_names - microphysics_names
+        if missing:
+            raise KeyError(
+                "microphysics dataset is missing variables "
+                "for interpolation of table onto grid.", *list(missing)
+                )
+
+        number_density_grid = list(self._size_distribution_grids.values())[0]
+        interp_coords = {name:microphysics[name] for name in number_density_grid.coords
+                         if name not in ('radius',)}
+        for interp_coord in interp_coords:
+            if np.any(microphysics[interp_coord] <= number_density_grid[interp_coord].min()) or \
+                np.any(microphysics[interp_coord] >= number_density_grid[interp_coord].max()):
+                raise ValueError(
+                    "Microphysical coordinate '{}' is not"
+                    " within the range of the size distribution parameters.".format(interp_coord)
+                    )
+        return interp_coords
+
+    def _postprocess_optical_properties(self, microphysics, optical_properties):
+
+        # these are internal consistency checks distinct from the validity checks used for the RTE.
+        assert not np.any(np.isnan(optical_properties.ssalb.data)), 'Unexpected NaN in ssalb'
+        assert not np.any(np.isnan(optical_properties.extinction.data)), 'Unexpected NaN in extinction'
+        assert not np.any(np.isnan(optical_properties.table_index.data)), 'Unexpected NaN in table_index'
+        assert not np.any(np.isnan(optical_properties.legcoef.data)), 'Unexpected NaN in legcoef'
+        assert np.allclose(optical_properties.phase_weights.sum(axis=0), 1.0), 'Interpolation weights dont add to 1.0'
+
+        #transfer the grid variables. NOTE that delx, dely exist and be passed.
+        # while nx/ny/nz are optional. delx/dely are checked for by check_grid.
+        grid_variables = ('delx', 'dely', 'nx', 'ny', 'nz')
+        for grid_variable in grid_variables:
+            if grid_variable in microphysics.data_vars:
+                optical_properties[grid_variable] = microphysics[grid_variable]
+
+        optical_properties = optical_properties.assign_attrs(microphysics.attrs)
+        optical_properties['interp_method'] = self._interpolation_mode
+        return optical_properties
+
+    def _differentiate_nearest(self, table, interp_coords, variable_names):
+        derivatives_tables = OrderedDict()
+        for variable_name in variable_names:
+
+            if variable_name in interp_coords.keys():
+                differentiated = table.differentiate(coord=variable_name)
+
+            elif variable_name == 'reff_phase_only':
+                differentiated = table.differentiate(coord='reff')
+                differentiated['extinction'][:] = np.zeros(table.extinction.shape)
+                differentiated['ssalb'][:] = np.zeros(table.ssalb.shape)
+            elif variable_name == 'veff_phase_only':
+                differentiated = table.differentiate(coord='veff')
+                differentiated['extinction'][:] = np.zeros(table.extinction.shape)
+                differentiated['ssalb'][:] = np.zeros(table.ssalb.shape)
+            elif variable_name == 'reff_no_ext':
+                differentiated = table.differentiate(coord='reff')
+                differentiated['extinction'][:] = np.zeros(table.extinction.shape)
+            elif variable_name == 'veff_no_ext':
+                differentiated = table.differentiate(coord='veff')
+                differentiated['extinction'][:] = np.zeros(table.extinction.shape)
+            elif variable_name == 'extinction':
+                differentiated = table.copy(data={
+                    'extinction': np.ones(table.extinction.shape),
+                    'legcoef': np.zeros(table.legcoef.shape),
+                    'ssalb': np.zeros(table.ssalb.shape)
+                })
+            elif variable_name == 'ssalb':
+                differentiated = table.copy(data={
+                    'extinction': np.zeros(table.extinction.shape),
+                    'legcoef': np.zeros(table.legcoef.shape),
+                    'ssalb': np.ones(table.ssalb.shape)
+                })
+            elif 'legendre_' in variable_name:
+                leg_index = int(variable_name[len('legendre_X_'):])
+                stokes_index = int(variable_name[len('legendre_')])
+                legcoef = np.zeros(table.legcoef.shape)
+                legcoef[stokes_index, leg_index, ...] = 1.0
+                differentiated = table.copy(data={
+                    'extinction': np.zeros(table.extinction.shape),
+                    'legcoef': legcoef,
+                    'ssalb': np.zeros(table.ssalb.shape)
+                })
+            elif variable_name == 'density':
+                differentiated = table.copy(data={
+                    'extinction': table.extinction,
+                    'legcoef': np.zeros(table.legcoef.shape),
+                    'ssalb': np.zeros(table.ssalb.shape)
+                })
+            else:
+                raise ValueError("Invalid variable name to differentiate '{}''".format(variable_name))
+
+            derivatives_tables[variable_name] = differentiated
+        return derivatives_tables
+
+    def _nearest_optical_properties(self, microphysics, poly_table, interp_coords, inverse_mode,
+                              interp_method):
+
+        # interp_method controls interpolation of optical efficiencies just for ssalb and extinction.
+        ssalb = poly_table.ssalb.interp(interp_coords, method=interp_method)
+        extinction_efficiency = poly_table.extinction.interp(interp_coords, method=interp_method)
+
+        if not inverse_mode:
+            extinction = extinction_efficiency * microphysics.density
+        else:
+            extinction = extinction_efficiency
+
+        # Nearest neighbor for phase functions / indices.
+        extinction.name = 'extinction'
+        table_index = poly_table.coords['table_index'].interp(
+            coords=interp_coords, method='nearest'
+            ).round().astype(int)
+        unique_table_indices, inverse = np.unique(table_index.data, return_inverse=True)
+        subset_table_index = xr.DataArray(name=table_index.name,
+                                          data=inverse.reshape(table_index.shape) + 1,
+                                          dims=table_index.dims,
+                                          coords=table_index.coords,
+                                          )
+
+        legendre_table_stack = poly_table['legcoef'].stack(table_index=interp_coords)
+        subset_legcoef = legendre_table_stack.isel({'table_index':unique_table_indices})
+        subset_legcoef = xr.DataArray(name='legcoef',
+                                      data=subset_legcoef.data,
+                                      dims=['stokes_index', 'legendre_index', 'table_index'],
+                                      coords={'stokes_index':subset_legcoef.coords['stokes_index']}
+                                     )
+
+        optical_properties = xr.merge([extinction, ssalb, subset_legcoef])
+        optical_properties['density'] = microphysics.density
+        table_coords = {'table_index': (['num_micro', 'x', 'y', 'z'], subset_table_index.data[np.newaxis])}
+
+        optical_properties = optical_properties.assign_coords(table_coords)
+        optical_properties['phase_weights'] = (['num_micro', 'x', 'y', 'z'], np.ones(optical_properties.table_index.shape))
+
+        return optical_properties
+
+    def _exact_forward_optical_properties(self, microphysics, monodisperse_table,
+                                          exact_size_distribution_parameters,
+                                          interpolation_weights, phase_indices, interp_coords):
+
+        # Make the size distribution for each table's radii.
+        number_density_raveled = self._size_distribution_function(
+            monodisperse_table.radius,
+            **exact_size_distribution_parameters,
+            particle_density=self._particle_density
+        )
+        size_dist_attrs = OrderedDict()
+        size_dist_attrs['distribution_type'] = self._size_distribution_function.__name__
+        size_dist_attrs['radius_units'] = list(self._size_distribution_grids.values())[0].radius_units
+        coords = {'radius': monodisperse_table.radius.data}
+        coords['table_index'] = pd.MultiIndex.from_arrays(
+            [exact_size_distribution_parameters[name] for name in exact_size_distribution_parameters],
+            names=list(exact_size_distribution_parameters)
+            )
+
+        size_dist_grid = xr.Dataset(
+            data_vars={'number_density': (['radius', 'table_index'], number_density_raveled)},
+            coords=coords,
+            attrs=size_dist_attrs
+        )
+
+        # Use the poly_table as the Dataset to add the main optical properties to.
+        poly_table = pyshdom.mie.get_poly_table(size_dist_grid, monodisperse_table)
+        # make sure this worked.
+        pyshdom.checks.check_legendre(poly_table)
+        optical_properties = poly_table.copy(deep=True)
+
+        extinct_efficiency = np.sum(
+            interpolation_weights*optical_properties.extinction.data[phase_indices],
+            axis=0
+            )
+        ssalb = np.sum(interpolation_weights*optical_properties.ssalb.data[phase_indices], axis=0)
+        extinction = microphysics.density*extinct_efficiency.reshape(microphysics.density.shape)
+        optical_properties['extinction'] = extinction
+        optical_properties['ssalb'] = (['x', 'y', 'z'], ssalb.reshape(microphysics.density.shape))
+
+        optical_properties['table_index'] = (
+            ['num_micro', 'x', 'y', 'z'],
+            1+phase_indices.reshape([-1] + list(microphysics.density.shape))
+        )
+        optical_properties['phase_weights'] = (
+            ['num_micro', 'x', 'y', 'z'],
+            interpolation_weights.reshape([-1] + list(microphysics.density.shape))
+        )
+        optical_properties['density'] = microphysics.density
+#         optical_properties.assign_coords(interp_coords)
+        for name, micro_var in interp_coords.items():
+            optical_properties.coords[name] = micro_var
+
+        return optical_properties, poly_table
+
+    def _exact_forward_size_distributions(self, interp_coords):
+
+        # use arrays rather than dictionaries to make use of np.unique
+        microphysics_data = np.stack([data.data.ravel() for data in interp_coords.values()], axis=0)
+        number_density_grid = list(self._size_distribution_grids.values())[0]
+        # digitize to find size distribution coordinate bin indices of each variable.
+        digitized_microphysics = np.stack(
+            [np.digitize(micro.data.ravel(), bins=number_density_grid[name].data)
+             for name, micro in interp_coords.items()], axis=0
+            )
+
+        # rule for forming phase functions:
+        #   1. maximize exact phase functions up to MAXNPHASE
+        #   2. if maxnphase exceeded then force to table mode.
+        #       treat table vs exact on a variable by variable basis
+        #       rather than globally or case by case.
+
+        # First check if any table is needed.
+        unique_values = np.unique(microphysics_data, axis=1)
+        num_unique = unique_values.shape[1]
+        parameter_dict = {}
+
+        variable_names_corresponding_to_table_dims = []
+
+        if num_unique <= self._maxnphase:
+            # make the set of phase indices and interpolation weights.
+            # when only exact phase functinos are used.
+            # and specify the exact microphysical variables to calculate optical properties for.
+            unique_exact, phase_indices = np.unique(microphysics_data, axis=1, return_inverse=True)
+
+            for name, variable_data in zip(interp_coords, unique_exact):
+                parameter_dict[name] = variable_data
+            phase_indices = phase_indices[np.newaxis, ...]
+            interpolation_weights = np.ones(phase_indices.shape)
+        else:
+            # lower_upper_flags contains -1,0 for finding the indices of lower and upper bounds
+            # based on the bin indices (given the default behaviour of np.digitize).
+            lower_upper_flags = np.array(
+                [i for i in itertools.product(*[np.arange(-1, 1)]*(microphysics_data.shape[0]))]
+                )
+            lower_upper_combinations = digitized_microphysics + lower_upper_flags[..., np.newaxis]
+
+            # find the exact microphysical values that we would use if we don't convert to table.
+            combinations = []
+            exact_points = []
+            for variable_data in microphysics_data:
+                unique_points, inverses = np.unique(variable_data, return_inverse=True)
+                combinations.append(inverses)
+                exact_points.append(unique_points)
+            combinations = np.repeat(np.stack(combinations, axis=0)[np.newaxis, ...],
+                                     lower_upper_flags.shape[0], axis=0)
+
+            # select which variables to first turn into table to most quickly reduce
+            # the number of phase functions.
+            unique_combinations = np.unique(lower_upper_combinations, axis=2) #number of unique bins.
+
+            # `test` is the metric for choosing which variable to turn into table.
+            #  This is not globally optimal.
+            test = np.array(
+                [np.unique(unique_combinations[:, i, :]).size/np.unique(microphysics_data[i]).size
+                 for i in range(unique_combinations.shape[1])]
+                )
+
+            # convert variables to table until maxnphase is no longer exceeded.
+            variables_to_turn_to_table = np.argsort(test)
+            table_counter = 0
+            while num_unique > self._maxnphase:
+                index = variables_to_turn_to_table[table_counter]
+                combinations[:, index, :] = lower_upper_combinations[:, index, :]
+                unique = np.unique(
+                    combinations.transpose([0, -1, 1]).reshape(
+                        combinations.shape[0]*combinations.shape[-1], -1),
+                    axis=0
+                )
+                num_unique = unique.shape[0]
+                table_counter += 1
+                if (table_counter > microphysics_data.shape[0]) & (num_unique > self._maxnphase):
+                    raise ValueError(
+                        "All variables are represented using tables but `maxnphase`='{}'' is "
+                        "still exceeded num_unique='{}'. Please increase `maxnphase` or set to "
+                        "`None` so that all of the table may be used.".format(self._maxnphase, num_unique)
+                    )
+
+            # redo the table with the smaller number of required bounding variables.
+            # This is could be more efficiently.
+            # taking a subset of `combinations` but would be a little complicated when there
+            # are more than two table variables so I just redo.
+            # Also this re-computes the table when all variables are table even though that is now
+            # in `combinations`. There is a shape difference.
+            lower_upper_flags = np.array(
+                [i for i in itertools.product(*[np.arange(-1, 1)]*table_counter)]
+                )
+            table_combinations = digitized_microphysics[variables_to_turn_to_table[:table_counter]] + \
+                lower_upper_flags[..., np.newaxis]
+            table_unique, table_inverse = np.unique(
+                table_combinations.transpose([0, -1, 1]).reshape(
+                    table_combinations.shape[0]*table_combinations.shape[-1], -1),
+                axis=0, return_inverse=True
+                )
+
+            # make the final set of phase indices
+            phase_indices = table_inverse.reshape(
+                table_combinations.shape[0], table_combinations.shape[-1], -1
+                ).transpose([0, -1, 1])
+            phase_indices = phase_indices[:, 0, :]
+
+            # make the interpolation weights.
+            interpolation_weights = np.ones(table_combinations.shape)
+            for i in range(table_counter):
+                index = variables_to_turn_to_table[i]
+                name = list(interp_coords)[index]
+                variable_names_corresponding_to_table_dims.append(name)
+                # make the values to generate while we are at it.
+                parameter_dict[name] = number_density_grid[name].data[table_unique[:, i]]
+
+                lower = number_density_grid[name].data[table_unique[phase_indices][0, :, i]]
+                upper = number_density_grid[name].data[table_unique[phase_indices][-1, :, i]]
+                step = upper - lower
+                interp_weight = (microphysics_data[index] - lower)/step
+
+                condition = np.where(lower_upper_flags[:, i] == -1)
+                condition2 = np.where(lower_upper_flags[:, i] == 0)
+                interpolation_weights[condition, i] = (1.0 - interp_weight)
+                interpolation_weights[condition2, i] = interp_weight
+
+            interpolation_weights = np.prod(interpolation_weights, axis=1)
+
+            # add all the exact optical properties to generate.
+            for i in range(table_counter, microphysics_data.shape[0]):
+                index = variables_to_turn_to_table[i]
+                name = list(interp_coords)[index]
+                parameter_dict[name] = exact_points[index][unique[:, index]]
+
+        return parameter_dict, interpolation_weights, phase_indices, variable_names_corresponding_to_table_dims
+
+    def estimate_interpolation_error(self, nsamples=1000):
+
+        if not self._poly_tables:
+            for key, table in self._monodisperse_tables.items():
+                # make sure this worked.
+                poly_table = pyshdom.mie.get_poly_table(self._size_distribution_grids[key], table)
+                pyshdom.checks.check_legendre(poly_table)
+                self._poly_tables[key] = poly_table
+
+        reference = OrderedDict()
+        interpolated = OrderedDict()
+        for key, table in self._poly_tables.items():
+
+            monodisperse_table = self._monodisperse_tables[key]
+            interp_coords = {name: table[name] for name in table.coords if name not in ('table_index', 'stokes_index')}
+
+            random_perturbed = {name: np.random.uniform(low=interp_coords[name].min(),
+                                               high=interp_coords[name].max(), size=nsamples) for name in interp_coords}
+
+            number_density_raveled = self._size_distribution_function(
+                monodisperse_table.radius,
+                **random_perturbed,
+                particle_density=self._particle_density
+            )
+            size_dist_attrs = OrderedDict()
+            size_dist_attrs['distribution_type'] = self._size_distribution_function.__name__
+            size_dist_attrs['radius_units'] = list(self._size_distribution_grids.values())[0].radius_units
+            coords = {'radius': monodisperse_table.radius.data}
+            coords['table_index'] = pd.MultiIndex.from_arrays(
+                [random_perturbed[name] for name in random_perturbed],
+                names=list(random_perturbed)
+                )
+
+            size_dist_grid = xr.Dataset(
+                data_vars={'number_density': (['radius', 'table_index'], number_density_raveled)},
+                coords=coords,
+                attrs=size_dist_attrs
+            )
+
+            # Use the poly_table as the Dataset to add the main optical properties to.
+            optical_properties = pyshdom.mie.get_poly_table(size_dist_grid, monodisperse_table)
+
+            to_interp = {name: xr.DataArray(random_perturbed[name], dims='table_index') for name in random_perturbed}
+            ext_interped = table.extinction.interp(to_interp, method='linear')
+            ssalb_interped = table.ssalb.interp(to_interp, method='linear')
+            legcoef_interped = table.legcoef.interp(to_interp, method='linear')
+
+            interped = xr.merge([ext_interped, ssalb_interped, legcoef_interped])
+            interpolated[key] = interped
+            reference[key] = optical_properties
+
+        return reference, interpolated
+
+
+def mix_optical_properties(*scatterers, asymmetry_tol=0.002, phase_tol=0.01, linear_polarization_tol=0.01,
+                           nangles=180, maxnphase=None, maxiter=1):
+    """
+    Mixes optical properties from different scattering species.
+
+    Extinction and single scatter albedo are mixed exactly between species. A greedy algorithm
+    is used to choose a small set of phase functions such that the relative error in the asymmetry
+    parameter is less than `asym_tol` and that the relative error in the P11 component of the
+    phase function doesn't exceed `phase_tol` at any of `nangles` equispaced scattering angles.
+    Note that at present, all traceability information / metadata about the scatterers is lost
+    upon mixing.
+    Note that error tolerances are of the mixture, not absolute accuracy if the individual scatterers
+    are represented approximately (e.g. by linear interpolation.)
+
+    Parameters
+    ----------
+    scatterers : xr.Dataset
+        Each dataset should contain the optical properties (e.g. extinction, ssalb, phase function table)
+        of a particle species on a spatial grid.
+        All scatterers should be on the same spatial grid and these grids should conform to
+        the requirements (e.g. pyshdom.checks.check_grid).
+    asymmetry_tol : float
+        The maximum absolute error in the asymmetry parameter allowable for the subset of phase functions
+        used to represent the mixture. Smaller values increase accuracy and increase number of phase
+        functions required. This parameter affects flux accuracy in RTE solutions.
+    phase_tol : float
+        The maximum relative error in the P11 component of the phase function allowed for the subset of
+        phase functions used to represent the mixture. Smaller values increase accuracy and increase number of phase
+        functions required. This parameter affects radiance accuracy in RTE solutions.
+    linear_polarization_tol : float
+        The maximum relative error in the ratio of P12/P11 phase function componenets allowed for the subset of
+        phase functions used to represent the mixture. Smaller values increase accuracy and increase number of phase
+        functions required. Under the approximation that the polarization signal is dominated by single scatter,
+        this
+    nangles : int
+        The number of scattering angles to sample the phase function at when testing `phase_tol`.
+    maxnphase : int
+        The maximum number of phase functions to use in the mixture.
+        If None then this is set to the total number of phase functions across all scatterers.
+    maxiter : int
+        Number of attempts to find the subset of phase functions. If greater than 1 and maxnphase is
+        exceeded then maxnphase will be extrapolated based on the number of phase functions per gridpoint
+        and a new mixture will be attempted.
+
+    Returns
+    -------
+    mixed_optical_properties
+
+    Notes
+    -----
+    This is very similar to SHDOM's PROPGEN program though it additionally constrains the accuracy of the
+    single scattering polarization signal.
+
+
+    """
+    #pyshdom.checks.check_grid_consistency(scatterers)
+    for i, scatterer in enumerate(scatterers):
+        pyshdom.checks.check_optical_properties(scatterer, i)
+
+    max_num_micro = max(
+        [scatterer.num_micro.size for scatterer in scatterers]
+    )
+
+    max_legendre = max([scatterer.sizes['legendre_index'] for
+                        scatterer in scatterers])
+    padded_legcoefs = [scatterer.legcoef.pad(
+        {'legendre_index':
+         (0, max_legendre - scatterer.legcoef.sizes['legendre_index'])
+         }, constant_values=0.0)
+                       for scatterer in scatterers]
+
+    legendre_table = xr.concat(padded_legcoefs, dim='table_index')
+    maxpg = scatterers[0].sizes['x']*scatterers[0].sizes['y']*scatterers[0].sizes['z']
+    phase_indices = np.zeros(
+        shape=[max_num_micro, maxpg, len(scatterers)],
+        dtype=np.int32
+    )
+    phase_weights = np.zeros(
+        shape=[max_num_micro, maxpg, len(scatterers)],
+        dtype=np.float32
+    )
+
+    scatter_coefficients = np.zeros(
+        shape=(maxpg, len(scatterers)),
+        dtype=np.float32
+    )
+    for i, scatterer in enumerate(scatterers):
+        phase_indices[..., i] = scatterer.table_index.pad(
+            {'num_micro': (0, max_num_micro-scatterer.num_micro.size)},
+            constant_values=1
+            ).data.reshape((max_num_micro, -1), order='F') + phase_indices.max()
+        phase_weights[..., i] = scatterer.phase_weights.pad(
+            {'num_micro': (0, max_num_micro-scatterer.num_micro.size)},
+            constant_values=0.0
+            ).data.reshape((max_num_micro, -1), order='F')
+        scatter_coefficients[..., i] = scatterer.extinction.data.ravel()*scatterer.ssalb.data.ravel()
+
+
+
+    # num_micro = opt_prop.sizes['num_micro']
+    nparticles = len(scatterers)
+    ierr = 1
+    if maxnphase is None:
+        maxnphase = legendre_table.sizes['table_index']
+
+    itr = 0
+    while ierr == 1 and itr < maxiter:
+        mixed_phase_table, mixed_phase_indices, nphase, ierr, errmsg = pyshdom.core.phase_function_mixing(
+            scatter_coefficients=scatter_coefficients,
+            phase_tables=legendre_table,
+            phase_indices=phase_indices,
+            interpolation_weights=phase_weights,
+            asym_tol=asymmetry_tol,
+            phase_tol=phase_tol,
+            dolp_tol=linear_polarization_tol,
+            nangles=nangles,
+            maxnphase=maxnphase
+        )
+
+        itr += 1
+        try:
+            pyshdom.checks.check_errcode(ierr, errmsg)
+        except pyshdom.exceptions.SHDOMError as err:
+            if itr == maxiter:
+                raise err
+
+            # if we failed then try again with a larger maxnphase.
+            gridpoint = int(errmsg.decode('utf-8')[100:112])
+            # extrapolate based on current (nphase/ngridpoints) plus a little bit extra.
+            maxnphase = int(nphase/gridpoint * scatterers[0].sizes['x']*scatterers[0].sizes['y']*scatterers[0].sizes['z']) + 10
+    extinction = np.sum(np.stack([scatterer.extinction.data for scatterer in scatterers], axis=0), axis=0)
+    albedo = np.sum(scatter_coefficients, axis=-1).reshape(extinction.shape)/extinction
+    albedo[np.where(extinction == 0.0)] = 0.0
+    mixed_phase_indices = mixed_phase_indices.reshape(extinction.shape)[np.newaxis, :]
+    mixed_phase_table[0, 0] = 1.0
+    mixed_optical_properties = xr.Dataset(
+       data_vars={
+           'legcoef': (['stokes_index', 'legendre_index', 'table_index'], mixed_phase_table[..., :nphase]),
+           'phase_weights': (['num_micro', 'x', 'y', 'z'], np.ones(mixed_phase_indices.shape, dtype=np.float32)),
+           'extinction': (['x', 'y', 'z'], extinction),
+           'ssalb': (['x', 'y', 'z'], albedo),
+           'mixture': True
+       },
+        coords={
+            'x': scatterers[0].x,
+            'y': scatterers[0].y,
+            'z': scatterers[0].z,
+
+        }
+    )
+    #transfer the grid variables. NOTE that delx, dely exist and be passed.
+    # while nx/ny/nz are optional. delx/dely are checked for by check_grid.
+    mixed_optical_properties = mixed_optical_properties.assign_coords(
+        {'table_index': (['num_micro', 'x', 'y', 'z'], mixed_phase_indices)}
+    )
+
+    grid_variables = ('delx', 'dely', 'nx', 'ny', 'nz')
+    for grid_variable in grid_variables:
+        if grid_variable in scatterers[0].data_vars:
+            mixed_optical_properties[grid_variable] = scatterers[0][grid_variable]
+
+    mixed_optical_properties.attrs['asymmetry_tolerance'] = asymmetry_tol
+    mixed_optical_properties.attrs['phase_tolerance'] = phase_tol
+    mixed_optical_properties.attrs['linear_polarization_tolerance'] = linear_polarization_tol
+    mixed_optical_properties.attrs['description'] = "This set of optical properties is a"\
+                                                " mixture of different scattering species."\
+        " All information about the species that were combined has been discarded."
+
+    return mixed_optical_properties
+
+class StateGenerator:
+
+    def __init__(self, solvers_dict, unknown_scatterers, rte_grid, surfaces,
+                 numerical_parameters, sources, background_optical_scatterers,
+                 num_stokes, names=None, state_to_grid=None, state_representation=None,
+                 state_transform='log'):
+
+        # check compatibility between UnknownScatterers and all other containers.
+        # if other containers don't exist then generate them from UnknownScatterers.
+
+        if not isinstance(unknown_scatterers, UnknownScatterers):
+            raise TypeError(
+                "`unknown_scatterers` arguments should be of type '{}'"
+                " ".format(type(UnknownScatterers)))
+        self._unknown_scatterers = unknown_scatterers
+
+        if not isinstance(solvers_dict, SolversDict):
+            raise TypeError(
+                "`solvers_dict` arguments should be of type '{}'"
+                " ".format(type(SolversDict)))
+        self._solvers_dict = solvers_dict
+
+        pyshdom.checks.check_grid(rte_grid)
+        self._rte_grid = rte_grid
+        self._grid_shape = (rte_grid.x.size, rte_grid.y.size, rte_grid.z.size)
+
+        # process state_to_grid.
+        if state_to_grid is None:
+            # set it to Null, this assumes the whole rte_grid is used.
+            self._state_to_grid = StateToGridNull()
+            # add all unknown names here.
+            for scatterer_name, variable_data in self._unknown_scatterers:
+                for variable_name in variable_data.keys():
+                    self._state_to_grid.add_mapping(
+                        scatterer_name, variable_name
+                        )
+
+        elif isinstance(state_to_grid, IndependentTransform):
+            # a supplied StateToGrid object. Check for compatibility with
+            # unknown_scatterers in terms of names.
+            for scatterer_name, variable_data in self._unknown_scatterers:
+                if scatterer_name not in state_to_grid.transforms:
+                    raise ValueError(
+                        "Unknown scatterer name '{}' is not found in "
+                        "supplied `state_to_grid` object".format(scatterer_name)
+                    )
+                for variable_name in variable_data.keys():
+                    if variable_name not in state_to_grid.transforms[scatterer_name].keys():
+                        raise ValueError(
+                            "Unknown variable '{}' for scatterer '{}' is not found "
+                            "in supplied `state_to_grid` object".format(
+                                variable_name, scatterer_name)
+                        )
+            self._state_to_grid = state_to_grid
+
+        elif isinstance(state_to_grid, np.ndarray):
+            # assume that this is a mask to use for all variables.
+            if (state_to_grid.shape == self._grid_shape):
+                mask = state_to_grid.astype(np.bool)
+                self._state_to_grid = StateToGridMask()
+                # add all unknown names here.
+                for scatterer_name, variable_data in self._unknown_scatterers:
+                    for variable_name in variable_data.keys():
+                        self._state_to_grid.add_mapping(
+                            scatterer_name, variable_name, mask, 0.0
+                            )
+        else:
+            raise TypeError(
+                "`state_to_grid` argument is not of valid type."
+            )
+
+        # process state_representation
+        if state_representation is None:
+            # make it from state_to_grid transfrom.
+            self._state_representation = StateRepresentation(state_to_grid, rte_grid)
+        elif isinstance(state_representation, StateRepresentation):
+            for scatterer_name, variable_data in self._unknown_scatterers:
+                if scatterer_name not in state_representation.start_end_points:
+                    raise ValueError(
+                        "Unknown scatterer name '{}' is not found in "
+                        "supplied `state_representation` object".format(scatterer_name)
+                    )
+                for variable_name in variable_data.keys():
+                    if variable_name not in state_representation.start_end_points[scatterer_name].keys():
+                        raise ValueError(
+                            "Unknown variable '{}' for scatterer '{}' is not found "
+                            "in supplied `state_representation` object".format(
+                                variable_name, scatterer_name)
+                        )
+            self._state_representation = state_representation
+        else:
+            raise TypeError(
+                "`state_representation` argument is not of valid type."
+            )
+
+        # process state_transform
+        if state_transform is None:
+            state_transform = NullStateTransform(self._state_representation)
+        elif state_transform == 'log':
+            state_transform = LogStateTransform(self._state_representation)
+        elif isinstance(state_transform, StateTransform):
+            warnings.warn(
+                "No checks are made on the internal consistency of this custom "
+                "transform."
+            )
+        elif isinstance(state_transform, IndependentStateTransform):
+            for scatterer_name, variable_data in self._unknown_scatterers:
+                if scatterer_name not in state_transform.transforms:
+                    raise ValueError(
+                        "Unknown scatterer name '{}' is not found in "
+                        "supplied `state_representation` object".format(scatterer_name)
+                    )
+                for variable_name in variable_data.keys():
+                    if variable_name not in state_transform.transforms[scatterer_name].keys():
+                        raise ValueError(
+                            "Unknown variable '{}' for scatterer '{}' is not found "
+                            "in supplied `state_representation` object".format(
+                                variable_name, scatterer_name)
+                        )
+        else:
+            raise TypeError(
+                "`state_transform` argument is not of valid type."
+            )
+        self._state_transform = state_transform
+
+        # check for compatibility in terms of keys for all solver.RTE inputs.
+        # don't check the typing of the inputs, that is done when the solver is formed
+        # ie when self.__call__() is executed.
+
+        # if we have more than one wavelength then we
+        # every optical_property_generator must
+        variables_to_test = [
+            sources, num_stokes, surfaces, background_optical_scatterers,
+            numerical_parameters
+        ]
+        names_to_test = [
+            'sources', 'num_stokes', 'surfaces', 'background_optical_scatterers',
+            'numerical_parameters'
+        ]
+        ref_keys = None
+        for variable, name in zip(variables_to_test, names_to_test):
+            if not isinstance(variable, typing.Dict):
+                raise TypeError(
+                    "`{}` argument should be of type Dict".format(name)
+                )
+            if ref_keys is None:
+                ref_keys = variable.keys()
+            else:
+                if ref_keys != variable.keys():
+                    raise ValueError(
+                        "All of the solver.RTE arguments should have a consistent "
+                        "set of keys. "
+                    )
+
+    def get_state(self):
+        """
+        Extract the state vector from the solvers_dict.
+        """
+        state = None
+        return state
+
+    def __call__(self, state):
+        """
+        Update the solvers to reflect the new state vector. This does not include
+        SOLVING the solver objects. That is performed elsewhere.
+        """
+        state_in_physical_coordinates = self._state_transform.inverse(state)
+
+        new_optical_properties = OrderedDict()
+        for scatterer_name in self._scatterer_names:
+
+            for variable_name in variable_name_list:
+                selected_state = self._state_representation.select_variable(variable_name)
+                state_on_grids = self._state_to_grid[scatterer_name](selected_state, variable_names)
+            scatterer_microphysics = xr.Dataset(
+                data_vars={
+                    variable_name: (['x','y','z'], state_on_grids)
+                },
+                coords=rte_grid.coords # add the correct x,y,z variables.
+            )
+            # make sure we have the correct added grid information.
+            pyshdom.grid.resample_onto_grid(rte_grid, scatterer_microphysics)
+            # make the new optical properties
+            new_optical_properties[scatterer_name] = self._optical_property_generator[scatterer_name](scatterer_microphysics)
+
+        for wavelength in self._solvers_dict:
+
+            # group the optical properties for this wavelength.
+            # and add the background_optical_scatterer
+            background_optical_scatterer = self._background_optical_scatterer
+
+
+            solver = pyshdom.solver.RTE(
+                numerical_params=self._numerical_config[wavelength],
+                medium={'cloud': cloud_optical_scatterer},
+                       #'aerosol': aerosol_optical_scatterer,
+                       #'rayleigh': rayleigh_scatterer_list[wavelength]},
+                source=self._sources[wavelength],
+                surface=self._surfaces[wavelength],
+                num_stokes=self._nstokes[wavelength],
+                name=self._names[wavelength]
+            )
+
+            solvers_dict[wavelength] = solver
+
+
+    def project_gradient_to_state(self, gradient):
+        pass
