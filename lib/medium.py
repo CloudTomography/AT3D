@@ -906,10 +906,8 @@ class OpticalPropertyGenerator:
 
         #transfer the grid variables. NOTE that delx, dely exist and be passed.
         # while nx/ny/nz are optional. delx/dely are checked for by check_grid.
-        grid_variables = ('delx', 'dely', 'nx', 'ny', 'nz')
-        for grid_variable in grid_variables:
-            if grid_variable in microphysics.data_vars:
-                optical_properties[grid_variable] = microphysics[grid_variable]
+
+        optical_properties = pyshdom.grid.add_grid_variables(microphysics, optical_properties)
 
         optical_properties = optical_properties.assign_attrs(microphysics.attrs)
         optical_properties['interp_method'] = self._interpolation_mode
@@ -1426,25 +1424,49 @@ def mix_optical_properties(*scatterers, asymmetry_tol=0.002, phase_tol=0.01, lin
     return mixed_optical_properties
 
 
-
 class DataGenerator:
-
-    def __init__(self, rte_grid, *fixed_data_arrays):
+    """
+    Not supposed to be used. Just consolidates code for the inheritors.
+    """
+    def _check_inputs(self, rte_grid, *fixed_data_arrays, **variable_data_bounds):
 
         pyshdom.checks.check_grid(rte_grid)
+        self._rte_grid = rte_grid
+        self._rte_grid_shape = (
+            self._rte_grid.x.size,
+            self._rte_grid.y.size,
+            self._rte_grid.z.size
+        )
+
         for data_array in fixed_data_arrays:
             if not isinstance(data_array, (xr.Dataset, xr.DataArray)):
                 raise TypeError(
                     "`fixed_data_arrays` should be of type 'xr.Dataset' "
                     "or xr.DataArray"
                 )
-        dataset = xr.merge(fixed_data_arrays)
-        self._fixed_dataset = pyshdom.grid.resample_onto_grid(rte_grid, dataset)
-        self._rte_grid_shape = (
-            self._fixed_dataset.x.size,
-            self._fixed_dataset.y.size,
-            self._fixed_dataset.z.size
-        )
+        dataset = xr.Dataset()
+        for data_array in fixed_data_arrays:
+            dataset[data_array.name] = data_array
+
+        for bounds in variable_data_bounds.values():
+            if not isinstance(bounds, typing.Tuple):
+                raise TypeError(
+                "Each `variable_data_bounds` argument should be of type '{}'"
+                "".format(typing.Tuple)
+                )
+            if not (len(bounds)==2 & isinstance(bounds[0], np.ndarray) & isinstance(bounds[1], np.ndarray)):
+                raise TypeError(
+                "Each `variable_data_bounds` should be a Tuple of two np.ndarrays."
+                )
+            if (bounds[0].shape != self._rte_grid_shape) | (bounds[1].shape != self._rte_grid_shape):
+                raise ValueError(
+                "Each `variable_data_bounds` argument should be of the "
+                "same shape as the `rte_grid`'s spatial coordinates."
+                )
+
+        self._variable_data_bounds = variable_data_bounds
+        return dataset
+
     def __call__(self, **variable_data):
         dataset = self._fixed_dataset.copy(deep=True)
 
@@ -1465,19 +1487,23 @@ class DataGenerator:
         self._checks(dataset)
         return dataset
 
-    def _checks(self, dataset):
-        pyshdom.checks.check_grid(dataset)
 
 class MicrophysicsGenerator(DataGenerator):
 
-    def __init__(self, rte_grid, optical_property_generator, *fixed_data_arrays):
-        super().__init__(rte_grid, *fixed_data_arrays)
+    def __init__(self, rte_grid, optical_property_generator, *fixed_data_arrays, **variable_data_bounds):
+
         if not isinstance(optical_property_generator, OpticalPropertyGenerator):
             raise TypeError(
                 "`optical_property_generator` argument should be of type "
                 "'{}'".format(OpticalPropertyGenerator)
             )
         self._optical_property_generator = optical_property_generator
+
+        dataset = self._check_inputs(rte_grid, *fixed_data_arrays, **variable_data_bounds)
+        self._fixed_dataset = pyshdom.grid.resample_onto_grid(rte_grid, dataset)
+
+    def get_bounds(self, variable_name):
+        return self._variable_data_bounds[variable_name]
 
     @property
     def optical_property_generator(self):
@@ -1508,20 +1534,20 @@ class MicrophysicsGenerator(DataGenerator):
                     "when calling this MicrophysicsGenerator.".format(variable)
                 )
 
-class OpticalGenerator(MicrophysicsGenerator):
+class OpticalGenerator(DataGenerator):
 
-    def __init__(self, rte_grid, *fixed_data_arrays):
-        super().__init__(rte_grid, OpticalDerivativeGenerator(), *fixed_data_arrays)
+    def __init__(self, rte_grid, *fixed_data_arrays, **variable_data_bounds):
+        self._optical_property_generator = pyshdom.medium.OpticalDerivativeGenerator()
+        dataset = self._check_inputs(rte_grid, *fixed_data_arrays, **variable_data_bounds)
+        self._fixed_dataset = pyshdom.grid.add_grid_variables(rte_grid, dataset)
+
+    @property
+    def optical_property_generator(self):
+        return self._optical_property_generator
 
     def _checks(self, dataset):
-        pyshdom.checks.check_grid(dataset)
         # checks for optical properties are easy.
         pyshdom.checks.check_optical_properties(dataset)
-
-    def calculate_optical_properties(self, **variable_data):
-        # the optical_derivative_generator doesn't even do anything
-        # for forward optical properties.
-        return self(**variable_data)
 
 class StateGenerator:
 
@@ -1586,7 +1612,7 @@ class StateGenerator:
                 # add all unknown names here.
                 for scatterer_name, variable_data in self._unknown_scatterers.items():
                     for variable_name in variable_data['variable_name_list']:
-                        self._state_to_grid.add_mapping(
+                        self._state_to_grid.add_transform(
                             scatterer_name, variable_name, mask, 0.0
                             )
         else:
@@ -1741,7 +1767,7 @@ class StateGenerator:
         Update the solvers to reflect the new state vector. This does not include
         SOLVING the solver objects. That is performed elsewhere.
         """
-        state_in_physical_coordinates = self._state_transform.inverse(state)
+        state_in_physical_coordinates = self._state_transform(state)
 
         new_optical_properties = OrderedDict()
         for scatterer_name, variable_data in self._unknown_scatterers.items():
@@ -1812,3 +1838,23 @@ class StateGenerator:
                 )
         gradient = self._state_transform.calc_derivative(state, gradient)
         return gradient
+
+    def transform_bounds(self):
+
+        lower_bounds = np.zeros(self._state_representation.number_of_unknowns)
+        upper_bounds = np.zeros(self._state_representation.number_of_unknowns)
+        for scatterer_name, variable_data in self._unknown_scatterers.items():
+            data_generator = variable_data['data_generator']
+            for variable_name in variable_data['variable_name_list']:
+                lower, upper = data_generator.bounds[variable_name]
+                for data, big_data in zip((lower, upper), (lower_bounds, upper_bounds)):
+                    vector = self._state_to_grid.inverse_bounds(
+                        data, scatterer_name, variable_name
+                        )
+                    self._state_representation.update_state_vector(
+                        big_data, scatterer_name, variable_name, vector
+                    )
+        lower_bounds = self._state_transform.inverse(lower_bounds)
+        upper_bounds = self._state_transform.inverse(upper_bounds)
+
+        return lower_bounds, upper_bounds

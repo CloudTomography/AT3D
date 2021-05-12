@@ -1050,7 +1050,7 @@ class RTE:
         self._direct_derivative_ptr = direct_derivative_ptr
         self._direct_derivative_path = direct_derivative_path
 
-    def calculate_microphysical_partial_derivatives(self, table_to_grid_method, table_data):
+    def prepare_microphysical_partial_derivatives(self, derivative_information):
         """
         Calculate the derivatives of optical properties with respect to the unknowns
         (microphysical or optical).
@@ -1061,25 +1061,43 @@ class RTE:
 
         Parameters
         ----------
-        table_to_grid_method : callable
-            An interpolation for mapping the derivatives from `table_data` onto the spatial
-            grid. See medium.py.
-        table_data : xr.Dataset
-            Contains the partial derivatives as a function of microphysical properties
-            this is the derivative analogue of a look up table of optical properties
-            as a function of bulk microphysical parameters.
+
         """
         self._precompute_phase()
         #solver_derivative_table = #all_derivative_tables[key]
-        num_derivatives = sum([len(scatterer_derivative_table.values()) for
-                               name, scatterer_derivative_table in table_data.items()
+        num_derivatives = sum([len(scatterer_derivative_information.values()) for
+                               name, scatterer_derivative_information in derivative_information.items()
                               ])
         self._num_derivatives = np.array(num_derivatives, dtype=np.int32)
         unknown_scatterer_indices = []
 
         dext = np.zeros(shape=[self._maxpg, num_derivatives], dtype=np.float32)
         dalb = np.zeros(shape=[self._maxpg, num_derivatives], dtype=np.float32)
-        diphase = np.zeros(shape=[self._maxpg, num_derivatives], dtype=np.int32)
+
+        # find maximum number of phase pointers across all species.
+        num_micros = []
+        max_legendre = []
+        unknown_scatterer_indices = []
+        table_phase_derivative_flag = []
+
+        i=0
+        for scatterer_derivative_information in derivative_information.values():
+            for variable_derivative in scatterer_derivative_information.values():
+                num_micros.append(variable_derivative.num_micro.size)
+                max_legendre.append(variable_derivative.legendre_index.size)
+                if variable_derivative
+                unknown_scatterer_indices.append(i+1)
+            i += 1
+        deriv_max_num_micro = max(num_micros)
+
+        diphase = np.zeros(
+            shape=[deriv_max_num_micro, self._maxpg, num_derivatives],
+            dtype=np.int32
+        )
+        self._pa.phasewtp = np.zeros(
+            shape=[deriv_max_num_micro, self._maxpg, num_derivatives],
+            dtype=np.float32
+        )
 
         #one loop through to find max_legendre and unkonwn_scatterer_indices
         max_legendre = []

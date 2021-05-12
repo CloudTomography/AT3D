@@ -167,9 +167,20 @@ def resample_onto_grid(grid, data):
     for name, datavar in filled.data_vars.items(): #consistency check.
         assert np.bitwise_not(np.all(np.isnan(datavar.data))), "Unexpected NaN in '{}'".format(name)
 
-    filled['delx'] = grid.delx
-    filled['dely'] = grid.dely
+    filled = add_grid_variables(grid, filled)
     return filled
+
+def add_grid_variables(grid, dataset):
+    dataset['delx'] = grid.delx
+    dataset['dely'] = grid.dely
+    if 'nx' in grid.data_vars:
+        dataset['nx'] = grid.nx
+    if 'ny' in grid.data_vars:
+        dataset['ny'] = grid.ny
+    if 'nz' in grid.data_vars:
+        dataset['nz'] = grid.nz
+
+    return dataset
 
 def combine_z_coordinates(scatterer_list):
     """

@@ -11,12 +11,14 @@ class Transform:
         self._transforms = OrderedDict()
         self._inverse_transforms = OrderedDict()
         self._gradient_transforms = OrderedDict()
+        self._bounds_inverse_transforms = OrderedDict()
 
     def _add_scatterer(self, scatterer_name):
 
         self._transforms[scatterer_name] = OrderedDict()
         self._inverse_transforms[scatterer_name] = OrderedDict()
         self._gradient_transforms[scatterer_name] = OrderedDict()
+        self._bounds_inverse_transforms[scatterer_name] = OrderedDict()
 
     @property
     def transforms(self):
@@ -30,22 +32,27 @@ class Transform:
     def gradient_transforms(self):
         return self._gradient_transforms
 
+    @property
+    def bounds_inverse_transforms(self):
+        return self._bounds_inverse_transforms
+
 
 class IndependentTransform(Transform):
     """
-    Handles mapping of each variable from the grid to the 1D vector.
+    Handles transform of each variable from the grid to the 1D vector.
     All in physical coordinates for the unknown data
     """
 
-    def add_mapping(self, scatterer_name, variable_name, mapping, inverse_mapping,
-                    gradient_mapping):
+    def add_transform(self, scatterer_name, variable_name, transform, inverse_transform,
+                      gradient_transform, bounds_inverse_transform):
 
         if scatterer_name not in self._transforms:
             self._add_scatterer(scatterer_name)
 
-        self._transforms[scatterer_name][variable_name] = mapping
-        self._inverse_transforms[scatterer_name][variable_name] = inverse_mapping
-        self._gradient_transforms[scatterer_name][variable_name] = gradient_mapping
+        self._transforms[scatterer_name][variable_name] = transform
+        self._inverse_transforms[scatterer_name][variable_name] = inverse_transform
+        self._gradient_transforms[scatterer_name][variable_name] = gradient_transform
+        self._bounds_inverse_transforms[scatterer_name][variable_name] = bounds_inverse_transform
 
     def __call__(self, state, scatterer_name, variable_name):
         return self._transforms[scatterer_name][variable_name](state)
@@ -56,28 +63,32 @@ class IndependentTransform(Transform):
     def calc_derivative(self, gridded_gradient, scatterer_name, variable_name):
         return self._gradient_transforms[scatterer_name][variable_name](gridded_gradient)
 
+    def inverse_bounds(self, gridded_bounds, scatterer_name, variable_name):
+        return self._bounds_inverse_transforms[scatterer_name][variable_name](gridded_bounds)
+
 class StateToGridMask(IndependentTransform):
 
-    def add_mapping(self, scatterer_name, variable_name, mask, fill_value):
+    def add_transform(self, scatterer_name, variable_name, mask, fill_value):
 
         if scatterer_name not in self._transforms:
             self._add_scatterer(scatterer_name)
 
-        def mapping(state):
+        def transform(state):
             state_gridded = np.zeros(mask.shape) + fill_value
             state_gridded[mask] = state
             return state_gridded
-        self._transforms[scatterer_name][variable_name] = mapping
+        self._transforms[scatterer_name][variable_name] = transform
 
-        def inverse_mapping(gridded_data):
+        def inverse_transform(gridded_data):
             return gridded_data[mask]
 
-        self._inverse_transforms[scatterer_name][variable_name] = inverse_mapping
-        self._gradient_transforms[scatterer_name][variable_name] = inverse_mapping
+        self._inverse_transforms[scatterer_name][variable_name] = inverse_transform
+        self._gradient_transforms[scatterer_name][variable_name] = inverse_transform
+        self._bounds_inverse_transforms[scatterer_name][variable_name] = inverse_transform
 
 class StateToGridNull(IndependentTransform):
 
-    def add_mapping(self, scatterer_name, variable_name, rte_grid):
+    def add_transform(self, scatterer_name, variable_name, rte_grid):
 
         grid_shape = (rte_grid.x.size, rte_grid.y.size, rte_grid.z.size)
         mask = np.ones(grid_shape, dtype=np.bool)
@@ -85,17 +96,18 @@ class StateToGridNull(IndependentTransform):
         if scatterer_name not in self._transforms:
             self._add_scatterer(scatterer_name)
 
-        def mapping(state):
+        def transform(state):
             state_gridded = np.zeros(mask.shape)
             state_gridded[mask] = state
             return state_gridded
-        self._transforms[scatterer_name][variable_name] = mapping
+        self._transforms[scatterer_name][variable_name] = transform
 
-        def inverse_mapping(gridded_data):
+        def inverse_transform(gridded_data):
             return gridded_data[mask]
 
-        self._inverse_transforms[scatterer_name][variable_name] = inverse_mapping
-        self._gradient_transforms[scatterer_name][variable_name] = inverse_mapping
+        self._inverse_transforms[scatterer_name][variable_name] = inverse_transform
+        self._gradient_transforms[scatterer_name][variable_name] = inverse_transform
+        self._bounds_inverse_transforms[scatterer_name][variable_name] = inverse_transform
 
 class StateRepresentation:
     """
@@ -246,8 +258,8 @@ class LogStateTransform(IndependentStateTransform):
         if scatterer_name not in self._transforms:
             self._add_scatterer(scatterer_name)
 
-        self._transforms[scatterer_name][variable_name] = np.log
-        self._inverse_transforms[scatterer_name][variable_name] = np.exp
+        self._transforms[scatterer_name][variable_name] = np.exp
+        self._inverse_transforms[scatterer_name][variable_name] = np.log
         def gradient_transform(state, gradient):
             return gradient*np.exp(state)
         self._gradient_transforms[scatterer_name][variable_name] = gradient_transform

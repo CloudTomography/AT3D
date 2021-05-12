@@ -366,6 +366,17 @@ def check_optical_properties(dataset, name=1):
             " for scatterer '{}' in `medium`.".format(
                 name)).with_traceback(sys.exc_info()[2])
     try:
+        pyshdom.checks.check_range(dataset, table_index=(1, dataset.sizes['table_index']))
+    except (KeyError, pyshdom.exceptions.OutOfRangeError) as err:
+        raise type(err)(str(err).replace('"', "") + \
+        " for scatterer '{}' in `medium`.".format(
+            name)).with_traceback(sys.exc_info()[2])
+    if not np.all(dataset.phase_weights.sum('num_micro') == 1):
+        raise ValueError(
+            "`phase_weights` do not sum to 1.0 for scatterer '{}' "
+            "in `medium`".format(name)
+        )
+    try:
         pyshdom.checks.check_legendre(dataset)
     except (KeyError, pyshdom.exceptions.MissingDimensionError,
             pyshdom.exceptions.LegendreTableError) as err:

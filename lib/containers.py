@@ -793,11 +793,28 @@ class SolversDict(OrderedDict):
                 "`unknown_scatterers` should be of type 'pyshdom.containers.UnknownScatterers'"
                 " not '{}'".format(type(unknown_scatterers))
                 )
+        wavelength_ordered_derivatives = OrderedDict()
         for key in self:
-            self[key].calculate_microphysical_partial_derivatives(
-                unknown_scatterers.table_to_grid_method,
-                unknown_scatterers.table_data[key]
+            wavelength_ordered_derivatives[key] = OrderedDict()
+
+        for scatterer_name, variable_data in unknown_scatterers.items():
+            data_generator = variable_data['data_generator']
+            if (isinstance(data_generator, pyshdom.medium.OpticalDerivativeGenerator) &
+                    (len(self) > 1)):
+                raise ValueError(
+                    "Optical property derivatives are only supported for a single solver."
                 )
+            medium_data = list(self.values())[0].medium[scatterer_name]
+            derivatives_by_wavelength = data_generator.calculate_derivatives(
+                variable_data['variable_name_list'], medium_data
+                )
+            for key in self:
+                wavelength_ordered_derivatives[key][scatterer_name] = derivatives_by_wavelength[key]
+
+        for key, solver in self.items():
+            solver.prepare_microphysical_partial_derivatives(
+                wavelength_ordered_derivatives[key]
+            )
 
 class UnknownScatterers(OrderedDict):
     """
@@ -813,7 +830,7 @@ class UnknownScatterers(OrderedDict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def add_unknown(self, scatterer_name, variable_name_list, dataset_generator):
+    def add_unknowns(self, variable_name_list, dataset_generator):
         """
         Adds the variable names to calculate derivatives for each scatterer in an
         solver.RTE object and the correct table of optical properties as a function
@@ -868,7 +885,7 @@ class UnknownScatterers(OrderedDict):
                         pyshdom.medium.MicrophysicsGenerator)
                     )
                 )
-
+        scatterer_name = dataset_generator.scatterer_name
         self[scatterer_name] = {
             'variable_name_list': variable_name_list,
             'dataset_generator': dataset_generator
