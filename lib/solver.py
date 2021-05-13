@@ -1080,56 +1080,67 @@ class RTE:
         unknown_scatterer_indices = []
         table_phase_derivative_flag = []
 
-        i=0
+        i = 0
         for scatterer_derivative_information in derivative_information.values():
             for variable_derivative in scatterer_derivative_information.values():
                 num_micros.append(variable_derivative.num_micro.size)
                 max_legendre.append(variable_derivative.legendre_index.size)
-                if variable_derivative
+                table_phase_flag = 0
+                if variable_derivative['derivative_method'] == 'table':
+                    table_phase_flag = 1
+                table_phase_derivative_flag.append(table_phase_flag)
                 unknown_scatterer_indices.append(i+1)
             i += 1
+
         deriv_max_num_micro = max(num_micros)
+        max_legendre = max(max_legendre)
+        self._unknown_scatterer_indices = np.array(unknown_scatterer_indices).astype(np.int32)
+        self._table_phase_derivative_flag = np.array(table_phase_derivative_flag).astype(np.int32)
 
         diphase = np.zeros(
             shape=[deriv_max_num_micro, self._maxpg, num_derivatives],
             dtype=np.int32
         )
-        self._pa.phasewtp = np.zeros(
+
+        dphasewt = np.zeros(
             shape=[deriv_max_num_micro, self._maxpg, num_derivatives],
             dtype=np.float32
         )
 
-        #one loop through to find max_legendre and unkonwn_scatterer_indices
-        max_legendre = []
+        dleg_table = []
         i = 0
-        for name, scatterer_derivative_table in table_data.items():
-            scatterer = self.medium[name]
-            for variable_derivative_table in scatterer_derivative_table.values():
-                derivative_on_grid = table_to_grid_method(scatterer, variable_derivative_table)
-                max_legendre.append(derivative_on_grid.sizes['legendre_index'])
-                unknown_scatterer_indices.append(i+1)
+        for scat_name, scatterer_derivative_information in derivative_information.items():
+            phase_size_sum = 0
+            for name, scatterer in self.medium.items():
+                if name == scat_name:
+                    break
+                phase_size_sum += scatterer.sizes['table_index']
+
+            for variable_derivative in scatterer_derivative_information.values():
+                assert variable_derivative['derivative_method'] in ('exact', 'table'), 'Bad `derivative_method`'
+                dext[:, i] = variable_derivative.extinction.data.ravel()
+                dalb[:, i] = variable_derivative.ssalb.data.ravel()
+                dphasewt[..., i] = np.pad(
+                    variable_derivative.phase_weights.data.reshape((-1,self._maxpg)),
+                    ((0,deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
+                    mode='constant' # default pads with zeros.
+                )
+
+                dleg_max = phase_size_sum
+                if variable_derivative['derivative_method'] == 'exact':
+                    # in this case phase pointer points to dleg table.
+                    dleg_max = sum([table.sizes['table_index'] for table in dleg_table])
+
+                    dleg_table.append(variable_derivative.legcoef.pad(
+                        {'legendre_index': (0, max_legendre - variable_derivative.legcoef.sizes['legendre_index'])},
+                        constant_values=0.0
+                    ))
+                diphase[..., i] = np.pad(
+                    variable_derivative.table_index.data.reshape((-1,self._maxpg)) + dleg_max,
+                    ((0,deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
+                    mode='constant' # default pads with zeros.
+                )
             i += 1
-        max_legendre = max(max_legendre)
-        self._unknown_scatterer_indices = np.array(unknown_scatterer_indices).astype(np.int32)
-
-        #second loop to assign everything else.
-        padded_legcoefs = []
-        count = 0
-        for name, scatterer_derivative_table in table_data.items():
-            scatterer = self.medium[name]
-            for variable_derivative_table in scatterer_derivative_table.values():
-                derivative_on_grid = table_to_grid_method(scatterer, variable_derivative_table)
-
-                dext[:, count] = derivative_on_grid.extinction.data.ravel()
-                dalb[:, count] = derivative_on_grid.ssalb.data.ravel()
-                diphase[:, count] = derivative_on_grid.table_index.data.ravel() + diphase.max()
-
-                padded_legcoefs.append(derivative_on_grid.legcoef.pad(
-                    {'legendre_index': (0, max_legendre - derivative_on_grid.legcoef.sizes['legendre_index'])},
-                    constant_values=0.0
-                ))
-
-                count += 1
 
         #COPIED FROM solver.RTE
         #In regions which are not covered by any optical scatterer they have an iphasep of 0.
@@ -1140,103 +1151,58 @@ class RTE:
         diphase[np.where(diphase == 0)] = 1
 
         # Concatenate all legendre tables into one table
-        legendre_table = xr.concat(padded_legcoefs, dim='table_index')
+        legendre_table = xr.concat(dleg_table, dim='table_index')
         if self._pa.nlegp > legendre_table.sizes['legendre_index']:
             legendre_table = legendre_table.pad(
                 {'legendre_index':
                  (0, 1 + self._pa.nlegp - legendre_table.sizes['legendre_index'])
                 }, constant_values=0.0
             )
-        dnumphase = legendre_table.sizes['table_index']
+        self._dnumphase = legendre_table.sizes['table_index']
         dleg = legendre_table.data
 
-        # zero the first term of the first component of the phase function
-        # gradient. Pre-scale the legendre moments by 1/(2*l+1) which
-        # is done in the forward problem in TRILIN_INTERP_PROP
         scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0, self._pa.nlegp+1)]))
         dleg[0, 0, :] = 0.0
         dleg = dleg[:self._nstleg] / scaling_factor
 
-        if self._deltam:
-            deriv_ind = self._unknown_scatterer_indices - 1
-            albs = self._pa.albedop[:, deriv_ind]
-            exts = self._pa.extinctp[:, deriv_ind]
-            legs = self._pa.legenp.reshape((self._nstleg, self._pa.nlegp+1, self._pa.numphase), order='F')/scaling_factor
+        self._dleg = dleg
+        self._dext = dext
+        self._dalb = dalb
+        self._diphase = diphase
+        self._dphasewt = dphasewt
 
-            # f (the delta-M scaling factor) is sensitive to changes in microphysics.
-            # note that the index for 'F' is ml+1 the same as in Fortran because
-            # LEGEN is one of the few Fortran arrays that is zero indexed.
-            f = legs[0, self._ml+1, self._pa.iphasep[:, deriv_ind]-1]
-            df = dleg[0, self._ml+1, diphase-1]
-            self._dext = dext*(1.0 - albs*f) - df*albs*exts - dalb*f*exts
-            self._dalb = dalb*(1.0 - f)/((1.0 - f*albs)**2) + \
-                df*(albs - 1.0)*albs/((1.0 - f*albs)**2)
-
-            #find legen table that matches the dleg table.
-            table_ind = []
-            for i, ind in enumerate(deriv_ind):
-                for j in range(1, dleg.shape[-1]+1): #+1 to match iphase/diphase
-                    test = self._pa.iphasep[np.where(diphase[:, i] == j), ind]
-                    if test.shape[1] > 0:
-                        table_ind.append(np.unique(test))
-            table_inds = np.array(table_ind)[:, 0] - 1 #-1 back to python 0-indexing.
-            table_legs = legs[:, :, table_inds]
-            table_f = table_legs[0, self._ml+1]
-            table_df = dleg[0, self._ml+1]
-
-            self._dleg = dleg/(1.0 - table_f)
-            self._dleg[0:min(4, self._nstleg)] += table_df* \
-                (table_legs[0:min(4, self._nstleg)] - 1.0)/((1.0 -table_f)**2)
-            if self._nstleg > 1:
-                self._dleg[4:] += table_df*table_legs[4:]/((1.0 - table_f)**2)
-            #self._dphasetab = dphasetab/(1.0 - table_f[:, np.newaxis])
-        else:
-            self._dext = dext
-            self._dleg = dleg
-            self._dalb = dalb
-            #self._dphasetab = dphasetab
-
-        #dphasetab holds tabulated values of the phase function derivative
-        # ie the inverse legendre transform of dleg evaluated at
-        # the same angles that the phase function is calculated.
+        # compute lut of phase function derivatives evaluated at scattering angles.
         self._dphasetab, ierr, errmsg = pyshdom.core.precompute_phase_check_grad(
             negcheck=False,
             nstphase=self._nstphase,
             nstleg=self._nstleg,
             nscatangle=self._nscatangle,
             nstokes=self._nstokes,
-            dnumphase=dnumphase,
+            dnumphase=self._dnumphase,
             ml=self._ml,
             nlm=self._nlm,
-            nleg=self._nleg,
-            dleg=self._dleg, #use the dleg already divided by 1-f if deltam.
+            nleg=self._pa.nlegp,
+            dleg=self._dleg,
             deltam=self._deltam
         )
         pyshdom.checks.check_errcode(ierr, errmsg)
 
-        self._dnumphase, self._diphase = dnumphase, diphase
-
-        #The diphaseind is a pointer that holds which base grid point supplied the
-        #phase function to each adaptive grid point. This interpolation scheme is based on
-        #maximum scattering coefficient. See also TRILIN_INTERP_PROP.
-        self._diphaseind = pyshdom.core.prepare_diphaseind(
+        # make property grid to RTE grid pointers and interpolation weights.
+        self._optinterpwt, self._interpptr, ierr, errmsg = \
+        pyshdom.core.prepare_deriv_interps(
             gridpos=self._gridpos[:, :self._npts],
             npx=self._pa.npx,
             npy=self._pa.npy,
             npz=self._pa.npz,
             npts=self._npts,
             maxpg=self._maxpg,
-            numphase=self._pa.numphase,
             delx=self._pa.delx,
             dely=self._pa.dely,
             xstart=self._pa.xstart,
             ystart=self._pa.ystart,
             zlevels=self._pa.zlevels,
-            extinctp=self._pa.extinctp,
-            albedop=self._pa.albedop,
-            npart=self._npart,
-            numder=self._num_derivatives
         )
+        pyshdom.checks.check_errcode(ierr, errmsg)
 
 
     def load_solution(self, input_dataset, load_radiance=True):

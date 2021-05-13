@@ -796,10 +796,9 @@ class OpticalPropertyGenerator:
                     )
                 single_optical_derivative['derivative_method'] = 'exact'
 
+            else:
                 # this is a table variable so we have to find the derivatives
                 # based on the table nodes.
-            else:
-
                 micro_data = interp_coords[var_name].data.ravel()
                 micro_data_bin = self._size_distribution_grids[key][var_name].data
                 digitized_micro_data = np.digitize(micro_data, bins=micro_data_bin)
@@ -815,37 +814,30 @@ class OpticalPropertyGenerator:
                     )
                 flag_index = np.where(np.array(self._table_variable_names) == var_name)[0][0]
 
-                derivative_interpolation_weights = np.zeros(
-                    (self._interpolation_weights.shape[0]//2, self._interpolation_weights.shape[-1])
-                    )
                 derivative_interpolation_indices = np.zeros(
-                    (2, self._interpolation_weights.shape[0]//2,
-                     self._interpolation_weights.shape[-1]),
-                    dtype=np.int
-                    )
+                    shape=self._interpolation_weights.shape,
+                    dtype=np.int32
+                )
+                derivative_interpolation_weights = np.zeros(
+                    self._interpolation_weights.shape,
+                    dtype=np.float32
+                )
 
-                derivative_interpolation_weights = self._interpolation_weights[
-                    np.where(lower_upper_flags[:, flag_index] == 0), :
-                    ] / (step*interp1)
+                derivative_interpolation_weights[np.where(lower_upper_flags[:, flag_index] == 0), :] = \
+                self._interpolation_weights[np.where(lower_upper_flags[:, flag_index] == 0), :] / \
+                (step*interp1)
+                derivative_interpolation_weights[np.where(lower_upper_flags[:, flag_index] == -1), :] = \
+                -1*self._interpolation_weights[np.where(lower_upper_flags[:, flag_index] == 0), :] / \
+                (step*interp1)
 
-                derivative_interpolation_indices[0] = self._phase_indices[
-                    np.where(lower_upper_flags[:, flag_index] == -1), :
-                    ]
-                derivative_interpolation_indices[1] = self._phase_indices[
-                    np.where(lower_upper_flags[:, flag_index] == 0), :
-                    ]
+                derivative_interpolation_indices[:] = self._phase_indices[:]
 
                 # dleg has to be mixed at each point using derivative_interpolation_weights and indices.
                 # rather than calculated here.
-                dext = np.sum(self._poly_tables[key].extinction.data[derivative_interpolation_indices[1]]* \
-                              derivative_interpolation_weights, axis=(0, 1)) - \
-                       np.sum(self._poly_tables[key].extinction.data[derivative_interpolation_indices[0]]* \
-                              derivative_interpolation_weights, axis=(0, 1))
-
-                dalb = np.sum(self._poly_tables[key].ssalb.data[derivative_interpolation_indices[1]]* \
-                              derivative_interpolation_weights, axis=(0, 1)) - \
-                       np.sum(self._poly_tables[key].ssalb.data[derivative_interpolation_indices[0]]* \
-                              derivative_interpolation_weights, axis=(0, 1))
+                dext = np.sum(self._poly_tables[key].extinction.data[derivative_interpolation_indices]*
+                              derivative_interpolation_weights, axis=0)
+                dalb = np.sum(self._poly_tables[key].ssalb.data[derivative_interpolation_indices]*
+                              derivative_interpolation_weights, axis=0)
 
                 single_optical_derivative = xr.Dataset(
                     data_vars={
@@ -854,11 +846,11 @@ class OpticalPropertyGenerator:
                         'legcoef': (['stokes_index', 'legendre_index', 'table_index'], # no differentiated legcoef required.
                                     np.zeros((6, 0, 0))),
                         'phase_weights': (['num_micro', 'x', 'y', 'z'],
-                            derivative_interpolation_weights[0].reshape(
+                            derivative_interpolation_weights.reshape(
                                 (-1,)+microphysics.density.shape)),
-                        'table_index': (['upper_lower', 'num_micro', 'x', 'y', 'z'],
+                        'table_index': (['num_micro', 'x', 'y', 'z'],
                             1+derivative_interpolation_indices.reshape(
-                                (2,-1)+microphysics.density.shape))
+                                (-1,)+microphysics.density.shape))
                     }
                 )
                 single_optical_derivative['derivative_method'] = 'table'

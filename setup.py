@@ -136,7 +136,8 @@ F2PY_CORE_API = [
     'compute_dir_source',
     'pencil_beam_prop2',
     'eddrtf',
-    'phase_function_mixing'
+    'phase_function_mixing',
+    'prepare_deriv_interps',
 ]
 
 def _run_command(cmd):
