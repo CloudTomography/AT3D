@@ -18,10 +18,10 @@ The inversion algorithms for can be found in the following papers:
 """
 
 MAINTAINER = "Aviad Levis; Jesse Loveridge"
-MAINTAINER_EMAIL = "aviad.levis@gmail.com"
+MAINTAINER_EMAIL = "aviad.levis@gmail.com; jesserl2@illinois.edu "
 URL = "https://github.com/aviadlevis/pyshdom"
 LICENSE = "MIT"
-VERSION = "3.0.0"
+VERSION = "4.0.0"
 
 classifiers =  ['Development Status :: 3 - Alpha',
                 'Programming Language :: Python',
@@ -166,7 +166,7 @@ def configuration(parent_package='',top_path=None):
         NAME,
         parent_package,
         top_path,
-        package_path='lib',
+        package_path='pyshdom',
         version = VERSION,
         maintainer  = MAINTAINER,
         maintainer_email = MAINTAINER_EMAIL,
