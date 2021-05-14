@@ -802,10 +802,10 @@ class UnknownScatterers(OrderedDict):
         #currently only this slight adaptation of pyshdom.medium.table_to_grid is possible.
         #The API must be updated to accomodate more flexibility if more
         #methods become avaialble.
-#         def regular_grid(scatterer, table_data):
-#             return pyshdom.medium.table_to_grid(scatterer, table_data, inverse_mode=True)
+        def regular_grid(scatterer, table_data, inverse_mode=False):
+            return pyshdom.medium.table_to_grid(scatterer, table_data, inverse_mode=inverse_mode)
 
-        self._table_to_grid_method = pyshdom.medium.table_to_grid
+        self._table_to_grid_method = regular_grid
         self.table_data = None
 
     def add_unknown(self, scatterer_name, variable_name_list, table_data):
