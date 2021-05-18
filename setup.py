@@ -138,6 +138,9 @@ F2PY_CORE_API = [
     'eddrtf',
     'phase_function_mixing',
     'prepare_deriv_interps',
+    'planck_function',
+    'planck_derivative',
+    'compute_gradient_oneproppoint',
 ]
 
 def _run_command(cmd):

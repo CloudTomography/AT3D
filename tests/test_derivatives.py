@@ -7,6 +7,70 @@ import pyshdom
 import warnings
 warnings.filterwarnings('ignore')
 
+import pyshdom
+import numpy as np
+import pylab as py
+from unittest import TestCase
+
+class PlanckDerivative(TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        np.random.seed(1)
+        units_all = ('B', 'T', 'R')
+        size = 10000
+        temp_test = np.random.uniform(0.0, 900.0, size=size)
+        wavelens = np.random.uniform(0.0, 20.0, size=size)
+        wavenos = np.zeros((size, 2))
+        wavenos[:,0] = np.random.uniform(0.0, 10000.0, size=size)
+        wavenos[:,1] = wavenos[:,0]+ np.random.uniform(0.0, 300.0 ,size)
+
+        finite_diff_step = 0.15
+        cls.all_ref = []
+        cls.all_finite_diff = []
+        cls.all_ref_grad = []
+
+        for units in units_all:
+            finite_diff_grad = []
+            planck_ref = []
+            planck_upper = []
+            ref_grad = []
+            for temp, wavelen, waveno in zip(temp_test,wavelens, wavenos):
+                planck_ref.append(pyshdom.core.planck_function(temp=temp, units=units, waveno=waveno, wavelen=wavelen))
+                planck_upper.append(pyshdom.core.planck_function(temp=temp+finite_diff_step, units=units, waveno=waveno, wavelen=wavelen))
+
+                ref_grad.append(pyshdom.core.planck_derivative(temp=temp, units=units, waveno=waveno, wavelen=wavelen))
+            ref_grad = np.array(ref_grad)
+            planck_ref = np.array(planck_ref)
+            planck_upper = np.array(planck_upper)
+            finite_diff_grad = ((planck_upper - planck_ref)/finite_diff_step)
+            cls.all_ref.append(planck_ref)
+            cls.all_finite_diff.append(finite_diff_grad)
+            cls.all_ref_grad.append(ref_grad)
+
+    def testTemperatureUnits(self):
+        self.assertTrue(np.allclose(self.all_ref_grad[1], 1.0))
+
+    def testBandUnits(self):
+        good_data = self.all_ref_grad[0][np.where(~np.isnan(self.all_ref_grad[0]))]
+        good_finite = self.all_finite_diff[0][np.where(~np.isnan(self.all_ref_grad[0]))]
+        maxerror = np.max(np.abs(good_data - good_finite))
+        self.assertTrue(maxerror < 1.7e-3)
+
+    def testBadBandUnits(self):
+        self.assertTrue(np.all(self.all_ref[0][np.where(np.isnan(self.all_ref_grad[0]))] < 1e-9))
+
+    def testBadRadianceUnits(self):
+        self.assertTrue(np.all(self.all_ref[-1][np.where(np.isnan(self.all_ref_grad[-1]))] < 1e-9))
+
+    def testRadianceUnits(self):
+        good_data = self.all_ref_grad[-1][np.where(~np.isnan(self.all_ref_grad[-1]))]
+        good_finite = self.all_finite_diff[-1][np.where(~np.isnan(self.all_ref_grad[-1]))]
+        maxerror = np.max(np.abs(good_data - good_finite))
+        self.assertTrue(maxerror < 1.23e-2)
+
+
+
 # class CostFunctionL2(TestCase):
 #     @classmethod
 #     def setUpClass(cls):

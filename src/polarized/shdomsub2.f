@@ -4551,6 +4551,8 @@ C     temperature in [Kelvins] at a wavelength in [microns] is returned.
       IMPLICIT NONE
       REAL  TEMP, WAVENO(2), WAVELEN, PLANCK
       CHARACTER*1  UNITS
+Cf2py intent(in) :: TEMP, WAVENO, WAVELEN, UNITS
+Cf2py intent(out) :: PLANCK
       DOUBLE PRECISION X1, X2, F
 
       IF (UNITS .EQ. 'T') THEN
