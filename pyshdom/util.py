@@ -15,6 +15,97 @@ import pyshdom.core
 import pyshdom.solver
 import pyshdom.grid
 
+def load_airmspi_data(path, bands=['355nm', '380nm', '445nm', '470nm', '555nm', '660nm', '865nm', '935nm']):
+    """
+    Utility function to load AirMSPI hdf files into xr.Dataset
+
+    Parameters
+    ----------
+    path : str,
+        path to file
+    bands : list or string,
+        AirMSPI bands to load. Default is all bands.
+
+    Returns
+    -------
+    output : xr.Dataset or tuple of datasets
+        A dataset with radiance or polarized fields or a tuple of datasets with both radiance and polarization fields.
+
+    Notes
+    -----
+    AirMSPI is an 8-band (355, 380, 445, 470, 555, 660, 865, 935 nm) pushbroom camera, measuring polarization in the
+    470, 660, and 865 nm bands, mounted on a gimbal to acquire multiangular observations over a ±67° along-track range.
+    Two principal observing modes are employed: step-and-stare, in which 11 km x 11 km targets are observed at a
+    discrete set of view angles with a spatial resolution of ~10 m; and continuous sweep, in which the camera
+    slews back and forth along the flight track between ±67° to acquire wide area coverage
+    (11 km swath at nadir, target length 108 km) with ~25 m spatial resolution. See references for more information.
+
+    References
+    ----------
+    https://asdc.larc.nasa.gov/project/AIRMSPI
+
+    Raises
+    ------
+    AttributeError if band not supported.
+    Supported types are: '355nm', '380nm', '445nm', '470nm', '555nm', '660nm', '865nm', '935nm'
+    """
+    ncf = nc.Dataset(path, diskless=True, persist=False)
+    pol_bands = ['470nm', '660nm', '865nm']
+    rad_bands = ['355nm', '380nm', '445nm', '555nm', '935nm']
+    bands = np.atleast_1d(bands)
+
+    for band in bands:
+        if (band not in pol_bands) and (band not in rad_bands):
+            raise AttributeError('Band: {} not recognized'.format(band))
+
+    dims, rad_dataset, pol_dataset = {}, [], []
+    for band in bands:
+        data = []
+        data_fields = ncf['HDFEOS/GRIDS/{}_band/Data Fields/'.format(band)]
+        for name, var in data_fields.variables.items():
+            if name in dims.keys():
+                continue
+            attrs_keys = [attr for attr in var.ncattrs() if not attr.startswith('_')]
+            attrs_vals = [var.getncattr(attr) for attr in attrs_keys]
+            attrs = dict(zip(attrs_keys, attrs_vals))
+
+            use_dims = True
+            for dim in var.dimensions:
+                if dim in data_fields.variables.keys():
+                    if dim not in dims:
+                        dim_attrs_keys = [attr for attr in data_fields[dim].ncattrs() if not attr.startswith('_')]
+                        dim_attrs_vals = [data_fields[dim].getncattr(attr) for attr in dim_attrs_keys]
+                        dim_attrs = dict(zip(dim_attrs_keys, dim_attrs_vals))
+                        dims[dim] = xr.DataArray(data_fields[dim], dims=dim, attrs=dim_attrs)
+                else:
+                    use_dims = False
+
+            if use_dims:
+                current_dims = {k: dims[k] for k in var.dimensions}
+                data_field = xr.DataArray(var[:], attrs=attrs, name=name, dims=list(current_dims.keys()),
+                                          coords=current_dims)
+            else:
+                data_field = xr.DataArray(var[:], attrs=attrs, name=name)
+
+            data.append(data_field.expand_dims(band=[band]))
+
+        data = xr.merge(data).squeeze()
+        if band in pol_bands:
+            pol_dataset.append(data)
+        else:
+            rad_dataset.append(data)
+
+    output = []
+    if len(rad_dataset) > 0:
+        rad_dataset = xr.concat(rad_dataset, dim='band')
+        output.append(rad_dataset)
+    if len(pol_dataset) > 0:
+        pol_dataset = xr.concat(pol_dataset, dim='band')
+        output.append(pol_dataset)
+
+    output = output[0] if len(output) == 1 else output
+    return output
+
 def set_pyshdom_path():
     """set path to pyshdom parent directory"""
     import os
