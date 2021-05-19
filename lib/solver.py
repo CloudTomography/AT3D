@@ -1068,7 +1068,7 @@ class RTE:
         count = 0
         for name, scatterer_derivative_table in table_data.items():
             scatterer = self.medium[name]
-            inverse_mode = name == 'density'
+            inverse_mode = name in ('density', 'extinction')
             for variable_derivative_table in scatterer_derivative_table.values():
                 derivative_on_grid = table_to_grid_method(scatterer, variable_derivative_table, inverse_mode=inverse_mode)
 
