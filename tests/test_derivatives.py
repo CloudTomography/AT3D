@@ -18,7 +18,7 @@ class PlanckDerivative(TestCase):
     def setUpClass(cls):
         np.random.seed(1)
         units_all = ('B', 'T', 'R')
-        size = 10000
+        size = 1000
         temp_test = np.random.uniform(0.0, 900.0, size=size)
         wavelens = np.random.uniform(0.0, 20.0, size=size)
         wavenos = np.zeros((size, 2))
