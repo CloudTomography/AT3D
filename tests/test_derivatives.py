@@ -953,6 +953,104 @@ class SolarJacobianThinNoSurfaceAsymmetry(TestCase):
         print(np.max(np.abs(self.jacobian_reference.ravel()-self.jacobian.ravel())))
         self.assertTrue(np.allclose(self.jacobian.ravel(), self.jacobian_reference.ravel(), atol=3.8e-7))
 
+# This is an independent test to ensure the direct beam derivatives are correct.
+# not yet complete.
+# class DirectBeamDerivative(TestCase):
+#     @classmethod
+#     def setUpClass(cls):
+#         tautol=0.2
+#         surfacealb=1.0
+#         ssalb = 0.0
+#         solarmu = 1.0
+#         reff=10.0
+#         resolutionfactor = 1
+#         nmu=2
+#         split=0.0
+#         ext=0.1
+#         veff=0.1
+#         step=1e-3
+#         ground_temperature=200.0
+#         mie_mono_table = pyshdom.mie.get_mono_table('Water',(0.86,0.86),
+#                                                   max_integration_radius=65.0,
+#                                                   minimum_effective_radius=0.1,
+#                                                   relative_dir='../mie_tables',
+#                                                   verbose=False)
+#
+#         solvers, Sensordict,cloud_poly_tables,final_step,rte_grid = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature,
+#                                                                  step=0.0,nmu=nmu,split=split,
+#                                                                 resolution=resolutionfactor, perturb='extinct',
+#                                                                 solve=False, random=False, random_ssalb=False)
+#
+#         solver = solvers[0.86]
+#         solver._init_solution()
+#         solver._make_direct()
+#         reference = solver._dirflux[:solver._npts]
+#
+#
+#         indices_for_jacobian = np.where(solver.medium['cloud'].extinction.data > 0.0)
+#         #CODE FOR GENERATING THE FINITE DIFFERENCE REFERENCE.
+#         # out = []
+#         # for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
+#         #     print(i)
+#         #
+#         #     data = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
+#         #                  resolution=resolutionfactor)
+#         #     solver2 = data[0][0.86]
+#         #     solver2._init_solution()
+#         #     solver2._make_direct()
+#         #     upper = solver2._dirflux[:solver._npts]
+#         #
+#         #     # note only forward difference not central difference here, because I was testing
+#         #     # derivatives at ext=0.0 as well.
+#         #     out.append((upper - reference)/step)
+#         # finite_jacobian = np.stack(out, axis=0)
+#         # np.save('./dirflux_gradient_{}_{}.npy'.format(step,ext), finite_jacobian)
+#         cls.jacobian_reference = np.load('./data/dirflux_gradient_{}_{}.npy'.format(step,ext))
+#
+#         solver.calculate_direct_beam_derivative()
+#         raygrad = np.zeros((solver._nstokes, solver._maxpg, 1))
+#         jacobian = []
+#         for i in range(solver._npts):
+#             raygrad = np.zeros((solver._nstokes, solver._maxpg, 1))
+#             raygrad = pyshdom.core.compute_direct_beam_deriv(
+#                 dpath=solver._direct_derivative_path[:,i],
+#                 dptr=solver._direct_derivative_ptr[:,i],
+#                 numder=1,
+#                 partder=np.array([1]),
+#                 npart=1,
+#                 dext=np.ones((solver._maxpg, 1)),
+#                 transmit=1.0,
+#                 abscell=1.0,
+#                 inputweight=solver._dirflux[i],
+#                 nstokes=1,
+#                 npx=solver._pa.npx,
+#                 npy=solver._pa.npy,
+#                 npz=solver._pa.npz,
+#                 maxpg=solver._maxpg,
+#                 albedop=solver._pa.albedop,
+#                 phasewtp=solver._pa.phasewtp,
+#                 diphasep=solver._diphasep,
+#                 dphasewtp=solver._dphasewtp,
+#                 dalb=solver._dalb,
+#                 dleg=solver._dleg,
+#                 legen=solver._legen,
+#                 nstleg=solver._nstleg,
+#                 numphase=solver._pa.numphase,
+#                 maxnmicro=solver._pa.max_num_micro,
+#                 iphasep=solver._pa.iphasep,
+#                 raygrad=raygrad,
+#                 ml=solver._ml,
+#                 nleg=solver._nleg,
+#                 deltam=solver._deltam,
+#                 verbose=False
+#             )
+#             jacobian.append(raygrad[0,:,0])
+#         jacobian = np.stack(jacobian, axis=1)
+#         cls.jacobian = jacobian[indices_for_jacobian[0], indices_for_jacobian[1], indices_for_jacobian[2], :].ravel()
+#
+#     def test_jacobian(self):
+#         print(np.max(np.abs(self.jacobian_reference.ravel()-self.jacobian.ravel())))
+#         self.assertTrue(np.allclose(self.jacobian.ravel(), self.jacobian_reference.ravel(), atol=3.8e-7))
 
 class AdjointSource(TestCase):
 
