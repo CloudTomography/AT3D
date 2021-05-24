@@ -126,11 +126,11 @@ class StateRepresentation:
         self._start_end_points = OrderedDict()
         for scatterer_name, variable_name_data in state_to_grid.transforms.items():
             start_end_scatterer = OrderedDict()
-            for variable_name in variable_name_data['variable_name_list']:
+            for variable_name in variable_name_data:
                 test_gridded_data = np.zeros(grid_shape)
                 abstract_state = state_to_grid.inverse(test_gridded_data, scatterer_name, variable_name)
                 start_end_scatterer[variable_name] = (self._total_length, self._total_length+len(abstract_state)+1)
-                self._total_length += abstract_state
+                self._total_length += len(abstract_state)
             self._start_end_points[scatterer_name] = start_end_scatterer
 
     def update_state_vector(self, state, scatterer_name, variable_name, data_to_update):
@@ -148,7 +148,7 @@ class StateRepresentation:
 
     @property
     def number_of_unknowns(self):
-        return self._start_end_points
+        return self._total_length
 
 class StateTransform:
     """
@@ -232,7 +232,7 @@ class IndependentStateTransform(IndependentTransform):
                     variable_name,
                     self._gradient_transforms[scatterer_name][variable_name](state_vector_portion, gradient_vector_portion)
                 )
-        return state
+        return gradient
 
 class NullStateTransform(IndependentStateTransform):
 

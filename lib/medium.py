@@ -461,7 +461,9 @@ class OpticalDerivativeGenerator:
 
     def __call__(self, data):
         pyshdom.checks.check_optical_properties(data)
-        return data
+        output = OrderedDict()
+        output[self.wavelength] = data
+        return output
 
     def calculate_derivatives(self, variable_names, optical_properties):
 
@@ -1424,7 +1426,7 @@ class DataGenerator:
     """
     Not supposed to be used. Just consolidates code for the inheritors.
     """
-    def _check_inputs(self, rte_grid, *fixed_data_arrays, **variable_data_bounds):
+    def _check_inputs(self, rte_grid, *fixed_data_arrays):
 
         pyshdom.checks.check_grid(rte_grid)
         self._rte_grid = rte_grid
@@ -1443,25 +1445,30 @@ class DataGenerator:
         dataset = xr.Dataset()
         for data_array in fixed_data_arrays:
             dataset[data_array.name] = data_array
-
-        for bounds in variable_data_bounds.values():
-            if not isinstance(bounds, typing.Tuple):
-                raise TypeError(
-                "Each `variable_data_bounds` argument should be of type '{}'"
-                "".format(typing.Tuple)
-                )
-            if not (len(bounds)==2 & isinstance(bounds[0], np.ndarray) & isinstance(bounds[1], np.ndarray)):
-                raise TypeError(
-                "Each `variable_data_bounds` should be a Tuple of two np.ndarrays."
-                )
-            if (bounds[0].shape != self._rte_grid_shape) | (bounds[1].shape != self._rte_grid_shape):
-                raise ValueError(
-                "Each `variable_data_bounds` argument should be of the "
-                "same shape as the `rte_grid`'s spatial coordinates."
-                )
-
-        self._variable_data_bounds = variable_data_bounds
         return dataset
+
+    def _check_bound(self, bounds):
+        if not isinstance(bounds, typing.Tuple):
+            raise TypeError(
+            "Each `bound` argument should be of type '{}'"
+            "".format(typing.Tuple)
+            )
+        if not ((len(bounds) == 2) & isinstance(bounds[0], np.ndarray) & isinstance(bounds[1], np.ndarray)):
+            raise TypeError(
+            "Each `bounds` should be a Tuple of two np.ndarrays."
+            )
+        if (bounds[0].shape != self._rte_grid_shape) | (bounds[1].shape != self._rte_grid_shape):
+            raise ValueError(
+            "Each `bound` should be of the "
+            "same shape as the `rte_grid`'s spatial coordinates."
+            )
+
+    def get_bounds(self, variable_name):
+        if variable_name not in self._variable_data_bounds:
+            raise ValueError(
+                "No bounds for '{}'".format(variable_name)
+            )
+        return self._variable_data_bounds[variable_name]
 
     def __call__(self, **variable_data):
         dataset = self._fixed_dataset.copy(deep=True)
@@ -1483,6 +1490,9 @@ class DataGenerator:
         self._checks(dataset)
         return dataset
 
+    @property
+    def optical_property_generator(self):
+        return self._optical_property_generator
 
 class MicrophysicsGenerator(DataGenerator):
 
@@ -1496,15 +1506,29 @@ class MicrophysicsGenerator(DataGenerator):
         self._optical_property_generator = optical_property_generator
         self.scatterer_name = optical_property_generator.scatterer_name
 
-        dataset = self._check_inputs(rte_grid, *fixed_data_arrays, **variable_data_bounds)
+        dataset = self._check_inputs(rte_grid, *fixed_data_arrays)
+        self._process_bounds(**variable_data_bounds)
         self._fixed_dataset = pyshdom.grid.resample_onto_grid(rte_grid, dataset)
 
-    def get_bounds(self, variable_name):
-        return self._variable_data_bounds[variable_name]
+    def _process_bounds(self, **variable_data_bounds):
+        # use the optical_property_generator to decide the bounds on variables.
+        bounds = OrderedDict()
+        opt_gen = self._optical_property_generator
+        coords = list(opt_gen._size_distribution_grids.values())[0]
+        variable_names = list(opt_gen._size_distribution_parameters).append('density')
+        for name in variable_names:
+            if name in variable_data_bounds:
+                bound = variable_data_bounds[name]
+            elif name == 'density':
+                bound = (np.zeros(self._rte_grid_shape),
+                         np.zeros(self._rte_grid_shape) + 1e9)
+            else:
+                bound = (np.zeros(self._rte_grid_shape) + coords[name].min(),
+                         np.zeros(self._rte_grid_shape) + coords[name].max())
+            self._check_bound(bound)
+            bounds[name] = bound
 
-    @property
-    def optical_property_generator(self):
-        return self._optical_property_generator
+        self._variable_data_bounds = bounds
 
     def calculate_optical_properties(self, **variable_data):
         microphysics_data = self(**variable_data)
@@ -1537,12 +1561,31 @@ class OpticalGenerator(DataGenerator):
         self._optical_property_generator = pyshdom.medium.OpticalDerivativeGenerator(scatterer_name, wavelength)
         self.scatterer_name = scatterer_name
         self.wavelength = wavelength
-        dataset = self._check_inputs(rte_grid, *fixed_data_arrays, **variable_data_bounds)
+        dataset = self._check_inputs(rte_grid, *fixed_data_arrays)
+        self._process_bounds(**variable_data_bounds)
         self._fixed_dataset = pyshdom.grid.add_grid_variables(rte_grid, dataset)
 
-    @property
-    def optical_property_generator(self):
-        return self._optical_property_generator
+    def _process_bounds(self, **variable_data_bounds):
+        # use the optical_property_generator to decide the bounds on variables.
+        bounds = OrderedDict()
+        names = list(variable_data_bounds)
+        names.extend(['extinction', 'ssalb'])
+        for name in names:
+            if name in variable_data_bounds:
+                bound = variable_data_bounds[name]
+            elif name == 'extinction':
+                bound = (np.zeros(self._rte_grid_shape),
+                         np.zeros(self._rte_grid_shape) + 1e9)
+            elif name == 'ssalb':
+                bound = (np.zeros(self._rte_grid_shape),
+                         np.ones(self._rte_grid_shape))
+            # no supported bounds on legendre as we don't know
+            # how big the table is.
+            self._check_bound(bound)
+            bounds[name] = bound
+
+        self._variable_data_bounds = bounds
+
 
     def _checks(self, dataset):
         # checks for optical properties are easy.
@@ -1582,7 +1625,7 @@ class StateGenerator:
             for scatterer_name, variable_data in self._unknown_scatterers.items():
                 for variable_name in variable_data['variable_name_list']:
                     self._state_to_grid.add_transform(
-                        scatterer_name, variable_name
+                        scatterer_name, variable_name, self._rte_grid
                         )
 
         elif isinstance(state_to_grid, pyshdom.transforms.IndependentTransform):
@@ -1623,7 +1666,7 @@ class StateGenerator:
         if state_representation is None:
             # make it from state_to_grid transfrom.
             self._state_representation = pyshdom.transforms.StateRepresentation(
-                state_to_grid, rte_grid
+                self._state_to_grid, self._rte_grid
                 )
         elif isinstance(state_representation, pyshdom.transforms.StateRepresentation):
             for scatterer_name, variable_data in self._unknown_scatterers.items():
@@ -1717,6 +1760,13 @@ class StateGenerator:
                         )
                     for opt_scat in opt_scat_dict.values():
                         pyshdom.checks.check_optical_properties(opt_scat)
+            elif name == 'num_stokes':
+                for value in variable.values():
+                    if not value in (1, 3, 4):
+                        raise ValueError(
+                            "`num_stokes` should be an integer from (1, 3, 4) "
+                            "not {}".format(variable)
+                        )
             else:
                 for value in variable.values():
                     if value is not None:
@@ -1735,7 +1785,7 @@ class StateGenerator:
         self._names = names
 
         for scatterer_name, scatterer_data in self._unknown_scatterers.items():
-            if isinstance(scatterer_data['data_generator'], pyshdom.medium.OpticalPropertyGenerator):
+            if isinstance(scatterer_data['dataset_generator'], pyshdom.medium.OpticalPropertyGenerator):
                 if len(self._sources) != 1:
                     raise ValueError(
                     "Optical property unknowns are not supported for multi-spectral data. "
@@ -1747,11 +1797,15 @@ class StateGenerator:
         """
         Extract the state vector from the solvers_dict.
         """
+        if not self._solvers_dict:
+            raise ValueError(
+                "State must first be set using the call method."
+            )
         state = np.zeros(self._state_representation.number_of_unknowns)
         solver = list(self._solvers_dict.values())[0]
         for scatterer_name, variable_data in self._unknown_scatterers.items():
             for variable_name in variable_data['variable_name_list']:
-                unknown_data = solver.mediums[scatterer_name][variable_name].data
+                unknown_data = solver.medium[scatterer_name][variable_name].data
                 state_vector = self._state_to_grid.inverse(
                     unknown_data, scatterer_name, variable_name
                     )
@@ -1785,7 +1839,7 @@ class StateGenerator:
                 generated_data
                 )
 
-        for wavelength in self._solvers_dict:
+        for wavelength in self._num_stokes:
 
             # group the optical properties for this wavelength.
             # and add the background_optical_scatterer
@@ -1802,7 +1856,7 @@ class StateGenerator:
                 name=self._names[wavelength]
             )
 
-            self._solvers_dict[wavelength] = solver
+            self._solvers_dict.add_solver(wavelength, solver)
 
 
     def project_gradient_to_state(self, state, gradient_dset):
@@ -1828,29 +1882,30 @@ class StateGenerator:
             for variable_name in variable_data['variable_name_list']:
                 gradient_variable = gradient_dset.gradient.sel(
                     scatterer_name=scatterer_name, variable_name=variable_name
-                    )
+                    ).data
                 gradient_vector = self._state_to_grid.calc_derivative(
                     gradient_variable, scatterer_name, variable_name
                     )
-                self._state_representation.update_state_vector(
+                gradient = self._state_representation.update_state_vector(
                     gradient, scatterer_name, variable_name, gradient_vector
                 )
         gradient = self._state_transform.calc_derivative(state, gradient)
         return gradient
 
     def transform_bounds(self):
-
-        lower_bounds = np.zeros(self._state_representation.number_of_unknowns)
-        upper_bounds = np.zeros(self._state_representation.number_of_unknowns)
+        total_number_unknowns = self._state_representation.number_of_unknowns
+        lower_bounds = np.zeros(total_number_unknowns)
+        upper_bounds = np.zeros(total_number_unknowns)
         for scatterer_name, variable_data in self._unknown_scatterers.items():
-            data_generator = variable_data['data_generator']
+            data_generator = variable_data['dataset_generator']
             for variable_name in variable_data['variable_name_list']:
-                lower, upper = data_generator.bounds[variable_name]
+                lower, upper = data_generator.get_bounds(variable_name)
                 for data, big_data in zip((lower, upper), (lower_bounds, upper_bounds)):
                     vector = self._state_to_grid.inverse_bounds(
                         data, scatterer_name, variable_name
                         )
-                    self._state_representation.update_state_vector(
+                        # need to verify line below.
+                    big_data = self._state_representation.update_state_vector(
                         big_data, scatterer_name, variable_name, vector
                     )
         lower_bounds = self._state_transform.inverse(lower_bounds)
