@@ -2755,6 +2755,7 @@ C             Special case for solar source and Delta-M
 
         IF (INTERPMETHOD(2:2) .EQ. 'O' ) THEN
           LEGENT = LEGEN(:,:,IPHASE(1,IP,IPA))
+          F = LEGENT(1,ML+1)
         ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
           IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
             LEGENT = LEGEN(:,:,IPHASE(1,IP,IPA))
@@ -2801,12 +2802,13 @@ C               original unscaled phase function.
 	      IF (NUMPHASE .GT. 0) THEN
           IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
             SRCEXT8(:,N) = SRCEXT8(:,N) +
-     .          DA*SINGSCAT(:,IPHASE(1,IP,IPA))
+     .          DA*SINGSCAT(:,IPHASE(1,IP,IPA))/(1-F)
           ELSE
             DO Q=1,8*MAXNMICRO
               IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
               SRCEXT8(:,N) = SRCEXT8(:,N) +
      .          DA*SINGSCAT(:,IPHASE(Q,IP,IPA))*PHASEINTERPWT(Q,IP,IPA)
+     .           /(1-F)
             ENDDO
           ENDIF
 	      ELSE IF (NSTOKES .EQ. 1) THEN
@@ -2946,12 +2948,13 @@ C               original unscaled phase function.
             IF (NUMPHASE .GT. 0) THEN
               IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
                 SRCEXT8(N) = SRCEXT8(N) +
-     .          DA*SINGSCAT(IPHASE(1,IP,IPA))
+     .          DA*SINGSCAT(IPHASE(1,IP,IPA))/(1-F)
               ELSE
                 DO Q=1,8*MAXNMICRO
                   IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
                   SRCEXT8(N) = SRCEXT8(N) +
      .          DA*SINGSCAT(IPHASE(Q,IP,IPA))*PHASEINTERPWT(Q,IP,IPA)
+     .          /(1-F)
                 ENDDO
               ENDIF
             ELSE

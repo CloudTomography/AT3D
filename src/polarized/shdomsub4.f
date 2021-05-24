@@ -1096,7 +1096,8 @@ C             extinction along the path between the gridpoint and the sun.
      .            ABSCELL, SRCSINGSCAT, NSTOKES, NPX,NPY,
      .            NPZ,MAXPG,ALBEDOP,PHASEWTP,LEGEN,NSTLEG,
      .            NUMPHASE,MAXNMICRO,IPHASEP,RAYGRAD,
-     .            ML, NLEG, DELTAM, .FALSE.)
+     .            ML, NLEG, DELTAM, DNUMPHASE, DIPHASEP,
+     .            DALB, EXTINCTP, DPHASEWTP, DLEG, DOEXACT)
               ENDIF
             ENDDO
           ENDIF
@@ -1192,7 +1193,8 @@ C             extinction along the path between the gridpoint and the sun.
      .          NSTOKES, NPX,NPY,
      .          NPZ,MAXPG,ALBEDOP,PHASEWTP,LEGEN,NSTLEG,
      .          NUMPHASE,MAXNMICRO,IPHASEP,RAYGRAD,
-     .          ML, NLEG, DELTAM, .FALSE.)
+     .          ML, NLEG, DELTAM, DNUMPHASE, DIPHASEP,
+     .          DALB, EXTINCTP, DPHASEWTP, DLEG, DOEXACT)
             ENDDO
           ENDIF
         ELSE
@@ -1355,6 +1357,7 @@ C           gradient computation at each property grid point.
             SCATTERJ = 0.0
             EXTINCTJ = 0.0
             SINGSCATJ = 0.0
+            F=0.0
 
             DO NB=1,8
               IB = INTERPPTR(NB,IP)
@@ -1391,7 +1394,6 @@ C           DIVIDE is used in albedo gradient below.
               LEGENT = LEGENT/SCATMIN
               SINGSCATJ = SINGSCATJ/SCATMIN
             ENDIF
-            DIVIDE = 1.0D0/(1 - F*ALBEDOJ)
 
 C           Do delta-M scaling.
             IF (DELTAM) THEN
@@ -1400,7 +1402,7 @@ C           Do delta-M scaling.
                 LEGENT(:,0:ML) = LEGENT(:,0:ML)/(1-F)
               ENDIF
             ENDIF
-
+            DIVIDE = 1.0D0/(1 - F*ALBEDOJ)
 C           Calculate the phase/radiance component of source function.
 C           for extinction/albedo gradients.
 C           (this is just for one SPECIES so we don't reuse it.
@@ -1420,7 +1422,6 @@ C             gonna be zero anyway.
               ENDIF
               SOURCET(1) = MAX(0.0, SOURCET(1))
             ENDIF
-
 
 C           Undo delta-M scaling so we have the unscaled legendre/wigner coefficients
 C           on the RTE grid for phase function gradients.
@@ -1497,6 +1498,7 @@ C         Special case for solar source and delta-M
 
              IF (INTERPMETHOD(2:2) .EQ. 'O' ) THEN
                LEGENT = LEGEN(:,:,IPHASE(1,IP,IPA))
+               F = LEGENT(1,ML+1)
              ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
                IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
                  LEGENT = LEGEN(:,:,IPHASE(1,IP,IPA))
@@ -1509,11 +1511,10 @@ C         Special case for solar source and delta-M
                  ENDDO
                ENDIF
                F = LEGENT(1,ML+1)
-               LEGENT = LEGENT/(1-F)
+               LEGENT(:,0:ML) = LEGENT(:,0:ML)/(1-F)
              ENDIF
-
 C               First subtract off the truncated single scattering
-             DA = ALBEDO(IP,IPA)*DIRFLUX(IP)*SECMU0*W/(1-F)
+             DA = ALBEDO(IP,IPA)*DIRFLUX(IP)*SECMU0*W
              J = 1
 
              DO L = 0, ML
@@ -1546,13 +1547,13 @@ C               original unscaled phase function.
              IF (NUMPHASE .GT. 0) THEN
                IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
                  SINGSCAT8(:,N) = SINGSCAT8(:,N) +
-     .          DA*SINGSCAT(:,IPHASE(1,IP,IPA))
+     .          DA*SINGSCAT(:,IPHASE(1,IP,IPA))/(1-F)
                ELSE
                  DO Q=1,8*MAXNMICRO
                    IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
                    SINGSCAT8(:,N) = SINGSCAT8(:,N) +
      .              DA*SINGSCAT(:,IPHASE(Q,IP,IPA))*
-     .              PHASEINTERPWT(Q,IP,IPA)
+     .              PHASEINTERPWT(Q,IP,IPA)/(1-F)
                  ENDDO
                ENDIF
              ELSE
@@ -2360,15 +2361,16 @@ C       for the TMS method. -JRLoveridge 2021/04/05'
 C       Why are we unscaling LEGEN for each scat angle????
 C       Isn't this a waste of time?
         DO IPH = 1, NUMPHASE
-          F = LEGEN(1,ML+1,IPH)/(2*(ML+1)+1)
+CF = LEGEN(1,ML+1,IPH)/(2*(ML+1)+1)
 C          IF (J .EQ. 1) THEN
 C            PRINT *, 'HELLO',IPH, F, LEGEN(1,ML+1,IPH)
 C          ENDIF
           DO L = 0, NLEG
             IF (L .LE. ML .AND. DELTAM) THEN
-              UNSCLEGEN(1,L) = LEGEN(1,L,IPH)/((2*L+1)*(1-F))
+              UNSCLEGEN(1,L) = LEGEN(1,L,IPH)/(2*L+1)
+C((2*L+1)*(1-F))
             ELSE IF (DELTAM) THEN
-              UNSCLEGEN(1,L) = LEGEN(1,L,IPH)/((2*L+1)*(1-F))
+              UNSCLEGEN(1,L) = LEGEN(1,L,IPH)/(2*L+1)
             ELSE
               UNSCLEGEN(1,L) = LEGEN(1,L,IPH)/(2*L+1)
             ENDIF
@@ -2377,9 +2379,9 @@ C              PRINT *, UNSCLEGEN(1,L), LEGEN(1,L,IPH)
 C            ENDIF
             IF (NSTLEG .GT. 1) THEN
               IF (L .LE. ML .AND. DELTAM) THEN
-                UNSCLEGEN(2,L) = LEGEN(5,L,IPH)/((2*L+1)*(1-F))
+                UNSCLEGEN(2,L) = LEGEN(5,L,IPH)/(2*L+1)
               ELSE IF (DELTAM) THEN
-                UNSCLEGEN(2,L) = LEGEN(5,L,IPH)/((2*L+1)*(1-F))
+                UNSCLEGEN(2,L) = LEGEN(5,L,IPH)/(2*L+1)
               ELSE
                 UNSCLEGEN(2,L) = LEGEN(5,L,IPH)/(2*L+1)
               ENDIF
@@ -2952,7 +2954,6 @@ C     by the deltam scaled albedo/extinct product.
             SINGSCATP(:) = SINGSCATP(:)
      .        + PHASEWTP(Q)*SINGSCAT(:,IPHASEP(Q))
           ENDDO
-
           GRADTEMP(:) = GRADTEMP(:) +
      .      DIRFLUX*SECMU0*XI*(SINGSCATJ*DFJ/(1-F) +
      .          DSINGSCATP*EXTINCTP*ALBEDOP
@@ -3129,31 +3130,40 @@ Cf2py intent(out) :: EXTGRAD
      .     INPUTWEIGHT, NSTOKES, NPX,NPY,NPZ,MAXPG,
      .  ALBEDOP, PHASEWTP, LEGEN, NSTLEG, NUMPHASE,
      .  MAXNMICRO, IPHASEP, RAYGRAD, ML, NLEG, DELTAM,
-     .  VERBOSE)
+     .  DNUMPHASE, DIPHASEP, DALB, EXTINCTP, DPHASEWTP,
+     .  DLEG, DOEXACT)
       IMPLICIT NONE
 
       INTEGER NSTOKES, NUMDER, NPART, PARTDER(NUMDER)
 Cf2py intent(in) :: NSTOKES, NUMDER, NPART, PARTDER
       INTEGER NPX, NPY, NPZ, MAXPG, MAXNMICRO
 Cf2py intent(in) :: NPX, NPY, NPZ, MAXPG, MAXNMICRO
-      INTEGER NSTLEG, NUMPHASE, NLEG, ML
-Cf2py intent(in) :: NSTLEG, NUMPHASE, NLEG, ML
-      LOGICAL DELTAM, VERBOSE
-Cf2py intent(in) :: DELTAM, VERBOSE
+      INTEGER NSTLEG, NUMPHASE, NLEG, ML, DNUMPHASE
+Cf2py intent(in) :: NSTLEG, NUMPHASE, NLEG, ML, DNUMPHASE
+      LOGICAL DELTAM
+Cf2py intent(in) :: DELTAM
+      INTEGER DOEXACT(NUMDER)
+Cf2py intent(in) :: DOEXACT
       REAL DPATH(8*(NPX+NPY+NPZ))
 Cf2py intent(in) :: DPATH
       INTEGER DPTR(8*(NPX+NPY+NPZ))
 Cf2py intent(in) :: DPTR
-      REAL DEXT(MAXPG, NUMDER)
-Cf2py intent(in) :: DEXT
-      REAL ALBEDOP(MAXPG,NPART)
-Cf2py intent(in) :: ALBEDOP
+      REAL DEXT(MAXPG, NUMDER), DALB(MAXPG,NUMDER)
+Cf2py intent(in) :: DEXT, DALB
+      REAL ALBEDOP(MAXPG,NPART), EXTINCTP(MAXPG,NPART)
+Cf2py intent(in) :: ALBEDOP, EXTINCTP
       REAL PHASEWTP(MAXNMICRO,MAXPG,NPART)
 Cf2py intent(in) :: PHASEWTP
       INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
 Cf2py intent(in) :: IPHASEP
+      REAL DPHASEWTP(MAXNMICRO,MAXPG,NUMDER)
+Cf2py intent(in) :: DPHASEWTP
+      INTEGER DIPHASEP(MAXNMICRO, MAXPG, NUMDER)
+Cf2py intent(in) :: DIPHASEP
       REAL LEGEN(NSTLEG,0:NLEG,NUMPHASE)
 Cf2py intent(in) :: LEGEN
+      REAL DLEG(NSTLEG,0:NLEG,DNUMPHASE)
+Cf2py intent(in) :: DLEG
       DOUBLE PRECISION TRANSMIT, ABSCELL
 Cf2py intent(in) :: TRANSMIT, ABSCELL
       REAL INPUTWEIGHT(NSTOKES)
@@ -3161,32 +3171,39 @@ Cf2py intent(in) :: INPUTWEIGHT
       DOUBLE PRECISION RAYGRAD(NSTOKES,MAXPG,NUMDER)
 Cf2py intent(in,out) :: RAYGRAD
 
-      INTEGER SSP, II, IDR, Q, IPA
-      REAL FP
+      INTEGER IB, II, IDR, Q, IPA
+      REAL FP, EXTGRAD
 
       II=1
       DO WHILE (DPTR(II) .GT. 0)
-        SSP = DPTR(II)
+        IB = DPTR(II)
         DO IDR=1,NUMDER
           IPA = PARTDER(IDR)
-          FP = 0.0
-          IF (DELTAM) THEN
-            DO Q=1,MAXNMICRO
-              IF (PHASEWTP(Q,SSP,IPA) .LE. 1E-6) CYCLE
-                FP = FP + PHASEWTP(Q,SSP,IPA)*
-     .                LEGEN(1,ML+1,IPHASEP(Q,SSP,IPA))
-            ENDDO
-          ENDIF
-          IF (VERBOSE) THEN
-            PRINT *, II
-            PRINT *, SSP
-            PRINT *, ABSCELL, TRANSMIT, INPUTWEIGHT
-            PRINT *, FP, ALBEDOP(SSP,IPA), DEXT(SSP,IDR)
-            PRINT *, DPATH(II)
-          ENDIF
-          RAYGRAD(:,SSP,IDR) = RAYGRAD(:,SSP,IDR) -
-     .      (1.0-FP*ALBEDOP(SSP,IPA))*
-     .      DEXT(SSP,IDR)*DPATH(II)*ABSCELL*TRANSMIT*
+          CALL EXTINCTION_DERIVATIVE_POINT(
+     .     DEXT(IB,IDR), DOEXACT(IDR), 1.0, LEGEN,
+     .     NLEG, NSTLEG, NUMPHASE, DNUMPHASE,
+     .     PHASEWTP(:,IB,IPA),
+     .     DELTAM, IPHASEP(:,IB,IPA),
+     .     DIPHASEP(:,IB,IDR),EXTGRAD, DLEG,
+     .     MAXNMICRO, DALB(IB,IDR), ALBEDOP(IB,IPA),
+     .     EXTINCTP(IB,IPA), DPHASEWTP(:,IB,IDR), ML)
+C          FP = 0.0
+C          IF (DELTAM) THEN
+C            DO Q=1,MAXNMICRO
+C              IF (PHASEWTP(Q,SSP,IPA) .LE. 1E-6) CYCLE
+C                FP = FP + PHASEWTP(Q,SSP,IPA)*
+C     .                LEGEN(1,ML+1,IPHASEP(Q,SSP,IPA))
+C            ENDDO
+C          ENDIF
+C          IF (VERBOSE) THEN
+C            PRINT *, II
+C            PRINT *, SSP
+C            PRINT *, ABSCELL, TRANSMIT, INPUTWEIGHT
+C            PRINT *, FP, ALBEDOP(SSP,IPA), DEXT(SSP,IDR)
+C            PRINT *, DPATH(II)
+C          ENDIF
+          RAYGRAD(:,IB,IDR) = RAYGRAD(:,IB,IDR) -
+     .      EXTGRAD*DPATH(II)*ABSCELL*TRANSMIT*
      .      INPUTWEIGHT(:)
         ENDDO
         II = II + 1
