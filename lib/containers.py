@@ -798,7 +798,7 @@ class SolversDict(OrderedDict):
             wavelength_ordered_derivatives[key] = OrderedDict()
 
         for scatterer_name, variable_data in unknown_scatterers.items():
-            data_generator = variable_data['data_generator']
+            data_generator = variable_data['dataset_generator'].optical_property_generator
             if (isinstance(data_generator, pyshdom.medium.OpticalDerivativeGenerator) &
                     (len(self) > 1)):
                 raise ValueError(
@@ -856,7 +856,7 @@ class UnknownScatterers(OrderedDict):
         --------
         pyshdom.solver.RTE.calculate_microphysical_partial_derivatives
         """
-        optical_derivative_generator = pyshdom.medium.OpticalDerivativeGenerator()
+        optical_derivative_generator = pyshdom.medium.OpticalDerivativeGenerator('test')
         for variable_name in variable_name_list:
 
             if isinstance(dataset_generator, pyshdom.medium.OpticalGenerator):

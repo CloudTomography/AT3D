@@ -1086,7 +1086,7 @@ class RTE:
                 num_micros.append(variable_derivative.num_micro.size)
                 max_legendre.append(variable_derivative.legendre_index.size)
                 table_phase_flag = 0
-                if variable_derivative['derivative_method'] == 'table':
+                if variable_derivative['derivative_method'] == 'exact':
                     table_phase_flag = 1
                 table_phase_derivative_flag.append(table_phase_flag)
                 unknown_scatterer_indices.append(i+1)
@@ -1130,7 +1130,6 @@ class RTE:
                 if variable_derivative['derivative_method'] == 'exact':
                     # in this case phase pointer points to dleg table.
                     dleg_max = sum([table.sizes['table_index'] for table in dleg_table])
-
                     dleg_table.append(variable_derivative.legcoef.pad(
                         {'legendre_index': (0, max_legendre - variable_derivative.legcoef.sizes['legendre_index'])},
                         constant_values=0.0
@@ -1152,10 +1151,10 @@ class RTE:
 
         # Concatenate all legendre tables into one table
         legendre_table = xr.concat(dleg_table, dim='table_index')
-        if self._pa.nlegp > legendre_table.sizes['legendre_index']:
+        if self._pa.nlegp + 1 > legendre_table.sizes['legendre_index']:
             legendre_table = legendre_table.pad(
                 {'legendre_index':
-                 (0, 1 + self._pa.nlegp - legendre_table.sizes['legendre_index'])
+                 (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])
                 }, constant_values=0.0
             )
         self._dnumphase = legendre_table.sizes['table_index']
@@ -1165,11 +1164,12 @@ class RTE:
         dleg[0, 0, :] = 0.0
         dleg = dleg[:self._nstleg] / scaling_factor
 
-        self._dleg = dleg
         self._dext = dext
         self._dalb = dalb
-        self._diphase = diphase
-        self._dphasewt = dphasewt
+        self._diphasep = diphase
+        self._dphasewtp = dphasewt
+        # temperature derivatives are not yet supported in the python interface.
+        self._dtemp = np.zeros((dext.shape))
 
         # compute lut of phase function derivatives evaluated at scattering angles.
         self._dphasetab, ierr, errmsg = pyshdom.core.precompute_phase_check_grad(
@@ -1182,11 +1182,13 @@ class RTE:
             ml=self._ml,
             nlm=self._nlm,
             nleg=self._pa.nlegp,
-            dleg=self._dleg,
+            dleg=dleg,
             deltam=self._deltam
         )
         pyshdom.checks.check_errcode(ierr, errmsg)
-
+        # now that we have dphasetab we can truncate dleg
+        # to the RTE accuracy.
+        self._dleg = dleg[:, :self._nleg+1]
         # make property grid to RTE grid pointers and interpolation weights.
         self._optinterpwt, self._interpptr, ierr, errmsg = \
         pyshdom.core.prepare_deriv_interps(
@@ -2383,7 +2385,10 @@ class RTE:
                 ipflag=self._ipflag,
                 deltam=self._deltam,
                 ml=self._ml,
-                nleg=self._nleg,
+                nlegp=self._pa.nlegp,
+                maxnmicro=self._pa.max_num_micro,
+                maxpg=self._maxpg,
+                npart=self._npart,
                 solarflux=self._solarflux,
                 solarmu=self._solarmu,
                 solaraz=self._solaraz,
@@ -2402,6 +2407,7 @@ class RTE:
                 albedop=self._pa.albedop,
                 legenp=self._pa.legenp,
                 iphasep=self._pa.iphasep,
+                phasewtp=self._pa.phasewtp,
                 nzckd=self._pa.nzckd,
                 zckd=self._pa.zckd,
                 gasabs=self._pa.gasabs

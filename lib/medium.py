@@ -442,15 +442,16 @@ def get_optical_properties(microphysics, mie_mono_tables, size_distribution_func
 
 class OpticalDerivativeGenerator:
 
-    def __init__(self):
-        pass
+    def __init__(self, scatterer_name, wavelength=None):
+        self.scatterer_name = scatterer_name
+        self.wavelength = wavelength
 
     def test_valid_names(self, name):
 
         valid = False
         if name in ('extinction', 'ssalb'):
             valid = True
-        elif 'legendre_X' in name:
+        elif 'legendre_' in name:
             leg_index = int(name[len('legendre_X_'):])
             stokes_index = int(name[len('legendre_')])
             if ((stokes_index >= 0) & (stokes_index <= 5) &
@@ -524,7 +525,7 @@ class OpticalDerivativeGenerator:
                         'extinction': (['x', 'y', 'z'],
                             np.zeros(optical_properties.extinction.shape)),
                         'ssalb': (['x', 'y', 'z'],
-                            np.ones(optical_properties.ssalb.shape)),
+                            np.zeros(optical_properties.ssalb.shape)),
                         'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
                             legcoef),
                         'table_index': optical_properties.table_index,
@@ -544,9 +545,12 @@ class OpticalDerivativeGenerator:
                     "variable name is not supported for derivative calculation "
                     "by this generator.'{}'".format(variable_name)
                     )
-
+            differentiated['derivative_method'] = 'exact'
             derivatives[variable_name] = differentiated
-        return derivatives
+
+        wavelength_organized_derivatives = OrderedDict()
+        wavelength_organized_derivatives[self.wavelength] = derivatives
+        return wavelength_organized_derivatives
 
 class OpticalPropertyGenerator:
 
@@ -1490,6 +1494,7 @@ class MicrophysicsGenerator(DataGenerator):
                 "'{}'".format(OpticalPropertyGenerator)
             )
         self._optical_property_generator = optical_property_generator
+        self.scatterer_name = optical_property_generator.scatterer_name
 
         dataset = self._check_inputs(rte_grid, *fixed_data_arrays, **variable_data_bounds)
         self._fixed_dataset = pyshdom.grid.resample_onto_grid(rte_grid, dataset)
@@ -1528,8 +1533,10 @@ class MicrophysicsGenerator(DataGenerator):
 
 class OpticalGenerator(DataGenerator):
 
-    def __init__(self, rte_grid, *fixed_data_arrays, **variable_data_bounds):
-        self._optical_property_generator = pyshdom.medium.OpticalDerivativeGenerator()
+    def __init__(self, rte_grid, scatterer_name, wavelength, *fixed_data_arrays, **variable_data_bounds):
+        self._optical_property_generator = pyshdom.medium.OpticalDerivativeGenerator(scatterer_name, wavelength)
+        self.scatterer_name = scatterer_name
+        self.wavelength = wavelength
         dataset = self._check_inputs(rte_grid, *fixed_data_arrays, **variable_data_bounds)
         self._fixed_dataset = pyshdom.grid.add_grid_variables(rte_grid, dataset)
 
@@ -1763,7 +1770,7 @@ class StateGenerator:
 
         new_optical_properties = OrderedDict()
         for scatterer_name, variable_data in self._unknown_scatterers.items():
-            data_generator = variable_data.data_generator
+            data_generator = variable_data['dataset_generator']
             gridded_state_data = {}
             for variable_name in variable_data['variable_name_list']:
                 selected_state = self._state_representation.select_variable(

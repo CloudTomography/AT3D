@@ -141,6 +141,8 @@ F2PY_CORE_API = [
     'planck_function',
     'planck_derivative',
     'compute_gradient_oneproppoint',
+    'compute_direct_beam_deriv',
+    'extinction_derivative_point'
 ]
 
 def _run_command(cmd):
