@@ -3187,21 +3187,7 @@ Cf2py intent(in,out) :: RAYGRAD
      .     DIPHASEP(:,IB,IDR),EXTGRAD, DLEG,
      .     MAXNMICRO, DALB(IB,IDR), ALBEDOP(IB,IPA),
      .     EXTINCTP(IB,IPA), DPHASEWTP(:,IB,IDR), ML)
-C          FP = 0.0
-C          IF (DELTAM) THEN
-C            DO Q=1,MAXNMICRO
-C              IF (PHASEWTP(Q,SSP,IPA) .LE. 1E-6) CYCLE
-C                FP = FP + PHASEWTP(Q,SSP,IPA)*
-C     .                LEGEN(1,ML+1,IPHASEP(Q,SSP,IPA))
-C            ENDDO
-C          ENDIF
-C          IF (VERBOSE) THEN
-C            PRINT *, II
-C            PRINT *, SSP
-C            PRINT *, ABSCELL, TRANSMIT, INPUTWEIGHT
-C            PRINT *, FP, ALBEDOP(SSP,IPA), DEXT(SSP,IDR)
-C            PRINT *, DPATH(II)
-C          ENDIF
+
           RAYGRAD(:,IB,IDR) = RAYGRAD(:,IB,IDR) -
      .      EXTGRAD*DPATH(II)*ABSCELL*TRANSMIT*
      .      INPUTWEIGHT(:)

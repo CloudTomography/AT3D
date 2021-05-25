@@ -1914,7 +1914,7 @@ C           Compute the cubic polynomial extinction coefficients
 
 
 C       Compute the inner derivatives (minus the path lengths)
-        IF (.NOT. OUTOFDOMAIN .AND. K .LT. NPZ) THEN
+        IF (.NOT. OUTOFDOMAIN .AND. K .LE. NPZ) THEN
           IF (IDP+8 .GT. 8*(NPX+NPY+NPZ)) THEN
             WRITE(*,*) 'ERROR DIRECT_BEAM_AND_PATHS_PROP: ',
      .                 'Max IDP exceeded: ', 8*(NPX+NPY+NPZ)

@@ -274,7 +274,7 @@ C    Compute the solar transmission in DIRFLUX.
           IF (ADJFLAG) THEN
             TRANSMIT = 1.0D0
             DIRFLUX = 0.0
-            CALL PENCIL_BEAM_PROP(0.5D0, 0.5D0, DBLE(ZGRID(NZ)),
+            CALL PENCIL_BEAM_PROP(0.2D0, 0.2D0, DBLE(ZGRID(NZ)),
      .        BCFLAG, IPFLAG,
      .        1.0, 1.0D0, 0.0D0,
      .        DIRFLUX(:NPTS),TOTAL_EXT(:NPTS),
