@@ -1912,7 +1912,7 @@ class RTE:
 
         #These are the sizes of the main arrays.
         self._maxig = int(self._adapt_grid_factor * self._nbpts)
-        self._maxic = int(self._cell_to_point_ratio * self._maxig)
+        self._maxic = max(int(self._cell_to_point_ratio * self._maxig), self._nbcells)
         maxiv = int(self._num_sh_term_factor * self._nlm * self._maxig)
         if maxiv < self._nbpts*4:
             warnings.warn("User specified MAXIV={} is smaller than the minimum needed "

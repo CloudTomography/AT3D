@@ -1699,7 +1699,6 @@ C      from a boundary then set the HITBOUNDARY flag
           HITBOUNDARY = .TRUE.
         ENDIF
       ENDIF
-
 C           Grid cell loop begin
       IDP = 0
       DO WHILE (.NOT. HITBOUNDARY .AND. ABS(ZE-ZLEVELS(NPZ)) .GT. EPSZ)
@@ -1742,10 +1741,10 @@ C           Get the eight corner extinction values
 
 C           Compute the distance to the next grid plane in  X, Y, and Z
 C             If in horizontal uniform region or doing IP then fix X and/or Y.
-        IF (ZE .GE. UNIFORMZLEV) THEN
-          CONSTX = .TRUE.
-          CONSTY = .TRUE.
-        ENDIF
+C        IF (ZE .GE. UNIFORMZLEV) THEN
+C          CONSTX = .TRUE.
+C          CONSTY = .TRUE.
+C        ENDIF
         IF (CONSTX) THEN
           SOX = 1.0E30
         ELSE IF (CX .GT. 0.0) THEN
@@ -1914,7 +1913,8 @@ C           Compute the cubic polynomial extinction coefficients
 
 
 C       Compute the inner derivatives (minus the path lengths)
-        IF (.NOT. OUTOFDOMAIN .AND. K .LE. NPZ) THEN
+C .NOT. OUTOFDOMAIN .AND.
+        IF (K .LE. NPZ) THEN
           IF (IDP+8 .GT. 8*(NPX+NPY+NPZ)) THEN
             WRITE(*,*) 'ERROR DIRECT_BEAM_AND_PATHS_PROP: ',
      .                 'Max IDP exceeded: ', 8*(NPX+NPY+NPZ)

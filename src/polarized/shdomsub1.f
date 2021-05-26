@@ -103,7 +103,6 @@ C         Put the Planck blackbody source in PLANCK.
 C       Get the maximum single scattering albedo over all processors
       CALL TOTAL_ALBEDO_MAX (ALBMAX)
 
-
       RETURN
       END
 

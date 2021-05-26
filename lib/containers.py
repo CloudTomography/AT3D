@@ -862,12 +862,14 @@ class UnknownScatterers(OrderedDict):
             if isinstance(dataset_generator, pyshdom.medium.OpticalGenerator):
                 if not optical_derivative_generator.test_valid_names(variable_name):
                     raise ValueError(
-                        "Variables to retrieve for must all be optical or microphysical, "
-                        "not a mixture. To jointly retrieve extinction with microphysical"
-                        " information look at the normalization options for the density "
-                        "variable in the OpticalPropertyGenerator."
-                    )
-
+                        "Unknown variable name '{}' is not supported by {}".format(
+                            variable_name, pyshdom.medium.OpticalGenerator
+                        ))
+#     "Variables to retrieve for must all be optical or microphysical, "
+#     "not a mixture. To jointly retrieve extinction with microphysical"
+#     " information look at the normalization options for the density "
+#     "variable in the OpticalPropertyGenerator."
+# )
             elif isinstance(dataset_generator, pyshdom.medium.MicrophysicsGenerator):
                 if not dataset_generator.optical_property_generator.test_valid_names(variable_name):
                     raise ValueError(

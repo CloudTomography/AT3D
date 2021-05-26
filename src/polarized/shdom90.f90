@@ -655,10 +655,10 @@
 
 !           Compute the distance to the next grid plane in  X, Y, and Z
 !             If in horizontal uniform region or doing IP then fix X and/or Y.
-        IF (ZE .GE. UNIFORMZLEV) THEN
-          CONSTX = .TRUE.
-          CONSTY = .TRUE.
-        ENDIF
+        ! IF (ZE .GE. UNIFORMZLEV) THEN
+        !   CONSTX = .TRUE.
+        !   CONSTY = .TRUE.
+        ! ENDIF
         IF (CONSTX) THEN
           SOX = 1.0E30
         ELSE IF (CX .GT. 0.0) THEN

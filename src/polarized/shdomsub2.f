@@ -28,7 +28,6 @@ Cf2py intent(out) :: XGRID, YGRID, ZGRID
       CHARACTER GRIDTYPE*1
 Cf2py intent(in) :: GRIDTYPE
       INTEGER IX, IY, IZ
-
 C         Make the X, Y, and Z grids, depending on type:
 C           E for evenly spaced, P from property file, F from zgrid.inp
 C           Only Even allowed horizontally
@@ -78,7 +77,6 @@ C           Only Even allowed horizontally
       ELSE
         STOP 'NEW_GRIDS: Illegal grid type in Z'
       ENDIF
-
       RETURN
       END
 
@@ -151,7 +149,6 @@ Cf2py intent(in) :: XGRID, YGRID, ZGRID
 Cf2py intent(out) :: GRIDPOS
       INTEGER IX, IY, IZ, IX0, IX1, IY0, IY1, I, NXC, NYC
       LOGICAL BTEST
-
 C         First, make the grid point positions
       I = 0
       DO IX = 1, NX1
@@ -562,6 +559,7 @@ C                LEGEN(6,L,IPH) = LEGEN(6,L,IPH)
           ENDIF
 	      ENDDO
       ENDDO
+
       RETURN
       END
 
