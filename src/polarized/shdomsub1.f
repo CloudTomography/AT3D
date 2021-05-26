@@ -13,6 +13,8 @@ C     phase functions between different particle types at run time
 C     e.g. COMPUTE_SOURCE.
 C     Directives for the f2py wrapping have also been added.
 C     - JRLoveridge 2021/02/22
+!     Modifications have been made to accomodate new interpolation
+!     of phase functions in SHDOM. - JRLoveridge
 
       SUBROUTINE TRANSFER_PA_TO_GRID (ML, MM, MAXIG, NLEG, NUMPHASE,
      .             DELTAM, SRCTYPE, UNITS, WAVENO, WAVELEN,

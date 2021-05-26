@@ -1548,7 +1548,8 @@ C     Compute trilinear interpolation kernel F(8)
      .		         DELX, DELY, XSTART, YSTART, GRIDPOS, ZLEVELS,
      .		         IPDIRECT, DI, DJ, DK, CX, CY, CZ, CXINV,
      .		         CYINV, CZINV, EPSS, EPSZ, XDOMAIN, YDOMAIN,
-     .		         UNIFORMZLEV, DELXD, DELYD, DPATH, DPTR)
+     .		         UNIFORMZLEV, DELXD, DELYD, DPATH, DPTR,
+     .             IERR, ERRMSG)
 C     Calculates the sensitvity of the direct beam to the extinction
 C     along the path from each grid point to the sun.
 C     Actually calls DIRECT_BEAM_AND_PATHS_PROP to do all the hard work.
@@ -1570,11 +1571,14 @@ Cf2py intent(in) :: UNIFORMZLEV, DELXD, DELYD
       REAL DPATH(8*(NPX+NPY+NPZ),NPTS)
       INTEGER DPTR(8*(NPX+NPY+NPZ),NPTS)
 Cf2py intent(out) :: DPATH, DPTR
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+Cf2py intent(out) :: IERR, ERRMSG
 
       INTEGER SIDE, IP
       LOGICAL VALIDBEAM
       REAL    UNIFZLEV, XO, YO, ZO, DIR, DIRPATH
-
+      IERR = 0
       DPTR = 0
       DPATH = 0.0
 
@@ -1585,7 +1589,8 @@ Cf2py intent(out) :: DPATH, DPTR
      .            NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS, CX, CY, CZ,
      .            CXINV, CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .            DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .            DPATH(:,IP), DPTR(:,IP))
+     .            DPATH(:,IP), DPTR(:,IP), IERR, ERRMSG)
+        IF (IERR .NE. 0) RETURN
       ENDDO
       RETURN
       END
@@ -1595,14 +1600,17 @@ Cf2py intent(out) :: DPATH, DPTR
      .           XO, YO, ZO, SIDE, NPX, NPY, NPZ, DELX, DELY,
      .           XSTART, YSTART, ZLEVELS, CX, CY, CZ, CXINV, CYINV,
      .           CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD, XDOMAIN,
-     .           YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, DPATH, DPTR)
+     .           YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, DPATH, DPTR,
+     .           IERR, ERRMSG)
       IMPLICIT NONE
 
       REAL    DPATH(8*(NPX+NPY+NPZ))
       INTEGER DPTR(8*(NPX+NPY+NPZ))
       INTEGER BCFLAG, SIDE
       REAL    XO, YO, ZO, XI, YI, ZI
-
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+      
       INTEGER IX, IY, IZ, JZ, IL, IM, IU
       INTEGER I, J, K, IP, JP, I1, I2, I3, I4
       INTEGER IPDIRECT, DI, DJ, DK
@@ -1647,14 +1655,18 @@ C         Find the grid location
       I = INT(X/DELXD) + 1
       IF (I .GT. NPX .AND. ABS(X-XDOMAIN) .LT. 0.001*DELXD) I = NPX
       IF (I .LT. 1 .OR. I .GT. NPX) THEN
-        WRITE (6,*) 'DIRECT_BEAM_PROP: Beyond X domain',I,XI,YI,ZI
-        STOP
+        IERR = 1
+        WRITE (ERRMSG,*) 'DIRECT_BEAM_AND_PATHS_PROP: Beyond X domain',
+     .    I,XI,YI,ZI
+        RETURN
       ENDIF
       J = INT(Y/DELYD) + 1
       IF (J .GT. NPY .AND. ABS(Y-YDOMAIN) .LT. 0.001*DELYD) J = NPY
       IF (J .LT. 1 .OR. J .GT. NPY) THEN
-        WRITE (6,*) 'DIRECT_BEAM_PROP: Beyond Y domain',J,XI,YI,ZI
-        STOP
+        IERR = 1
+        WRITE (6,*) 'DIRECT_BEAM_AND_PATHS_PROP: Beyond Y domain',
+     .    J,XI,YI,ZI
+        RETURN
       ENDIF
       XE = X
       YE = Y
@@ -1728,10 +1740,11 @@ C           Grid cell loop begin
         IF (I .LT. 1 .OR. I .GT. NPX .OR.
      .      J .LT. 1 .OR. J .GT. NPY .OR.
      .      K .LT. 1 .OR. K .GE. NPZ) THEN
-          WRITE (6,'(A,3I4)') 'DIRECT_BEAM_PROP: beyond grid!', I, J, K
-          WRITE(*,*) NPX, NPY, NPZ
-          WRITE (6,'(1(2X,3F9.5))') X, Y, Z
-          STOP
+          WRITE (ERRMSG,'(A,3I4)') 'DIRECT_BEAM_AND_PATHS_PROP: ',
+     .     'beyond grid!', I, J, K
+          WRITE(ERRMSG,*) NPX, NPY, NPZ
+          WRITE (ERRMSG,'(1(2X,3F9.5))') X, Y, Z
+          RETURN
         ENDIF
 C           Get the eight corner extinction values
         I1 = K + NPZ*(J-1)  + NPZ*NPY*(I-1)
@@ -1846,9 +1859,11 @@ C               (periodic) or go into IP mode (open boundaries).
           ENDIF
         ENDIF
         IF (SO .LT. -EPSS) THEN
-          WRITE (6,*) 'DIRECT_BEAM_PROP: SO<0', X,Y,Z,
+          IERR = 1
+          WRITE (ERRMSG,*) 'DIRECT_BEAM_AND_PATHS_PROP: SO<0',
+     .      X,Y,Z,
      .         XE,YE,ZE, XP,YP,ZP, CX,CY,CZ, SOX,SOY,SOZ
-          STOP
+          RETURN
         ENDIF
         SO = MAX(SO,0.0D0)
 C           Make the starting and ending interpolation factors
@@ -1916,9 +1931,11 @@ C       Compute the inner derivatives (minus the path lengths)
 C .NOT. OUTOFDOMAIN .AND.
         IF (K .LE. NPZ) THEN
           IF (IDP+8 .GT. 8*(NPX+NPY+NPZ)) THEN
-            WRITE(*,*) 'ERROR DIRECT_BEAM_AND_PATHS_PROP: ',
-     .                 'Max IDP exceeded: ', 8*(NPX+NPY+NPZ)
-            STOP
+            IERR = 1
+            WRITE(ERRMSG,*) 'DIRECT_BEAM_AND_PATHS_PROP: ',
+     .      'Max number of property points to pass',
+     .       'exceeded: IDP=', 8*(NPX+NPY+NPZ)
+            RETURN
           ENDIF
           DPATH(IDP+1) = MAX(0.0, SO*(U0M*VMWM + 0.5D0*B1 +
      .                 0.3333333333333333D0*C1 - 0.25D0*DU*DV*DW))

@@ -1005,7 +1005,7 @@ class RTE:
             #calculate the derivative.
             self._make_direct()
 
-            direct_derivative_path, direct_derivative_ptr = \
+            direct_derivative_path, direct_derivative_ptr, ierr, errmsg = \
                 pyshdom.core.make_direct_derivative(
                     npts=self._npts,
                     bcflag=self._bcflag,
@@ -1036,6 +1036,7 @@ class RTE:
                     delxd=self._delxd,
                     delyd=self._delyd
                 )
+            pyshdom.checks.check_errcode(ierr, errmsg)
         else:
             direct_derivative_ptr = np.zeros(
                 (8*(self._pa.npx + self._pa.npy + self._pa.npz), self._npts),

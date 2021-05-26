@@ -4,9 +4,9 @@ build/
 dist/
 mie_tables/
 pyshdom.egg-info/
-lib/__pycache__/
+pyshdom/__pycache__/
 tests/__pycache__/
-lib/*.so
+pyshdom/*.so
 venv/
 src/core.pyf
 src/coremodule.c

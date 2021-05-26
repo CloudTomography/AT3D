@@ -549,7 +549,7 @@ def _make_surface_dataset(surface_type, ground_temperature, delx, dely, **kwargs
                                                               for val in kwargs.values()]
 
     parms_in = np.stack(list_of_params, axis=0)
-    nsfcpar, sfcparms, gndtemp, gndalbedo = pyshdom.core.prep_surface(maxsfcpts=maxsfcpts,
+    nsfcpar, sfcparms, gndtemp, gndalbedo, ierr, errmsg = pyshdom.core.prep_surface(maxsfcpts=maxsfcpts,
                                                                       maxsfcpars=maxsfcpars,
                                                                       sfctype=sfctype,
                                                                       nxsfc=nxsfc,
@@ -558,6 +558,7 @@ def _make_surface_dataset(surface_type, ground_temperature, delx, dely, **kwargs
                                                                       delysfc=delysfc,
                                                                       parms_in=parms_in,
                                                                       grid_coords=grid_coords)
+    pyshdom.checks.check_errcode(ierr, errmsg)
     surface_dataset = xr.Dataset(
         data_vars={
             'name': surface_type,

@@ -2,7 +2,7 @@
       SUBROUTINE PREP_SURFACE (MAXSFCPTS, MAXSFCPARS,
      .                     SFCTYPE, NXSFC, NYSFC, DELXSFC, DELYSFC,
      .                     NSFCPAR, SFCPARMS, GNDTEMP, GNDALBEDO,
-     .                     GRID_COORDS, PARMS_IN)
+     .                     GRID_COORDS, PARMS_IN, IERR, ERRMSG)
 C    MODIFIED FROM READ_SURFACE (shdomsub2.f) by Jesse Loveridge. This
 C    function now prepares the surface properties based on arrays passed
 C    from python rather than read from file.
@@ -41,11 +41,15 @@ Cf2py intent(in) :: SFCTYPE
 Cf2py intent(in) :: GRIDCOORDS
       REAL :: PARMS_IN(MAXSFCPARS, NXSFC*NYSFC)
 Cf2py intent(in) ::PARMS_IN
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+Cf2py intent(out) :: IERR, ERRMSG
       INTEGER COUNT
       INTEGER N, I, I0, IX, IY, J
       REAL    ALB, TEMP, MRE, MIM, RHO0, KR, THETA, WSPD, PCL
       REAL    A, B, ZETA, SIGMA
 
+      IERR = 0
       GNDTEMP = 0.0
       GNDALBEDO = 0.0
       N = 0
@@ -54,8 +58,9 @@ C           Surface file type L is for variable Lambertian surface
       IF (SFCTYPE .EQ. 'VL' .OR. SFCTYPE .EQ. 'Vl') THEN
         NSFCPAR = 2
         IF (NSFCPAR .GT. MAXSFCPARS ) THEN
-          WRITE (*,*) 'READ_SURFACE: MAXSFCPARS exceeded'
-          STOP
+          IERR = 1
+          WRITE (ERRMSG,*) 'PREP_SURFACE: MAXSFCPARS exceeded'
+          RETURN
         ENDIF
         DO COUNT =1,NXSFC*NYSFC
           IX = GRID_COORDS(1,COUNT)
@@ -68,10 +73,14 @@ C           Surface file type L is for variable Lambertian surface
             I = NSFCPAR*(IX-1 + (NXSFC+1)*(IY-1))
             SFCPARMS(I+1) = TEMP
             SFCPARMS(I+2) = ALB
-            IF (ALB .LT. 0.0 .OR. ALB .GT. 1.0)
-     .        STOP 'READ_SURFACE: Illegal surface albedo'
+            IF (ALB .LT. 0.0 .OR. ALB .GT. 1.0) THEN
+              IERR = 1
+              WRITE(ERRMSG, *),
+     .        'PREP_SURFACE: Illegal surface albedo'
+              RETURN
+            ENDIF
             IF (TEMP .LT. 150. .OR. TEMP .GT. 350.)
-     .        WRITE (*,*) 'READ_SURFACE: Warning -',
+     .        WRITE (*,*) 'PREP_SURFACE: Warning -',
      .          ' surface temperature: ',IX,IY,TEMP
             GNDTEMP = GNDTEMP + TEMP
             GNDALBEDO = GNDALBEDO + ALB
@@ -83,8 +92,9 @@ C           Surface file type W is for Wave-Fresnel surface
       ELSE IF (SFCTYPE .EQ. 'VW') THEN
         NSFCPAR = 4
         IF (NSFCPAR .GT. MAXSFCPARS ) THEN
-          WRITE (*,*) 'READ_SURFACE: MAXSFCPARS exceeded'
-          STOP
+          IERR = 1
+          WRITE (ERRMSG,*) 'PREP_SURFACE: MAXSFCPARS exceeded'
+          RETURN
         ENDIF
         DO COUNT=1,NXSFC*NYSFC
           IX = GRID_COORDS(1,COUNT)
@@ -111,8 +121,9 @@ C             Norm Loeb's modification of 6S ocean reflectance module.
       ELSE IF (SFCTYPE .EQ. 'VO') THEN
         NSFCPAR = 3
         IF (NSFCPAR .GT. MAXSFCPARS ) THEN
-          WRITE (*,*) 'READ_SURFACE: MAXSFCPARS exceeded'
-          STOP
+          IERR = 1
+          WRITE (ERRMSG,*) 'READ_SURFACE: MAXSFCPARS exceeded'
+          RETURN
         ENDIF
         DO COUNT=1,NXSFC*NYSFC
           IX = GRID_COORDS(1,COUNT)
@@ -139,8 +150,9 @@ C              Data, J. Geophys. Res., 98, 20791-20801.)
       ELSE IF (SFCTYPE .EQ. 'VR') THEN
         NSFCPAR = 4
         IF (NSFCPAR .GT. MAXSFCPARS ) THEN
-          WRITE (*,*) 'READ_SURFACE: MAXSFCPARS exceeded'
-          STOP
+          IERR = 1
+          WRITE (ERRMSG,*) 'PREP_SURFACE: MAXSFCPARS exceeded'
+          RETURN
         ENDIF
         DO COUNT=1,NXSFC*NYSFC
           IX = GRID_COORDS(1,COUNT)
@@ -171,8 +183,9 @@ C     Atmosphere 2012, 3, 591-619; doi:10.3390/atmos3040591.)
       ELSE IF (SFCTYPE .EQ. 'VD') THEN
         NSFCPAR = 6
         IF (NSFCPAR .GT. MAXSFCPARS ) THEN
-          WRITE (*,*) 'READ_SURFACE: MAXSFCPARS exceeded'
-          STOP
+          IERR = 1
+          WRITE (ERRMSG,*) 'PREP_SURFACE: MAXSFCPARS exceeded'
+          RETURN
         ENDIF
         DO COUNT=1,NXSFC*NYSFC
           IX = GRID_COORDS(1,COUNT)
@@ -199,7 +212,9 @@ C     Atmosphere 2012, 3, 591-619; doi:10.3390/atmos3040591.)
         ENDDO
 
       ELSE
-        STOP 'READ_SURFACE: Unknown BRDF type'
+        IERR = 1
+        WRITE(ERRMSG,*), 'PREP_SURFACE: Unknown BRDF type'
+        RETURN
       ENDIF
 
 

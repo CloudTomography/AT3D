@@ -10,6 +10,8 @@
 !     as the solver.RTE object.
 !     Directives for the f2py wrapping have also been added.
 !     - JRLoveridge 2021/02/22
+!     Modifications have been made to accomodate new interpolation
+!     of phase functions in SHDOM. - JRLoveridge
 
 
       SUBROUTINE TRILIN_INTERP_PROP (X, Y, Z, INIT, NSTLEG, NLEG, &
