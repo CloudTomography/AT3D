@@ -4,26 +4,22 @@ import subprocess
 
 NAME = "pyshdom"
 DESCRIPTION = "3D Radiative Transfer Inversion using the SHDOM forward algorithm"
-LONG_DESCRIPTION ="""
-Pyshdom performs 3D reconstruction of cloud microphysical properties from multi-angle, multi-spectral solar reflected
-radiation using a non-linear optimization procedure. The core radiative transfer routines are sourced from the
-Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [1].
-The python package was created by Aviad Levis [2], Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois).
-The inversion algorithms for can be found in the following papers:
- - `Levis, Aviad, et al. "Airborne Three-Dimensional Cloud Tomography." Proceedings of the IEEE International Conference on Computer Vision. 2015.`
- - `Levis, Aviad, et al. "Multiple-Scattering Microphysical Tomography." Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition. 2017.`
+LONG_DESCRIPTION ="""Pyshdom performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]]. The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[4]]. The python package was created by Aviad Levis [[5]], Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois).
 
-[1] http://nit.colorado.edu/shdom.html
-[2] https://www.aviadlevis.com/3d-remote-sensing
+[1]: http://openaccess.thecvf.com/content_iccv_2015/html/Levis_Airborne_Three-Dimensional_Cloud_ICCV_2015_paper.html
+[2]: http://openaccess.thecvf.com/content_cvpr_2017/html/Levis_Multiple-Scattering_Microphysics_Tomography_CVPR_2017_paper.html
+[3]: https://www.mdpi.com/2072-4292/12/17/2831
+[4]: http://coloradolinux.com/~evans/shdom.html
+[5] https://www.aviadlevis.com/3d-remote-sensing
 """
 
 MAINTAINER = "Aviad Levis; Jesse Loveridge"
-MAINTAINER_EMAIL = "aviad.levis@gmail.com"
-URL = "https://github.com/aviadlevis/pyshdom"
+MAINTAINER_EMAIL = "aviad.levis@gmail.com; jesserl2@illinois.edu"
+URL = "https://github.com/CloudTomography/pyshdom"
 LICENSE = "MIT"
-VERSION = "3.0.0"
+VERSION = "4.1.0"
 
-classifiers =  ['Development Status :: 3 - Alpha',
+classifiers =  ['Development Status :: 4 - Beta',
                 'Programming Language :: Python',
                 'License :: OSI Approved :: MIT License',
                 'Intended Audience :: Science/Research',
@@ -35,7 +31,8 @@ classifiers =  ['Development Status :: 3 - Alpha',
 #
 # Set this to True for compiling the polarized
 # version of the SHDOM algorithm.
-#
+# Note that the scalar-only version is no longer supported
+# so this should always be set to true.
 POLARIZED_SHDOM = True
 
 #
@@ -182,7 +179,7 @@ def configuration(parent_package='',top_path=None):
         NAME,
         parent_package,
         top_path,
-        package_path='lib',
+        package_path='pyshdom',
         version = VERSION,
         maintainer  = MAINTAINER,
         maintainer_email = MAINTAINER_EMAIL,
