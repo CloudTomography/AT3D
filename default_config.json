@@ -42,7 +42,7 @@
     "description": "(SOLACC) solution accuracy - tolerance for solution criterion."
   },
   "max_total_mb": {
-    "default_value": 10000.0,
+    "default_value": 3000.0,
     "description": "approximate maximum memory to use (MB for 4 byte reals)"
   },
   "adapt_grid_factor": {
@@ -50,12 +50,12 @@
     "description": "(ADAPT_GRID_FACTOR) ratio of total grid points to base grid points"
   },
   "num_sh_term_factor": {
-    "default_value": 1.0,
-    "description": "(NUM_SH_TERM_FACTOR) ratio of average number of spherical harmonic terms to total possible (NLM) (<=1.0)"
+    "default_value": 1,
+    "description": "(NUM_SH_TERM_FACTOR) ratio of average number of spherical harmonic terms to total possible (NLM)"
   },
   "cell_to_point_ratio": {
     "default_value": 1.5,
-    "description": "(CELL_TO_POINT_RATIO) ratio of number of grid cells to grid points (1.0 - 2.0)"
+    "description": "(CELL_TO_POINT_RATIO) ratio of number of grid cells to grid points"
   },
   "high_order_radiance": {
     "default_value": false,
@@ -70,7 +70,15 @@
     ]
   },
   "iterfixsh": {
-      "default_value": 30,
-      "description": "The number of iterations after which the spherical harmonic truncation is fixed."
+    "default_value": 30,
+    "description": "The number of iterations after which the spherical harmonic truncation is fixed."
+  },
+  "tautol": {
+    "default_value": 0.1,
+    "description": "The maximum optical path length for integration of radiances. Only affects radiance accuracy."
+  },
+  "angle_set": {
+    "default_value": 2,
+    "description": "The angle set used for the discrete ordinates. Gaussian: 1, Reduced Gaussian: 2, Reduced Double Gaussian: 3."
   }
 }

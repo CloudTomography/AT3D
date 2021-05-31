@@ -7,6 +7,8 @@ import numpy as np
 from collections import OrderedDict
 import netCDF4 as nc
 import xarray as xr
+import os
+import warnings
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -456,7 +458,8 @@ def load_from_netcdf(path, density=None):
 
 def load_forward_model(file_name):
     """
-    TODO
+    Load from netCDF the solvers and sensors that were saved using
+    `save_forward_model` below.
     """
     dataset = nc.Dataset(file_name)
 
@@ -505,31 +508,80 @@ def load_forward_model(file_name):
         rte_grid = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/grid']))
 
     return sensor_dict, solver_dict, rte_grid
-#TODO add checks here for if file exists etc.
+
 def save_forward_model(file_name, sensors, solvers):
     """
-    TODO
+    Save sensors and solvers together to netcdf.
+
+    This is useful for saving rendered measurements and the specifications that
+    were used to make them. The SHDOM solution itself is not currently incorporated
+    here. See solver.RTE.save_solution for how to save that.
+
+    Parameters
+    ----------
+    file_name : str
+        The path to the file that will be created and saved to.
+        If it exists an integer is appended to the file name until
+        it can be safely created.
+    sensors : pyshdom.containers.SensorsDict
+        The container with all of the sensors information.
+    solvers : pyshdom.containers.SolversDict
+        The container with all of the solver.RTE objects.
     """
+
+    if not isinstance(sensors, pyshdom.containers.SensorsDict):
+        raise TypeError(
+            "`sensors` should be an instance of '{}'".format(pyshdom.containers.SensorsDict)
+        )
+    if not isinstance(solvers, pyshdom.containers.SolversDict):
+        raise TypeError(
+            "`sensors` should be an instance of '{}'".format(pyshdom.containers.SolversDict)
+        )
+
+    # make a safe file name. We always want one that works
+    # as we might have spent a lot of time to make the input data.
+    counter = 1
+    initial_file_name = file_name
+    while os.path.exists(file_name):
+        if counter > 1:
+            file_name = file_name[:-5] + '_{}'.format(counter) + '.nc'
+        else:
+            file_name = file_name[:-3] + '_{}'.format(counter) + '.nc'
+        counter += 1
+
+    if counter > 1:
+
+        warnings.warn("file_name '{}' already exists, your file is now at '{}'".format(
+            initial_file_name,file_name), category=RuntimeWarning
+             )
+
+    # intialize the save file.
+    save_file = nc.Dataset(file_name, 'w')
+    save_file.close()
+
+    # do the mediums first in their own loop because otherwise the whole thing crashes?!?
+    for key, solver in solvers.items():
+        for name, med in solver.medium.items():
+            med.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'medium/'+str(name))
+
     for i, (key,sensor) in enumerate(sensors.items()):
         for j, image in enumerate(sensor['sensor_list']):
             if (i==0) & (j==0):
-                image.to_netcdf(file_name, 'w', group = 'sensors/'+str(key)+'/'+str(j), format='NETCDF4',engine='netcdf4')
+                image.to_netcdf(file_name, 'a', group = 'sensors/'+str(key)+'/'+str(j))
+
             else:
-                image.to_netcdf(file_name, 'a', group = 'sensors/'+str(key)+'/'+str(j), format='NETCDF4',engine='netcdf4')
+                image.to_netcdf(file_name, 'a', group = 'sensors/'+str(key)+'/'+str(j))
+
 
     for i, (key, solver) in enumerate(solvers.items()):
-
         numerical_params = solver.numerical_params
         numerical_params['num_stokes'] = solver._nstokes
-
-        solver.numerical_params.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'numerical_parameters', format='NETCDF4',engine='netcdf4')
-        solver.surface.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'surface', format='NETCDF4',engine='netcdf4')
-        solver.source.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'source', format='NETCDF4',engine='netcdf4')
-        solver._grid.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'grid', format='NETCDF4',engine='netcdf4')
+        solver.numerical_params.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'numerical_parameters')
+        solver.surface.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'surface')
+        solver.source.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'source')
+        solver._grid.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'grid')
         if solver.atmosphere is not None:
-            solver.atmosphere.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'atmosphere', format='NETCDF4',engine='netcdf4')
-        for name, med in solver.medium.items():
-            med.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'medium/'+str(name), format='NETCDF4',engine='netcdf4')
+            solver.atmosphere.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'atmosphere')
 
 def adjoint_linear_interpolation(reference_coords, data_array):
     """

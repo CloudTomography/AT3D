@@ -30,137 +30,27 @@ import numpy as np
 import xarray as xr
 import pyshdom.checks
 
-class OpticalDerivativeGenerator:
-    """
-
-    """
-    def __init__(self, scatterer_name, wavelength=None):
-        self.scatterer_name = scatterer_name
-        self.wavelength = wavelength
-
-    def test_valid_names(self, name):
-
-        valid = False
-        if name in ('extinction', 'ssalb'):
-            valid = True
-        elif 'legendre_' in name:
-            leg_index = int(name[len('legendre_X_'):])
-            stokes_index = int(name[len('legendre_')])
-            if ((stokes_index >= 0) & (stokes_index <= 5) &
-                (leg_index >= 0)):
-                valid = True
-        return valid
-
-    def __call__(self, data):
-        pyshdom.checks.check_optical_properties(data)
-        output = OrderedDict()
-        output[self.wavelength] = data
-        return output
-
-    def calculate_derivatives(self, variable_names, optical_properties):
-
-        derivatives = OrderedDict()
-
-        for variable_name in variable_names:
-            if variable_name == 'extinction':
-                differentiated = xr.Dataset(
-                    data_vars={
-                        'extinction': (['x', 'y', 'z'],
-                            np.ones(optical_properties.extinction.shape)),
-                        'ssalb': (['x', 'y', 'z'],
-                            np.zeros(optical_properties.ssalb.shape)),
-                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
-                            np.zeros(optical_properties.legcoef.shape)),
-                        'table_index': optical_properties.table_index,
-                        'phase_weights': optical_properties.phase_weights,
-                        'delx': optical_properties.delx,
-                        'dely': optical_properties.dely
-                    },
-                    coords={
-                        'x': optical_properties.x,
-                        'y': optical_properties.y,
-                        'z': optical_properties.z,
-                        'stokes_index': optical_properties.stokes_index
-                    }
-                )
-            elif variable_name == 'ssalb':
-                differentiated = xr.Dataset(
-                    data_vars={
-                        'extinction': (['x', 'y', 'z'],
-                            np.zeros(optical_properties.extinction.shape)),
-                        'ssalb': (['x', 'y', 'z'],
-                            np.ones(optical_properties.ssalb.shape)),
-                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
-                            np.zeros(optical_properties.legcoef.shape)),
-                        'table_index': optical_properties.table_index,
-                        'phase_weights': optical_properties.phase_weights,
-                        'delx': optical_properties.delx,
-                        'dely': optical_properties.dely
-                    },
-                    coords={
-                        'x': optical_properties.x,
-                        'y': optical_properties.y,
-                        'z': optical_properties.z,
-                        'stokes_index': optical_properties.stokes_index
-                    }
-                )
-            elif 'legendre_' in variable_name:
-                leg_index = int(variable_name[len('legendre_X_'):])
-                stokes_index = int(variable_name[len('legendre_')])
-                legcoef = np.zeros(optical_properties.legcoef.shape)
-                if not ((stokes_index >= 0) & (stokes_index <= 5) &
-                    (leg_index <= legcoef.shape[1]) & (leg_index >= 0)):
-                    raise ValueError(
-                        "Invalid phase component and legendre index for variable name "
-                        "'{}'".format(variable_name))
-                legcoef[stokes_index, leg_index, ...] = 1.0
-                differentiated = xr.Dataset(
-                    data_vars={
-                        'extinction': (['x', 'y', 'z'],
-                            np.zeros(optical_properties.extinction.shape)),
-                        'ssalb': (['x', 'y', 'z'],
-                            np.zeros(optical_properties.ssalb.shape)),
-                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
-                            legcoef),
-                        'table_index': optical_properties.table_index,
-                        'phase_weights': optical_properties.phase_weights,
-                        'delx': optical_properties.delx,
-                        'dely': optical_properties.dely
-                    },
-                    coords={
-                        'x': optical_properties.x,
-                        'y': optical_properties.y,
-                        'z': optical_properties.z,
-                        'stokes_index': optical_properties.stokes_index
-                    }
-                )
-            else:
-                raise ValueError(
-                    "variable name is not supported for derivative calculation "
-                    "by this generator.'{}'".format(variable_name)
-                    )
-            differentiated['derivative_method'] = 'exact'
-            derivatives[variable_name] = differentiated
-
-        wavelength_organized_derivatives = OrderedDict()
-        wavelength_organized_derivatives[self.wavelength] = derivatives
-        return wavelength_organized_derivatives
 
 class OpticalPropertyGenerator:
 
     # TODO.
-    # turn this into three different objects.
-    # One does 'nearest', other does 'linear/table'
+    # turn this into two different objects.
+    # One does does 'linear/table'
     # The other does exact and inherits from the other one.
     # and will use some of the methods defined for 'linear/table'
     # The 'linear/table' takes poly_tables like 'nearest' which
     # opens up for generalization to optical properties for which
     # we don't have single scattering properties.
 
-    def __init__(self, monodisperse_tables, size_distribution_function,
-                 scatterer_name,
+    def __init__(self, scatterer_name, monodisperse_tables, size_distribution_function,
                  particle_density=1.0, maxnphase=None,
                  interpolation_mode='exact', **size_distribution_parameters):
+
+        if not isinstance(monodisperse_tables, typing.Dict):
+            raise TypeError(
+                "`monodisperse_tables` should be a dictionary of mie monodisperse "
+                "tables."
+            )
 
         self._valid_interpolation_modes = ('exact', 'nearest')
         if interpolation_mode not in self._valid_interpolation_modes:
@@ -1113,7 +1003,7 @@ class MicrophysicsGenerator(DataGenerator):
             if name in variable_data_bounds:
                 bound = variable_data_bounds[name]
             elif name == 'density':
-                bound = (np.zeros(self._rte_grid_shape),
+                bound = (np.zeros(self._rte_grid_shape) + 1e-9,
                          np.zeros(self._rte_grid_shape) + 1e9)
             else:
                 bound = (np.zeros(self._rte_grid_shape) + coords[name].min(),
@@ -1167,10 +1057,10 @@ class OpticalGenerator(DataGenerator):
             if name in variable_data_bounds:
                 bound = variable_data_bounds[name]
             elif name == 'extinction':
-                bound = (np.zeros(self._rte_grid_shape),
+                bound = (np.zeros(self._rte_grid_shape)+ 1e-9,
                          np.zeros(self._rte_grid_shape) + 1e9)
             elif name == 'ssalb':
-                bound = (np.zeros(self._rte_grid_shape),
+                bound = (np.zeros(self._rte_grid_shape)+ 1e-9,
                          np.ones(self._rte_grid_shape))
             # no supported bounds on legendre as we don't know
             # how big the table is.
@@ -1284,8 +1174,14 @@ class StateGenerator:
         # process state_transform
         if state_transform is None:
             state_transform = pyshdom.transforms.NullStateTransform(self._state_representation)
+            for scatterer_name, variable_data in self._unknown_scatterers.items():
+                for variable_name in variable_data['variable_name_list']:
+                    state_transform.add_transform(scatterer_name, variable_name)
         elif state_transform == 'log':
             state_transform = pyshdom.transforms.LogStateTransform(self._state_representation)
+            for scatterer_name, variable_data in self._unknown_scatterers.items():
+                for variable_name in variable_data['variable_name_list']:
+                    state_transform.add_transform(scatterer_name, variable_name)
         elif isinstance(state_transform, pyshdom.transforms.StateTransform):
             warnings.warn(
                 "No checks are made on the internal consistency of this custom "
@@ -1506,6 +1402,10 @@ class StateGenerator:
 
         return lower_bounds, upper_bounds
 
+    @property
+    def state_transform(self):
+        return self._state_transform
+
 
 def table_to_grid(microphysics, poly_table, inverse_mode=False):
     """
@@ -1628,6 +1528,124 @@ def table_to_grid(microphysics, poly_table, inverse_mode=False):
             optical_properties[grid_variable] = microphysics[grid_variable]
 
     return optical_properties
+
+
+
+class OpticalDerivativeGenerator:
+    """
+
+    """
+    def __init__(self, scatterer_name, wavelength=None):
+        self.scatterer_name = scatterer_name
+        self.wavelength = wavelength
+
+    def test_valid_names(self, name):
+
+        valid = False
+        if name in ('extinction', 'ssalb'):
+            valid = True
+        elif 'legendre_' in name:
+            leg_index = int(name[len('legendre_X_'):])
+            stokes_index = int(name[len('legendre_')])
+            if ((stokes_index >= 0) & (stokes_index <= 5) &
+                (leg_index >= 0)):
+                valid = True
+        return valid
+
+    def __call__(self, data):
+        pyshdom.checks.check_optical_properties(data)
+        output = OrderedDict()
+        output[self.wavelength] = data
+        return output
+
+    def calculate_derivatives(self, variable_names, optical_properties):
+
+        derivatives = OrderedDict()
+
+        for variable_name in variable_names:
+            if variable_name == 'extinction':
+                differentiated = xr.Dataset(
+                    data_vars={
+                        'extinction': (['x', 'y', 'z'],
+                            np.ones(optical_properties.extinction.shape)),
+                        'ssalb': (['x', 'y', 'z'],
+                            np.zeros(optical_properties.ssalb.shape)),
+                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+                            np.zeros(optical_properties.legcoef.shape)),
+                        'table_index': optical_properties.table_index,
+                        'phase_weights': optical_properties.phase_weights,
+                        'delx': optical_properties.delx,
+                        'dely': optical_properties.dely
+                    },
+                    coords={
+                        'x': optical_properties.x,
+                        'y': optical_properties.y,
+                        'z': optical_properties.z,
+                        'stokes_index': optical_properties.stokes_index
+                    }
+                )
+            elif variable_name == 'ssalb':
+                differentiated = xr.Dataset(
+                    data_vars={
+                        'extinction': (['x', 'y', 'z'],
+                            np.zeros(optical_properties.extinction.shape)),
+                        'ssalb': (['x', 'y', 'z'],
+                            np.ones(optical_properties.ssalb.shape)),
+                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+                            np.zeros(optical_properties.legcoef.shape)),
+                        'table_index': optical_properties.table_index,
+                        'phase_weights': optical_properties.phase_weights,
+                        'delx': optical_properties.delx,
+                        'dely': optical_properties.dely
+                    },
+                    coords={
+                        'x': optical_properties.x,
+                        'y': optical_properties.y,
+                        'z': optical_properties.z,
+                        'stokes_index': optical_properties.stokes_index
+                    }
+                )
+            elif 'legendre_' in variable_name:
+                leg_index = int(variable_name[len('legendre_X_'):])
+                stokes_index = int(variable_name[len('legendre_')])
+                legcoef = np.zeros(optical_properties.legcoef.shape)
+                if not ((stokes_index >= 0) & (stokes_index <= 5) &
+                    (leg_index <= legcoef.shape[1]) & (leg_index >= 0)):
+                    raise ValueError(
+                        "Invalid phase component and legendre index for variable name "
+                        "'{}'".format(variable_name))
+                legcoef[stokes_index, leg_index, ...] = 1.0
+                differentiated = xr.Dataset(
+                    data_vars={
+                        'extinction': (['x', 'y', 'z'],
+                            np.zeros(optical_properties.extinction.shape)),
+                        'ssalb': (['x', 'y', 'z'],
+                            np.zeros(optical_properties.ssalb.shape)),
+                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+                            legcoef),
+                        'table_index': optical_properties.table_index,
+                        'phase_weights': optical_properties.phase_weights,
+                        'delx': optical_properties.delx,
+                        'dely': optical_properties.dely
+                    },
+                    coords={
+                        'x': optical_properties.x,
+                        'y': optical_properties.y,
+                        'z': optical_properties.z,
+                        'stokes_index': optical_properties.stokes_index
+                    }
+                )
+            else:
+                raise ValueError(
+                    "variable name is not supported for derivative calculation "
+                    "by this generator.'{}'".format(variable_name)
+                    )
+            differentiated['derivative_method'] = 'exact'
+            derivatives[variable_name] = differentiated
+
+        wavelength_organized_derivatives = OrderedDict()
+        wavelength_organized_derivatives[self.wavelength] = derivatives
+        return wavelength_organized_derivatives
 
 # NB This is redundant with optical property generator.
 # def get_optical_properties(microphysics, mie_mono_tables, size_distribution_function,

@@ -12,8 +12,6 @@ import pyshdom.solver
 import pyshdom.util
 import pyshdom.grid
 
-warnings.filterwarnings('ignore')
-
 class SpaceCarver:
     """
     Performs a space carving operation to mask points in a volume based on masked
@@ -345,17 +343,27 @@ class SpaceCarver:
                 sensor_list.extend(sensors[instrument]['sensor_list'])
 
         weights = np.zeros(volume_mask.shape)
-        weights[volume_mask.data] = 1.0
-
+        weights[np.where(volume_mask.data > 0.0)] = 1.0
+        weights_data = xr.Dataset(
+            data_vars={
+                'density': (['x','y','z'],weights)
+            },
+            coords={
+            'x': self._grid.x,
+            'y': self._grid.y,
+            'z': self._grid.z
+            }
+        )
         grid_sensor = pyshdom.sensor.make_sensor_dataset(wavelength=0.672,
-            x=self._gridpos[0,:],y=self._gridpos[1,:],
-            z =self._gridpos[2,:],
+            x=self._gridpos[0,:], y=self._gridpos[1,:],
+            z=self._gridpos[2,:],
             mu=np.array([solar_mu]*self._npts),phi=np.array([solar_azimuth]*self._npts),
                                             stokes=['I'],
                                                    fill_ray_variables=True)
 
-        self.project(weights, grid_sensor)
-        sundistance= grid_sensor.weights.data
+        self.project(weights_data, grid_sensor)
+        sundistance = grid_sensor.weights.data
+        sundistance[np.where(weights_data.density.data.ravel() == 0.0)] = 0.0
         for sensor in sensor_list:
             camx = sensor['ray_x'].data.astype(np.float64)
             camy = sensor['ray_y'].data.astype(np.float64)
@@ -395,3 +403,16 @@ class SpaceCarver:
                 nrays=nrays
             )
             sensor['sun_distance'] = (['npixels'], paths)
+
+        sundistance_grid = xr.Dataset(
+            data_vars={
+                'sun_distance': (
+                    ['x', 'y', 'z'],sundistance.reshape((self._nx1, self._ny1, self._nz)))
+            },
+            coords={
+                'x': self._grid.x,
+                'y': self._grid.y,
+                'z': self._grid.z
+            }
+        )
+        return sundistance_grid

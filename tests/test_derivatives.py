@@ -443,6 +443,7 @@ def cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperatu
         config['high_order_radiance'] = False
         config['acceleration_flag'] = True
         config['deltam'] = False
+        config['tautol'] = 0.2
         solver = pyshdom.solver.RTE(
                             numerical_params=config,
                             medium={'cloud': optical_properties},
@@ -722,6 +723,7 @@ def cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_te
         config['high_order_radiance'] = True
         config['acceleration_flag'] = False
         config['deltam'] = True
+        config['tautol'] = 0.2
         solver = pyshdom.solver.RTE(
                             numerical_params=config,
                             medium={'cloud': optical_properties},

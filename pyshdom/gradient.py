@@ -103,22 +103,7 @@ class LevisApproxGradient:
         self._rte_sensors = None
         self._sensor_mapping = None
 
-        # These variables were used to debug the radiance contribution to the
-        # gradient. While they are still required inputs, they no longer
-        # do anything.
-        self._uselongrad = 'Q'
-        self._longradiance = None
-        # Turns off the contribution of diffuse radiance to both radiance and
-        # gradient calculation (single scatter only). All calculations
-        # are still performed so there is little performance
-        # improvement. This is just for checking the single scatter
-        # is exact.
         self._nodiffuse = False
-        # tautol is the subgrid interval size for the radiance integration.
-        # this was added as an option for testing. But it is hardcoded
-        # to the value used in the forward model (see INTEGRATE_1RAY in
-        # shdomsub2.f) for consistency between the two methods.
-        self._tautol = 0.2
 
         for name, instrument in self.measurements.items():
             if instrument['uncertainty_model'] is None:
@@ -147,12 +132,18 @@ class LevisApproxGradient:
         This does the heavy lifting of preparing the gradient calculation.
         This code should not really need to be modified.
         """
+        import time
+        times = []
+        times.append(time.time())
         self.solvers.parallel_solve(**self.parallel_solve_kwargs)
+        times.append(time.time())
         #does some preprocessing for calculating the sensitivity of a gridpoint's
         #solar source to the optical properties along the path to the sun.
         self.solvers.add_direct_beam_derivatives()
+        times.append(time.time())
         #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
         self.solvers.add_microphysical_partial_derivatives(self.unknown_scatterers)
+        times.append(time.time())
         #prepare the sensors for the fortran subroutine for calculating gradient.
         rte_sensors, sensor_mapping = self.forward_sensors.sort_sensors(
             self.solvers, self.measurements
@@ -166,12 +157,15 @@ class LevisApproxGradient:
         #The treatment of the gradient_kwargs is quite clumsy here as they are known in self
         #but are sent, instead of redefining gradient_fun to be self.levis_approximation_grad
         #WITH the kwargs set.
+        times.append(time.time())
         outputs = pyshdom.parallel.parallel_gradient(
             self.solvers, rte_sensors, sensor_mapping, self.forward_sensors,
             gradient_fun=self.levis_approximation_grad,
             mpi_comm=mpi_comm,
             n_jobs=n_jobs, **self.gradient_kwargs
             )
+        times.append(time.time())
+        print(times)
         return outputs
 
     def levis_approximation_grad(self, rte_solver, sensor, cost_function='L2',
@@ -271,7 +265,7 @@ class LevisApproxGradient:
                 dtype=np.float32
             )
             jacobian_flag = True
-
+        maxsubgridints = int(rte_solver._npts*rte_solver._maxsubgridints/rte_solver._nbpts)
         gradient, loss, images, jacobian, ierr, errmsg = pyshdom.core.levisapprox_gradient(
             camx=camx,
             camy=camy,
@@ -294,7 +288,11 @@ class LevisApproxGradient:
             num_jacobian_pts=num_jacobian_pts,
             makejacobian=jacobian_flag,
             nodiffuse=self._nodiffuse,
-            tautol=self._tautol,
+            maxsubgridints=maxsubgridints,
+            tautol=rte_solver._tautol,
+            dextm=rte_solver._dextm,
+            dalbm=rte_solver._dalbm,
+            dfj=rte_solver._dfj,
             nstphase=rte_solver._nstphase,
             interpmethod=rte_solver._interpmethod,
             dpath=rte_solver._direct_derivative_path,

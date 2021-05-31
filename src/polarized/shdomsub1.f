@@ -135,7 +135,7 @@ C       Get the maximum single scattering albedo over all processors
      .             INRADFLAG,NDELSOURCE, IERR, ERRMSG, MAXPG,
      .             WORK2_SIZE, PHASEINTERPWT, PHASEMAX,
      .             INTERPMETHOD, NLEGP, ADJFLAG, MAXNMICRO,
-     .             PHASEWTP)
+     .             PHASEWTP, ORDINATESET)
 Cf2py threadsafe
 C       Initialize the SHDOM solution procedure.
       IMPLICIT NONE
@@ -255,6 +255,7 @@ Cf2py intent(out) :: FFTFLAG, CMU1, CMU2, WTMU, CPHI1, CPHI2, WPHISAVE
       REAL    SFC_BRDF_DO(NSTOKES,NMU/2,NPHI0MAX,NSTOKES,NMU/2,NPHI0MAX)
 Cf2py intent(out) ::  UNIFORM_SFC_BRDF, SFC_BRDF_DO
       INTEGER ORDINATESET, IERR2
+Cf2py intent(in) :: ORDINATESET
       LOGICAL LAMBERTIAN
       INTEGER IERR
       CHARACTER ERRMSG*600
@@ -323,7 +324,6 @@ C        Precompute Ylm's for solar direction
 
 C        Make the discrete ordinates (angles)
 C       (set 2 is reduced gaussian, 3 is reduced double gauss)
-      ORDINATESET = 2
       CALL MAKE_ANGLE_SET (NMU, NPHI, ORDINATESET, NPHI0MAX,
      .                  NPHI0, MU, PHI, WTMU, WTDO, FFTFLAG, NANG)
 

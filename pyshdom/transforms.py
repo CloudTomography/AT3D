@@ -84,7 +84,7 @@ class StateToGridMask(IndependentTransform):
 
         def transform(state):
             state_gridded = np.zeros(mask.shape) + fill_value
-            state_gridded[mask] = state
+            state_gridded[np.where(mask)] = state
             return state_gridded
         self._transforms[scatterer_name][variable_name] = transform
 
@@ -149,7 +149,9 @@ class StateRepresentation:
 
     def select_variable(self, state, scatterer_name, variable_name):
         start, end = self._start_end_points[scatterer_name][variable_name]
-        return state[start:end]
+        state_out = np.zeros(state[start:end].shape)
+        state_out[:] = state[start:end]
+        return state_out
 
     @property
     def start_end_points(self):
@@ -205,43 +207,47 @@ class IndependentStateTransform(IndependentTransform):
 
     def __call__(self, state):
 
+        state_copy = np.zeros(state.shape)
+        state_copy[:] = state[:]
         for scatterer_name, variable_name_data in self._transforms.items():
             for variable_name in variable_name_data:
                 state_vector_portion = self._state_representation.select_variable(state, scatterer_name, variable_name)
-                state = self._state_representation.update_state_vector(
-                    state,
+                state_copy = self._state_representation.update_state_vector(
+                    state_copy,
                     scatterer_name,
                     variable_name,
                     self._transforms[scatterer_name][variable_name](state_vector_portion)
                 )
-        return state
+        return state_copy
 
     def inverse(self, state):
-
+        state_copy = np.zeros(state.shape)
+        state_copy[:] = state[:]
         for scatterer_name, variable_name_data in self._transforms.items():
             for variable_name in variable_name_data:
                 state_vector_portion = self._state_representation.select_variable(state, scatterer_name, variable_name)
-                state = self._state_representation.update_state_vector(
-                    state,
+                state_copy = self._state_representation.update_state_vector(
+                    state_copy,
                     scatterer_name,
                     variable_name,
                     self._inverse_transforms[scatterer_name][variable_name](state_vector_portion)
                 )
-        return state
+        return state_copy
 
     def calc_derivative(self, state, gradient):
-
+        gradient_copy = np.zeros(gradient.shape)
+        gradient_copy[:] = gradient[:]
         for scatterer_name, variable_name_data in self._transforms.items():
             for variable_name in variable_name_data:
                 state_vector_portion = self._state_representation.select_variable(state, scatterer_name, variable_name)
                 gradient_vector_portion = self._state_representation.select_variable(gradient, scatterer_name, variable_name)
-                gradient = self._state_representation.update_state_vector(
-                    gradient,
+                gradient_copy = self._state_representation.update_state_vector(
+                    gradient_copy,
                     scatterer_name,
                     variable_name,
                     self._gradient_transforms[scatterer_name][variable_name](state_vector_portion, gradient_vector_portion)
                 )
-        return gradient
+        return gradient_copy
 
 class NullStateTransform(IndependentStateTransform):
 

@@ -533,6 +533,7 @@ class RTE:
         self._precompute_phase()
 
         output, ierr, errmsg = pyshdom.core.render(
+            tautol=self._tautol,
             maxnmicro=self._pa.max_num_micro,
             interpmethod=self._interpmethod,
             phaseinterpwt=self._phaseinterpwt[:,:self._npts,:],
@@ -877,9 +878,9 @@ class RTE:
                 'Fz': (['x', 'y', 'z'], self._shterms[3, :self._nbpts].reshape(
                     self._nx1, self._ny1, self._nz)),
                 },
-            coords={'x': self._grid.x,
-                    'y': self._grid.y,
-                    'z': self._grid.z,
+            coords={'x': self._xgrid[:-1],
+                    'y': self._ygrid[:-1],
+                    'z': self._zgrid,
                    },
             attrs={
                 'long_names':{'Fx': 'Net Flux in x direction',
@@ -890,7 +891,7 @@ class RTE:
         if self._highorderrad & (self._shterms.shape[0] == 5):
             sh_out_dataset['rms_higher_rad'] = (['x', 'y', 'z'],
                                                 self._shterms[-1, :self._nbpts].reshape(
-                                                    self._nx, self._ny, self._nz)/ \
+                                                    self._nx1, self._ny1, self._nz)/ \
                                                     (np.sqrt(np.pi*4.0*self._nlm)))
         return sh_out_dataset
 
@@ -928,9 +929,9 @@ class RTE:
                 'flux_direct': (['x', 'y', 'z'], self._dirflux[:self._nbpts].reshape(
                     self._nx1, self._ny1, self._nz)),
                 },
-            coords={'x': self._grid.x,
-                    'y': self._grid.y,
-                    'z': self._grid.z,
+            coords={'x': self._xgrid[:-1],
+                    'y': self._ygrid[:-1],
+                    'z': self._zgrid,
                    },
             attrs={
                 'long_names': {'flux_down': 'Downwelling Hemispherical Flux',
@@ -980,9 +981,9 @@ class RTE:
                 'net_flux_div':(['x', 'y', 'z'], self._netfluxdiv[:self._nbpts].reshape(
                     self._nx1, self._ny1, self._nz))
                 },
-            coords={'x': self._grid.x,
-                    'y': self._grid.y,
-                    'z': self._grid.z,
+            coords={'x': self._xgrid[:-1],
+                    'y': self._ygrid[:-1],
+                    'z': self._zgrid,
                    },
             attrs={
                 'long_names': {'net_flux_div': 'Net Flux Divergence'},
@@ -1082,7 +1083,8 @@ class RTE:
         table_phase_derivative_flag = []
 
         i = 0
-        for scatterer_derivative_information in derivative_information.values():
+        for scatterer_name, scatterer_derivative_information in derivative_information.items():
+            scatterer_index = np.where(scatterer_name == np.array(list(self.medium)))[0][0]
             for variable_derivative in scatterer_derivative_information.values():
                 num_micros.append(variable_derivative.num_micro.size)
                 max_legendre.append(variable_derivative.legendre_index.size)
@@ -1090,7 +1092,7 @@ class RTE:
                 if variable_derivative['derivative_method'] == 'exact':
                     table_phase_flag = 1
                 table_phase_derivative_flag.append(table_phase_flag)
-                unknown_scatterer_indices.append(i+1)
+                unknown_scatterer_indices.append(scatterer_index+1)
             i += 1
 
         deriv_max_num_micro = max(num_micros)
@@ -1191,7 +1193,8 @@ class RTE:
         # to the RTE accuracy.
         self._dleg = dleg[:, :self._nleg+1]
         # make property grid to RTE grid pointers and interpolation weights.
-        self._optinterpwt, self._interpptr, ierr, errmsg = \
+        self._optinterpwt, self._interpptr, ierr, errmsg, \
+        self._dalbm, self._dextm, self._dfj = \
         pyshdom.core.prepare_deriv_interps(
             gridpos=self._gridpos[:, :self._npts],
             npx=self._pa.npx,
@@ -1204,6 +1207,32 @@ class RTE:
             xstart=self._pa.xstart,
             ystart=self._pa.ystart,
             zlevels=self._pa.zlevels,
+            legen=self._legen,
+            numphase=self._pa.numphase,
+            nstleg=self._nstleg,
+            dleg=self._dleg,
+            dnumphase=self._dnumphase,
+            phasewtp=self._pa.phasewtp,
+            dphasewtp=self._dphasewtp,
+            iphasep=self._pa.iphasep,
+            diphasep=self._diphasep,
+            nleg=self._nleg,
+            maxnmicro=self._pa.max_num_micro,
+            albedop=self._pa.albedop,
+            extinctp=self._pa.extinctp,
+            npart=self._npart,
+            dalb=self._dalb,
+            dext=self._dext,
+            numder=self._num_derivatives,
+            partder=self._unknown_scatterer_indices,
+            doexact=self._table_phase_derivative_flag,
+            ml=self._ml,
+            deltam=self._deltam,
+            albedo=self._albedo[:self._npts],
+            iphase=self._iphase[:,:self._npts],
+            phaseinterpwt=self._phaseinterpwt[:,:self._npts],
+            phasemax=self._phasemax,
+            interpmethod=self._interpmethod
         )
         pyshdom.checks.check_errcode(ierr, errmsg)
 
@@ -1430,6 +1459,9 @@ class RTE:
                            'z': first_scatterer.coords['z'],
                            'delx': first_scatterer.delx,
                            'dely': first_scatterer.dely})
+        for optional in ('nx', 'ny', 'nz'):
+            if optional in first_scatterer:
+                grid[optional] = first_scatterer[optional]
 
         scatterer_wavelengths = [scatterer.attrs['wavelength_center']
                                  for scatterer in medium_dict.values() if
@@ -1653,6 +1685,8 @@ class RTE:
         self._solacc = numerical_params.solution_accuracy.data
         self._highorderrad = numerical_params.high_order_radiance.data
         self._iterfixsh = int(numerical_params.iterfixsh.data)
+        self._tautol = numerical_params.tautol.data
+        self._angle_set = numerical_params.angle_set.data
 
         if self._deltam.dtype != np.bool:
             raise TypeError("numerical_params.deltam should be of boolean type.")
@@ -1672,6 +1706,12 @@ class RTE:
                              "in (0, 1, 2, 3, 4, 5, 6, 7, 8) not '{}'".format(self._ipflag))
         # bcflag is set in _setup_grid and ipflag may be modified there to handle the
         # nx/ny = 1 special case.
+
+        if self._angle_set not in (1,2,3):
+            raise ValueError(
+                "Numerical Parameter 'angle_set' must be in the set (1, 2, 3). See "
+                "default_config.json or shdom.txt for more details."
+            )
 
         return numerical_params
 
@@ -2116,13 +2156,23 @@ class RTE:
         #about optical thickness of cells. High optical thickness across a cell
         #leads to lower accuracy for SHDOM.
         reshaped_ext = self._total_ext[:self._nbpts].reshape(self._nx1, self._ny1, self._nz)
-        cell_averaged_extinct = (reshaped_ext[1:, 1:, 1:] + reshaped_ext[1:, 1:, :-1] +   \
-                                 reshaped_ext[1:, :-1, 1:] + reshaped_ext[1:, :-1, :-1] + \
-                                 reshaped_ext[:-1, 1:, 1:] + reshaped_ext[:-1, 1:, :-1] + \
-                                 reshaped_ext[:-1, :-1, 1:] + reshaped_ext[:-1, :-1, :-1])/8.0
+        if self._nx1 == 1:
+            cell_averaged_extinct = (reshaped_ext[:, 1:, 1:] + reshaped_ext[:, 1:, :-1] +   \
+                                     reshaped_ext[:, :-1, 1:] + reshaped_ext[:, :-1, :-1])/4.0
+        elif self._ny1 == 1:
+            cell_averaged_extinct = (reshaped_ext[:1, :, 1:] + reshaped_ext[:1, :, :-1] + \
+                                 reshaped_ext[:-1, :, 1:] + reshaped_ext[:-1, :, :-1])/4.0
+        else:
+            cell_averaged_extinct = (reshaped_ext[1:, 1:, 1:] + reshaped_ext[1:, 1:, :-1] +   \
+                                     reshaped_ext[1:, :-1, 1:] + reshaped_ext[1:, :-1, :-1] + \
+                                     reshaped_ext[:-1, 1:, 1:] + reshaped_ext[:-1, 1:, :-1] + \
+                                     reshaped_ext[:-1, :-1, 1:] + reshaped_ext[:-1, :-1, :-1])/8.0
         cell_volume = (np.diff(self._pa.zlevels)*self._pa.delx.data*self._pa.dely.data)**(1/3)
         cell_tau_approx = cell_volume[np.newaxis, np.newaxis, :]*cell_averaged_extinct
         number_thick_cells = np.sum(cell_tau_approx >= 2.0)
+
+        # compute something for the gradient later.
+        self._maxsubgridints = int(np.nanmean(cell_tau_approx) / self._tautol)
 
         if number_thick_cells > 0:
             warnings.warn("Number of SHDOM grid cells with optical depth greater than 2: '{}'. "
@@ -2236,6 +2286,7 @@ class RTE:
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
         self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg \
          = pyshdom.core.init_solution(
+            ordinateset=self._angle_set,
             phasewtp=self._pa.phasewtp,
             maxnmicro=self._pa.max_num_micro,
             adjflag=self._adjflag,

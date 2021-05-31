@@ -72,7 +72,7 @@ def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength, fill_ray_variables
     """
     x, y, z, mu, phi, wavelength, stokes = np.asarray(x), np.asarray(y), np.asarray(z), \
                                            np.asarray(mu), np.asarray(phi), np.asarray(wavelength),\
-                                           np.asarray(stokes)
+                                           np.atleast_1d(stokes)
     for totest, name in zip((x, y, z, mu, phi), ('x', 'y', 'z', 'mu', 'phi')):
         if not totest.ndim == 1:
             raise ValueError("'{}' should be a 1-D np.ndarray".format(name))

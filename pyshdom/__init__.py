@@ -50,3 +50,4 @@ import pyshdom.regularization
 import pyshdom.generate
 import pyshdom.bispectral_retrieval
 import pyshdom.transforms
+import pyshdom.initialization

@@ -109,14 +109,20 @@ class SensorsDict(OrderedDict):
         for sensor in self[instrument]['sensor_list']:
             self[instrument]['uncertainty_model'].add_noise(sensor)
 
-    def make_forward_sensors(self):
+    def make_forward_sensors(self, instrument_list=None):
         """Make a deep copy of self.
 
         Used when wanting to exactly replicate the sensor geometry to store the
         output of the forward model during optimization.
         """
         forward_sensors = SensorsDict()
-        for key, instrument in self.items():
+        if instrument_list is None:
+            instrument_list = self
+        for key in instrument_list:
+            if not key in self:
+                raise KeyError("Instrument '{}' is not in SensorsDict")
+            instrument = self[key]
+        # for key, instrument in self.items():
             forward_instrument = OrderedDict()
             forward_instrument['sensor_list'] = [single_sensor.copy(deep=True) for
                                                  single_sensor in instrument['sensor_list']]

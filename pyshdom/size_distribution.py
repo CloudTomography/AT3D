@@ -17,6 +17,7 @@ all that is required is to add a callable similar to `gamma`/`lognormal` that
 generates the weight of the distribution at a set range of radii given the
 input parameters.
 """
+import typing
 from collections import OrderedDict
 import xarray as xr
 import numpy as np
@@ -226,8 +227,8 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
         if isinstance(parameter, np.ndarray):
             if parameter.ndim == 1:
                 coord_list.append(parameter)
-        elif 'coord' in parameter:
-            coord_list.append(parameter['coord'])
+        elif 'coords' in parameter:
+            coord_list.append(parameter['coords'])
         else:
             if parameter['spacing'] == 'logarithmic':
                 coord = np.logspace(np.log10(parameter['coord_min']),
@@ -268,8 +269,9 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
     # create "flat" attrs dictionary to enable saving to netCDF
     size_dist_attrs = OrderedDict()
     for name, parameter in size_distribution_parameters.items():
-        for _name, _param in parameter.items():
-            size_dist_attrs[f"{name}_{_name}"] = _param
+        if isinstance(parameter, typing.Dict):
+            for _name, _param in parameter.items():
+                size_dist_attrs[f"{name}_{_name}"] = _param
     size_dist_attrs['distribution_type'] = size_distribution_function.__name__
     size_dist_attrs['radius_units'] = 'radius units [{}]'.format(radius_units)
 

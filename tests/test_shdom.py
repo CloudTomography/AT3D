@@ -212,7 +212,7 @@ class Verify_Solver(TestCase):
         config['num_mu_bins'] = 8
         config['num_phi_bins'] = 16
         config['solution_accuracy'] = 1e-4
-
+        config['tautol'] = 0.2
         solvers = pyshdom.containers.SolversDict()
         for wavelength in wavelengths:
 
@@ -436,6 +436,7 @@ class Parallelization_No_SubpixelRays(TestCase):
             config['split_accuracy'] = 0.1
             config['spherical_harmonics_accuracy'] = 0.0
             config['solution_accuracy'] = 1e-4
+            config['tautol'] = 0.2
             solver = pyshdom.solver.RTE(numerical_params=config,
                                             medium={'cloud': optical_properties},
                                            source=pyshdom.source.solar(wavelength, -1*np.cos(np.deg2rad(60.0)),0.0,solarflux=1.0),
@@ -544,6 +545,7 @@ class Parallelization_SubpixelRays(TestCase):
             config['split_accuracy'] = 0.1
             config['spherical_harmonics_accuracy'] = 0.0
             config['solution_accuracy'] = 1e-4
+            config['tautol'] = 0.2
             solver = pyshdom.solver.RTE(numerical_params=config,
                                             medium={'cloud': optical_properties},
                                            source=pyshdom.source.solar(wavelength, -1*np.cos(np.deg2rad(60.0)),0.0,solarflux=1.0),
@@ -894,6 +896,7 @@ class Verify_Thermal(TestCase):
         config['x_boundary_condition'] = 'periodic'
         config['y_boundary_condition'] = 'periodic'
         config['ip_flag'] = 3
+        config['tautol'] = 0.2
 
         rte_grid = pyshdom.grid.make_grid(0.02, 50, 0.02, 1,
                                    np.array([0,3.0,6.0,9.0,12.0,15.0,18.0,21.0,24.0,27.0,30.0]))
@@ -951,6 +954,7 @@ class Verify_Combined(TestCase):
         config['x_boundary_condition'] = 'periodic'
         config['y_boundary_condition'] = 'periodic'
         config['ip_flag'] = 3
+        config['tautol'] = 0.2
 
         rte_grid = pyshdom.grid.make_grid(0.02, 50, 0.02, 1,
                                    np.array([0,3.0,6.0,9.0,12.0,15.0,18.0,21.0,24.0,27.0,30.0]))

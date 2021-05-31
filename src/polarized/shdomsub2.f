@@ -2157,7 +2157,7 @@ C        Choose the best range for the angle of linear polarization (-90 to 90 o
      .			              XE,YE,ZE, SIDE, TRANSMIT, RADIANCE,
      .			              VALIDRAD, TOTAL_EXT, NPART, IERR, ERRMSG,
      .                    INTERPMETHOD, PHASEINTERPWT, PHASEMAX,
-     .                    MAXNMICRO)
+     .                    MAXNMICRO, TAUTOL, TIME_SOURCE)
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
 C     radiance (RADIANCE) at the point X0,Y0,Z0.
@@ -2215,6 +2215,7 @@ C     5=-Z,6=+Z).
       DOUBLE PRECISION, ALLOCATABLE :: SUNDIRLEG(:)
       INTEGER IERR
       CHARACTER ERRMSG*600
+      REAL TIME1, TIME2, TIME_SOURCE
       DATA OPPFACE/2,1,4,3,6,5/
       DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
       DATA DONEFACE/0,0,0,0,0,0,0,0, 0,1,0,3,0,5,0,7, 2,0,4,0,6,0,8,0,
@@ -2224,7 +2225,7 @@ C     5=-Z,6=+Z).
 C         TRANSCUT is the transmission to stop the integration at
       TRANSCUT = 5.0E-5
 C         TAUTOL is the maximum optical path for the subgrid intervals
-      TAUTOL = 0.2
+C      TAUTOL = 0.2
       RADIANCE(:) = 0.0D0
 
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
@@ -2339,6 +2340,7 @@ C           Decide which of the eight grid points we need the source function
           OSRCEXT8(:,I) = SRCEXT8(:,I)
         ENDDO
 C         Compute the source function times extinction in direction (MU2,PHI2)
+C        CALL CPU_TIME(TIME1)
         IF (NSTOKES .EQ. 1) THEN
           CALL COMPUTE_SOURCE_1CELL_UNPOL (ICELL, GRIDPTR,
      .             ML, MM, NLM, NLEG, NUMPHASE,
@@ -2358,6 +2360,8 @@ C         Compute the source function times extinction in direction (MU2,PHI2)
      .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART,
      .             INTERPMETHOD, PHASEINTERPWT, PHASEMAX,MAXNMICRO)
         ENDIF
+C        CALL CPU_TIME(TIME2)
+C        TIME_SOURCE = TIME_SOURCE + TIME2 - TIME1
 C         Interpolate the source and extinction to the current point
         IPT1 = GRIDPTR(1,ICELL)
         IPT2 = GRIDPTR(8,ICELL)
@@ -2521,7 +2525,8 @@ C           Get the location coordinate
         ENDIF
 C           If the transmission is greater than zero and not at a
 C             boundary then prepare for next cell
-        IF (TRANSMIT .LT. TRANSCUT .OR. NGRID.GT.MAXCELLSCROSS) THEN
+C.OR. NGRID.GT.MAXCELLSCROSS
+        IF (TRANSMIT .LT. TRANSCUT) THEN
           VALIDRAD = .TRUE.
         ELSE IF (INEXTCELL .EQ. 0 .AND. IFACE .GE. 5) THEN
           VALIDRAD = .TRUE.
