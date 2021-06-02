@@ -8,6 +8,52 @@ from scipy import ndimage
 import netCDF4 as nc
 from scipy import optimize
 
+def project_to_altitude(theta, phi, altitude):
+    """
+    Get horizontal grid offsets for projection of a ray to a specified altitude.
+
+    Parameters
+    ----------
+    theta : float or np.array,
+        Spherical coordinates zenith angle in [deg]
+    phi : float or np.array,
+        Spherical coordinates azimuth angle in [deg]
+    altitude : float or np.array,
+        Altitude (e.g. top of the atmosphere)
+
+    Returns
+    -------
+    delta_x: float or np.array,
+        offsets in x-direction
+    delta_y: float or np.array,
+        offsets in y-direction
+    """
+    tan_theta = np.tan(np.deg2rad(theta)) * altitude
+    delta_x = tan_theta * np.cos(np.deg2rad(phi))
+    delta_y = tan_theta * np.sin(np.deg2rad(phi))
+    return delta_x, delta_y
+
+def spherical_coords_to_vector(theta, phi):
+    """
+    Transform spherical coordinate angles into a direction vector
+
+    Parameters
+    ----------
+    theta : float,
+        Spherical coordinates zenith angle in [deg]
+    phi : float,
+        Spherical coordinates azimuth angle in [deg]
+
+    Returns
+    -------
+    vector: np.array,
+        3D direction vector
+    """
+    theta = np.deg2rad(np.mod(theta, 180.0))
+    phi = np.deg2rad(phi)
+    vector = np.array([np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)]).T
+    return vector.squeeze()
+
 def find_intersection_line(rays, reference_view='000N', x_bounds=(-np.inf, np.inf),
                            y_bounds=(-np.inf, np.inf), z_bounds=(-np.inf, np.inf),
                            vx_bounds=(-np.inf, np.inf), vy_bounds=(-np.inf, np.inf),

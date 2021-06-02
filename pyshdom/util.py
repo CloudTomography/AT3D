@@ -21,27 +21,6 @@ import pyshdom.core
 import pyshdom.solver
 import pyshdom.grid
 
-def spherical_coords_to_vector(theta, phi):
-    """
-    Transform spherical coordinate angles into a direction vector
-
-    Parameters
-    ----------
-    zenith : float,
-        Spherical coordinates zenith angle in [deg]
-    azimuth :
-        Spherical coordinates azimuth angle in [deg]
-
-    Returns
-    -------
-    vector: np.array,
-        3D direction vector
-    """
-    theta = np.deg2rad(np.mod(theta, 180.0))
-    phi = np.deg2rad(phi)
-    vector = np.array([np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)]).T
-    return vector.squeeze()
-
 def github_version():
     """
     Get github version.
