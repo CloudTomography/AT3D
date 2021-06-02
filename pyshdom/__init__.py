@@ -49,3 +49,4 @@ import pyshdom.exceptions
 import pyshdom.regularization
 import pyshdom.generate
 import pyshdom.preprocessing
+import pyshdom.visualization
