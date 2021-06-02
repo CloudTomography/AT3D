@@ -48,3 +48,4 @@ import pyshdom.parallel
 import pyshdom.exceptions
 import pyshdom.regularization
 import pyshdom.generate
+import pyshdom.preprocessing
