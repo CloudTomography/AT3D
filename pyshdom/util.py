@@ -10,107 +10,85 @@ import xarray as xr
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import subprocess
+import os
+import warnings
+from IPython.display import display
+from ipywidgets import fixed, interactive
+from pathlib import Path
 
 import pyshdom.core
 import pyshdom.solver
 import pyshdom.grid
 
-def load_airmspi_data(path, bands=['355nm', '380nm', '445nm', '470nm', '555nm', '660nm', '865nm', '935nm']):
+def spherical_coords_to_vector(theta, phi):
     """
-    Utility function to load AirMSPI hdf files into xr.Dataset
+    Transform spherical coordinate angles into a direction vector
 
     Parameters
     ----------
-    path : str,
-        path to file
-    bands : list or string,
-        AirMSPI bands to load. Default is all bands.
+    zenith : float,
+        Spherical coordinates zenith angle in [deg]
+    azimuth :
+        Spherical coordinates azimuth angle in [deg]
 
     Returns
     -------
-    output : xr.Dataset or tuple of datasets
-        A dataset with radiance or polarized fields or a tuple of datasets with both radiance and polarization fields.
+    vector: np.array,
+        3D direction vector
+    """
+    theta = np.deg2rad(np.mod(theta, 180.0))
+    phi = np.deg2rad(phi)
+    vector = np.array([np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)]).T
+    return vector.squeeze()
 
-    Notes
-    -----
-    AirMSPI is an 8-band (355, 380, 445, 470, 555, 660, 865, 935 nm) pushbroom camera, measuring polarization in the
-    470, 660, and 865 nm bands, mounted on a gimbal to acquire multiangular observations over a ±67° along-track range.
-    Two principal observing modes are employed: step-and-stare, in which 11 km x 11 km targets are observed at a
-    discrete set of view angles with a spatial resolution of ~10 m; and continuous sweep, in which the camera
-    slews back and forth along the flight track between ±67° to acquire wide area coverage
-    (11 km swath at nadir, target length 108 km) with ~25 m spatial resolution. See references for more information.
+def github_version():
+    """
+    Get github version.
 
-    References
-    ----------
-    https://asdc.larc.nasa.gov/project/AIRMSPI
+    Returns
+    -------
+    github_version: str,
+        The current GitHub version.
 
     Raises
     ------
-    AttributeError if band not supported.
-    Supported types are: '355nm', '380nm', '445nm', '470nm', '555nm', '660nm', '865nm', '935nm'
+    warning if there are uncomitted changes in pyshdom.
     """
-    ncf = nc.Dataset(path, diskless=True, persist=False)
-    pol_bands = ['470nm', '660nm', '865nm']
-    rad_bands = ['355nm', '380nm', '445nm', '555nm', '935nm']
-    bands = np.atleast_1d(bands)
+    github_dir = Path(os.environ['PYSHDOM_DIR']).joinpath('pyshdom')
+    uncomitted_changes = subprocess.check_output(["git", "diff", "--name-only", github_dir]).strip().decode('UTF-8')
+    if uncomitted_changes:
+        warnings.warn('There are uncomitted changes in the {}/pyshdom directories: {}'.format(github_dir, uncomitted_changes))
+    github_version = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode('UTF-8')
+    github_version = github_version + ' + uncomitted changes' if uncomitted_changes else github_version
+    return github_version
 
-    for band in bands:
-        if (band not in pol_bands) and (band not in rad_bands):
-            raise AttributeError('Band: {} not recognized'.format(band))
+def slider_select_file(dir, filetype=None):
+    """
+    Slider for interactive selection of a file
 
-    dims, rad_dataset, pol_dataset = {}, [], []
-    for band in bands:
-        data = []
-        data_fields = ncf['HDFEOS/GRIDS/{}_band/Data Fields/'.format(band)]
-        for name, var in data_fields.variables.items():
-            if name in dims.keys():
-                continue
-            attrs_keys = [attr for attr in var.ncattrs() if not attr.startswith('_')]
-            attrs_vals = [var.getncattr(attr) for attr in attrs_keys]
-            attrs = dict(zip(attrs_keys, attrs_vals))
+    Parameters
+    ----------
+    dir: str,
+        The directory from which to choose.
+    filetype:  str, optional,
+        Filetypes to display. If filetype is None then all files in the directory are displayed.
 
-            use_dims = True
-            for dim in var.dimensions:
-                if dim in data_fields.variables.keys():
-                    if dim not in dims:
-                        dim_attrs_keys = [attr for attr in data_fields[dim].ncattrs() if not attr.startswith('_')]
-                        dim_attrs_vals = [data_fields[dim].getncattr(attr) for attr in dim_attrs_keys]
-                        dim_attrs = dict(zip(dim_attrs_keys, dim_attrs_vals))
-                        dims[dim] = xr.DataArray(data_fields[dim], dims=dim, attrs=dim_attrs)
-                else:
-                    use_dims = False
+    Returns
+    -------
+    file: interactive,
+        An interactive slider utility.
+    """
 
-            if use_dims:
-                current_dims = {k: dims[k] for k in var.dimensions}
-                data_field = xr.DataArray(var[:], attrs=attrs, name=name, dims=list(current_dims.keys()),
-                                          coords=current_dims)
-            else:
-                data_field = xr.DataArray(var[:], attrs=attrs, name=name)
+    def select_path(i, paths):
+        print(paths[i])
+        return paths[i]
 
-            data.append(data_field.expand_dims(band=[band]))
-
-        data = xr.merge(data).squeeze()
-        if band in pol_bands:
-            pol_dataset.append(data)
-        else:
-            rad_dataset.append(data)
-
-    output = []
-    if len(rad_dataset) > 0:
-        rad_dataset = xr.concat(rad_dataset, dim='band')
-        output.append(rad_dataset)
-    if len(pol_dataset) > 0:
-        pol_dataset = xr.concat(pol_dataset, dim='band')
-        output.append(pol_dataset)
-
-    output = output[0] if len(output) == 1 else output
-    return output
-
-def set_pyshdom_path():
-    """set path to pyshdom parent directory"""
-    import os
-    from pathlib import Path
-    os.chdir(str(Path(pyshdom.__path__[0]).parent))
+    filetype = '*' if filetype is None else '*.' + filetype
+    paths = [str(path) for path in Path(dir).rglob('{}'.format(filetype))]
+    file = interactive(select_path, i=(0, len(paths)-1), paths=fixed(paths));
+    display(file)
+    return file
 
 def get_phase_function(legcoef, angles, phase_elements='All'):
     """Calculates phase function from legendre tables.
