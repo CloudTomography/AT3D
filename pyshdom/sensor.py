@@ -44,12 +44,12 @@ def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength, fill_ray_variables
     mu : array_like of floats
         The cosine of zenith angle pointing TOWARDS the sensor's pixels.
     phi : array_like of floats
-        The azimuthal angle angle (in degrees) pointing TOWARDS the sensor's pixels.
-    stokes : list of strings
+        The azimuthal angle angle (in radians) pointing TOWARDS the sensor's pixels.
+    stokes : string or list of strings
         The Stokes components that will be calculated for the sensor at each pixel.
         Valid values ('I', 'Q', 'U', 'V')
     wavelength : float
-        monochromatic wavelength that the `stokes` observables will be calculated at.
+        monochromatic wavelength [microns] that the `stokes` observables will be calculated at.
     fill_ray_variables : {'False', 'True'}, optional
         If True, then 'ray' variables are created corresponding to the specified
         pixel variables. If this function is being used in isolation without a geometric projection
@@ -72,7 +72,7 @@ def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength, fill_ray_variables
     """
     x, y, z, mu, phi, wavelength, stokes = np.asarray(x), np.asarray(y), np.asarray(z), \
                                            np.asarray(mu), np.asarray(phi), np.asarray(wavelength),\
-                                           np.asarray(stokes)
+                                           np.atleast_1d(stokes)
     for totest, name in zip((x, y, z, mu, phi), ('x', 'y', 'z', 'mu', 'phi')):
         if not totest.ndim == 1:
             raise ValueError("'{}' should be a 1-D np.ndarray".format(name))
