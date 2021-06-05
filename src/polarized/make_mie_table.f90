@@ -376,7 +376,7 @@ END SUBROUTINE GET_REFRACT_INDEX
 SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
                                 PARTYPE, WAVELENCEN, RINDEX, NSIZE, RADII, &
                                 MAXLEG, EXTINCT1, SCATTER1, NLEG1, LEGCOEF1,&
-				 VERBOSE)
+				                        VERBOSE, IERR, ERRMSG)
  ! Does a Mie computation for each particle radius in RADII and returns the
  ! optical properties in arrays EXTINCT1, SCATTER1, NLEG1, and LEGCOEF1.
  ! For AVGFLAG='C' the computation is done at a single wavelength (WAVELENCEN),
@@ -399,13 +399,20 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
   INTEGER, INTENT(OUT) :: NLEG1(NSIZE)
   REAL,    INTENT(OUT) :: EXTINCT1(NSIZE), SCATTER1(NSIZE)
   REAL,    INTENT(OUT) :: LEGCOEF1(6,0:MAXLEG,NSIZE)
+  INTEGER,  INTENT(OUT) :: IERR
+  CHARACTER(LEN=600), INTENT(OUT) :: ERRMSG
+!f2py intent(out) :: ERRMSG, IERR, EXTINCT1, SCATTER1, LEGCOEF1
+!f2py intent(out) :: NLEG1
   CHARACTER(LEN=6) :: TABLE_TYPE
   INTEGER :: I, NL
   REAL    :: WAVECEN, WAVE, BBTEMP, PLANCK, SUMP, A
   REAL    :: MRE, MIM, EXT, SCAT, COEF(6,0:MAXLEG)
   COMPLEX :: REFIND
-
-  WRITE(*,*) 'Computing mie scattering for all sizes, this may take a while...'
+  IERR = 0
+  IF (VERBOSE) THEN
+    WRITE(*,*) 'Computing mie scattering for all sizes, &
+      this may take a while...'
+  ENDIF
   TABLE_TYPE = 'VECTOR'
   IF (AVGFLAG == 'C') THEN
      ! For using one central wavelength: just call Mie routine for each radius
@@ -414,7 +421,9 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
         WRITE(*,*) 'Computing mie for radius: ', RADII(I), ' microns'
       ENDIF
       CALL MIE_ONE (WAVELENCEN, RINDEX, RADII(I), MAXLEG, &
-                    EXTINCT1(I), SCATTER1(I), NLEG1(I), LEGCOEF1(1,0,I) )
+                    EXTINCT1(I), SCATTER1(I), NLEG1(I), LEGCOEF1(1,0,I),&
+                     IERR, ERRMSG)
+      IF (IERR .NE. 0) RETURN
     ENDDO
 
   ELSE
@@ -451,7 +460,9 @@ SUBROUTINE COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, &
           WRITE(*,*) 'Computing mie for radius: ', RADII(I), &
                   ' microns [wavelength = ', WAVE, 'microns]'
         ENDIF
-        CALL MIE_ONE (WAVE, REFIND, RADII(I), MAXLEG, EXT, SCAT, NL, COEF)
+        CALL MIE_ONE (WAVE, REFIND, RADII(I), MAXLEG, EXT, SCAT, NL, COEF, &
+                IERR, ERRMSG)
+        IF (IERR .NE. 0) RETURN
         EXTINCT1(I) = EXTINCT1(I) + PLANCK*EXT
         SCATTER1(I) = SCATTER1(I) + PLANCK*SCAT
         NLEG1(I) = MAX(NLEG1(I),NL)
@@ -468,7 +479,7 @@ END SUBROUTINE COMPUTE_MIE_ALL_SIZES
 
 
 SUBROUTINE MAKE_MULTI_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA,&
-				GAMMA, ND, NDIST)
+				GAMMA, ND, NDIST, IERR, ERRMSG)
  ! Calculates the number concentrations (ND in cm^-3) for the NSIZE
  ! discrete particle radii (micron) of a gamma or lognormal size distribution
  ! with an effective radius of REFF (micron), gamma shape parameter or
@@ -478,19 +489,23 @@ SUBROUTINE MAKE_MULTI_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA,&
   INTEGER, INTENT(IN)  :: NSIZE, NDIST
   REAL,    INTENT(IN)  :: RADII(NSIZE), REFF(NDIST), ALPHA(NDIST), GAMMA, PARDENS
   REAL,    INTENT(OUT) :: ND(NSIZE, NDIST)
+  CHARACTER(LEN=600), INTENT(OUT) :: ERRMSG
+  INTEGER, INTENT(OUT) :: IERR
   CHARACTER(LEN=1), INTENT(IN) :: DISTFLAG
   INTEGER :: K
-
+  IERR = 0
   DO K = 1, NDIST
     CALL MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF(K), ALPHA(K),&
-   			GAMMA, ND(1,K))
+   			GAMMA, ND(1,K), IERR, ERRMSG)
+    IF (IERR .NE. 0) RETURN
   ENDDO
 END SUBROUTINE MAKE_MULTI_SIZE_DIST
 
 
 
 
-SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, ND)
+SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, ND,&
+                          IERR, ERRMSG)
  ! Calculates the number concentrations (ND in cm^-3) for the NSIZE
  ! discrete particle radii (micron) of a gamma or lognormal size distribution
  ! with an effective radius of REFF (micron), gamma shape parameter or
@@ -501,6 +516,8 @@ SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, N
   REAL,    INTENT(IN)  :: RADII(NSIZE), REFF, ALPHA, GAMMA, PARDENS
   REAL,    INTENT(OUT) :: ND(NSIZE)
   CHARACTER(LEN=1), INTENT(IN) :: DISTFLAG
+  CHARACTER(LEN=600) :: ERRMSG
+  INTEGER :: IERR
   REAL, PARAMETER :: TOL=0.001  ! fractional tolerance in achieving Reff
   INTEGER :: I
   REAL    :: TRUERE, F, REHI, RELO, REMID
@@ -523,8 +540,10 @@ SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, N
                          NSIZE, RADII, ND, TRUERE)
     ENDDO
     IF (TRUERE <= REFF) THEN
-      PRINT *, 'MAKE_SIZE_DIST: effective radius cannot be achieved',REFF,TRUERE,ALPHA
-      STOP
+      IERR = 1
+      WRITE(ERRMSG, *) 'MAKE_SIZE_DIST: effective radius cannot be achieved', &
+          REFF,TRUERE,ALPHA
+      RETURN
     ENDIF
   ELSE
     ! Find Reff that gives true Reff below desired value
@@ -539,8 +558,12 @@ SUBROUTINE MAKE_SIZE_DIST(DISTFLAG, PARDENS, NSIZE, RADII, REFF, ALPHA, GAMMA, N
                          NSIZE, RADII, ND, TRUERE)
     ENDDO
     IF (TRUERE >= REFF) THEN
-      PRINT *, 'MAKE_SIZE_DIST: effective radius cannot be achieved',REFF,TRUERE,ALPHA
-      STOP
+      IERR = 1
+      WRITE(ERRMSG, *) 'MAKE_SIZE_DIST: effective radius cannot be achieved', &
+          REFF,TRUERE,ALPHA
+      RETURN
+      ! PRINT *, 'MAKE_SIZE_DIST: effective radius cannot be achieved',REFF,TRUERE,ALPHA
+      ! STOP
     ENDIF
   ENDIF
   ! Do bisection to get correct effective radius

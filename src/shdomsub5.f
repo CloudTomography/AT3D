@@ -15,7 +15,8 @@ C     2020-2021.
      .             BCFLAG, IPFLAG, CAMX, CAMY, CAMZ,
      .             CAMMU, CAMPHI, NPIX, PATH, IPHASE,
      .             ALBEDO, LEGEN, DELTAMPATH, DELTAM,
-     .             NPART, NSTLEG, NLEG,ML,PATHS_SIZE)
+     .             NPART, NSTLEG, NLEG,ML,PATHS_SIZE,
+     .             INTERPMETHOD, PHASEMAX, PHASEINTERPWT)
 C     Integrates the extinction field (EXTINCT) along a ray and stores the minimum
 C     optical path that intersects a cell adjacent to each gridpoint.
 C     Stores only the minimum across all the set of rays.
@@ -31,7 +32,8 @@ Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
 Cf2py intent(in) :: BCFLAG, IPFLAG
       INTEGER*2 CELLFLAGS(*)
 Cf2py intent(in) :: CELLFLAGS
-      REAL    CAMX(*), CAMY(*), CAMZ(*), CAMMU(*), CAMPHI(*)
+      DOUBLE PRECISION    CAMX(*), CAMY(*), CAMZ(*), CAMMU(*)
+      DOUBLE PRECISION    CAMPHI(*)
 Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
       INTEGER  NPIX, NLEG, NPART, NSTLEG
 Cf2py intent(in) :: NPIX,NLEG,NPART,NSTLEG
@@ -41,12 +43,15 @@ Cf2py intent(out):: PATH
 Cf2py intent(in) :: EXTINCT, ALBEDO
       REAL  LEGEN(NSTLEG,0:NLEG,*)
 Cf2py intent(in) :: LEGEN
-      INTEGER IPHASE(NPTS,NPART), ML
-Cf2py intent(in) :: IPHASE, ML
+      INTEGER IPHASE(8,NPTS,NPART), ML
+      REAL PHASEINTERPWT(8,NPTS,NPART), PHASEMAX
+Cf2py intent(in) :: IPHASE, ML, PHASEINTERPWT,PHASEMAX
+      CHARACTER INTERPMETHOD*2
+Cf2py intent(in) :: INTERPMETHOD
       LOGICAL DELTAMPATH, DELTAM
 Cf2py intent(in) :: DELTAMPATH, DELTAM
       INTEGER N, K
-      REAL    MURAY, PHIRAY, MU2, PHI2
+      DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION X0, Y0, Z0, R, PI
 
       PI = ACOS(-1.0D0)
@@ -82,7 +87,8 @@ C             Extrapolate ray to domain top if above
      .                          GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
      .			                X0, Y0, Z0, PATH, IPHASE,
      .                      ALBEDO, LEGEN, DELTAMPATH, DELTAM,
-     .                      NPART, NSTLEG, NLEG,ML,N, PATHS_SIZE)
+     .                      NPART, NSTLEG, NLEG,ML,N, PATHS_SIZE,
+     .                      INTERPMETHOD, PHASEMAX, PHASEINTERPWT)
 900     CONTINUE
 
       ENDDO
@@ -97,7 +103,8 @@ C             Extrapolate ray to domain top if above
      .                       GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
      .			             X0, Y0, Z0, PATH, IPHASE,
      .                      ALBEDO, LEGEN, DELTAMPATH, DELTAM,
-     .                      NPART, NSTLEG, NLEG,ML,N, PATHS_SIZE)
+     .                      NPART, NSTLEG, NLEG,ML,N, PATHS_SIZE,
+     .                      INTERPMETHOD, PHASEMAX, PHASEINTERPWT)
 
 C     Integrates the extinction field (EXTINCT) along a ray and stores the minimum
 C     optical path that intersects a cell adjacent to each gridpoint.
@@ -106,7 +113,7 @@ C     optical path that intersects a cell adjacent to each gridpoint.
       INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
       INTEGER*2 CELLFLAGS(*), N
       REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
-      REAL    MURAY, PHIRAY, MU2, PHI2
+      DOUBLE PRECISION    MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION X0, Y0, Z0
       REAL    TAU, EXT1, EXTN
       REAL    PATH(NPTS, PATHS_SIZE)
@@ -123,12 +130,14 @@ C     optical path that intersects a cell adjacent to each gridpoint.
 
       INTEGER NLEG,NPART, NSTLEG
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
-      REAL  LEGEN(NSTLEG,0:NLEG,*)
-      INTEGER IPHASE(NPTS,NPART), ML
+      REAL  LEGEN(NSTLEG,0:NLEG,*), PHASEMAX
+      REAL  PHASEINTERPWT(8,NPTS,NPART)
+      CHARACTER INTERPMETHOD*2
+      INTEGER IPHASE(8,NPTS,NPART), ML
       LOGICAL DELTAMPATH, DELTAM
 
       REAL FM, UNSCALED_ALBEDO
-      INTEGER J, IPART
+      INTEGER J, IPART, Q
 
       DATA OPPFACE/2,1,4,3,6,5/
       DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
@@ -204,19 +213,25 @@ C           Make sure current cell is valid
 
 C         Interpolate the source and extinction to the current point
         CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XE, YE, ZE, F)
+
         EXT1 = 0.0
         DO IPART=1,NPART
           DO J=1,8
-            IF (DELTAM .AND. .NOT. DELTAMPATH) THEN
-              FM = LEGEN(1,ML+1,IPHASE(GRIDPTR(J,ICELL),IPART))
+            IF (DELTAM .AND. .NOT. DELTAMPATH)THEN
+              IF (PHASEINTERPWT(1,GRIDPTR(J,ICELL),IPART)
+     .            .GE. PHASEMAX) THEN
+                FM = LEGEN(1,ML+1,IPHASE(1,GRIDPTR(J,ICELL),IPART))
+              ELSE
+                FM = 0.0
+                DO Q=1,8
+                  FM = FM +
+     .              LEGEN(1,ML+1,IPHASE(Q,GRIDPTR(J,ICELL),IPART))
+                ENDDO
+              ENDIF
               UNSCALED_ALBEDO = ALBEDO(GRIDPTR(J,ICELL),IPART)/
      .                  (FM*ALBEDO(GRIDPTR(J,ICELL),IPART)+ 1.0)
               EXT1 = EXT1 + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)/
      .                   (1.0 - UNSCALED_ALBEDO*FM)
-            ELSE IF (DELTAMPATH .AND. .NOT. DELTAM) THEN
-              FM = LEGEN(1,ML+1,IPHASE(GRIDPTR(J,ICELL),IPART))
-              EXT1 = EXT1 + F(J)*(1.0-ALBEDO(GRIDPTR(J,ICELL),IPART)
-     .                  *FM)*EXTINCT(GRIDPTR(J,ICELL),IPART)
             ELSE
               EXT1 = EXT1 + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)
             ENDIF
@@ -275,15 +290,20 @@ C             many subgrid intervals to use
         DO IPART=1,NPART
           DO J=1,8
             IF (DELTAM .AND. .NOT. DELTAMPATH)THEN
-              FM = LEGEN(1,ML+1,IPHASE(GRIDPTR(J,ICELL),IPART))
+              IF (PHASEINTERPWT(1,GRIDPTR(J,ICELL),IPART)
+     .            .GE. PHASEMAX) THEN
+                FM = LEGEN(1,ML+1,IPHASE(1,GRIDPTR(J,ICELL),IPART))
+              ELSE
+                FM = 0.0
+                DO Q=1,8
+                  FM = FM +
+     .              LEGEN(1,ML+1,IPHASE(Q,GRIDPTR(J,ICELL),IPART))
+                ENDDO
+              ENDIF
               UNSCALED_ALBEDO = ALBEDO(GRIDPTR(J,ICELL),IPART)/
      .                  (FM*ALBEDO(GRIDPTR(J,ICELL),IPART)+ 1.0)
               EXTN = EXTN + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)/
      .                   (1.0 - UNSCALED_ALBEDO*FM)
-            ELSE IF (DELTAMPATH .AND. .NOT. DELTAM) THEN
-              FM = LEGEN(1,ML+1,IPHASE(GRIDPTR(J,ICELL),IPART))
-              EXTN = EXTN + F(J)*(1.0-ALBEDO(GRIDPTR(J,ICELL),IPART)
-     .                  *FM)*EXTINCT(GRIDPTR(J,ICELL),IPART)
             ELSE
               EXTN = EXTN + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)
             ENDIF
@@ -299,8 +319,9 @@ C     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
 C     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
 C     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
         TAU = TAU + SO*0.5*(EXT1+EXTN)
-        OUTOFDOMAIN = (BTEST(INT(CELLFLAGS(ICELL)),0).OR.
-     .                 BTEST(INT(CELLFLAGS(ICELL)),1))
+C        OUTOFDOMAIN = (BTEST(INT(CELLFLAGS(ICELL)),0).OR.
+C     .                 BTEST(INT(CELLFLAGS(ICELL)),1))
+        OUTOFDOMAIN = .FALSE.
         IF (.NOT.OUTOFDOMAIN) THEN
           IF (PATHS_SIZE .EQ. 1) THEN
             DO K=1,8
@@ -377,7 +398,8 @@ C             boundary then prepare for next cell
      .             BCFLAG, IPFLAG, CAMX, CAMY, CAMZ,
      .             CAMMU, CAMPHI, NPIX, PATH, IPHASE,
      .             ALBEDO, LEGEN, DELTAMPATH, DELTAM,
-     .             NPART, NSTLEG, NLEG, ML)
+     .             NPART, NSTLEG, NLEG, ML,
+     .             INTERPMETHOD, PHASEMAX, PHASEINTERPWT)
 C    Integrates the extinction field along the line of sight,
 C    this may be delta-M scaled extinction or not depending on
 C    DELTAMPATH (and DELTAM). - JRLoveridge 2021/02/22
@@ -392,13 +414,15 @@ Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
 Cf2py intent(in) :: BCFLAG, IPFLAG
       INTEGER*2 CELLFLAGS(*)
 Cf2py intent(in) :: CELLFLAGS
-      REAL    CAMX(*), CAMY(*), CAMZ(*), CAMMU(*), CAMPHI(*)
+      DOUBLE PRECISION CAMX(*), CAMY(*), CAMZ(*), CAMMU(*), CAMPHI(*)
 Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
       INTEGER  NPIX, NLEG, NSTLEG, NPART
 Cf2py intent(in) :: NPIX, NLEG, NSTLEG, NPART
       REAL  PATH(NPIX)
 Cf2py intent(out):: PATH
-      INTEGER IPHASE(NPTS,NPART), ML
+      INTEGER IPHASE(8,NPTS,NPART), ML
+      REAL PHASEINTERPWT(8,NPTS,NPART), PHASEMAX
+      CHARACTER INTERPMETHOD*2
 Cf2py intent(in) :: IPHASE, ML
       REAL EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
 Cf2py intent(in) :: EXTINCT, ALBEDO
@@ -409,7 +433,7 @@ Cf2py intent(in) :: DELTAMPATH, DELTAM
 
       REAL TAU
       INTEGER N, K
-      REAL    MURAY, PHIRAY, MU2, PHI2
+      DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION X0, Y0, Z0, R, PI
 
       PI = ACOS(-1.0D0)
@@ -445,7 +469,7 @@ C             Extrapolate ray to domain top if above
      .                          GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
      .			                X0, Y0, Z0, TAU, ALBEDO,LEGEN,IPHASE,
      .                      NSTLEG, NLEG,NPART, DELTAMPATH,DELTAM,
-     .                      ML)
+     .                      ML,INTERPMETHOD,PHASEINTERPWT,PHASEMAX)
         PATH(N) = TAU
 900     CONTINUE
 
@@ -460,7 +484,7 @@ C             Extrapolate ray to domain top if above
      .                       GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
      .			             X0, Y0, Z0, TAU, ALBEDO, LEGEN, IPHASE,
      .                   NSTLEG, NLEG, NPART, DELTAMPATH, DELTAM,
-     .                   ML)
+     .                   ML,INTERPMETHOD,PHASEINTERPWT,PHASEMAX)
 
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward in the direction (MURAY,PHIRAY) to find the
@@ -470,10 +494,12 @@ C     outgoing radiance (RAD) at the point X0,Y0,Z0.
       INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
       INTEGER*2 CELLFLAGS(*)
       REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
-      REAL    MURAY, PHIRAY, MU2, PHI2
+      DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION X0, Y0, Z0
       INTEGER NPART, NSTLEG, NLEG
-      INTEGER IPHASE(NPTS,NPART)
+      INTEGER IPHASE(8,NPTS,NPART)
+      REAL    PHASEINTERPWT(8,NPTS,NPART), PHASEMAX
+      CHARACTER INTERPMETHOD*2
       REAL EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL LEGEN(NSTLEG,0:NLEG,*)
       LOGICAL DELTAMPATH, DELTAM
@@ -491,7 +517,7 @@ C      REAL    PATH(*)
       DOUBLE PRECISION SO, SOX, SOY, SOZ, EPS, F(8)
 
       REAL FM, UNSCALED_ALBEDO
-      INTEGER J, IPART, ML
+      INTEGER J, IPART, ML, Q
 
       DATA OPPFACE/2,1,4,3,6,5/
       DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
@@ -570,33 +596,29 @@ C         Interpolate the source and extinction to the current point
         CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XE, YE, ZE, F)
         EXT1 = 0.0
 
+        EXT1 = 0.0
         DO IPART=1,NPART
           DO J=1,8
-            IF (DELTAM .AND. .NOT. DELTAMPATH) THEN
-              FM = LEGEN(1,ML+1,IPHASE(GRIDPTR(J,ICELL),IPART))
+            IF (DELTAM .AND. .NOT. DELTAMPATH)THEN
+              IF (PHASEINTERPWT(1,GRIDPTR(J,ICELL),IPART)
+     .            .GE. PHASEMAX) THEN
+                FM = LEGEN(1,ML+1,IPHASE(1,GRIDPTR(J,ICELL),IPART))
+              ELSE
+                FM = 0.0
+                DO Q=1,8
+                  FM = FM +
+     .              LEGEN(1,ML+1,IPHASE(Q,GRIDPTR(J,ICELL),IPART))
+                ENDDO
+              ENDIF
               UNSCALED_ALBEDO = ALBEDO(GRIDPTR(J,ICELL),IPART)/
      .                  (FM*ALBEDO(GRIDPTR(J,ICELL),IPART)+ 1.0)
               EXT1 = EXT1 + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)/
      .                   (1.0 - UNSCALED_ALBEDO*FM)
-            ELSE IF (DELTAMPATH .AND. .NOT. DELTAM) THEN
-              FM = LEGEN(1,ML+1,IPHASE(GRIDPTR(J,ICELL),IPART))
-              EXT1 = EXT1 + F(J)*(1.0-ALBEDO(GRIDPTR(J,ICELL),IPART)
-     .                  *FM)*EXTINCT(GRIDPTR(J,ICELL),IPART)
             ELSE
               EXT1 = EXT1 + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)
             ENDIF
           ENDDO
        ENDDO
-
-C        EXT1 = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
-C     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
-C     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
-C     .         F(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
-C     .         F(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
-C     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
-C     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
-C     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
-
 C           This cell is independent pixel if IP mode or open boundary
 C             conditions and ray is leaving domain (i.e. not entering)
         IPINX = BTEST(INT(CELLFLAGS(ICELL)),0) .AND.
@@ -639,29 +661,26 @@ C             many subgrid intervals to use
         DO IPART=1,NPART
           DO J=1,8
             IF (DELTAM .AND. .NOT. DELTAMPATH)THEN
-              FM = LEGEN(1,ML+1,IPHASE(GRIDPTR(J,ICELL),IPART))
+              IF (PHASEINTERPWT(1,GRIDPTR(J,ICELL),IPART)
+     .            .GE. PHASEMAX) THEN
+                FM = LEGEN(1,ML+1,IPHASE(1,GRIDPTR(J,ICELL),IPART))
+              ELSE
+                FM = 0.0
+                DO Q=1,8
+                  FM = FM +
+     .              LEGEN(1,ML+1,IPHASE(Q,GRIDPTR(J,ICELL),IPART))
+                ENDDO
+              ENDIF
               UNSCALED_ALBEDO = ALBEDO(GRIDPTR(J,ICELL),IPART)/
      .                  (FM*ALBEDO(GRIDPTR(J,ICELL),IPART)+ 1.0)
               EXTN = EXTN + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)/
      .                   (1.0 - UNSCALED_ALBEDO*FM)
-            ELSE IF (DELTAMPATH .AND. .NOT. DELTAM) THEN
-              FM = LEGEN(1,ML+1,IPHASE(GRIDPTR(J,ICELL),IPART))
-              EXTN = EXTN + F(J)*(1.0-ALBEDO(GRIDPTR(J,ICELL),IPART)
-     .                  *FM)*EXTINCT(GRIDPTR(J,ICELL),IPART)
             ELSE
               EXTN = EXTN + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)
             ENDIF
           ENDDO
        ENDDO
 
-C        EXTN = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
-C     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
-C     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
-C     .         F(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
-C     .         F(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
-C     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
-C     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
-C     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
         TAU = TAU + SO*0.5*(EXT1+EXTN)
         OUTOFDOMAIN = (BTEST(INT(CELLFLAGS(ICELL)),0).OR.
      .                 BTEST(INT(CELLFLAGS(ICELL)),1))
@@ -734,7 +753,7 @@ C             boundary then prepare for next cell
      .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .             BCFLAG, IPFLAG, CAMX, CAMY, CAMZ,
      .             CAMMU, CAMPHI, NPIX, VOLUME, FLAGS, WEIGHTS,
-     .              LINEAR)
+     .              LINEAR, COUNTS)
 C    Performs a space carving algorithm by counting intersections between
 C    cells and rays. Can also backproject a set of weights. A nearest neighbor
 C    interpolation kernel is assumed. The linear one does not operate correctly
@@ -750,25 +769,27 @@ Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
 Cf2py intent(in) :: BCFLAG, IPFLAG
       INTEGER*2 CELLFLAGS(*)
 Cf2py intent(in) :: CELLFLAGS
-      REAL    CAMX(*), CAMY(*), CAMZ(*), CAMMU(*), CAMPHI(*)
+      DOUBLE PRECISION   CAMX(*), CAMY(*), CAMZ(*), CAMMU(*), CAMPHI(*)
 Cf2py intent(in) ::  CAMX, CAMY, CAMZ, CAMMU, CAMPHI
       INTEGER  NPIX
 Cf2py intent(in) :: NPIX
       INTEGER FLAGS(*)
 Cf2py intent(in) :: FLAG
-      REAL WEIGHTS(*)
+      DOUBLE PRECISION WEIGHTS(*)
 Cf2py intent(in) :: WEIGHTS
       LOGICAL LINEAR
 Cf2py intent(in) LINEAR
-      REAL  VOLUME(3,NPTS)
-Cf2py intent(out):: VOLUME
+      DOUBLE PRECISION  VOLUME(NPTS)
+      INTEGER COUNTS(2,NPTS)
+Cf2py intent(out):: VOLUME, COUNTS
 
       INTEGER N, K, FLAG
-      REAL    MURAY, PHIRAY, MU2, PHI2, WEIGHT
+      DOUBLE PRECISION    MURAY, PHIRAY, MU2, PHI2, WEIGHT
       DOUBLE PRECISION X0, Y0, Z0, R, PI
 
       PI = ACOS(-1.0D0)
-      VOLUME = 0.0
+      VOLUME = 0.0D0
+      COUNTS = 0
 C         Loop over pixels in image
       DO N = 1, NPIX
         X0 = CAMX(N)
@@ -780,7 +801,6 @@ C         Loop over pixels in image
         WEIGHT = WEIGHTS(N)
         MURAY = -MU2
         PHIRAY = PHI2 - PI
-
 C             Extrapolate ray to domain top if above
         IF (Z0 .GT. ZGRID(NZ)) THEN
           IF (MURAY .GE. 0.0) THEN
@@ -800,7 +820,8 @@ C             Extrapolate ray to domain top if above
      .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                       BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,
      .                       GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
-     .			             X0, Y0, Z0, VOLUME, FLAG, WEIGHT, LINEAR)
+     .			             X0, Y0, Z0, VOLUME, FLAG, WEIGHT, LINEAR,
+     .                   COUNTS)
 900     CONTINUE
 
       ENDDO
@@ -813,7 +834,8 @@ C             Extrapolate ray to domain top if above
      .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                       BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,
      .                       GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
-     .			             X0, Y0, Z0, VOLUME, FLAG, WEIGHT, LINEAR)
+     .			             X0, Y0, Z0, VOLUME, FLAG, WEIGHT, LINEAR,
+     .                   COUNTS)
 
 C     Performs the space carving by traversing the grid.
 C     LINEAR mode is untested.
@@ -822,11 +844,11 @@ C     LINEAR mode is untested.
       INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
       INTEGER*2 CELLFLAGS(*)
       REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
-      REAL    MURAY, PHIRAY, MU2, PHI2, WEIGHT
+      DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2, WEIGHT
       DOUBLE PRECISION X0, Y0, Z0
-      REAL  VOLUME(3,NPTS), TEMP_VOLUME(NPTS), PATH_SUM
+      DOUBLE PRECISION  VOLUME(NPTS), PATH_SUM
       LOGICAL LINEAR
-      INTEGER FLAG
+      INTEGER FLAG, COUNTS(2,NPTS)
       INTEGER BITX, BITY, BITZ, IOCT, ICELL, INEXTCELL, IFACE
       INTEGER IOPP, NTAU, IT, I, IPT1, IPT2, K
       LOGICAL DONE, IPINX, IPINY, OPENBCFACE, OUTOFDOMAIN
@@ -834,7 +856,7 @@ C     LINEAR mode is untested.
       INTEGER OPPFACE(6), OLDIPTS(8), BCFLAG, IPFLAG
       INTEGER DONEFACE(8,7), ONEX(8), ONEY(8)
       REAL    XM, YM
-      DOUBLE PRECISION XMID,YMID,ZMID, F(8)
+      DOUBLE PRECISION XMID,YMID,ZMID, F1(8), F2(8)
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
       DOUBLE PRECISION XE, YE, ZE, XN, YN, ZN, XI, YI, ZI
       DOUBLE PRECISION SO, SOX, SOY, SOZ, EPS
@@ -952,29 +974,30 @@ C             (always need to deal with the cell that is wrapped)
         YMID = YE + SO*CY/2.0
         ZMID = ZE + SO*CZ/2.0
         CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS,
-     .    XMID, YMID, ZMID, F)
+     .    XE,YE,ZE, F1)
+        CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS,
+     .    XN,YN,ZN, F2)
 
 C	If this is not a boundary cell (currently assuming that the bc conditions are open)
-C	    Check if the zlevel is within the zparticle levels
-C		Compute the gradient field in direction  (MU2,PHI2)
-
         OUTOFDOMAIN = (BTEST(INT(CELLFLAGS(ICELL)),0).OR.
      .                 BTEST(INT(CELLFLAGS(ICELL)),1))
+        OUTOFDOMAIN = .FALSE.
         IF (.NOT.OUTOFDOMAIN) THEN
             DO K=1,8
               IF (FLAG .EQ. 1) THEN
-                VOLUME(1,GRIDPTR(K,ICELL))=
-     .              VOLUME(1,GRIDPTR(K,ICELL)) + 1
+                COUNTS(1,GRIDPTR(K,ICELL))=
+     .              COUNTS(1,GRIDPTR(K,ICELL)) + 1
               ELSEIF (FLAG .EQ. 0) THEN
-                 VOLUME(2,GRIDPTR(K,ICELL))=
-     .                VOLUME(2,GRIDPTR(K,ICELL)) + 1
+                 COUNTS(2,GRIDPTR(K,ICELL))=
+     .                COUNTS(2,GRIDPTR(K,ICELL)) + 1
               ENDIF
               IF (LINEAR) THEN
-                VOLUME(3,GRIDPTR(K,ICELL)) =
-     .              VOLUME(3,GRIDPTR(K,ICELL)) + WEIGHT/(F(K)*SO)
+                VOLUME(GRIDPTR(K,ICELL)) =
+     .              VOLUME(GRIDPTR(K,ICELL)) +
+     .              WEIGHT*(F1(K)+F2(K))*0.5*SO
               ELSE
-                VOLUME(3,GRIDPTR(K,ICELL)) =
-     .              VOLUME(3,GRIDPTR(K,ICELL)) + WEIGHT
+                VOLUME(GRIDPTR(K,ICELL)) =
+     .              VOLUME(GRIDPTR(K,ICELL)) + WEIGHT
               ENDIF
             ENDDO
         ENDIF
@@ -1039,13 +1062,10 @@ C             boundary then prepare for next cell
      .             XGRID, YGRID, ZGRID, GRIDPOS,WEIGHTS,
      .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .             BCFLAG, IPFLAG, CAMX, CAMY, CAMZ,
-     .             CAMMU, CAMPHI, NPIX,PATH, RETURN_MATRIX,
-     .             MATRIX, MATRIX_PTRS, MATRIX_SIZE,
+     .             CAMMU, CAMPHI, NPIX,PATH,
      .             PIXEL_INDICES, RAY_WEIGHTS, NRAYS)
 C     Performs ray integration (PATH) of a set of WEIGHTS assuming
-C     a linear interpolation kernel. Is also supposed to output
-C     the matrix of describing this integration but it is inconsistent and
-C     should not be used, likely due to boundary condition issues.
+C     a linear interpolation kernel.
 C     - JRLoveridge 2021/02/22
       IMPLICIT NONE
       INTEGER NX, NY, NZ, NPTS, NCELLS
@@ -1058,28 +1078,22 @@ Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
 Cf2py intent(in) :: BCFLAG, IPFLAG
       INTEGER*2 CELLFLAGS(*)
 Cf2py intent(in) :: CELLFLAGS
-      REAL  CAMX(NRAYS), CAMY(NRAYS), CAMZ(NRAYS)
-      REAL  CAMMU(NRAYS), CAMPHI(NRAYS)
+      DOUBLE PRECISION  CAMX(NRAYS), CAMY(NRAYS), CAMZ(NRAYS)
+      DOUBLE PRECISION  CAMMU(NRAYS), CAMPHI(NRAYS)
 Cf2py intent(in) :: CAMX, CAMY, CAMZ, CAMMU, CAMPHI
       INTEGER  NPIX, PIXEL_INDICES(NRAYS), NRAYS
 Cf2py intent(in) NPIX, PIXEL_INDICES, NRAYS
-      REAL  PATH(NPIX)
+      DOUBLE PRECISION  PATH(NPIX)
       DOUBLE PRECISION RAY_WEIGHTS(NRAYS)
 Cf2py intent(in) :: RAY_WEIGHTS
 Cf2py intent(out):: PATH
-      REAL WEIGHTS(NPTS)
+      DOUBLE PRECISION WEIGHTS(NPTS)
 Cf2py intent(in) :: WEIGHTS
-      LOGICAL RETURN_MATRIX
-Cf2py intent(in) :: RETURN_MATRIX
-      REAL MATRIX(MATRIX_SIZE, NPIX)
-Cf2py intent(in,out) :: MATRIX
-      INTEGER MATRIX_PTRS(MATRIX_SIZE, NPIX), MATRIX_SIZE
-Cf2py intent(in,out) :: MATRIX_PTRS
 
-      REAL TAU
+      DOUBLE PRECISION TAU
       DOUBLE PRECISION RAY_WEIGHT
       INTEGER N, K,Q
-      REAL    MURAY, PHIRAY, MU2, PHI2
+      DOUBLE PRECISION    MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION X0, Y0, Z0, R, PI
 
       PI = ACOS(-1.0D0)
@@ -1112,14 +1126,13 @@ C             Extrapolate ray to domain top if above
      .		                      ZGRID(1)
           STOP
         ENDIF
-        TAU = 0.0
+        TAU = 0.0D0
         CALL PROJECT_1RAY(NX, NY, NZ, NPTS, NCELLS, WEIGHTS,
      .                      GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                      BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,
      .                      GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
-     .			                X0, Y0, Z0, TAU, RETURN_MATRIX,
-     .                      MATRIX, MATRIX_PTRS,MATRIX_SIZE,N,
-     .                      RAY_WEIGHT, NPIX)
+     .			                X0, Y0, Z0, TAU ,N,
+     .                      RAY_WEIGHT, NPIX, .FALSE.)
         PATH(N) = PATH(N) + TAU
 900     CONTINUE
 
@@ -1132,27 +1145,24 @@ C             Extrapolate ray to domain top if above
      .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                       BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,
      .                       GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
-     .			                 X0, Y0, Z0, TAU, RETURN_MATRIX,
-     .                       MATRIX, MATRIX_PTRS,MATRIX_SIZE,N,
-     .                       RAY_WEIGHT, NPIX)
+     .			                 X0, Y0, Z0, TAU, N,
+     .                       RAY_WEIGHT, NPIX, FIRSTMODE)
 
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward in the direction (MURAY,PHIRAY) to find the
 C     outgoing radiance (RAD) at the point X0,Y0,Z0.
       IMPLICIT NONE
+      LOGICAL FIRSTMODE
       INTEGER NX, NY, NZ, NPTS, NCELLS
       INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
       INTEGER*2 CELLFLAGS(*)
       REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
-      REAL    MURAY, PHIRAY, MU2, PHI2
+      DOUBLE PRECISION    MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION X0, Y0, Z0
-      REAL    WEIGHTS(NPTS)
+      DOUBLE PRECISION    WEIGHTS(NPTS)
       DOUBLE PRECISION RAY_WEIGHT
-      LOGICAL RETURN_MATRIX
-      REAL    MATRIX(MATRIX_SIZE, NPIX)
-      INTEGER MATRIX_SIZE, MATRIX_PTRS(MATRIX_SIZE, NPIX),N
-      INTEGER NPIX, COUNTER
-      REAL    TAU, EXT1, EXTN
+      INTEGER NPIX, COUNTER, N
+      DOUBLE PRECISION    TAU, EXT1, EXTN
 C      REAL    PATH(*)
       INTEGER BITX, BITY, BITZ, IOCT, ICELL, INEXTCELL, IFACE
       INTEGER IOPP, NTAU, IT, I, IPT1, IPT2, K
@@ -1285,24 +1295,20 @@ C             (always need to deal with the cell that is wrapped)
 C           Find the optical path across the grid cell and figure how
 C             many subgrid intervals to use
 C         Interpolate the source and extinction to the current point
-        CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XE, YE, ZE, F2)
+        CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XN, YN, ZN, F2)
         EXTN = 0.0
         DO J=1,8
           EXTN = EXTN+ WEIGHTS(GRIDPTR(J,ICELL))*F2(J)
         ENDDO
-
-        TAU = TAU + SO*0.5*(EXT1+EXTN)*RAY_WEIGHT
-
         OUTOFDOMAIN = (BTEST(INT(CELLFLAGS(ICELL)),0).OR.
      .                 BTEST(INT(CELLFLAGS(ICELL)),1))
-        IF (.NOT. OUTOFDOMAIN) THEN
-          IF (RETURN_MATRIX) THEN
-            DO J=1,8
-              MATRIX_PTRS(COUNTER, N) = GRIDPTR(J,ICELL)
-              MATRIX(COUNTER, N) = MATRIX(COUNTER,N)
-     .                + RAY_WEIGHT*SO*0.5*(F1(J) + F2(J))
-              COUNTER = COUNTER + 1
-            ENDDO
+        OUTOFDOMAIN=.FALSE.
+        IF (.NOT.OUTOFDOMAIN) THEN
+          IF (FIRSTMODE) THEN
+            TAU = MAXVAL(WEIGHTS(GRIDPTR(:,ICELL)))*RAY_WEIGHT
+            IF (TAU .GT. 1e-5 .AND. NGRID .GE. 1) DONE = .TRUE.
+          ELSE
+            TAU = TAU + SO*0.5*(EXT1+EXTN)*RAY_WEIGHT
           ENDIF
         ENDIF
 
@@ -1358,9 +1364,89 @@ C             boundary then prepare for next cell
           ICELL = INEXTCELL
         ENDIF
       ENDDO
-
       RETURN
       END
+
+      SUBROUTINE GET_SHADOW(NX, NY, NZ, NPTS, NCELLS,
+     .             XGRID, YGRID, ZGRID, GRIDPOS,WEIGHTS,
+     .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
+     .             BCFLAG, IPFLAG, CAMX, CAMY, CAMZ,
+     .             CAMMU, CAMPHI, NPIX,PATH,
+     .             PIXEL_INDICES, RAY_WEIGHTS, NRAYS
+     .             )
+
+      IMPLICIT NONE
+      INTEGER NX, NY, NZ, NPTS, NCELLS
+Cf2py intent(in) :: NX, NY, NZ, NPTS, NCELLS
+      REAL    XGRID(*), YGRID(*), ZGRID(*), GRIDPOS(3,*)
+Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
+      INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
+Cf2py intent(in) :: GRIDPTR, NEIGHPTR, TREEPTR
+      INTEGER BCFLAG, IPFLAG
+Cf2py intent(in) :: BCFLAG, IPFLAG
+      INTEGER*2 CELLFLAGS(*)
+Cf2py intent(in) :: CELLFLAGS
+      DOUBLE PRECISION SOLARMU, SOLARAZ
+Cf2py intent(in) :: SOLARMU, SOLARAZ
+      DOUBLE PRECISION  CAMX(NRAYS), CAMY(NRAYS), CAMZ(NRAYS)
+      DOUBLE PRECISION  CAMMU(NRAYS), CAMPHI(NRAYS)
+Cf2py intent(in) :: CAMX, CAMY, CAMZ, CAMMU, CAMPHI
+      INTEGER  NPIX, PIXEL_INDICES(NRAYS), NRAYS
+Cf2py intent(in) NPIX, PIXEL_INDICES, NRAYS
+      DOUBLE PRECISION  PATH(NPIX)
+      DOUBLE PRECISION RAY_WEIGHTS(NRAYS)
+Cf2py intent(in) :: RAY_WEIGHTS
+Cf2py intent(out):: PATH
+      DOUBLE PRECISION WEIGHTS(NPTS)
+Cf2py intent(in) :: WEIGHTS
+
+      DOUBLE PRECISION TAU
+      DOUBLE PRECISION RAY_WEIGHT
+      INTEGER N, K,Q
+      DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
+      DOUBLE PRECISION X0, Y0, Z0, R, PI
+
+      PI = ACOS(-1.0D0)
+
+      DO Q=1, NRAYS
+        N = PIXEL_INDICES(Q) + 1
+        X0 = CAMX(Q)
+        Y0 = CAMY(Q)
+        Z0 = CAMZ(Q)
+        MU2 = CAMMU(Q)
+        PHI2 = CAMPHI(Q)
+        RAY_WEIGHT = RAY_WEIGHTS(Q)
+
+        MURAY = -MU2
+        PHIRAY = PHI2 - PI
+
+C             Extrapolate ray to domain top if above
+        IF (Z0 .GT. ZGRID(NZ)) THEN
+          IF (MURAY .GE. 0.0) THEN
+            GOTO 900
+          ENDIF
+          R = (ZGRID(NZ) - Z0)/MURAY
+          X0 = X0 + R*SQRT(1-MURAY**2)*COS(PHIRAY)
+          Y0 = Y0 + R*SQRT(1-MURAY**2)*SIN(PHIRAY)
+          Z0 = ZGRID(NZ)
+        ELSE IF (Z0 .LT. ZGRID(1)) THEN
+          WRITE (6,*) 'OPTICAL_DEPTH: Level', Z0, 'below domain',
+     .		                      ZGRID(1)
+          STOP
+        ENDIF
+        TAU = 0.0D0
+        CALL PROJECT_1RAY(NX, NY, NZ, NPTS, NCELLS, WEIGHTS,
+     .                      GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
+     .                      BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,
+     .                      GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
+     .			                X0, Y0, Z0, TAU ,N,
+     .                      RAY_WEIGHT, NPIX, .TRUE.)
+        PATH(N) = PATH(N) + TAU
+900   CONTINUE
+      ENDDO
+      RETURN
+      END
+
 
       SUBROUTINE RAYLEIGH_EXTINCT (NZT, ZLEVELS,TEMP, RAYSFCPRES,
      .                             RAYLCOEF, EXTRAYL)
@@ -1462,7 +1548,8 @@ C     Compute trilinear interpolation kernel F(8)
      .		         DELX, DELY, XSTART, YSTART, GRIDPOS, ZLEVELS,
      .		         IPDIRECT, DI, DJ, DK, CX, CY, CZ, CXINV,
      .		         CYINV, CZINV, EPSS, EPSZ, XDOMAIN, YDOMAIN,
-     .		         UNIFORMZLEV, DELXD, DELYD, DPATH, DPTR)
+     .		         UNIFORMZLEV, DELXD, DELYD, DPATH, DPTR,
+     .             IERR, ERRMSG)
 C     Calculates the sensitvity of the direct beam to the extinction
 C     along the path from each grid point to the sun.
 C     Actually calls DIRECT_BEAM_AND_PATHS_PROP to do all the hard work.
@@ -1484,11 +1571,14 @@ Cf2py intent(in) :: UNIFORMZLEV, DELXD, DELYD
       REAL DPATH(8*(NPX+NPY+NPZ),NPTS)
       INTEGER DPTR(8*(NPX+NPY+NPZ),NPTS)
 Cf2py intent(out) :: DPATH, DPTR
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+Cf2py intent(out) :: IERR, ERRMSG
 
       INTEGER SIDE, IP
       LOGICAL VALIDBEAM
       REAL    UNIFZLEV, XO, YO, ZO, DIR, DIRPATH
-
+      IERR = 0
       DPTR = 0
       DPATH = 0.0
 
@@ -1499,7 +1589,8 @@ Cf2py intent(out) :: DPATH, DPTR
      .            NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS, CX, CY, CZ,
      .            CXINV, CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .            DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .            DPATH(:,IP), DPTR(:,IP))
+     .            DPATH(:,IP), DPTR(:,IP), IERR, ERRMSG)
+        IF (IERR .NE. 0) RETURN
       ENDDO
       RETURN
       END
@@ -1509,14 +1600,17 @@ Cf2py intent(out) :: DPATH, DPTR
      .           XO, YO, ZO, SIDE, NPX, NPY, NPZ, DELX, DELY,
      .           XSTART, YSTART, ZLEVELS, CX, CY, CZ, CXINV, CYINV,
      .           CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD, XDOMAIN,
-     .           YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, DPATH, DPTR)
+     .           YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, DPATH, DPTR,
+     .           IERR, ERRMSG)
       IMPLICIT NONE
 
       REAL    DPATH(8*(NPX+NPY+NPZ))
       INTEGER DPTR(8*(NPX+NPY+NPZ))
       INTEGER BCFLAG, SIDE
       REAL    XO, YO, ZO, XI, YI, ZI
-
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+      
       INTEGER IX, IY, IZ, JZ, IL, IM, IU
       INTEGER I, J, K, IP, JP, I1, I2, I3, I4
       INTEGER IPDIRECT, DI, DJ, DK
@@ -1561,14 +1655,18 @@ C         Find the grid location
       I = INT(X/DELXD) + 1
       IF (I .GT. NPX .AND. ABS(X-XDOMAIN) .LT. 0.001*DELXD) I = NPX
       IF (I .LT. 1 .OR. I .GT. NPX) THEN
-        WRITE (6,*) 'DIRECT_BEAM_PROP: Beyond X domain',I,XI,YI,ZI
-        STOP
+        IERR = 1
+        WRITE (ERRMSG,*) 'DIRECT_BEAM_AND_PATHS_PROP: Beyond X domain',
+     .    I,XI,YI,ZI
+        RETURN
       ENDIF
       J = INT(Y/DELYD) + 1
       IF (J .GT. NPY .AND. ABS(Y-YDOMAIN) .LT. 0.001*DELYD) J = NPY
       IF (J .LT. 1 .OR. J .GT. NPY) THEN
-        WRITE (6,*) 'DIRECT_BEAM_PROP: Beyond Y domain',J,XI,YI,ZI
-        STOP
+        IERR = 1
+        WRITE (6,*) 'DIRECT_BEAM_AND_PATHS_PROP: Beyond Y domain',
+     .    J,XI,YI,ZI
+        RETURN
       ENDIF
       XE = X
       YE = Y
@@ -1613,7 +1711,6 @@ C      from a boundary then set the HITBOUNDARY flag
           HITBOUNDARY = .TRUE.
         ENDIF
       ENDIF
-
 C           Grid cell loop begin
       IDP = 0
       DO WHILE (.NOT. HITBOUNDARY .AND. ABS(ZE-ZLEVELS(NPZ)) .GT. EPSZ)
@@ -1643,10 +1740,11 @@ C           Grid cell loop begin
         IF (I .LT. 1 .OR. I .GT. NPX .OR.
      .      J .LT. 1 .OR. J .GT. NPY .OR.
      .      K .LT. 1 .OR. K .GE. NPZ) THEN
-          WRITE (6,'(A,3I4)') 'DIRECT_BEAM_PROP: beyond grid!', I, J, K
-          WRITE(*,*) NPX, NPY, NPZ
-          WRITE (6,'(1(2X,3F9.5))') X, Y, Z
-          STOP
+          WRITE (ERRMSG,'(A,3I4)') 'DIRECT_BEAM_AND_PATHS_PROP: ',
+     .     'beyond grid!', I, J, K
+          WRITE(ERRMSG,*) NPX, NPY, NPZ
+          WRITE (ERRMSG,'(1(2X,3F9.5))') X, Y, Z
+          RETURN
         ENDIF
 C           Get the eight corner extinction values
         I1 = K + NPZ*(J-1)  + NPZ*NPY*(I-1)
@@ -1656,10 +1754,10 @@ C           Get the eight corner extinction values
 
 C           Compute the distance to the next grid plane in  X, Y, and Z
 C             If in horizontal uniform region or doing IP then fix X and/or Y.
-        IF (ZE .GE. UNIFORMZLEV) THEN
-          CONSTX = .TRUE.
-          CONSTY = .TRUE.
-        ENDIF
+C        IF (ZE .GE. UNIFORMZLEV) THEN
+C          CONSTX = .TRUE.
+C          CONSTY = .TRUE.
+C        ENDIF
         IF (CONSTX) THEN
           SOX = 1.0E30
         ELSE IF (CX .GT. 0.0) THEN
@@ -1761,9 +1859,11 @@ C               (periodic) or go into IP mode (open boundaries).
           ENDIF
         ENDIF
         IF (SO .LT. -EPSS) THEN
-          WRITE (6,*) 'DIRECT_BEAM_PROP: SO<0', X,Y,Z,
+          IERR = 1
+          WRITE (ERRMSG,*) 'DIRECT_BEAM_AND_PATHS_PROP: SO<0',
+     .      X,Y,Z,
      .         XE,YE,ZE, XP,YP,ZP, CX,CY,CZ, SOX,SOY,SOZ
-          STOP
+          RETURN
         ENDIF
         SO = MAX(SO,0.0D0)
 C           Make the starting and ending interpolation factors
@@ -1828,11 +1928,14 @@ C           Compute the cubic polynomial extinction coefficients
 
 
 C       Compute the inner derivatives (minus the path lengths)
-        IF (.NOT. OUTOFDOMAIN .AND. K .LT. NPZ) THEN
+C .NOT. OUTOFDOMAIN .AND.
+        IF (K .LE. NPZ) THEN
           IF (IDP+8 .GT. 8*(NPX+NPY+NPZ)) THEN
-            WRITE(*,*) 'ERROR DIRECT_BEAM_AND_PATHS_PROP: ',
-     .                 'Max IDP exceeded: ', 8*(NPX+NPY+NPZ)
-            STOP
+            IERR = 1
+            WRITE(ERRMSG,*) 'DIRECT_BEAM_AND_PATHS_PROP: ',
+     .      'Max number of property points to pass',
+     .       'exceeded: IDP=', 8*(NPX+NPY+NPZ)
+            RETURN
           ENDIF
           DPATH(IDP+1) = MAX(0.0, SO*(U0M*VMWM + 0.5D0*B1 +
      .                 0.3333333333333333D0*C1 - 0.25D0*DU*DV*DW))
@@ -1872,38 +1975,246 @@ C       Compute the inner derivatives (minus the path lengths)
       RETURN
       END
 
+C    Store the source in sparse format.
+C
+C    Group input rays by angle, each with its magnitude.
+C    Get a GIANT array of size MAXCELLSCROSS*8*NANGLES
+C    For each angle:
+C     Fill the GIANT arrays with the adjoint beams and pointers.
+C
+C    SORT the array by gridpoint, taking the values
+C    and ANGLES along with it.
+C    Form a pointer array for the start index of each grid point in
+C    the data and angle arrays.
+C    Set a flag for whether to precompute the YLMDIR for all of the angles.
+C    If so:
+C      Do the precomputing.
+C    MODIFY CALC_SOURCE_PNT/CALC_SOURCE_PNT_UNPOL
+C    to accomodate the new source.
+
+C    Remove negativity check on radiance/SRCEXT during solution process
+C    or make it optional.
+C
+C    Add a new SRCTYPE option and revise all of the previous conditions
+C    because they assume only S,T,B.
+
+      SUBROUTINE MAKE_ADJOINT (CAMX, CAMY, CAMZ, CAMMU, CAMPHI,
+     .    CAMMAGNITUDE, ADJSOURCE, TOTAL_EXT, NX, NY, NZ, NCELLS,
+     .    NPTS, CELLFLAGS, XGRID, YGRID, ZGRID, GRIDPOS,
+     .    GRIDPTR, NEIGHPTR, TREEPTR, BCFLAG, IPFLAG,
+     .    NVIS, MAXCELLSCROSS, IERR, ERRMSG, ADJSOURCEPTR,
+     .    TAUTOL, ANGLEPTR)
+
+C     Angle sorting must have been done in python.
+C     Loop through rays
+C       Update the sparse/big array with the non-zero entries of ADJTEMP
+C       reset ADJTEMP when the angle changes.
+C
+C     SORT the sparse/big arrays to the gridpoint first sparse format.
+      IMPLICIT NONE
+      INTEGER BCFLAG, IPFLAG
+Cf2py intent(in) BCFLAG, IPFLAG
+      INTEGER NX, NY, NZ, NPTS, NCELLS, NVIS
+Cf2py intent(in) NX, NY, NZ, NPTS, NCELLS, NVIS
+      INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
+Cf2py intent(in) GRIDPTR, NEIGHPTR, TREEPTR
+      INTEGER*2 CELLFLAGS(NCELLS)
+Cf2py intent(in) CELLFLAGS
+      REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
+Cf2py intent(in) XGRID, YGRID, ZGRID, GRIDPOS
+      REAL CAMX(NVIS), CAMY(NVIS), CAMZ(NVIS), TOTAL_EXT(NPTS)
+      DOUBLE PRECISION CAMMU(NVIS), CAMPHI(NVIS), TAUTOL
+Cf2py intent(in) :: TAUTOL, TOTAL_EXT
+      REAL CAMMAGNITUDE(NVIS)
+Cf2py intent(in) CAMX, CAMY, CAMZ, CAMMU, CAMPHI, CAMMAGNITUDE
+      INTEGER IERR, MAXCELLSCROSS
+Cf2py intent(in) MAXCELLSCROSS
+Cf2py intent(out) IERR
+      CHARACTER ERRMSG*600
+Cf2py intent(out) :: ERRMSG
+      REAL ADJSOURCE(8*MAXCELLSCROSS*NVIS)
+      INTEGER ANGLEPTRS(8*MAXCELLSCROSS*NVIS)
+      INTEGER PTSPTRS(8*MAXCELLSCROSS*NVIS)
+      INTEGER ADJSOURCEPTR(NPTS+1)
+Cf2py intent(out) ADJSOURCE, ANGLEPTRS, ADJSOURCEPTR
+      INTEGER I, IVIS, NSOURCE, NSOURCETEMP, ANGLEPTR
+Cf2py intent(out) ANGLEPTR
+      DOUBLE PRECISION MU, MUOLD, PHI, PHIOLD, MURAY,PHIRAY
+      DOUBLE PRECISION X0, Y0, Z0, PI, TRANSMIT, XE,YE,ZE,R
+      INTEGER SIDE, PTR, PTROLD, COUNTER
+      REAL ADJTEMP(NPTS), MAGNITUDE
+
+
+      PI = ACOS(-1.0D0)
+      IERR = 0
+      ADJTEMP = 0.0
+      NSOURCE = 1
+      ANGLEPTR = 1
+      MUOLD = CAMMU(1)
+      PHIOLD = CAMPHI(1)
+
+      DO IVIS=1,NVIS
+        MU = CAMMU(IVIS)
+        PHI = CAMPHI(IVIS)
+C       Refresh the temporary adjoint source storage and
+C       update the full storage if the angle has changed.
+        IF (ABS(MU - MUOLD) .GE. 1e-6 .OR. ABS(PHI - PHIOLD)
+     .    .GE. 1e-6) THEN
+
+          NSOURCETEMP = 1
+          DO I=1,NPTS
+            IF (ABS(ADJTEMP(I)) .GE. 1e-6) THEN
+C             Update the coordinate list format sparse representation
+C             of the adjoint source.
+              ADJSOURCE(NSOURCE + NSOURCETEMP) = ADJTEMP(I)
+              ANGLEPTRS(NSOURCE + NSOURCETEMP) = ANGLEPTR
+              PTSPTRS(NSOURCE + NSOURCETEMP) = I
+              NSOURCETEMP = NSOURCETEMP + 1
+            ENDIF
+          ENDDO
+          NSOURCE = NSOURCE + NSOURCETEMP
+          ANGLEPTR = ANGLEPTR + 1
+          ADJTEMP = 0.0
+        ENDIF
+        MUOLD = MU
+        PHIOLD = PHI
+
+        X0 = CAMX(IVIS)
+        Y0 = CAMY(IVIS)
+        Z0 = CAMZ(IVIS)
+        MAGNITUDE = CAMMAGNITUDE(IVIS)
+        MURAY = -MU
+        PHIRAY = PHI - PI
+
+C             Extrapolate ray to domain top if above
+        IF (Z0 .GT. ZGRID(NZ)) THEN
+          IF (MURAY .GE. 0.0) THEN
+            GOTO 900
+          ENDIF
+          R = (ZGRID(NZ) - Z0)/MURAY
+          X0 = X0 + R*SQRT(1-MURAY**2)*COS(PHIRAY)
+          Y0 = Y0 + R*SQRT(1-MURAY**2)*SIN(PHIRAY)
+          Z0 = ZGRID(NZ)
+        ELSE IF (Z0 .LT. ZGRID(1)) THEN
+          IERR = 1
+          WRITE (ERRMSG,*) 'MAKE_ADJOINT: Level below domain'
+          RETURN
+        ENDIF
+
+C       Trace a ray through the domain and update the temporary
+C       adjoint source array (ADJTEMP).
+        TRANSMIT = 1.0D0
+        CALL PENCIL_BEAM_PROP (X0, Y0, Z0, BCFLAG, IPFLAG,
+     .    MAGNITUDE, MU, PHI, ADJTEMP, TOTAL_EXT, NX, NY,
+     .    NZ, NCELLS, NPTS, CELLFLAGS, XGRID, YGRID, ZGRID,
+     .    GRIDPOS, GRIDPTR, NEIGHPTR, TREEPTR,
+     .    SIDE, XE,YE,ZE,TRANSMIT,TAUTOL, IERR, ERRMSG)
+        IF (IERR .NE. 0) RETURN
+
+900     CONTINUE
+      ENDDO
+
+C     Add the last temporary array.
+      NSOURCETEMP = 1
+      DO I=1,NPTS
+        IF (ABS(ADJTEMP(I)) .GE. 1e-6) THEN
+C             Update the coordinate list format sparse representation
+C             of the adjoint source.
+          ADJSOURCE(NSOURCE + NSOURCETEMP) = ADJTEMP(I)
+          ANGLEPTRS(NSOURCE + NSOURCETEMP) = ANGLEPTR
+          PTSPTRS(NSOURCE + NSOURCETEMP) = I
+          NSOURCETEMP = NSOURCETEMP + 1
+        ENDIF
+      ENDDO
+      NSOURCE = NSOURCE + NSOURCETEMP
+      ANGLEPTR = ANGLEPTR + 1
+      ADJTEMP = 0.0
+
+C     Sort the ADJSOURCE and ANGLEPTRS, PTSPTRS inplace so that
+C     we are in a compressed sparse column format so that
+C     values are grouped by point for efficient use in
+C     the CALC_SOURCE_PNT/CALC_SOURCE_PNT_UNPOL.
+C     ie PTSPTRS are sorted carrying along values in ANGLEPTRS
+C     and ADJSOURCE. '2' means sort in increasing order carrying
+C     other variables along.
+      CALL QUICKSORT_NEW (PTSPTRS,ADJSOURCE,ANGLEPTRS, NSOURCE, 2)
+
+C     Construct the ADJSOURCEPTR from the sorted PTSPTRS
+C     which holds the starting point of each gridpoint's
+C     adjoint source, just like RSHPTR or SHPTR does for the
+C     adaptive radiance/source spherical harmonic expansions.
+      CALL CONSTRUCT_PTR(ADJSOURCEPTR, PTSPTRS, NPTS,
+     .                   8*MAXCELLSCROSS*NVIS)
+
+      RETURN
+      END
+
+      SUBROUTINE CONSTRUCT_PTR(ADJSOURCEPTR, PTSPTRS,
+     .                         NPTS, SOURCESIZE)
+
+      IMPLICIT NONE
+      INTEGER SOURCESIZE, NPTS
+      INTEGER ADJSOURCEPTR(NPTS+1)
+      INTEGER PTSPTRS(SOURCESIZE)
+Cf2py intent(in) NPTS
+Cf2py intent(out) ADJSOURCEPTR
+Cf2py intent(in) PTSPTRS
+
+      INTEGER COUNTER, I, PTR
+      ADJSOURCEPTR(1) = 0
+      COUNTER = 1
+      PTR = PTSPTRS(1)
+      DO I=1,NPTS
+        DO WHILE (PTR .EQ. I)
+          COUNTER = COUNTER + 1
+          PTR = PTSPTRS(COUNTER)
+        ENDDO
+        ADJSOURCEPTR(I+1) = COUNTER - 1
+      ENDDO
+
+      RETURN
+      END
+
       SUBROUTINE PENCIL_BEAM_PROP (X0, Y0, Z0, BCFLAG, IPFLAG,
-     .                   SOLARFLUX, SOLARMU, SOLARAZ,
+     .                   MAGNITUDE, MU2, PHI2,
      .                   DIRFLUX, TOTAL_EXT,
      .                   NX, NY, NZ, NCELLS, NPTS, CELLFLAGS,
      .                   XGRID, YGRID, ZGRID, GRIDPOS,GRIDPTR,
-     .                   NEIGHPTR, TREEPTR)
-
+     .                   NEIGHPTR, TREEPTR,
+     .                   SIDE, XE,YE,ZE, TRANSMIT, TAUTOL,
+     .                   IERR, ERRMSG)
 C    Calculates the source function for a pencil-beam source.
-C    Completely untested.
+C    This is adjoint to SHDOM's source integration technique.
+
+C    Note that this is missing the arguments for parallelization.
+C    SIDE/TRANSMIT,XE,YE,ZE.
       IMPLICIT NONE
       INTEGER BCFLAG, IPFLAG
 Cf2py intent(in) BCFLAG, IPFLAG
       INTEGER NX, NY, NZ, NPTS, NCELLS, SIDE
 Cf2py intent(in) NX,NY,NPTS,NCELLS
+Cf2py intent(out) SIDE
       INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
 Cf2py intent(in) GRIDPTR, NEIGHPTR, TREEPTR
       INTEGER*2 CELLFLAGS(NCELLS)
 Cf2py intent(in) CELLFLAGS
       LOGICAL VALIDRAD
-      REAL    SOLARMU, SOLARAZ, SOLARFLUX
-Cf2py intent(in) SOLARMU, SOLARAZ, SOLARFLUX
+      REAL    MAGNITUDE
+Cf2py intent(in) MAGNITUDE
       REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
 Cf2py intent(in) XGRID, YGRID, ZGRID, GRIDPOS
       REAL    DIRFLUX(NPTS), TOTAL_EXT(NPTS)
 Cf2py intent(in) TOTAL_EXT
-Cf2py intent(out) DIRFLUX
+Cf2py intent(in, out) DIRFLUX
       DOUBLE PRECISION MU2, PHI2, X0,Y0,Z0, XE,YE,ZE
-Cf2py intent(in) X0, Y0,Z0
+Cf2py intent(in) X0, Y0,Z0, MU2, PHI2
       DOUBLE PRECISION TRANSMIT
+Cf2py intent(in, out) TRANSMIT, XE,YE,ZE
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+Cf2py intent(out) IERR, ERRMSG
 
       INTEGER BITX, BITY, BITZ, IOCT, ICELL, INEXTCELL, IFACE
-Cf2py intent(out) ICELL, INEXTCELL, IFACE
       INTEGER IOPP, NTAU, IT, I, IPT1, IPT2, J, L
       LOGICAL DONE, IPINX, IPINY, OPENBCFACE
       INTEGER JFACE, KFACE, IC, MAXCELLSCROSS, NGRID
@@ -1915,9 +2226,10 @@ Cf2py intent(out) ICELL, INEXTCELL, IFACE
       DOUBLE PRECISION XN, YN, ZN, XI, YI, ZI
       DOUBLE PRECISION SO, SOX, SOY, SOZ, EPS
       DOUBLE PRECISION TAUTOL, TAUGRID, S, DELS, TRANSCUT
+Cf2py intent(in) :: TAUTOL
       DOUBLE PRECISION EXT, TAU, TRANSCELL, ABSCELL
       DOUBLE PRECISION U,V,W, DELX,DELY,DELZ, INVDELX,INVDELY,INVDELZ
-      DOUBLE PRECISION F(8), WEIGHTS(8)
+      DOUBLE PRECISION F(8), INTEGRATED_WEIGHTS(8), F1(8), F0(8)
 
       DATA OPPFACE/2,1,4,3,6,5/
       DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
@@ -1925,20 +2237,19 @@ Cf2py intent(out) ICELL, INEXTCELL, IFACE
      .              0,0,1,2,0,0,5,6, 3,4,0,0,5,6,0,0,
      .              0,0,0,0,1,2,3,4, 5,6,7,8,0,0,0,0/
 
-      TRANSMIT = 1.0D0
+C      TRANSMIT = 1.0D0
 C         TRANSCUT is the transmission to stop the integration at
       TRANSCUT = 5.0E-5
 C         TAUTOL is the maximum optical path for the subgrid intervals
-      TAUTOL = 0.2
-      DIRFLUX = 0.0
+C      DIRFLUX = 0.0
 
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
       MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
       PI = ACOS(-1.0D0)
-      MU2 = SOLARMU
+
 C         Make the ray direction (opposite to the outgoing direction)
-      CX = SQRT(1.0D0-MU2**2)*COS(SOLARAZ-PI)
-      CY = SQRT(1.0D0-MU2**2)*SIN(SOLARAZ-PI)
+      CX = SQRT(1.0D0-MU2**2)*COS(PHI2-PI)
+      CY = SQRT(1.0D0-MU2**2)*SIN(PHI2-PI)
       CZ = -MU2
       IF (ABS(CX) .GT. 1.0E-6) THEN
         CXINV = 1.0D0/CX
@@ -1977,7 +2288,576 @@ C         Setup for the ray path direction
       IOCT = 1 + BITX + 2*BITY + 4*BITZ
       XM = 0.5*(XGRID(1)+XGRID(NX))
       YM = 0.5*(YGRID(1)+YGRID(NY))
-      PRINT *,  'x,y,z', X0,Y0,Z0
+
+C         Start at the desired point, getting the extinction and source there
+      XE = X0
+      YE = Y0
+      ZE = Z0
+!      ZE = MAX(MIN(Z0,DBLE(ZGRID(NZ))),DBLE(ZGRID(1)))
+      CALL LOCATE_GRID_CELL (NX, NY, NZ, XGRID, YGRID, ZGRID,
+     .                  NCELLS, TREEPTR, GRIDPTR, CELLFLAGS, GRIDPOS,
+     .                  BCFLAG, IPFLAG, XE, YE, ZE,  ICELL)
+c      print '(A,5(1X,F8.5),1X,I6)',
+c     .     'INTEGRATE_1RAY:',X0,Y0,Z0,MU2,PHI2,ICELL
+      IFACE = 0
+      NGRID = 0
+C         Loop until reach a Z boundary or transmission is very small
+      VALIDRAD = .FALSE.
+      DO WHILE (.NOT. VALIDRAD .AND. ICELL .GT. 0)
+C           Make sure current cell is valid
+        IF (ICELL .LE. 0) THEN
+          WRITE (6,*)'PENCIL_BEAM_PROP: ICELL=',ICELL,
+     .                MU2,PHI2,XE,YE,ZE
+          STOP
+        ENDIF
+        NGRID = NGRID + 1
+
+        CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XE, YE, ZE, F1)
+        EXT1 = F1(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
+     .         F1(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
+     .         F1(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
+     .         F1(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
+     .         F1(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
+     .         F1(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
+     .         F1(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
+     .         F1(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
+
+C           This cell is independent pixel if IP mode or open boundary
+C             conditions and ray is leaving domain (i.e. not entering)
+        IPINX = BTEST(INT(CELLFLAGS(ICELL)),0) .AND.
+     .          .NOT. ( BTEST(BCFLAG,0) .AND.
+     .          ((CX.GT.0.AND.XE.LT.XM) .OR. (CX.LT.0.AND.XE.GT.XM)) )
+        IPINY = BTEST(INT(CELLFLAGS(ICELL)),1) .AND.
+     .          .NOT. ( BTEST(BCFLAG,1) .AND.
+     .          ((CY.GT.0.AND.YE.LT.YM) .OR. (CY.LT.0.AND.YE.GT.YM)) )
+
+C           Find boundaries of the current cell
+C           Find the three possible intersection planes (X,Y,Z)
+C             from the coordinates of the opposite corner grid point
+        IOPP = GRIDPTR(9-IOCT,ICELL)
+C           Get the distances to the 3 planes and select the closest
+C             (always need to deal with the cell that is wrapped)
+        IF (IPINX) THEN
+          SOX = 1.0E20
+        ELSE
+          SOX = (GRIDPOS(1,IOPP)-XE)*CXINV
+        ENDIF
+        IF (IPINY) THEN
+          SOY = 1.0E20
+        ELSE
+          SOY = (GRIDPOS(2,IOPP)-YE)*CYINV
+        ENDIF
+        SOZ = (GRIDPOS(3,IOPP)-ZE)*CZINV
+        SO = MIN(SOX,SOY,SOZ)
+        IF (SO .LT. -EPS) THEN
+          WRITE (6,*) 'PENCIL_BEAM_PROP: SO<0  ',
+     .      MU2,PHI2,XE,YE,ZE,SO,ICELL
+          STOP
+        ENDIF
+        XN = XE + SO*CX
+        YN = YE + SO*CY
+        ZN = ZE + SO*CZ
+C           Find the optical path across the grid cell and figure how
+C             many subgrid intervals to use
+
+        CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XN, YN, ZN, F)
+        EXTN = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
+     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
+     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
+     .         F(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
+     .         F(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
+     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
+     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
+     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
+
+        TAUGRID = SO*0.5*(EXT1+EXTN)
+        NTAU = MAX(1,1+INT(TAUGRID/TAUTOL))
+        DELS = SO/NTAU
+
+C           Loop over the subgrid cells
+        DO IT = 1, NTAU
+          S = IT*DELS
+          XI = XE + S*CX
+          YI = YE + S*CY
+          ZI = ZE + S*CZ
+
+          CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XI, YI, ZI,
+     .                           F0)
+          EXT0 = F0(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
+     .         F0(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
+     .         F0(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
+     .         F0(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
+     .         F0(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
+     .         F0(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
+     .         F0(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
+     .         F0(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
+
+C            Compute the subgrid radiance: integration of the source function
+          EXT = 0.5*(EXT0+EXT1)
+          IF (EXT .NE. 0.0) THEN
+            TAU=EXT*DELS
+            ABSCELL = TAU*(1.0-0.5*TAU*(1.0-0.33333333333*TAU))
+            TRANSCELL = 1.0 - ABSCELL
+            INTEGRATED_WEIGHTS = ( 0.5*(F0(:)+F1(:))
+     .        + 0.08333333333*(EXT0*F1(:)-EXT1*F0(:))*DELS
+     .        *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
+
+          ELSE
+            ABSCELL = 0.0
+            TRANSCELL = 1.0
+            INTEGRATED_WEIGHTS = 0.0
+          ENDIF
+          DO I=1,8
+            IF (TOTAL_EXT(GRIDPTR(I,ICELL)) .NE. 0.0) THEN
+              DIRFLUX(GRIDPTR(I,ICELL)) = DIRFLUX(GRIDPTR(I,ICELL))+
+     .          MAGNITUDE*TRANSMIT*INTEGRATED_WEIGHTS(I)*ABSCELL
+            ENDIF
+          ENDDO
+
+          TRANSMIT = TRANSMIT*TRANSCELL
+          EXT1 = EXT0
+          F1 = F0
+C                End of sub grid cell loop
+        ENDDO
+C               Get the intersection face number (i.e. neighptr index)
+        IF (SOX .LE. SOZ .AND. SOX .LE. SOY) THEN
+          IFACE = 2-BITX
+          JFACE = 1
+          OPENBCFACE=BTEST(INT(CELLFLAGS(ICELL)),0).AND.BTEST(BCFLAG,0)
+        ELSE IF (SOY .LE. SOZ) THEN
+          IFACE = 4-BITY
+          JFACE = 2
+          OPENBCFACE=BTEST(INT(CELLFLAGS(ICELL)),1).AND.BTEST(BCFLAG,1)
+        ELSE
+          IFACE = 6-BITZ
+          JFACE = 3
+          OPENBCFACE=.FALSE.
+        ENDIF
+C            Get the next cell to go to
+        INEXTCELL = NEIGHPTR(IFACE,ICELL)
+        IF (INEXTCELL .LT. 0) THEN
+          CALL NEXT_CELL (XN, YN, ZN, IFACE, JFACE, ICELL, GRIDPOS,
+     .           GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,  INEXTCELL)
+        ENDIF
+C             If going to same or larger face then use previous face
+        IF (NEIGHPTR(IFACE,ICELL) .GE. 0 .AND. .NOT.OPENBCFACE) THEN
+          KFACE = IFACE
+          IC = ICELL
+        ELSE
+C             If going to smaller face then use next face (more accurate)
+          KFACE = OPPFACE(IFACE)
+          IC = INEXTCELL
+          IFACE = 0
+        ENDIF
+C           Get the location coordinate
+        IF (INEXTCELL .GT. 0) THEN
+          IF (JFACE .EQ. 1) THEN
+            XN = GRIDPOS(1,GRIDPTR(IOCT,INEXTCELL))
+          ELSE IF (JFACE .EQ. 2) THEN
+            YN = GRIDPOS(2,GRIDPTR(IOCT,INEXTCELL))
+          ELSE
+            ZN = GRIDPOS(3,GRIDPTR(IOCT,INEXTCELL))
+          ENDIF
+        ENDIF
+C           If the transmission is greater than zero and not at a
+C             boundary then prepare for next cell
+        IF (TRANSMIT .LT. TRANSCUT .OR. NGRID.GT.MAXCELLSCROSS) THEN
+          VALIDRAD = .TRUE.
+        ELSE IF (INEXTCELL .EQ. 0 .AND. IFACE .GE. 5) THEN
+          VALIDRAD = .TRUE.
+        ELSE
+          ICELL = INEXTCELL
+        ENDIF
+        XE = XN
+        YE = YN
+        ZE = ZN
+      ENDDO
+
+      SIDE = IFACE
+
+      RETURN
+      END
+
+      SUBROUTINE PENCIL_BEAM_PROP2 (X0, Y0, Z0, BCFLAG, IPFLAG,
+     .                   MAGNITUDE, MU2, PHI2,
+     .                   DIRFLUX, TOTAL_EXT,
+     .                   NX, NY, NZ, NCELLS, NPTS, CELLFLAGS,
+     .                   XGRID, YGRID, ZGRID, GRIDPOS,GRIDPTR,
+     .                   NEIGHPTR, TREEPTR,
+     .                   SIDE, XE,YE,ZE, TRANSMIT, TAUTOL,
+     .                   IERR, ERRMSG)
+C    Calculates the source function for a pencil-beam source.
+C    This is adjoint to SHDOM's source integration technique.
+
+C    Note that this is missing the arguments for parallelization.
+C    SIDE/TRANSMIT,XE,YE,ZE.
+      IMPLICIT NONE
+      INTEGER BCFLAG, IPFLAG
+Cf2py intent(in) BCFLAG, IPFLAG
+      INTEGER NX, NY, NZ, NPTS, NCELLS, SIDE
+Cf2py intent(in) NX,NY,NPTS,NCELLS
+Cf2py intent(out) SIDE
+      INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
+Cf2py intent(in) GRIDPTR, NEIGHPTR, TREEPTR
+      INTEGER*2 CELLFLAGS(NCELLS)
+Cf2py intent(in) CELLFLAGS
+      LOGICAL VALIDRAD
+      REAL    MAGNITUDE
+Cf2py intent(in) MAGNITUDE
+      REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
+Cf2py intent(in) XGRID, YGRID, ZGRID, GRIDPOS
+      REAL    DIRFLUX(NPTS), TOTAL_EXT(NPTS)
+Cf2py intent(in) TOTAL_EXT
+Cf2py intent(in, out) DIRFLUX
+      DOUBLE PRECISION MU2, PHI2, X0,Y0,Z0, XE,YE,ZE
+Cf2py intent(in) X0, Y0,Z0, MU2, PHI2
+      DOUBLE PRECISION TRANSMIT
+Cf2py intent(in, out) TRANSMIT, XE,YE,ZE
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+Cf2py intent(out) IERR, ERRMSG
+
+      INTEGER BITX, BITY, BITZ, IOCT, ICELL, INEXTCELL, IFACE
+      INTEGER IOPP, NTAU, IT, I, IPT1, IPT2, J, L
+      LOGICAL DONE, IPINX, IPINY, OPENBCFACE
+      INTEGER JFACE, KFACE, IC, MAXCELLSCROSS, NGRID
+      INTEGER OPPFACE(6), OLDIPTS(8), DONETHIS(8)
+      INTEGER DONEFACE(8,7), ONEX(8), ONEY(8)
+      REAL    EXT0, EXT1, EXTN
+      REAL    XM,YM
+      DOUBLE PRECISION PI, CX, CY, CZ, CXINV, CYINV, CZINV
+      DOUBLE PRECISION XN, YN, ZN, XI, YI, ZI
+      DOUBLE PRECISION SO, SOX, SOY, SOZ, EPS
+      DOUBLE PRECISION TAUTOL, TAUGRID, S, DELS, TRANSCUT
+Cf2py intent(in) :: TAUTOL
+      DOUBLE PRECISION EXT, TAU, TRANSCELL, ABSCELL
+      DOUBLE PRECISION U,V,W, DELX,DELY,DELZ, INVDELX,INVDELY,INVDELZ
+      DOUBLE PRECISION F(8), INTEGRATED_WEIGHTS(8), F1(8), F0(8)
+
+      DATA OPPFACE/2,1,4,3,6,5/
+      DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
+      DATA DONEFACE/0,0,0,0,0,0,0,0, 0,1,0,3,0,5,0,7, 2,0,4,0,6,0,8,0,
+     .              0,0,1,2,0,0,5,6, 3,4,0,0,5,6,0,0,
+     .              0,0,0,0,1,2,3,4, 5,6,7,8,0,0,0,0/
+
+C      TRANSMIT = 1.0D0
+C         TRANSCUT is the transmission to stop the integration at
+      TRANSCUT = 5.0E-5
+C         TAUTOL is the maximum optical path for the subgrid intervals
+C      DIRFLUX = 0.0
+
+      EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
+      MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
+      PI = ACOS(-1.0D0)
+
+C         Make the ray direction (opposite to the outgoing direction)
+      CX = SQRT(1.0D0-MU2**2)*COS(PHI2-PI)
+      CY = SQRT(1.0D0-MU2**2)*SIN(PHI2-PI)
+      CZ = -MU2
+      IF (ABS(CX) .GT. 1.0E-6) THEN
+        CXINV = 1.0D0/CX
+      ELSE
+        CX = 0.0
+        CXINV = 1.0E6
+      ENDIF
+      IF (ABS(CY) .GT. 1.0E-6) THEN
+        CYINV = 1.0D0/CY
+      ELSE
+        CY = 0.0
+        CYINV = 1.0E6
+      ENDIF
+      IF (ABS(CZ) .GT. 1.0E-6) THEN
+        CZINV = 1.0D0/CZ
+      ELSE
+        CZ = 0.0
+        CZINV = 1.0E6
+      ENDIF
+C         Setup for the ray path direction
+      IF (CX .LT. 0.0) THEN
+        BITX = 1
+      ELSE
+        BITX = 0
+      ENDIF
+      IF (CY .LT. 0.0) THEN
+        BITY = 1
+      ELSE
+        BITY = 0
+      ENDIF
+      IF (CZ .LT. 0.0) THEN
+        BITZ = 1
+      ELSE
+        BITZ = 0
+      ENDIF
+      IOCT = 1 + BITX + 2*BITY + 4*BITZ
+      XM = 0.5*(XGRID(1)+XGRID(NX))
+      YM = 0.5*(YGRID(1)+YGRID(NY))
+
+C         Start at the desired point, getting the extinction and source there
+      XE = X0
+      YE = Y0
+      ZE = Z0
+!      ZE = MAX(MIN(Z0,DBLE(ZGRID(NZ))),DBLE(ZGRID(1)))
+      CALL LOCATE_GRID_CELL (NX, NY, NZ, XGRID, YGRID, ZGRID,
+     .                  NCELLS, TREEPTR, GRIDPTR, CELLFLAGS, GRIDPOS,
+     .                  BCFLAG, IPFLAG, XE, YE, ZE,  ICELL)
+c      print '(A,5(1X,F8.5),1X,I6)',
+c     .     'INTEGRATE_1RAY:',X0,Y0,Z0,MU2,PHI2,ICELL
+      IFACE = 0
+      NGRID = 0
+C         Loop until reach a Z boundary or transmission is very small
+      VALIDRAD = .FALSE.
+      DO WHILE (.NOT. VALIDRAD .AND. ICELL .GT. 0)
+C           Make sure current cell is valid
+        IF (ICELL .LE. 0) THEN
+          WRITE (6,*)'PENCIL_BEAM_PROP: ICELL=',ICELL,
+     .                MU2,PHI2,XE,YE,ZE
+          STOP
+        ENDIF
+        NGRID = NGRID + 1
+
+        CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XE, YE, ZE, F1)
+        EXT1 = F1(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
+     .         F1(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
+     .         F1(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
+     .         F1(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
+     .         F1(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
+     .         F1(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
+     .         F1(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
+     .         F1(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
+
+C           This cell is independent pixel if IP mode or open boundary
+C             conditions and ray is leaving domain (i.e. not entering)
+        IPINX = BTEST(INT(CELLFLAGS(ICELL)),0) .AND.
+     .          .NOT. ( BTEST(BCFLAG,0) .AND.
+     .          ((CX.GT.0.AND.XE.LT.XM) .OR. (CX.LT.0.AND.XE.GT.XM)) )
+        IPINY = BTEST(INT(CELLFLAGS(ICELL)),1) .AND.
+     .          .NOT. ( BTEST(BCFLAG,1) .AND.
+     .          ((CY.GT.0.AND.YE.LT.YM) .OR. (CY.LT.0.AND.YE.GT.YM)) )
+
+C           Find boundaries of the current cell
+C           Find the three possible intersection planes (X,Y,Z)
+C             from the coordinates of the opposite corner grid point
+        IOPP = GRIDPTR(9-IOCT,ICELL)
+C           Get the distances to the 3 planes and select the closest
+C             (always need to deal with the cell that is wrapped)
+        IF (IPINX) THEN
+          SOX = 1.0E20
+        ELSE
+          SOX = (GRIDPOS(1,IOPP)-XE)*CXINV
+        ENDIF
+        IF (IPINY) THEN
+          SOY = 1.0E20
+        ELSE
+          SOY = (GRIDPOS(2,IOPP)-YE)*CYINV
+        ENDIF
+        SOZ = (GRIDPOS(3,IOPP)-ZE)*CZINV
+        SO = MIN(SOX,SOY,SOZ)
+        IF (SO .LT. -EPS) THEN
+          WRITE (6,*) 'PENCIL_BEAM_PROP: SO<0  ',
+     .      MU2,PHI2,XE,YE,ZE,SO,ICELL
+          STOP
+        ENDIF
+        XN = XE + SO*CX
+        YN = YE + SO*CY
+        ZN = ZE + SO*CZ
+C           Find the optical path across the grid cell and figure how
+C             many subgrid intervals to use
+
+        CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XN, YN, ZN, F)
+        EXTN = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
+     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
+     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
+     .         F(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
+     .         F(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
+     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
+     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
+     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
+
+        TAUGRID = SO*0.5*(EXT1+EXTN)
+        NTAU = MAX(1,1+INT(TAUGRID/TAUTOL))
+        DELS = SO/NTAU
+
+        DO I=1,8
+          IF (F(I) .GT. 1e-7) THEN
+            DIRFLUX(GRIDPTR(I,ICELL)) = F(I)
+          ENDIF
+          IF (F1(I) .GT. 1e-7) THEN
+            DIRFLUX(GRIDPTR(I,ICELL)) = F1(I)
+          ENDIF
+        ENDDO
+        TRANSCELL = 1.0D0 - EXP(-TAUGRID)
+        TRANSMIT = TRANSMIT*TRANSCELL
+C        EXT1 = EXT0
+C        F1 = F0
+C                End of sub grid cell loop
+C               Get the intersection face number (i.e. neighptr index)
+        IF (SOX .LE. SOZ .AND. SOX .LE. SOY) THEN
+          IFACE = 2-BITX
+          JFACE = 1
+          OPENBCFACE=BTEST(INT(CELLFLAGS(ICELL)),0).AND.BTEST(BCFLAG,0)
+        ELSE IF (SOY .LE. SOZ) THEN
+          IFACE = 4-BITY
+          JFACE = 2
+          OPENBCFACE=BTEST(INT(CELLFLAGS(ICELL)),1).AND.BTEST(BCFLAG,1)
+        ELSE
+          IFACE = 6-BITZ
+          JFACE = 3
+          OPENBCFACE=.FALSE.
+        ENDIF
+C            Get the next cell to go to
+        INEXTCELL = NEIGHPTR(IFACE,ICELL)
+        IF (INEXTCELL .LT. 0) THEN
+          CALL NEXT_CELL (XN, YN, ZN, IFACE, JFACE, ICELL, GRIDPOS,
+     .           GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,  INEXTCELL)
+        ENDIF
+C             If going to same or larger face then use previous face
+        IF (NEIGHPTR(IFACE,ICELL) .GE. 0 .AND. .NOT.OPENBCFACE) THEN
+          KFACE = IFACE
+          IC = ICELL
+        ELSE
+C             If going to smaller face then use next face (more accurate)
+          KFACE = OPPFACE(IFACE)
+          IC = INEXTCELL
+          IFACE = 0
+        ENDIF
+C           Get the location coordinate
+        IF (INEXTCELL .GT. 0) THEN
+          IF (JFACE .EQ. 1) THEN
+            XN = GRIDPOS(1,GRIDPTR(IOCT,INEXTCELL))
+          ELSE IF (JFACE .EQ. 2) THEN
+            YN = GRIDPOS(2,GRIDPTR(IOCT,INEXTCELL))
+          ELSE
+            ZN = GRIDPOS(3,GRIDPTR(IOCT,INEXTCELL))
+          ENDIF
+        ENDIF
+C           If the transmission is greater than zero and not at a
+C             boundary then prepare for next cell
+        IF (TRANSMIT .LT. TRANSCUT .OR. NGRID.GT.MAXCELLSCROSS) THEN
+          VALIDRAD = .TRUE.
+        ELSE IF (INEXTCELL .EQ. 0 .AND. IFACE .GE. 5) THEN
+          VALIDRAD = .TRUE.
+        ELSE
+          ICELL = INEXTCELL
+        ENDIF
+        XE = XN
+        YE = YN
+        ZE = ZN
+      ENDDO
+
+      SIDE = IFACE
+
+      RETURN
+      END
+
+
+      SUBROUTINE TRANSMISSION_INTEGRAL (X0, Y0, Z0, BCFLAG, IPFLAG,
+     .                   MAGNITUDE, MU2, PHI2,
+     .                   FIELD, TOTAL_EXT,
+     .                   NX, NY, NZ, NCELLS, NPTS, CELLFLAGS,
+     .                   XGRID, YGRID, ZGRID, GRIDPOS,GRIDPTR,
+     .                   NEIGHPTR, TREEPTR)
+C    Integrates a field along characteristic weighted by the
+C    transmission. Should be adjoint to PENCIL_BEAM_PROP.
+C
+C    Completely untested.
+      IMPLICIT NONE
+      INTEGER BCFLAG, IPFLAG
+Cf2py intent(in) BCFLAG, IPFLAG
+      INTEGER NX, NY, NZ, NPTS, NCELLS, SIDE
+Cf2py intent(in) NX,NY,NPTS,NCELLS
+      INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
+Cf2py intent(in) GRIDPTR, NEIGHPTR, TREEPTR
+      INTEGER*2 CELLFLAGS(NCELLS)
+Cf2py intent(in) CELLFLAGS
+      LOGICAL VALIDRAD
+      REAL    MAGNITUDE
+Cf2py intent(out) MAGNITUDE
+      REAL    FIELD(NPTS)
+Cf2py intent(in) :: FIELD
+      REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
+Cf2py intent(in) XGRID, YGRID, ZGRID, GRIDPOS
+      REAL    TOTAL_EXT(NPTS)
+Cf2py intent(in) TOTAL_EXT
+      DOUBLE PRECISION MU2, PHI2, X0,Y0,Z0, XE,YE,ZE
+Cf2py intent(in) X0, Y0,Z0, MU2, PHI2
+      DOUBLE PRECISION TRANSMIT
+
+      INTEGER BITX, BITY, BITZ, IOCT, ICELL, INEXTCELL, IFACE
+Cf2py intent(out) ICELL, INEXTCELL, IFACE
+      INTEGER IOPP, NTAU, IT, I, IPT1, IPT2, J, L
+      LOGICAL DONE, IPINX, IPINY, OPENBCFACE
+      INTEGER JFACE, KFACE, IC, MAXCELLSCROSS, NGRID
+      INTEGER OPPFACE(6), OLDIPTS(8), DONETHIS(8)
+      INTEGER DONEFACE(8,7), ONEX(8), ONEY(8)
+      REAL    EXT0, EXT1, EXTN
+      REAL    XM,YM
+      DOUBLE PRECISION PI, CX, CY, CZ, CXINV, CYINV, CZINV
+      DOUBLE PRECISION XN, YN, ZN, XI, YI, ZI
+      DOUBLE PRECISION SO, SOX, SOY, SOZ, EPS
+      DOUBLE PRECISION TAUTOL, TAUGRID, S, DELS, TRANSCUT
+      DOUBLE PRECISION EXT, TAU, TRANSCELL, ABSCELL
+      DOUBLE PRECISION U,V,W, DELX,DELY,DELZ, INVDELX,INVDELY,INVDELZ
+      DOUBLE PRECISION F(8), INTEGRATED_WEIGHTS(8), F1(8), F0(8)
+      REAL FIELDEXT0, FIELDEXT1, FIELDEXT
+
+      DATA OPPFACE/2,1,4,3,6,5/
+      DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
+      DATA DONEFACE/0,0,0,0,0,0,0,0, 0,1,0,3,0,5,0,7, 2,0,4,0,6,0,8,0,
+     .              0,0,1,2,0,0,5,6, 3,4,0,0,5,6,0,0,
+     .              0,0,0,0,1,2,3,4, 5,6,7,8,0,0,0,0/
+
+      TRANSMIT = 1.0D0
+      MAGNITUDE = 0.0
+C         TRANSCUT is the transmission to stop the integration at
+      TRANSCUT = 5.0E-5
+C         TAUTOL is the maximum optical path for the subgrid intervals
+      TAUTOL = 0.2
+C      DIRFLUX = 0.0
+
+      EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
+      MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
+      PI = ACOS(-1.0D0)
+C         Make the ray direction (opposite to the outgoing direction)
+      CX = SQRT(1.0D0-MU2**2)*COS(PHI2-PI)
+      CY = SQRT(1.0D0-MU2**2)*SIN(PHI2-PI)
+      CZ = -MU2
+      IF (ABS(CX) .GT. 1.0E-6) THEN
+        CXINV = 1.0D0/CX
+      ELSE
+        CX = 0.0
+        CXINV = 1.0E6
+      ENDIF
+      IF (ABS(CY) .GT. 1.0E-6) THEN
+        CYINV = 1.0D0/CY
+      ELSE
+        CY = 0.0
+        CYINV = 1.0E6
+      ENDIF
+      IF (ABS(CZ) .GT. 1.0E-6) THEN
+        CZINV = 1.0D0/CZ
+      ELSE
+        CZ = 0.0
+        CZINV = 1.0E6
+      ENDIF
+C         Setup for the ray path direction
+      IF (CX .LT. 0.0) THEN
+        BITX = 1
+      ELSE
+        BITX = 0
+      ENDIF
+      IF (CY .LT. 0.0) THEN
+        BITY = 1
+      ELSE
+        BITY = 0
+      ENDIF
+      IF (CZ .LT. 0.0) THEN
+        BITZ = 1
+      ELSE
+        BITZ = 0
+      ENDIF
+      IOCT = 1 + BITX + 2*BITY + 4*BITZ
+      XM = 0.5*(XGRID(1)+XGRID(NX))
+      YM = 0.5*(YGRID(1)+YGRID(NY))
 C         Start at the desired point, getting the extinction and source there
       XE = X0
       YE = Y0
@@ -2001,16 +2881,33 @@ C           Make sure current cell is valid
         ENDIF
         NGRID = NGRID + 1
 
-        CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XE, YE, ZE, F)
-        EXT1 = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
-     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
-     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
-     .         F(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
-     .         F(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
-     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
-     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
-     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
-        PRINT *, EXT1
+        CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XE, YE, ZE, F1)
+        EXT1 = F1(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
+     .         F1(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
+     .         F1(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
+     .         F1(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
+     .         F1(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
+     .         F1(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
+     .         F1(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
+     .         F1(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
+
+        FIELDEXT1 = F1(1)*TOTAL_EXT(GRIDPTR(1,ICELL))*
+     .          FIELD(GRIDPTR(1,ICELL)) +
+     .         F1(2)*TOTAL_EXT(GRIDPTR(2,ICELL))*
+     .          FIELD(GRIDPTR(2,ICELL)) +
+     .         F1(3)*TOTAL_EXT(GRIDPTR(3,ICELL))*
+     .          FIELD(GRIDPTR(3,ICELL)) +
+     .         F1(4)*TOTAL_EXT(GRIDPTR(4,ICELL))*
+     .          FIELD(GRIDPTR(4,ICELL)) +
+     .         F1(5)*TOTAL_EXT(GRIDPTR(5,ICELL))*
+     .          FIELD(GRIDPTR(5,ICELL)) +
+     .         F1(6)*TOTAL_EXT(GRIDPTR(6,ICELL))*
+     .          FIELD(GRIDPTR(6,ICELL)) +
+     .         F1(7)*TOTAL_EXT(GRIDPTR(7,ICELL))*
+     .          FIELD(GRIDPTR(7,ICELL)) +
+     .         F1(8)*TOTAL_EXT(GRIDPTR(8,ICELL))*
+     .          FIELD(GRIDPTR(8,ICELL))
+
 C           This cell is independent pixel if IP mode or open boundary
 C             conditions and ray is leaving domain (i.e. not entering)
         IPINX = BTEST(INT(CELLFLAGS(ICELL)),0) .AND.
@@ -2065,21 +2962,38 @@ C             many subgrid intervals to use
 
 C           Loop over the subgrid cells
         DO IT = 1, NTAU
-          PRINT *, TRANSMIT
           S = IT*DELS
           XI = XE + S*CX
           YI = YE + S*CY
           ZI = ZE + S*CZ
 
-          CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XI, YI, ZI, F)
-          EXT0 = F(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
-     .         F(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
-     .         F(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
-     .         F(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
-     .         F(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
-     .         F(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
-     .         F(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
-     .         F(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
+          CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XI, YI, ZI,
+     .                           F0)
+          EXT0 = F0(1)*TOTAL_EXT(GRIDPTR(1,ICELL)) +
+     .         F0(2)*TOTAL_EXT(GRIDPTR(2,ICELL)) +
+     .         F0(3)*TOTAL_EXT(GRIDPTR(3,ICELL)) +
+     .         F0(4)*TOTAL_EXT(GRIDPTR(4,ICELL)) +
+     .         F0(5)*TOTAL_EXT(GRIDPTR(5,ICELL)) +
+     .         F0(6)*TOTAL_EXT(GRIDPTR(6,ICELL)) +
+     .         F0(7)*TOTAL_EXT(GRIDPTR(7,ICELL)) +
+     .         F0(8)*TOTAL_EXT(GRIDPTR(8,ICELL))
+
+          FIELDEXT0 = F0(1)*TOTAL_EXT(GRIDPTR(1,ICELL))*
+     .          FIELD(GRIDPTR(1,ICELL)) +
+     .         F0(2)*TOTAL_EXT(GRIDPTR(2,ICELL))*
+     .          FIELD(GRIDPTR(2,ICELL)) +
+     .         F0(3)*TOTAL_EXT(GRIDPTR(3,ICELL))*
+     .          FIELD(GRIDPTR(3,ICELL)) +
+     .         F0(4)*TOTAL_EXT(GRIDPTR(4,ICELL))*
+     .          FIELD(GRIDPTR(4,ICELL)) +
+     .         F0(5)*TOTAL_EXT(GRIDPTR(5,ICELL))*
+     .          FIELD(GRIDPTR(5,ICELL)) +
+     .         F0(6)*TOTAL_EXT(GRIDPTR(6,ICELL))*
+     .          FIELD(GRIDPTR(6,ICELL)) +
+     .         F0(7)*TOTAL_EXT(GRIDPTR(7,ICELL))*
+     .          FIELD(GRIDPTR(7,ICELL)) +
+     .         F0(8)*TOTAL_EXT(GRIDPTR(8,ICELL))*
+     .          FIELD(GRIDPTR(8,ICELL))
 
 C            Compute the subgrid radiance: integration of the source function
           EXT = 0.5*(EXT0+EXT1)
@@ -2087,22 +3001,20 @@ C            Compute the subgrid radiance: integration of the source function
             TAU=EXT*DELS
             ABSCELL = TAU*(1.0-0.5*TAU*(1.0-0.33333333333*TAU))
             TRANSCELL = 1.0 - ABSCELL
+            FIELDEXT = ( 0.5*(FIELDEXT0 + FIELDEXT1)
+     .        + 0.08333333333*(EXT0*FIELDEXT1-EXT1*FIELDEXT0)*DELS
+     .        *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
 
           ELSE
             ABSCELL = 0.0
             TRANSCELL = 1.0
+            FIELDEXT = 0.0
           ENDIF
-          DO I=1,8
-            IF (EXT0 > 1e-5) THEN
-              WEIGHTS(I) = F(I)*TOTAL_EXT(GRIDPTR(1,ICELL))/EXT0
-            ELSE
-              WEIGHTS(I) = F(I)*TOTAL_EXT(GRIDPTR(1,ICELL))*1e5
-            ENDIF
-            DIRFLUX(GRIDPTR(I,ICELL)) = DIRFLUX(GRIDPTR(I,ICELL)) +
-     .            SOLARFLUX*TRANSMIT*WEIGHTS(I)
-          ENDDO
+          MAGNITUDE = MAGNITUDE + TRANSMIT*ABSCELL*FIELDEXT
+
           TRANSMIT = TRANSMIT*TRANSCELL
           EXT1 = EXT0
+          FIELDEXT1 = FIELDEXT0
 C                End of sub grid cell loop
         ENDDO
 C               Get the intersection face number (i.e. neighptr index)
@@ -2121,7 +3033,6 @@ C               Get the intersection face number (i.e. neighptr index)
         ENDIF
 C            Get the next cell to go to
         INEXTCELL = NEIGHPTR(IFACE,ICELL)
-        PRINT *, 'inextcell',INEXTCELL
         IF (INEXTCELL .LT. 0) THEN
           CALL NEXT_CELL (XN, YN, ZN, IFACE, JFACE, ICELL, GRIDPOS,
      .           GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,  INEXTCELL)
@@ -2165,6 +3076,7 @@ C             boundary then prepare for next cell
       RETURN
       END
 
+
       SUBROUTINE COMPUTE_RADIANCE_GRID(NSTOKES, RADIANCE, RSHPTR,
      .           NPTS, MU, PHI, ML, MM, NSTLEG, NLM, GRIDRAD)
 
@@ -2193,6 +3105,197 @@ C             boundary then prepare for next cell
       ENDDO
       RETURN
       END
+
+      SUBROUTINE COMPUTE_DIR_SOURCE(NSTOKES, SOURCE, SHPTR,
+     .    TOTAL_EXT, NPTS, MU, PHI, ML, MM, NSTLEG, NLM,
+     .    SOURCE1, PHASETAB, NUMPHASE, EXTINCT, ALBEDO,
+     .    LEGEN, IPHASE, DIRFLUX, NPART, INTERPMETHOD,
+     .    PHASEINTERPWT, PHASEMAX, DELTAM, NLEG, SRCTYPE,
+     .    SOLARMU, SOLARAZ,NSCATANGLE, NSTPHASE,
+     .    IERR, ERRMSG)
+
+      IMPLICIT NONE
+      INTEGER NSTOKES, NSTLEG, NPTS, ML, MM, NLM, NLEG
+Cf2py intent(in) :: NSTOKES, NSTLEG, NPTS, ML, MM, NLM, NLEG
+      INTEGER NUMPHASE
+Cf2py intent(in) :: NUMPHASE
+      INTEGER NSCATANGLE, NSTPHASE
+      INTEGER IPHASE(8,NPTS,NPART), NPART
+Cf2py intent(in) :: IPHASE, NPART, NSCATANGLE, NSTPHASE
+      REAL    PHASEINTERPWT(8,NPTS,NPART), PHASEMAX
+Cf2py intent(in) :: PHASEINTERPWT, PHASEMAX
+      CHARACTER INTERPMETHOD*2
+Cf2py intent(in) :: INTERPMETHOD
+      LOGICAL DELTAM
+Cf2py intent(in) :: DELTAM
+      REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
+Cf2py intent(in) :: EXTINCT, ALBEDO
+      REAL    LEGEN(NSTLEG,0:NLEG,NUMPHASE), TOTAL_EXT(NPTS)
+Cf2py intent(in) :: LEGEN, TOTAL_EXT
+      REAL    DIRFLUX(NPTS), SOURCE(NSTOKES,*)
+Cf2py intent(in) :: DIRFLUX, SOURCE
+      REAL    SOURCE1(NSTOKES, NPTS)
+Cf2py intent(out) :: SOURCE1
+      REAL    PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
+Cf2py intent(in) :: PHASETAB
+      CHARACTER SRCTYPE*1
+Cf2py intent(in) :: SRCTYPE
+      REAL    MU, PHI, SOLARMU, SOLARAZ
+Cf2py intent(in) :: MU, PHI, SOLARMU, SOLARAZ
+      INTEGER IERR, SHPTR(*)
+Cf2py intent(out) :: IERR
+Cf2py intent(in) :: SHPTR
+      CHARACTER ERRMSG*600
+Cf2py intent(out) :: ERRMSG
+
+      REAL    SINGSCAT(NSTOKES,NUMPHASE)
+      DOUBLE PRECISION SECMU0, COSSCAT, F
+      INTEGER I, IS, NS, J, IPA, Q, MS, ME, L
+      INTEGER JT, M
+      REAL EXT, LEGENT(NSTLEG,0:NLEG), DA, A1,B1
+      DOUBLE PRECISION W, PI
+      REAL YLMDIR(NSTLEG,NLM), YLMSUN(NSTLEG,NLM)
+
+      SECMU0 = 1.0D0/ABS(SOLARMU)
+      PI = ACOS(-1.0D0)
+
+      IERR = 0
+      IF (ABS(MU) .GT. 1.0) THEN
+        IERR = 1
+        WRITE(ERRMSG, *) 'COMPUTE_DIR_SOURCE: ABS(MU)>1'
+      ENDIF
+
+C         Precompute Ylm's for output direction and solar direction
+      CALL YLMALL (.FALSE., MU, PHI, ML, MM, NSTLEG, YLMDIR)
+
+
+      IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
+
+        CALL YLMALL (.TRUE., SOLARMU, SOLARAZ, ML, MM, NSTLEG,
+     .                YLMSUN)
+        COSSCAT = SOLARMU*MU + SQRT((1.0D0-SOLARMU**2)*(1.0D0-MU**2))
+     .                  *COS(SOLARAZ-PHI)
+        COSSCAT = MAX(MIN(1.0D0, COSSCAT), -1.0D0)
+
+        F = (NSCATANGLE-1)*(ACOS(COSSCAT)/PI) + 1
+        J = MIN(NSCATANGLE-1,INT(F))
+        F = F - J
+        DO I = 1, NUMPHASE
+          SINGSCAT(1:NSTPHASE,I)
+     .               = (1-F)*PHASETAB(:,I,J) + F*PHASETAB(:,I,J+1)
+          IF (NSTOKES .GT. 1) THEN
+            CALL ROTATE_POL_PLANE (NSTOKES, COSSCAT, SOLARMU,
+     .                   MU, SOLARAZ-PHI, SINGSCAT(:,I))
+          ENDIF
+        ENDDO
+      ENDIF
+
+C         Loop over all the grid points, computing the source function
+C           at the viewing angle from the spherical harmonic source function.
+      DO I = 1, NPTS
+        EXT = TOTAL_EXT(I)
+        IS = SHPTR(I)
+        NS = SHPTR(I+1)-IS
+C         Sum over the real generalized spherical harmonic series
+C         of the source function
+        SOURCE1(:,I) = 0.0
+        DO J = 1, NS
+          SOURCE1(1,I) = SOURCE1(1,I) + SOURCE(1,IS+J)*YLMDIR(1,J)
+        ENDDO
+        IF (NSTOKES .GT. 1) THEN
+          DO J = 1, NS
+            SOURCE1(2,I) = SOURCE1(2,I) + SOURCE(2,IS+J)*YLMDIR(2,J)
+     .                                  + SOURCE(3,IS+J)*YLMDIR(5,J)
+            SOURCE1(3,I) = SOURCE1(3,I) + SOURCE(2,IS+J)*YLMDIR(6,J)
+     .                                  + SOURCE(3,IS+J)*YLMDIR(3,J)
+          ENDDO
+        ENDIF
+        IF (NSTOKES .EQ. 4) THEN
+          DO J = 1, NS
+            SOURCE1(4,I) = SOURCE1(4,I) + SOURCE(4,IS+J)*YLMDIR(4,J)
+          ENDDO
+        ENDIF
+
+C             Special case for solar source and Delta-M
+        IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
+  	    DO IPA = 1, NPART
+
+  	      IF (EXT.EQ.0.0) THEN
+  		        W = 1.0
+  	      ELSE
+  		        W = EXTINCT(I,IPA)/EXT
+  	      ENDIF
+  	      IF (W.EQ.0.0) CYCLE
+
+          IF (INTERPMETHOD(2:2) .EQ. 'O' ) THEN
+            LEGENT = LEGEN(:,:,IPHASE(1,I,IPA))
+          ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+            IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+              LEGENT = LEGEN(:,:,IPHASE(1,I,IPA))
+            ELSE
+              LEGENT = 0.0
+              DO Q=1,8
+                IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
+                LEGENT = LEGENT + LEGEN(:,:,IPHASE(Q,I,IPA))*
+     .          PHASEINTERPWT(Q,I,IPA)
+              ENDDO
+            ENDIF
+            F = LEGENT(1,ML+1)
+            LEGENT = LEGENT/(1-F)
+          ENDIF
+
+C               First subtract off the truncated single scattering
+  	      DA = ALBEDO(I,IPA)*DIRFLUX(I)*SECMU0*W
+  	      J = 1
+
+  	      DO L = 0, ML
+  	        ME = MIN(L,MM)
+  	        MS = -ME
+  	        A1 = DA*LEGENT(1,L)
+  	        B1 = DA*LEGENT(5,L)
+  	        IF (J .LE. NS) THEN
+  	          JT = J
+  	          DO M = MS, ME
+  	            SOURCE1(1,I) =SOURCE1(1,I)-A1*YLMDIR(1,J)*YLMSUN(1,J)
+  	            J = J + 1
+              ENDDO
+  	          IF (NSTOKES .GT. 1) THEN
+  	            J = JT
+                DO M = MS, ME
+  	              SOURCE1(2,I)=SOURCE1(2,I)-B1*YLMDIR(2,J)*YLMSUN(1,J)
+  	              SOURCE1(3,I)=SOURCE1(3,I)-B1*YLMDIR(6,J)*YLMSUN(1,J)
+  	              J = J + 1
+               ENDDO
+  	         ENDIF
+  	       ENDIF
+  	      ENDDO
+
+C               Then add in the single scattering contribution for the
+C               original unscaled phase function.
+  	      IF (NUMPHASE .GT. 0) THEN
+            IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+              SOURCE1(:,I) = SOURCE1(:,I) +
+     .          DA*SINGSCAT(:,IPHASE(1,I,IPA))
+            ELSE
+              DO Q=1,8
+                IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
+                SOURCE1(:,I) = SOURCE1(:,I) +
+     .          DA*SINGSCAT(:,IPHASE(Q,I,IPA))*PHASEINTERPWT(Q,I,IPA)
+              ENDDO
+            ENDIF
+  	      ELSE
+            WRITE(ERRMSG,*) 'COMPUTE_DIR_SOURCE:',
+     .      ' NUMPHASE=0 is not supported.'
+            IERR = 1
+            RETURN
+  	      ENDIF
+  	    ENDDO
+        ENDIF
+      ENDDO
+
+      RETURN
+      END
+
 
 
       SUBROUTINE COMPUTE_SOURCE_GRID(NSTOKES, SOURCE, SHPTR,
@@ -2223,6 +3326,18 @@ C             boundary then prepare for next cell
       ENDDO
       RETURN
       END
+
+C      SUBROUTINE INNER_PRODUCT(NPTS,NCELLS,GRIDPTR, TREEPTR,
+C     .    NEIGHPTR, CELLFLAGS, BCFLAG, IPFLAG, XGRID, YGRID,
+C     .    ZGRID, GRIDPOS, FOR_RADIANCE, PSEUDO_RADIANCE,
+C     .    FOR_RSHPTR, PSEUDO_RSHPTR, ML, MM, NLM, NSTLEG,
+C     .    NSTOKES, OUTPUT)
+CC    Loop over all of the deepest layer of cells and perform
+CC    the inner product for each one. This will contribute to
+CC    the derivative on the property grid.
+C      IMPLICIT NONE
+C      RETURN
+C      END
 
       SUBROUTINE TRAVERSE_GRID(NX, NY, NZ, NPTS, NCELLS,
      .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
@@ -2429,3 +3544,90 @@ C             boundary then prepare for next cell
 
       RETURN
       END
+
+      SUBROUTINE PHASEFUNC_FROM_WIGNER(NANGLES, NLEG, LEGCOEF,
+     .                                 PHASE, NSTPHASE, IERR,
+     .    ERRMSG, NEGCHECK, NSTLEG)
+      IMPLICIT NONE
+      LOGICAL, INTENT(IN) :: NEGCHECK
+      INTEGER, INTENT(IN) :: NANGLES, NLEG, NSTLEG, NSTPHASE
+      REAL,    INTENT(IN) :: LEGCOEF(NSTLEG,0:NLEG)
+      REAL,    INTENT(OUT) :: PHASE(NSTPHASE, NANGLES)
+      CHARACTER ERRMSG*600
+      INTEGER IERR
+
+      INTEGER J, L
+      DOUBLE PRECISION  PI, OFOURPI, COSSCAT, FCT, F, X, A1, B1
+      DOUBLE PRECISION, ALLOCATABLE :: DMM1(:), DMM2(:)
+      ALLOCATE (DMM1(0:NLEG), DMM2(0:NLEG))
+
+      PI = ACOS(-1.0D0)
+      OFOURPI = 1.0/(4.0*PI)
+      IERR = 0
+
+
+
+      DO J = 1, NANGLES
+        COSSCAT = COS(PI*DFLOAT(J-1)/(NANGLES-1))
+        X = DBLE(COSSCAT)
+        CALL WIGNERFCT (X, NLEG, 0, 0, DMM1)
+        CALL WIGNERFCT (X, NLEG, 2, 0, DMM2)
+
+C           Sum the first Wigner function series, which is actually a Legendre series
+        A1 = 0.0D0
+        DO L = 0, NLEG
+          FCT = 1.0D0
+!2.0D0*L + 1.0D0
+          A1  = A1 + FCT*DBLE(LEGCOEF(1,L))*DMM1(L)
+        ENDDO
+        IF (NEGCHECK .AND. A1 .LE. 0.0) THEN
+          IERR=1
+          WRITE (ERRMSG,*) 'PHASEFUNC_FROM_WIGNER: ',
+     .          'negative phase ',
+     .         'function'
+          RETURN
+        ENDIF
+        PHASE(1,J) = SNGL(A1*OFOURPI)
+
+        B1 = 0.0D0
+        DO L = 0, NLEG
+          FCT = 1.0D0
+!2.0D0*L + 1.0D0
+          B1  = B1 - FCT*DBLE(LEGCOEF(5,L))*DMM2(L)
+        ENDDO
+        PHASE(2,J) = SNGL(B1*OFOURPI)
+
+      ENDDO
+      DEALLOCATE (DMM1, DMM2)
+      RETURN
+      END
+
+      SUBROUTINE PHASEFUNC_FROM_LEGENDRE (NANGLES, NCOEF, LEGCOEF,
+     .                                    PHASE)
+       ! Calculates the phase function at NANGLES equally spaced angles
+       ! from the Legendres series expansion in LEGCOEF.  The scalar (I,I)
+       ! element of the phase matrix is expanded in Wigner d^l_{0,0} functions,
+       ! which are the same as Legendre polynomials in \cos\Theta.
+        IMPLICIT NONE
+        INTEGER, INTENT(IN) :: NANGLES, NCOEF
+        REAL,    INTENT(IN) :: LEGCOEF(0:NCOEF)
+        REAL,    INTENT(OUT) :: PHASE(NANGLES)
+        INTEGER :: J, L
+        REAL(8) :: RD, MU, SUM, PL, PL1, PL2
+
+        RD = ACOS(-1.0D0)/180.D0
+        DO J = 1, NANGLES
+          MU = COS(RD*J*180.D0/NANGLES)
+          SUM = 0.0
+            ! Use upward recurrence to find Legendre polynomials
+          PL1 = 1.0
+          PL = 1.0
+          DO L = 0, NCOEF
+            IF (L .GT. 0) PL = (2*L-1)*MU*PL1/L-(L-1)*PL2/L
+            SUM = SUM + LEGCOEF(L)*PL
+            PL2 = PL1
+            PL1 = PL
+          ENDDO
+          PHASE(J) = SUM
+        ENDDO
+      END SUBROUTINE PHASEFUNC_FROM_LEGENDRE

@@ -2,10 +2,10 @@ Summary: pyshdom is available for non-commercial use only. For commercial use, c
 
 ---
 
-Copyright (C) 2019, Aviad Levis & Amit Aides, all rights reserved.
+Copyright (C) 2019, Aviad Levis, Jesse Loveridge & Amit Aides, all rights reserved.
 
-pyshdom includes the source code of SHDOM by Frank Evans (http://nit.colorado.edu/shdom.html).
-Please contact Frank Evans for the license of SHDOM source. The license hereinafter refers to the pyshdom code only without the SHDOM sources.
+pyshdom includes modified source code of SHDOM by Frank Evans (https://nit.coloradolinux.com/~evans/shdom.html) which is distributed without a license.
+Please contact Frank Evans for the license of SHDOM source. The license hereinafter refers only to this distribution.
 
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
 
@@ -18,6 +18,6 @@ Redistribution and use in source and binary forms, with or without modification,
     - `Levis, Aviad, et al. "Airborne Three-Dimensional Cloud Tomography." Proceedings of the IEEE International Conference on Computer Vision. 2015.`
     - `Levis, Aviad, et al. "Multiple-Scattering Microphysical Tomography." Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition. 2017.`
     - `Levis, A.; Schechner, Y.Y.; Davis, A.B.; Loveridge, J. Multi-View Polarimetric Scattering Cloud Tomography and Retrieval of Droplet Size. Remote Sens. 2020, 12, 2831. https://doi.org/10.3390/rs12172831`
-* Any publications using the synthetic les cloud which is included in the distribution must cite the following work:  G. Matheou and D. Chung. "Large-eddy simulation of stratified turbulence. Part II: Application of the stretched-vortex model to the atmospheric boundary layer." Journal of Atmospheric Science, 71:4439–4460, 2014.
+* Any publications using the synthetic les clouds in the ./data/synthetic_cloud_fields/jpl_les directory which is included in the distribution must cite the following work:  G. Matheou and D. Chung. "Large-eddy simulation of stratified turbulence. Part II: Application of the stretched-vortex model to the atmospheric boundary layer." Journal of Atmospheric Science, 71:4439–4460, 2014.
 
 THIS SOFTWARE IS PROVIDED BY THE AUTHOR "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
