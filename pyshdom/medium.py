@@ -925,9 +925,11 @@ class DataGenerator:
                     "`fixed_data_arrays` should be of type 'xr.Dataset' "
                     "or xr.DataArray"
                 )
-        dataset = xr.Dataset()
-        for data_array in fixed_data_arrays:
-            dataset[data_array.name] = data_array
+        dataset = xr.merge(fixed_data_arrays)
+        # merge_list = []
+        # for data_array in fixed_data_arrays:
+        #     merge_list.append(data_array)
+        #     dataset[data_array.name] = data_array
         return dataset
 
     def _check_bound(self, bounds):
@@ -1004,7 +1006,7 @@ class MicrophysicsGenerator(DataGenerator):
                 bound = variable_data_bounds[name]
             elif name == 'density':
                 bound = (np.zeros(self._rte_grid_shape) + 1e-9,
-                         np.zeros(self._rte_grid_shape) + 1e9)
+                         np.zeros(self._rte_grid_shape) + 1e2)
             else:
                 bound = (np.zeros(self._rte_grid_shape) + coords[name].min(),
                          np.zeros(self._rte_grid_shape) + coords[name].max())
@@ -1058,7 +1060,7 @@ class OpticalGenerator(DataGenerator):
                 bound = variable_data_bounds[name]
             elif name == 'extinction':
                 bound = (np.zeros(self._rte_grid_shape)+ 1e-9,
-                         np.zeros(self._rte_grid_shape) + 1e9)
+                         np.zeros(self._rte_grid_shape) + 1e3)
             elif name == 'ssalb':
                 bound = (np.zeros(self._rte_grid_shape)+ 1e-9,
                          np.ones(self._rte_grid_shape))
@@ -1280,7 +1282,9 @@ class StateGenerator:
                     "Optical property unknowns are not supported for multi-spectral data. "
                     "for similar effect - try forming a 'microphysics' representation. "
                     )
-
+        self._old_solutions = OrderedDict()
+        for key in self._sources:
+            self._old_solutions[key] = None
 
     def get_state(self):
         """
@@ -1344,9 +1348,9 @@ class StateGenerator:
                 num_stokes=self._num_stokes[wavelength],
                 name=self._names[wavelength]
             )
-
+            if self._old_solutions[wavelength] is not None:
+                solver.load_solution(self._old_solutions[wavelength])
             self._solvers_dict.add_solver(wavelength, solver)
-
 
     def project_gradient_to_state(self, state, gradient_dset):
         """

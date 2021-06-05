@@ -8,7 +8,7 @@ import pyshdom.space_carve
 
 def mean_ext_estimate(rte_grid, sensors, solar_mu, solar_azimuth,
                      chi=2/3, g=0.86, sun_distance_reflect=0.1,
-                     sun_distance_transmit=0.3):
+                     sun_distance_transmit=0.1):
     """
     Estimate the extinction of a cloud using diffusion theory.
 
@@ -42,9 +42,9 @@ def mean_ext_estimate(rte_grid, sensors, solar_mu, solar_azimuth,
     transmitted = []
     for sensor in sensor_list:
         reflected.extend(sensor.I.data[np.where((sensor.sun_distance.data < sun_distance_reflect) &
-                                                (sensor.cloud_mask == 1))])
+                                                (sensor.cloud_mask.data == 1))])
         transmitted.extend(sensor.I.data[np.where((sensor.sun_distance.data >= sun_distance_transmit) &
-                                                  (sensor.cloud_mask == 1))])
+                                                  (sensor.cloud_mask.data == 1))])
 
     sundistance_radius = sundistance.sun_distance.data[np.where(sundistance.sun_distance > 0.0)].max()
 
@@ -61,6 +61,12 @@ def mean_ext_estimate(rte_grid, sensors, solar_mu, solar_azimuth,
             'x': rte_grid.x,
             'y': rte_grid.y,
             'z': rte_grid.z,
+        },
+        attrs={
+            'tau_estimate': tau_estimate,
+            'chi': chi,
+            'g': g,
+            'radius': sundistance_radius
         }
     )
     return extinction

@@ -132,18 +132,14 @@ class LevisApproxGradient:
         This does the heavy lifting of preparing the gradient calculation.
         This code should not really need to be modified.
         """
-        import time
-        times = []
-        times.append(time.time())
         self.solvers.parallel_solve(**self.parallel_solve_kwargs)
-        times.append(time.time())
+
         #does some preprocessing for calculating the sensitivity of a gridpoint's
         #solar source to the optical properties along the path to the sun.
         self.solvers.add_direct_beam_derivatives()
-        times.append(time.time())
+
         #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
         self.solvers.add_microphysical_partial_derivatives(self.unknown_scatterers)
-        times.append(time.time())
         #prepare the sensors for the fortran subroutine for calculating gradient.
         rte_sensors, sensor_mapping = self.forward_sensors.sort_sensors(
             self.solvers, self.measurements
@@ -157,15 +153,12 @@ class LevisApproxGradient:
         #The treatment of the gradient_kwargs is quite clumsy here as they are known in self
         #but are sent, instead of redefining gradient_fun to be self.levis_approximation_grad
         #WITH the kwargs set.
-        times.append(time.time())
         outputs = pyshdom.parallel.parallel_gradient(
             self.solvers, rte_sensors, sensor_mapping, self.forward_sensors,
             gradient_fun=self.levis_approximation_grad,
             mpi_comm=mpi_comm,
             n_jobs=n_jobs, **self.gradient_kwargs
             )
-        times.append(time.time())
-        print(times)
         return outputs
 
     def levis_approximation_grad(self, rte_solver, sensor, cost_function='L2',

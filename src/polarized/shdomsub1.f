@@ -440,7 +440,7 @@ C           inequality holds.
      .               WORK, WORK1, WORK2, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
      .               ITERFIXSH, INTERPMETHOD, IERR, ERRMSG, MAXPG,
      .               PHASEINTERPWT, PHASEMAX, NLEGP,
-     .               MAXNMICRO, PHASEWTP)
+     .               MAXNMICRO, PHASEWTP, SOLVE)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -566,6 +566,8 @@ Cf2py intent(in) :: UNIFORM_SFC_BRDF, SFC_BRDF_DO
       INTEGER IERR
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
+      LOGICAL SOLVE
+Cf2py intent(in) :: SOLVE
 
       REAL A
       INTEGER SP, STACK(50)
@@ -713,13 +715,14 @@ C              the solution criterion, and dot products for acceleration.
 
 C           Calculate the acceleration parameter and solution criterion
 C            from all the processors
-        CALL CALC_ACCEL_SOLCRIT (ACCELFLAG, DELJDOT, DELJOLD, DELJNEW,
+        IF (SOLVE) THEN
+          CALL CALC_ACCEL_SOLCRIT (ACCELFLAG, DELJDOT, DELJOLD, DELJNEW,
      .                           JNORM, ACCELPAR, SOLCRIT, A)
 
 C           Accelerate the convergence of the source function vector
-        CALL ACCELERATE_SOLUTION (ACCELPAR, NPTS, SHPTR, OSHPTR,
+          CALL ACCELERATE_SOLUTION (ACCELPAR, NPTS, SHPTR, OSHPTR,
      .                            NSTOKES, SOURCE, DELSOURCE)
-
+        ENDIF
 C           If it is a not scattering medium then do only one iteration
         IF (ALBMAX .LT. SOLACC)  SOLCRIT = SOLACC
 

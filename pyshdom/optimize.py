@@ -193,7 +193,7 @@ class Optimizer:
         self._objective_fn = objective_fn
         self._prior_fn = np.atleast_1d(prior_fn) if prior_fn is not None else None
         self._callback_fn = np.atleast_1d(callback_fn)
-        self._callback = None if callback_fn is None else self.callback
+        #self._callback = None if callback_fn is None else self.callback
         self._iteration = None
         self._state = None
 
@@ -203,7 +203,8 @@ class Optimizer:
         Additionally it keeps track of the iteration number.
         """
         self._iteration += 1
-        [function() for function in self._callback_fn]
+        if self._callback_fn[0] is not None:
+            [function() for function in self._callback_fn]
 
     def objective(self, state):
         """
@@ -235,7 +236,7 @@ class Optimizer:
             'method': self._method,
             'jac': True,
             'options': self._options,
-            'callback': self._callback
+            'callback': self.callback
         }
         args.update(kwargs)
         if self.method not in ['CG', 'Newton-CG']:

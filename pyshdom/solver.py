@@ -250,7 +250,8 @@ class RTE:
         self.numerical_params['solacc'] = val
         #important to update both consistently.
 
-    def solve(self, maxiter, init_solution=True, setup_grid=True, verbose=True):
+    def solve(self, maxiter, init_solution=True, setup_grid=True, verbose=True,
+              solve=True):
         """
         Main solver routine. This routine is comprised of two parts:
           1. Initialization, optional
@@ -319,6 +320,7 @@ class RTE:
         self._work2, ierr, errmsg, self._phaseinterpwt \
          = pyshdom.core.solution_iterations(
             verbose=verbose,
+            solve=solve,
             maxnmicro=self._pa.max_num_micro,
             phasewtp=self._pa.phasewtp,
             nlegp=self._pa.nlegp,
