@@ -6,6 +6,252 @@
 ! There is also a ray integration routine to allow linear tomography methods
 ! utilizing an SHDOM-type grid.
 
+
+subroutine phase_function_mixing(scatter_coefficients, phase_tables, &
+  phase_indices, interpolation_weights, &
+  nparticles, maxpg, maxleg, nstleg, mixed_phase_table, mixed_phase_indices, &
+  asym_tol, phase_tol, dolp_tol, numphase, maxnphase, nangles, maxnmicro, &
+  nphase, ierr, errmsg)
+! This subroutine combines optical properties using similar logic to SHDOM's
+! PROPGEN program (see propgen.f90). Adapted for pyshdom by Jesse Loveridge.
+! A greedy algorithm is used to select the set of phase functions:
+!   New phase functions are added to the set if either the
+!   maximum relative error across nangles of the phase function or maximum relative
+!   error in the asymmetry parameter are exceeded across all of the set of
+!   phase functions.
+!   There is no check for agreement in polarization.
+!
+!   We set a hard upper limit on the total number of phase functions
+!   to use and the method will fail if exceeded. Full arrays are allocated
+!   based on largest possible sizes rather than writing to file.
+
+  implicit none
+  integer maxpg, maxleg, nstleg, nparticles, numphase, maxnmicro
+  real scatter_coefficients(maxpg, nparticles)
+!f2py intent(in) :: scatter_coefficients
+  real interpolation_weights(maxnmicro, maxpg, nparticles)
+!f2py intent(in) :: interpolation_weights
+  real phase_tables(nstleg, 0:maxleg, numphase)
+!f2py intent(in) :: phase_tables
+  integer phase_indices(maxnmicro,maxpg, nparticles)
+!f2py intent(in) :: phase_indices
+  double precision asym_tol, phase_tol, dolp_tol
+!f2py intent(in) :: asym_tol, phase_tol, dolp_tol
+  integer maxnphase, nangles
+!f2py intent(in) :: maxphase, nangles
+  real mixed_phase_table(nstleg, 0:maxleg, maxnphase)
+!f2py intent(out) :: mixed_phase_table
+  integer mixed_phase_indices(maxpg)
+!f2py intent(out) :: mixed_phase_indices
+  integer ierr, nphase
+  character(len=600) errmsg
+!f2py intent(out) :: ierr, errmsg, nphase
+
+  integer i, l, jpart, k, minind
+  real asym(maxnphase), phase(2,nangles, maxnphase)
+  real asym0, phase0(2,nangles), minerr, err
+  real dolp(nangles), dolp0(nangles)
+  double precision scatter
+  real wigcoef(nstleg, 0:maxleg)
+
+  ierr = 0
+
+  mixed_phase_table = 0.0
+  asym = 0.0
+  phase = 0.0
+  mixed_phase_indices = 0
+  nphase = 0
+
+  do i=1,maxpg
+    wigcoef = 0.0
+    scatter = 0.0
+    do jpart=1,nparticles
+      do k=1,maxnmicro
+        wigcoef = wigcoef + scatter_coefficients(i,jpart)* &
+          interpolation_weights(k,i,jpart)* &
+          phase_tables(:,:,phase_indices(k,i,jpart))
+        scatter = scatter + scatter_coefficients(i,jpart)
+      enddo
+    enddo
+    if (scatter > 0.0) then
+
+      wigcoef = wigcoef / scatter
+      asym0 = wigcoef(1, 1)/3
+      ! this is in shdomsub5.f
+      call phasefunc_from_wigner(nangles, maxleg, wigcoef(:,0:), phase0, &
+        2, ierr, errmsg, .True., 6)
+
+      if (nphase .eq. 0) then
+      ! initialize with the first phase function we find.
+        nphase = nphase + 1
+        asym(nphase) = asym0
+        phase(:,:,nphase) = phase0
+        mixed_phase_table(:,:,nphase) = wigcoef
+        mixed_phase_indices(i) = nphase
+      else
+      ! compare with existing phase functions
+        minind = 1
+        minerr = 1000.0
+        do l=1,nphase
+          dolp0 = phase0(2,:)/phase0(1,:)
+          dolp = phase(2,:,l)/phase(1,:,l)
+          err = abs(asym0-asym(l))/asym_tol &
+            + maxval(abs((phase0(1,:) - phase(1,:,l))/max(0.001,phase(1,:,l))))/ &
+            phase_tol + maxval(abs((dolp0(:) - dolp(:))/ &
+              max(0.001, dolp(:))))/dolp_tol
+
+          if (err < minerr) then
+            minerr = err
+            minind = l
+          endif
+        enddo
+        ! if smallest error is sufficiently small then use that phase function
+        ! otherwise add this phase function to the set of phase functions.
+        dolp = phase(2,:,minind)/phase(1,:,minind)
+        if (abs(asym0 - asym(minind)) < asym_tol .and. phase_tol > &
+          maxval(abs((phase0(1,:)-phase(1,:,minind))/max(0.001,phase(1,:,minind)))) &
+          .and. dolp_tol > &
+          maxval(abs((dolp0(:)-dolp)/max(0.001,dolp))) ) then
+          mixed_phase_indices(i) = minind
+        else
+          nphase = nphase + 1
+          if (nphase > maxnphase) then
+            ierr = 1
+            write(errmsg, *) 'Maximum number of phase functions exceeded when ', &
+              'mixing optical properties of different particle species. Either ', &
+              'decrease accuracy tolerance or increase maxnphase.', &
+              ' nphase=',nphase, ' maxnphase=', maxnphase, ' gridpoint=', i, &
+              ' total_number_of_gridpoints=', maxpg
+            return
+          endif
+          mixed_phase_table(:,:,nphase) = wigcoef
+          asym(nphase) = asym0
+          phase(:,:,nphase) = phase0
+          mixed_phase_indices(i) = nphase
+        endif
+      endif
+    endif
+  enddo
+  return
+end subroutine phase_function_mixing
+
+subroutine adjoint_linear_interpolation(xgrid, ygrid, zgrid, &
+  nx,ny,nz, output, inxgrid, inygrid, inzgrid, innx,inny, &
+  innz, field)
+! This subroutine is written for mapping between two grids with
+! linear interpolation in 3D.
+! If the unknowns are on a coarser resolution
+! grid and linearly interpolated to the property grid for use in SHDOM
+! we need to correctly perform the adjoint of the interpolation
+! to transform the gradients from the property grid back up to the
+! unknowns. This subroutine performs this adjoint interpolation.
+! This subroutine assumes that input has been sanitized and does
+! no error checking.
+
+  implicit none
+  integer nx,ny,nz,innx,inny, innz
+  double precision xgrid(nx), ygrid(ny), zgrid(nz)
+! f2py intent(in) :: xgrid, ygrid, zgrid
+  double precision inxgrid(innx), inygrid(inny), inzgrid(innz)
+! f2py intent(in) :: inxgrid, inygrid, inzgrid
+  double precision output(nx,ny,nz), field(innx,inny,innz)
+!f2py intent(out) :: output
+!f2py intent(in) :: field
+
+  integer i,j,k
+  do k=1,innz
+    do j=1,inny
+      do i=1,innx
+        call adjoint_interp_point(xgrid, ygrid, zgrid, &
+         nx,ny,nz, field(i,j,k), inxgrid(i), inygrid(j), &
+         inzgrid(k), output)
+      enddo
+    enddo
+  enddo
+
+  return
+end subroutine adjoint_linear_interpolation
+
+
+subroutine adjoint_interp_point(xgrid, ygrid, &
+  zgrid, nx,ny,nz, fieldval, x,y, z, output)
+
+  implicit none
+  integer nx, ny, nz
+  double precision xgrid(nx), ygrid(ny), zgrid(nz)
+  double precision x,y,z, fieldval
+  double precision output(nx,ny,nz)
+
+  double precision u,v,w,f1,f2,f3,f4,f5,f6
+  double precision f7,f8
+  integer il, iu, im, ix, iy, iz
+! binary searches for the position.
+  il=0
+  iu=nx
+  do while (iu-il .gt. 1)
+    im = (iu+il)/2
+    if (x .ge. xgrid(im)) then
+      il = im
+    else
+      iu=im
+    endif
+  enddo
+  ix = max(il,1)
+  u = (x - xgrid(ix))/(xgrid(ix+1) - xgrid(ix))
+  u = max(min(u, 1.0D0), 0.0D0)
+
+  il=0
+  iu=ny
+  do while (iu-il .gt. 1)
+    im = (iu+il)/2
+    if (x .ge. ygrid(im)) then
+      il = im
+    else
+      iu=im
+    endif
+  enddo
+  iy = max(il,1)
+  v = (y - ygrid(iy))/(ygrid(iy+1) - ygrid(iy))
+  v = max(min(v, 1.0D0), 0.0D0)
+
+  il=0
+  iu=nz
+  do while (iu-il .gt. 1)
+    im = (iu+il)/2
+    if (x .ge. zgrid(im)) then
+      il = im
+    else
+      iu=im
+    endif
+  enddo
+  iz = max(il,1)
+  w = (z - zgrid(iz))/(zgrid(iz+1) - zgrid(iz))
+  w = max(min(w, 1.0D0), 0.0D0)
+! calculate interpolation weights.
+  f1 = (1-u)*(1-v)*(1-w)
+  f2 =    u *(1-v)*(1-w)
+  f3 = (1-u)*   v *(1-w)
+  f4 =    u *   v *(1-w)
+  f5 = (1-u)*(1-v)*   w
+  f6 =    u *(1-v)*   w
+  f7 = (1-u)*   v *   w
+  f8 =    u *   v *   w
+! add to the output field the contributions of the
+! adjoint interpolation.
+  output(ix,iy,iz) = output(ix,iy,iz) + f1*fieldval
+  output(ix+1,iy,iz) = output(ix+1,iy,iz) + f2*fieldval
+  output(ix,iy+1,iz) = output(ix,iy+1,iz) + f3*fieldval
+  output(ix+1,iy+1,iz) = output(ix+1,iy+1,iz) + f4*fieldval
+  output(ix,iy,iz+1) = output(ix,iy,iz+1) + f5*fieldval
+  output(ix+1,iy,iz+1) = output(ix+1,iy,iz+1) + f6*fieldval
+  output(ix,iy+1,iz+1) = output(ix,iy+1,iz+1) + f7*fieldval
+  output(ix+1,iy+1,iz+1) = output(ix+1,iy+1,iz+1) + f8*fieldval
+
+  return
+end subroutine adjoint_interp_point
+
+
+
 subroutine average_subpixel_rays (npixels,nrays, weighted_stokes, nstokes, &
                               pixel_index, observables)
 ! Averages over sub-pixel rays to calculate pixel average observables.

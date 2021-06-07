@@ -72,6 +72,13 @@ class ShdomPropertyArrays(object):
         correlated-k distribution z levels.
     gasabs: np.ndarray, shape=(npz,)
         Gas absorption extinction on vertical levels.
+    nlegp: int
+        Number of legendre moments in full phase functio expansions (legenp)
+    max_num_micro: int
+        The maximum number of phase functions to mix per grid point across
+        all scattering species.
+    phasewtp: np.ndarray
+        interpolation weights for mixtures of phase functions.
     """
     def __init__(self):
         self.npx = None
@@ -92,6 +99,9 @@ class ShdomPropertyArrays(object):
         self.nzckd = None
         self.zckd = None
         self.gasabs = None
+        self.nlegp = None
+        self.max_num_micro = None
+        self.phasewtp = None
 
 class RTE:
     """
@@ -130,6 +140,16 @@ class RTE:
         self._type = 'Radiance' if num_stokes == 1 else 'Polarization'
         self._nstokes = num_stokes
         self._nstleg = 1 if num_stokes == 1 else 6
+
+        # If the second character is 'O' then 'max scattering' interpolation
+        # of phase functions occurs. If the second character is 'N' then
+        # linear mixing of phase functions occurs.
+        self._interpmethod = 'ON'
+        # phasemax is only used for linear mixing of phase functions
+        # and is the threshold for the weight for neglecting the
+        # contributions of other phase functions.
+        self._phasemax = 0.999
+        self._adjflag = False # Used for testing the adjoint source.
 
         self.source = self._setup_source(source)
         self.medium, self._grid = self._setup_medium(medium)
@@ -200,6 +220,7 @@ class RTE:
         self._shterm_fac_out = None
         self._cell_point_out = None
 
+
     @property
     def final_maxmb(self):
         return self._maxmb_out
@@ -229,7 +250,8 @@ class RTE:
         self.numerical_params['solacc'] = val
         #important to update both consistently.
 
-    def solve(self, maxiter, init_solution=True, setup_grid=True, verbose=True):
+    def solve(self, maxiter, init_solution=True, setup_grid=True, verbose=True,
+              solve=True):
         """
         Main solver routine. This routine is comprised of two parts:
           1. Initialization, optional
@@ -295,8 +317,16 @@ class RTE:
         self._radiance, self._fluxes, self._dirflux, self._uniformzlev, \
         self._pa.extdirp, self._oldnpts, self._total_ext, self._deljdot, \
         self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
-        self._work2 = pyshdom.core.solution_iterations(
+        self._work2, ierr, errmsg, self._phaseinterpwt \
+         = pyshdom.core.solution_iterations(
             verbose=verbose,
+            solve=solve,
+            maxnmicro=self._pa.max_num_micro,
+            phasewtp=self._pa.phasewtp,
+            nlegp=self._pa.nlegp,
+            phasemax=self._phasemax,
+            phaseinterpwt=self._phaseinterpwt,
+            interpmethod=self._interpmethod,
             iterfixsh=self._iterfixsh,
             iter=self._iters,
             uniform_sfc_brdf=self._uniform_sfc_brdf,
@@ -442,18 +472,19 @@ class RTE:
             ylmsun=self._ylmsun,
             runname=self._name
         )
-        nsh = self._shptr[self._npts+1]
+        pyshdom.checks.check_errcode(ierr, errmsg)
+        nsh = self._shptr[self._npts]
         self._maxmb_out = 4*(self._nmu*(2+2*self._nphi + 2*self._nlm+2*33*32) \
-                        + 4.5*self._maxpg + self._maxpgl + self._pa.numphase*(self._nleg + 1) \
+                        + 4.5*self._maxpg + self._maxpgl + self._nstleg*self._pa.numphase*(self._nleg + 1) \
                         + 16.5*self._ncells + self._npts*(28+self._nphi0max*self._nstokes) \
                         + self._nstokes*nsh*self._big_arrays)/(1024**2)
         self._adapt_grid_factor_out = self._npts/self._nbpts
         self._shterm_fac_out = nsh/(self._nlm*self._npts)
         self._cell_point_out = self._ncells/self._npts
         # if verbose:
-        #     print("Actual MAX_TOTAL_MB: {:.2f}".format(self._maxmb_out))
-        #     print("Actual adapt_grid_factor: {:.4f}".format(self._adapt_grid_factor_out))
-        #     print("Actual cell_point_ratio: {:.4f}".format(self._cell_point_out))
+        #     warnings.warn("Actual MAX_TOTAL_MB: {:.2f}".format(self._maxmb_out))
+        #     warnings.warn("Actual adapt_grid_factor: {:.4f}".format(self._adapt_grid_factor_out))
+        #     warnings.warn("Actual cell_point_ratio: {:.4f}".format(self._cell_point_out))
 
     def integrate_to_sensor(self, sensor):
         """Calculates the StokesVector at specified geometry using an RTE solution.
@@ -503,7 +534,12 @@ class RTE:
         self.check_solved()
         self._precompute_phase()
 
-        output = pyshdom.core.render(
+        output, ierr, errmsg = pyshdom.core.render(
+            tautol=self._tautol,
+            maxnmicro=self._pa.max_num_micro,
+            interpmethod=self._interpmethod,
+            phaseinterpwt=self._phaseinterpwt[:,:self._npts,:],
+            phasemax=self._phasemax,
             nstphase=self._nstphase,
             ylmsun=self._ylmsun,
             phasetab=self._phasetab,
@@ -541,7 +577,7 @@ class RTE:
             shptr=self._shptr,
             bcptr=self._bcptr,
             cellflags=self._cellflags,
-            iphase=self._iphase[:self._npts],
+            iphase=self._iphase[:,:self._npts],
             deltam=self._deltam,
             solarmu=self._solarmu,
             solaraz=self._solaraz,
@@ -571,7 +607,7 @@ class RTE:
             units=self._units,
             total_ext=self._total_ext[:self._npts],
             npart=self._npart)
-
+        pyshdom.checks.check_errcode(ierr, errmsg)
         sensor['I'] = xr.DataArray(
             data=output[0],
             dims='nrays',
@@ -836,17 +872,17 @@ class RTE:
         sh_out_dataset = xr.Dataset(
             data_vars={
                 'mean_intensity': (['x', 'y', 'z'], self._shterms[0, :self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 'Fx': (['x', 'y', 'z'], self._shterms[1, :self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 'Fy': (['x', 'y', 'z'], self._shterms[2, :self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 'Fz': (['x', 'y', 'z'], self._shterms[3, :self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 },
-            coords={'x': self._grid.x,
-                    'y': self._grid.y,
-                    'z': self._grid.z,
+            coords={'x': self._xgrid[:-1],
+                    'y': self._ygrid[:-1],
+                    'z': self._zgrid,
                    },
             attrs={
                 'long_names':{'Fx': 'Net Flux in x direction',
@@ -857,7 +893,7 @@ class RTE:
         if self._highorderrad & (self._shterms.shape[0] == 5):
             sh_out_dataset['rms_higher_rad'] = (['x', 'y', 'z'],
                                                 self._shterms[-1, :self._nbpts].reshape(
-                                                    self._nx, self._ny, self._nz)/ \
+                                                    self._nx1, self._ny1, self._nz)/ \
                                                     (np.sqrt(np.pi*4.0*self._nlm)))
         return sh_out_dataset
 
@@ -889,15 +925,15 @@ class RTE:
         fluxes = xr.Dataset(
             data_vars={
                 'flux_down': (['x', 'y', 'z'], self._fluxes[0, :self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 'flux_up': (['x', 'y', 'z'], self._fluxes[1, :self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 'flux_direct': (['x', 'y', 'z'], self._dirflux[:self._nbpts].reshape(
-                    self._nx, self._ny, self._nz)),
+                    self._nx1, self._ny1, self._nz)),
                 },
-            coords={'x': self._grid.x,
-                    'y': self._grid.y,
-                    'z': self._grid.z,
+            coords={'x': self._xgrid[:-1],
+                    'y': self._ygrid[:-1],
+                    'z': self._zgrid,
                    },
             attrs={
                 'long_names': {'flux_down': 'Downwelling Hemispherical Flux',
@@ -945,11 +981,11 @@ class RTE:
         netfluxdiv_dataset = xr.Dataset(
             data_vars={
                 'net_flux_div':(['x', 'y', 'z'], self._netfluxdiv[:self._nbpts].reshape(
-                    self._nx, self._ny, self._nz))
+                    self._nx1, self._ny1, self._nz))
                 },
-            coords={'x': self._grid.x,
-                    'y': self._grid.y,
-                    'z': self._grid.z,
+            coords={'x': self._xgrid[:-1],
+                    'y': self._ygrid[:-1],
+                    'z': self._zgrid,
                    },
             attrs={
                 'long_names': {'net_flux_div': 'Net Flux Divergence'},
@@ -972,7 +1008,7 @@ class RTE:
             #calculate the derivative.
             self._make_direct()
 
-            direct_derivative_path, direct_derivative_ptr = \
+            direct_derivative_path, direct_derivative_ptr, ierr, errmsg = \
                 pyshdom.core.make_direct_derivative(
                     npts=self._npts,
                     bcflag=self._bcflag,
@@ -1003,6 +1039,7 @@ class RTE:
                     delxd=self._delxd,
                     delyd=self._delyd
                 )
+            pyshdom.checks.check_errcode(ierr, errmsg)
         else:
             direct_derivative_ptr = np.zeros(
                 (8*(self._pa.npx + self._pa.npy + self._pa.npz), self._npts),
@@ -1017,7 +1054,7 @@ class RTE:
         self._direct_derivative_ptr = direct_derivative_ptr
         self._direct_derivative_path = direct_derivative_path
 
-    def calculate_microphysical_partial_derivatives(self, table_to_grid_method, table_data):
+    def prepare_microphysical_partial_derivatives(self, derivative_information):
         """
         Calculate the derivatives of optical properties with respect to the unknowns
         (microphysical or optical).
@@ -1028,60 +1065,86 @@ class RTE:
 
         Parameters
         ----------
-        table_to_grid_method : callable
-            An interpolation for mapping the derivatives from `table_data` onto the spatial
-            grid. See medium.py &
-        table_data : xr.Dataset
-            Contains the partial derivatives as a function of microphysical properties
-            this is the derivative analogue of a look up table of optical properties
-            as a function of bulk microphysical parameters.
-        """
 
+        """
         self._precompute_phase()
         #solver_derivative_table = #all_derivative_tables[key]
-        num_derivatives = sum([len(scatterer_derivative_table.values()) for
-                               name, scatterer_derivative_table in table_data.items()
+        num_derivatives = sum([len(scatterer_derivative_information.values()) for
+                               name, scatterer_derivative_information in derivative_information.items()
                               ])
         self._num_derivatives = np.array(num_derivatives, dtype=np.int32)
         unknown_scatterer_indices = []
 
-        dext = np.zeros(shape=[self._nbpts, num_derivatives], dtype=np.float32)
-        dalb = np.zeros(shape=[self._nbpts, num_derivatives], dtype=np.float32)
-        diphase = np.zeros(shape=[self._nbpts, num_derivatives], dtype=np.int32)
+        dext = np.zeros(shape=[self._maxpg, num_derivatives], dtype=np.float32)
+        dalb = np.zeros(shape=[self._maxpg, num_derivatives], dtype=np.float32)
 
-        #one loop through to find max_legendre and unkonwn_scatterer_indices
+        # find maximum number of phase pointers across all species.
+        num_micros = []
         max_legendre = []
+        unknown_scatterer_indices = []
+        table_phase_derivative_flag = []
+
         i = 0
-        for name, scatterer_derivative_table in table_data.items():
-            scatterer = self.medium[name]
-            inverse_mode = name == 'density'
-            for variable_derivative_table in scatterer_derivative_table.values():
-                derivative_on_grid = table_to_grid_method(scatterer, variable_derivative_table, inverse_mode=inverse_mode)
-                max_legendre.append(derivative_on_grid.sizes['legendre_index'])
-                unknown_scatterer_indices.append(i+1)
+        for scatterer_name, scatterer_derivative_information in derivative_information.items():
+            scatterer_index = np.where(scatterer_name == np.array(list(self.medium)))[0][0]
+            for variable_derivative in scatterer_derivative_information.values():
+                num_micros.append(variable_derivative.num_micro.size)
+                max_legendre.append(variable_derivative.legendre_index.size)
+                table_phase_flag = 0
+                if variable_derivative['derivative_method'] == 'exact':
+                    table_phase_flag = 1
+                table_phase_derivative_flag.append(table_phase_flag)
+                unknown_scatterer_indices.append(scatterer_index+1)
             i += 1
+
+        deriv_max_num_micro = max(num_micros)
         max_legendre = max(max_legendre)
         self._unknown_scatterer_indices = np.array(unknown_scatterer_indices).astype(np.int32)
+        self._table_phase_derivative_flag = np.array(table_phase_derivative_flag).astype(np.int32)
 
-        #second loop to assign everything else.
-        padded_legcoefs = []
-        count = 0
-        for name, scatterer_derivative_table in table_data.items():
-            scatterer = self.medium[name]
-            inverse_mode = name in ('density', 'extinction')
-            for variable_derivative_table in scatterer_derivative_table.values():
-                derivative_on_grid = table_to_grid_method(scatterer, variable_derivative_table, inverse_mode=inverse_mode)
+        diphase = np.zeros(
+            shape=[deriv_max_num_micro, self._maxpg, num_derivatives],
+            dtype=np.int32
+        )
 
-                dext[:, count] = derivative_on_grid.extinction.data.ravel()
-                dalb[:, count] = derivative_on_grid.ssalb.data.ravel()
-                diphase[:, count] = derivative_on_grid.table_index.data.ravel() + diphase.max()
+        dphasewt = np.zeros(
+            shape=[deriv_max_num_micro, self._maxpg, num_derivatives],
+            dtype=np.float32
+        )
 
-                padded_legcoefs.append(derivative_on_grid.legcoef.pad(
-                    {'legendre_index': (0, max_legendre - derivative_on_grid.legcoef.sizes['legendre_index'])},
-                    constant_values=0.0
-                ))
+        dleg_table = []
+        i = 0
+        for scat_name, scatterer_derivative_information in derivative_information.items():
+            phase_size_sum = 0
+            for name, scatterer in self.medium.items():
+                if name == scat_name:
+                    break
+                phase_size_sum += scatterer.sizes['table_index']
 
-                count += 1
+            for variable_derivative in scatterer_derivative_information.values():
+                assert variable_derivative['derivative_method'] in ('exact', 'table'), 'Bad `derivative_method`'
+                dext[:, i] = variable_derivative.extinction.data.ravel()
+                dalb[:, i] = variable_derivative.ssalb.data.ravel()
+                dphasewt[..., i] = np.pad(
+                    variable_derivative.phase_weights.data.reshape((-1,self._maxpg)),
+                    ((0,deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
+                    mode='constant' # default pads with zeros.
+                )
+
+                dleg_max = phase_size_sum
+                if variable_derivative['derivative_method'] == 'exact':
+                    # in this case phase pointer points to dleg table.
+                    dleg_max = sum([table.sizes['table_index'] for table in dleg_table])
+                    dleg_table.append(variable_derivative.legcoef.pad(
+                        {'legendre_index': (0, max_legendre - variable_derivative.legcoef.sizes['legendre_index'])},
+                        constant_values=0.0
+                    ))
+                diphase[..., i] = np.pad(
+                    variable_derivative.table_index.data.reshape((-1,self._maxpg)) + dleg_max,
+                    ((0,deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
+                    mode='constant' # default pads with zeros.
+                )
+            i += 1
 
         #COPIED FROM solver.RTE
         #In regions which are not covered by any optical scatterer they have an iphasep of 0.
@@ -1092,100 +1155,88 @@ class RTE:
         diphase[np.where(diphase == 0)] = 1
 
         # Concatenate all legendre tables into one table
-        legendre_table = xr.concat(padded_legcoefs, dim='table_index')
-        if self._nleg > legendre_table.sizes['legendre_index']:
+        legendre_table = xr.concat(dleg_table, dim='table_index')
+        if self._pa.nlegp + 1 > legendre_table.sizes['legendre_index']:
             legendre_table = legendre_table.pad(
                 {'legendre_index':
                  (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])
                 }, constant_values=0.0
             )
-        dnumphase = legendre_table.sizes['table_index']
+        self._dnumphase = legendre_table.sizes['table_index']
         dleg = legendre_table.data
 
-        # zero the first term of the first component of the phase function
-        # gradient. Pre-scale the legendre moments by 1/(2*l+1) which
-        # is done in the forward problem in TRILIN_INTERP_PROP
-        scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0, self._nleg+1)]))
+        scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0, self._pa.nlegp+1)]))
         dleg[0, 0, :] = 0.0
         dleg = dleg[:self._nstleg] / scaling_factor
 
-        #dphasetab holds tabulated values of the phase function derivative
-        # ie the inverse legendre transform of dleg evaluated at
-        # the same angles that the phase function is calculated.
-        dphasetab = pyshdom.core.precompute_phase_check_grad(
+        self._dext = dext
+        self._dalb = dalb
+        self._diphasep = diphase
+        self._dphasewtp = dphasewt
+        # temperature derivatives are not yet supported in the python interface.
+        self._dtemp = np.zeros((dext.shape))
+
+        # compute lut of phase function derivatives evaluated at scattering angles.
+        self._dphasetab, ierr, errmsg = pyshdom.core.precompute_phase_check_grad(
             negcheck=False,
             nstphase=self._nstphase,
             nstleg=self._nstleg,
             nscatangle=self._nscatangle,
             nstokes=self._nstokes,
-            dnumphase=dnumphase,
+            dnumphase=self._dnumphase,
             ml=self._ml,
             nlm=self._nlm,
-            nleg=self._nleg,
+            nleg=self._pa.nlegp,
             dleg=dleg,
             deltam=self._deltam
         )
-
-        if self._deltam:
-            deriv_ind = self._unknown_scatterer_indices - 1
-            albs = self._pa.albedop[:, deriv_ind]
-            exts = self._pa.extinctp[:, deriv_ind]
-            legs = self._pa.legenp.reshape((self._nstleg, self._nleg+1, self._pa.numphase), order='F')/scaling_factor
-
-            # f (the delta-M scaling factor) is sensitive to changes in microphysics.
-            f = legs[0, self._ml, self._pa.iphasep[:, deriv_ind]-1]
-            df = dleg[0, self._ml, diphase-1]
-            self._dext = dext*(1.0 - albs*f) - df*albs*exts - dalb*f*exts
-            self._dalb = dalb*(1.0 - f)/((1.0 - f*albs)**2) + \
-                df*(albs - 1.0)*albs/((1.0 - f*albs)**2)
-
-            #find legen table that matches the dleg table.
-            table_ind = []
-            for i, ind in enumerate(deriv_ind):
-                for j in range(1, dleg.shape[-1]+1): #+1 to match iphase/diphase
-                    test = self._pa.iphasep[np.where(diphase[:, i] == j), ind]
-                    if test.shape[1] > 0:
-                        table_ind.append(np.unique(test))
-            table_inds = np.array(table_ind)[:, 0] - 1 #-1 back to python 0-indexing.
-            table_legs = legs[:, :, table_inds]
-            table_f = table_legs[0, self._ml]
-            table_df = dleg[0, self._ml]
-
-            self._dleg = dleg/(1.0 - table_f)
-            self._dleg[0:min(4, self._nstleg)] += table_df* \
-                (table_legs[0:min(4, self._nstleg)] - 1.0)/((1.0 -table_f)**2)
-            if self._nstleg > 1:
-                self._dleg[4:] += table_df*table_legs[4:]/((1.0 - table_f)**2)
-            self._dphasetab = dphasetab/(1.0 - table_f[:, np.newaxis])
-        else:
-            self._dext = dext
-            self._dleg = dleg
-            self._dalb = dalb
-            self._dphasetab = dphasetab
-
-        self._dnumphase, self._diphase = dnumphase, diphase
-
-        #The diphaseind is a pointer that holds which base grid point supplied the
-        #phase function to each adaptive grid point. This interpolation scheme is based on
-        #maximum scattering coefficient. See also TRILIN_INTERP_PROP.
-        self._diphaseind = pyshdom.core.prepare_diphaseind(
+        pyshdom.checks.check_errcode(ierr, errmsg)
+        # now that we have dphasetab we can truncate dleg
+        # to the RTE accuracy.
+        self._dleg = dleg[:, :self._nleg+1]
+        # make property grid to RTE grid pointers and interpolation weights.
+        self._optinterpwt, self._interpptr, ierr, errmsg, \
+        self._dalbm, self._dextm, self._dfj = \
+        pyshdom.core.prepare_deriv_interps(
             gridpos=self._gridpos[:, :self._npts],
             npx=self._pa.npx,
             npy=self._pa.npy,
             npz=self._pa.npz,
             npts=self._npts,
-            nbpts=self._nbpts,
-            numphase=self._pa.numphase,
+            maxpg=self._maxpg,
             delx=self._pa.delx,
             dely=self._pa.dely,
             xstart=self._pa.xstart,
             ystart=self._pa.ystart,
             zlevels=self._pa.zlevels,
-            extinctp=self._pa.extinctp,
+            legen=self._legen,
+            numphase=self._pa.numphase,
+            nstleg=self._nstleg,
+            dleg=self._dleg,
+            dnumphase=self._dnumphase,
+            phasewtp=self._pa.phasewtp,
+            dphasewtp=self._dphasewtp,
+            iphasep=self._pa.iphasep,
+            diphasep=self._diphasep,
+            nleg=self._nleg,
+            maxnmicro=self._pa.max_num_micro,
             albedop=self._pa.albedop,
+            extinctp=self._pa.extinctp,
             npart=self._npart,
-            numder=self._num_derivatives
+            dalb=self._dalb,
+            dext=self._dext,
+            numder=self._num_derivatives,
+            partder=self._unknown_scatterer_indices,
+            doexact=self._table_phase_derivative_flag,
+            ml=self._ml,
+            deltam=self._deltam,
+            albedo=self._albedo[:self._npts],
+            iphase=self._iphase[:,:self._npts],
+            phaseinterpwt=self._phaseinterpwt[:,:self._npts],
+            phasemax=self._phasemax,
+            interpmethod=self._interpmethod
         )
+        pyshdom.checks.check_errcode(ierr, errmsg)
 
 
     def load_solution(self, input_dataset, load_radiance=True):
@@ -1339,20 +1390,20 @@ class RTE:
             output_dataset['npts'] = self._npts
             output_dataset['ncells'] = self._ncells
             output_dataset['nbcells'] = self._nbcells
-            output_dataset['xgrid'] = (['nx+1'], self._xgrid)
-            output_dataset['ygrid'] = (['ny+1'], self._ygrid)
+            output_dataset['xgrid'] = (['nx1'], self._xgrid)
+            output_dataset['ygrid'] = (['ny1'], self._ygrid)
             output_dataset['zgrid'] = (['nz_dim'], self._zgrid)
             output_dataset['gridpos'] = (['xyz', 'npts_dim'], self._gridpos[:, :self._npts])
             output_dataset['gridptr'] = (['8points', 'ncells_dim'], self._gridptr[:, :self._ncells])
             output_dataset['neighptr'] = (['6neighbours', 'ncells_dim'],
                                           self._neighptr[:, :self._ncells])
-            output_dataset['treeptr'] = (['parent/child', 'ncells_dim'],
+            output_dataset['treeptr'] = (['parent_child', 'ncells_dim'],
                                          self._treeptr[:, :self._ncells])
             output_dataset['cellflags'] = (['ncells_dim'], self._cellflags[:self._ncells])
         if save_radiances:
             output_dataset['fluxes'] = (['updown', 'npts_dim'], self._fluxes[:, :self._npts])
-            output_dataset['shptr'] = (['npts+1'], self._shptr[:self._npts+1])
-            output_dataset['rshptr'] = (['npts+2'], self._rshptr[:self._npts+2])
+            output_dataset['shptr'] = (['nptsand1'], self._shptr[:self._npts+1])
+            output_dataset['rshptr'] = (['nptsand2'], self._rshptr[:self._npts+2])
             output_dataset['source'] = (['nstokes_dim', 'sourcesize'],
                                         self._source[:, :self._shptr[self._npts]])
             output_dataset['radiance'] = (['nstokes_dim', 'radsize'],
@@ -1396,62 +1447,23 @@ class RTE:
                             "of xr.Dataset or an xr.Dataset")
 
         for name, dataset in medium_dict.items():
-            if not isinstance(dataset, xr.Dataset):
-                raise TypeError("scatterer '{}' in `medium` is not an xr.Dataset".format(name))
-            try:
-                pyshdom.checks.check_range(dataset, ssalb=(0.0, 1.0))
-            except (KeyError, pyshdom.exceptions.OutOfRangeError) as err:
-                raise type(err)(str(err).replace('"', "") + \
-                " for scatterer '{}' in `medium`.".format(
-                    name)).with_traceback(sys.exc_info()[2])
-            try:
-                pyshdom.checks.check_positivity(dataset, 'extinction')
-            except (KeyError, pyshdom.exceptions.NegativeValueError) as err:
-                raise type(err)(str(err).replace('"', "") + \
-                " for scatterer '{}' in `medium`.".format(
-                    name)).with_traceback(sys.exc_info()[2])
-            for var_name in ('extinction', 'ssalb', 'table_index'):
-                try:
-                    pyshdom.checks.check_hasdim(dataset, **{var_name: ('x', 'y', 'z')})
-                except (KeyError, pyshdom.exceptions.MissingDimensionError) as err:
-                    raise type(err)(str(err).replace('"', "") + \
-                    " for scatterer '{}' in `medium`.".format(
-                        name)).with_traceback(sys.exc_info()[2])
-            try:
-                pyshdom.checks.check_legendre(dataset)
-            except (KeyError, pyshdom.exceptions.MissingDimensionError,
-                    pyshdom.exceptions.LegendreTableError) as err:
-                raise type(err)(str(err).replace('"', "") + \
-                " for scatterer '{}' in `medium`.".format(
-                    name)).with_traceback(sys.exc_info()[2])
-            try:
-                pyshdom.checks.check_grid(dataset)
-            except (KeyError, pyshdom.exceptions.MissingDimensionError,
-                    pyshdom.exceptions.GridError) as err:
-                raise type(err)(str(err).replace('"', "") + \
-                " for scatterer '{}' in `medium`.".format(
-                    name)).with_traceback(sys.exc_info()[2])
+            pyshdom.checks.check_optical_properties(dataset, name=name)
 
         #check that all scatterers are on the same grid
-        first_scatterer = list(medium_dict.values())[0]
-        failed_list = []
-        for name, gridded in medium_dict.items():
-            if np.all(gridded.coords['x'] != first_scatterer.coords['x']) | \
-                np.all(gridded.coords['y'] != first_scatterer.coords['y']) | \
-                np.all(gridded.coords['z'] != first_scatterer.coords['z']) |\
-                (gridded.delx != first_scatterer.delx) | \
-                (gridded.dely != first_scatterer.dely):
-                failed_list.append(name)
-        if failed_list:
-            raise pyshdom.exceptions.GridError("Scatterers in `medium` do "
-                                               "not all have consistent grids.",
-                                               *failed_list)
+        pyshdom.checks.check_grid_consistency(
+            *medium_dict.values(),
+            names=list(medium_dict.keys())
+        )
 
+        first_scatterer = list(medium_dict.values())[0]
         grid = xr.Dataset({'x': first_scatterer.coords['x'],
                            'y': first_scatterer.coords['y'],
                            'z': first_scatterer.coords['z'],
                            'delx': first_scatterer.delx,
                            'dely': first_scatterer.dely})
+        for optional in ('nx', 'ny', 'nz'):
+            if optional in first_scatterer:
+                grid[optional] = first_scatterer[optional]
 
         scatterer_wavelengths = [scatterer.attrs['wavelength_center']
                                  for scatterer in medium_dict.values() if
@@ -1487,7 +1499,7 @@ class RTE:
             Contains temperature and possibly gas absorption data. Should be consistent
             with any rayleigh scatterer that is added.
         """
-        self._pa.tempp = np.zeros(shape=(self._nbpts,), dtype=np.float32) + 273.0
+        self._pa.tempp = np.zeros(shape=(self._maxpg,), dtype=np.float32) + 273.0
         if atmosphere is None:
             if self._srctype in ('T', 'B'):
                 raise KeyError("'temperature' variable was not specified in "
@@ -1530,8 +1542,12 @@ class RTE:
                                 'extinction': (['x', 'y', 'z'], atmosphere.gas_absorption.data),
                                 'ssalb': (['x', 'y', 'z'],
                                            np.zeros(atmosphere.gas_absorption.shape)),
-                                'table_index': (['x', 'y', 'z'],
-                                                np.zeros(atmosphere.gas_absorption.shape)),
+                                'table_index': (['num_micro', 'x', 'y', 'z'],
+                                                np.zeros((1,)+atmosphere.gas_absorption.shape,
+                                                dtype=np.int)),
+                                'phase_weights': (['num_micro', 'x', 'y', 'z'],
+                                                np.ones((1,)+atmosphere.gas_absorption.shape,
+                                                dtype=np.float32)),
                                 'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
                                             np.zeros((6, 0, 0)))
                             },
@@ -1671,6 +1687,8 @@ class RTE:
         self._solacc = numerical_params.solution_accuracy.data
         self._highorderrad = numerical_params.high_order_radiance.data
         self._iterfixsh = int(numerical_params.iterfixsh.data)
+        self._tautol = numerical_params.tautol.data
+        self._angle_set = numerical_params.angle_set.data
 
         if self._deltam.dtype != np.bool:
             raise TypeError("numerical_params.deltam should be of boolean type.")
@@ -1688,12 +1706,14 @@ class RTE:
         if self._ipflag not in np.arange(8):
             raise ValueError("numerical_params.ip_flag should be an integer "
                              "in (0, 1, 2, 3, 4, 5, 6, 7, 8) not '{}'".format(self._ipflag))
+        # bcflag is set in _setup_grid and ipflag may be modified there to handle the
+        # nx/ny = 1 special case.
 
-        self._bcflag = 0
-        if (numerical_params.x_boundary_condition == 'open') & (self._ipflag in (0, 2, 4, 6)):
-            self._bcflag += 1
-        if (numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0, 1, 4, 5)):
-            self._bcflag += 2
+        if self._angle_set not in (1,2,3):
+            raise ValueError(
+                "Numerical Parameter 'angle_set' must be in the set (1, 2, 3). See "
+                "default_config.json or shdom.txt for more details."
+            )
 
         return numerical_params
 
@@ -1721,6 +1741,10 @@ class RTE:
         self._pa.npx = grid.dims['x']
         self._pa.npy = grid.dims['y']
         self._pa.npz = grid.dims['z']
+        #All grids start from 0.0, xstart should be used only
+        #for MPI as each worker will have different starting positions.
+        assert np.allclose(grid.x[0], 0.0), 'X-dimension of property grid should start from 0.0'
+        assert np.allclose(grid.y[0], 0.0), 'Y-dimension of property grid should start from 0.0'
         self._pa.xstart = grid.x[0]
         self._pa.ystart = grid.y[0]
 
@@ -1729,9 +1753,33 @@ class RTE:
         self._pa.zlevels = grid.z.data
 
         # Initialize shdom internal grid sizes to property array grid
-        self._nx = self._pa.npx
-        self._ny = self._pa.npy
-        self._nz = self._pa.npz
+        # If SHDOM grid sizes aren't specified. If they are then the
+        # override.
+        self._nx = self._pa.npx if 'nx' not in grid.data_vars else grid.nx.data
+        self._ny = self._pa.npy if 'ny' not in grid.data_vars else grid.ny.data
+        self._nz = self._pa.npz if 'nz' not in grid.data_vars else grid.nz.data
+
+        # gridtype = 'P': Z levels taken from property file
+        self._gridtype = 'E' if 'nz' in grid.data_vars else 'P'
+        # If a vertical resolution is specified we use an equispaced vertical
+        # grid for SHDOM overriding the property grid vertical levels.
+
+        if self._nz < self._pa.npz:
+            warnings.warn(
+                "SHDOM vertical resolution nz={}, is less than property grid"
+                " npz={}".format(self._nz, self._pa.npz)
+                )
+        if self._nx < self._pa.npx:
+            warnings.warn(
+                "SHDOM X resolution nz={}, is less than property grid"
+                " npz={}".format(self._nx, self._pa.npx)
+                )
+        if self._ny < self._pa.npy:
+            warnings.warn(
+                "SHDOM Y resolution nz={}, is less than property grid"
+                " npz={}".format(self._ny, self._pa.npy)
+                )
+
         self._maxpg = grid.dims['x'] * grid.dims['y'] * grid.dims['z']
         self._maxnz = grid.dims['z']
 
@@ -1741,8 +1789,18 @@ class RTE:
         self._nx, self._ny, self._nz = \
             max(1, self._nx), max(1, self._ny), max(2, self._nz)
 
-        # gridtype = 'P': Z levels taken from property file
-        self._gridtype = 'P'
+        # if single plane or column then force independent pixel mode.
+        if self._nx == 1:
+            self._ipflag = self._ipflag | (1<<0) #first bit for X-dim.
+        if self._ny == 1:
+            self._ipflag = self._ipflag | (1<<1) # second bit for Y-dim.
+
+        # set boundary condition flag based on updated information about ipflag.
+        self._bcflag = 0
+        if (self.numerical_params.x_boundary_condition == 'open') & (self._ipflag in (0, 2, 4, 6)):
+            self._bcflag += 1
+        if (self.numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0, 1, 4, 5)):
+            self._bcflag += 2
 
         # Set up base grid point actual size (NX1xNY1xNZ)
         self._nx1, self._ny1 = self._nx + 1, self._ny + 1
@@ -1750,7 +1808,7 @@ class RTE:
             self._nx1 -= 1
         if self._bcflag & 7 or ibits(self._ipflag, 1, 1):
             self._ny1 -= 1
-        self._nbpts = self._nx * self._ny * self._nz
+        self._nbpts = self._nx1 * self._ny1 * self._nz
 
         # Calculate the number of base grid cells depending on the BCFLAG
         self._nbcells = (self._nz - 1) * (self._nx + ibits(self._bcflag, 0, 1) - \
@@ -1820,8 +1878,14 @@ class RTE:
             self._nphi0max = self._nphi
         else:
             raise AttributeError
-        self._memword = self._nmu * (2 + 2 * self._nphi + 2 * self._nlm + 2 * 33 * 32)
 
+        #max_legendre and numphase are recalculated
+        max_legendre = max([scatterer.sizes['legendre_index'] for
+                            scatterer in self.medium.values()])
+        numphase = sum([scatterer.sizes['table_index'] for
+                        scatterer in self.medium.values()])
+        self._memword = self._nmu * (2 + 2 * self._nphi + 2 * self._nlm + 2 * 33 * 32) \
+                        + 4.5*self._maxpg + 2*numphase*self._nstleg*max_legendre
         # Guess maximum number of grid points, cells, SH vector size needed
         # but don't let MAX_TOTAL_MB be exceeded
 
@@ -1863,8 +1927,8 @@ class RTE:
         wantmem = self._adapt_grid_factor * self._nbpts * (
             28 + 16.5 * self._cell_to_point_ratio + self._nphi0max * self._nstokes + \
             self._num_sh_term_factor * self._nstokes * self._nlm * self._big_arrays)
-
         reduce = min(1.0, ((self._max_total_mb * 1024 ** 2) / 4 - self._memword) / wantmem)
+
         self._adapt_grid_factor *= reduce
         if self._adapt_grid_factor < 1.0:
             raise pyshdom.exceptions.SHDOMError(
@@ -1891,8 +1955,23 @@ class RTE:
 
         #These are the sizes of the main arrays.
         self._maxig = int(self._adapt_grid_factor * self._nbpts)
-        self._maxic = int(self._cell_to_point_ratio * self._maxig)
-        self._maxiv = int(self._num_sh_term_factor * self._nlm * self._maxig)
+        self._maxic = max(int(self._cell_to_point_ratio * self._maxig), self._nbcells)
+        maxiv = int(self._num_sh_term_factor * self._nlm * self._maxig)
+        if maxiv < self._nbpts*4:
+            warnings.warn("User specified MAXIV={} is smaller than the minimum needed "
+                "to initialize the radiance fields. It has been increased to {}.".format(
+                    maxiv, self._nbpts*4
+                    )
+                )
+        self._maxiv = max(maxiv, self._nbpts*4) #at minimum we need enough to allocate the
+                                                # L=1 radiances on the base grid
+                                                # or we will segfault in COMPUTE_SOURCE
+                                                # as pointers are made in INIT_RADIANCE
+                                                # assuming there is enough room.
+                                                # For balancing of adaptive grid points and
+                                                # spherical harmonics you are on your own but
+                                                # should trigger informative exceptions.
+
         self._maxido = self._maxig * self._nphi0max
 
         #important that these numbers are smaller than sys._max_int32_size or
@@ -1927,15 +2006,37 @@ class RTE:
         as well as the arrays that will be used in the solution of SHDOM.
         The SHDOM optical properties includes adaptive points and may be delta-M scaled.
         """
-
         # Iterate over all particle types and aggregate the legendre scattering table
-        self._pa.extinctp = np.zeros(shape=[self._nbpts, len(self.medium)], dtype=np.float32)
-        self._pa.albedop = np.zeros(shape=[self._nbpts, len(self.medium)], dtype=np.float32)
-        self._pa.iphasep = np.zeros(shape=[self._nbpts, len(self.medium)], dtype=np.int32)
+
+        # sefl._maxpg is different to self._nbpts as that has the extra boundary points.
+        self._pa.extinctp = np.zeros(shape=[self._maxpg, len(self.medium)], dtype=np.float32)
+        self._pa.albedop = np.zeros(shape=[self._maxpg, len(self.medium)], dtype=np.float32)
+
+        # find maximum number of phase pointers across all species.
+        self._pa.max_num_micro = max(
+            [scatterer.num_micro.size for scatterer in self.medium.values()]
+        )
+
+        self._pa.iphasep = np.zeros(
+            shape=[self._pa.max_num_micro, self._maxpg, len(self.medium)],
+            dtype=np.int32
+        )
+        self._pa.phasewtp = np.zeros(
+            shape=[self._pa.max_num_micro, self._maxpg, len(self.medium)],
+            dtype=np.float32
+        )
+
         for i, scatterer in enumerate(self.medium.values()):
             self._pa.extinctp[:, i] = scatterer.extinction.data.ravel()
             self._pa.albedop[:, i] = scatterer.ssalb.data.ravel()
-            self._pa.iphasep[:, i] = scatterer.table_index.data.ravel() + self._pa.iphasep.max()
+            self._pa.iphasep[..., i] = scatterer.table_index.pad(
+                {'num_micro': (0, self._pa.max_num_micro-scatterer.num_micro.size)},
+                 constant_values=1
+                ).data.reshape(self._pa.max_num_micro, -1) + self._pa.iphasep.max()
+            self._pa.phasewtp[..., i] = scatterer.phase_weights.pad(
+                {'num_micro': (0, self._pa.max_num_micro-scatterer.num_micro.size)},
+                constant_values=0.0
+                ).data.reshape(self._pa.max_num_micro, -1)
 
         #In regions which are not covered by any optical scatterer they have an iphasep of 0.
         #In original SHDOM these would be pointed to the rayleigh phase function
@@ -1964,17 +2065,16 @@ class RTE:
         # Determine the number of legendre coefficient for a given angular resolution
         self._nleg = self._ml + 1 if self._deltam else self._ml
 
-        self._nleg = max(legendre_table.sizes['legendre_index'] - 1, self._nleg)
-        self._nscatangle = max(36, min(721, 2 * self._nleg))
+        self._pa.nlegp = max(legendre_table.sizes['legendre_index'] - 1, self._nleg)
+        self._nscatangle = max(36, min(721, 2 * self._pa.nlegp))
 
         # Check if legendre table needs padding. It will only need
         # padding if angular resolution is larger than the number of
-        # non-zero phase function legendre coefficients. That is a
-        # rare occurrence so it may not have been properly tested.
-        if self._nleg > legendre_table.sizes['legendre_index']:
+        # non-zero phase function legendre coefficients.
+        if self._pa.nlegp > legendre_table.sizes['legendre_index']:
             legendre_table = legendre_table.pad(
                 {'legendre_index':
-                 (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])
+                 (0, 1 + self._pa.nlegp - legendre_table.sizes['legendre_index'])
                 }, constant_values=0.0
             )
 
@@ -1987,11 +2087,11 @@ class RTE:
             self._pa.legenp = legendre_table.data.ravel(order='F').astype(np.float32)
 
         self._maxasym = np.max(legendre_table.isel(stokes_index=0, legendre_index=1).data / 3.0)
-        self._maxpgl = self._maxpg * legendre_table.sizes['legendre_index']
+        self._maxpgl = self._nstleg * self._pa.numphase * (legendre_table.sizes['legendre_index']+1)
 
         if legendre_table.sizes['table_index'] > 0:
-            self._maxigl = legendre_table.sizes['table_index'] * \
-            (legendre_table.sizes['legendre_index'] + 1)
+            self._maxigl = self._nstleg*legendre_table.sizes['table_index'] * \
+            (self._pa.nlegp + 1)
         else:
             self._maxigl = self._maxig * (legendre_table.sizes['legendre_index'] + 1)
 
@@ -2004,9 +2104,21 @@ class RTE:
         # have shape=(npts, nparticles) as the relative contribution of each
         # particle to the total extinction is needed for the mixing of the phase
         # functions during the source function calculation.
+        # Note that this is not perfectly optimized in terms of space. Especially
+        # the phaseinterpwt and iphase.
+        # Technically, the albedo/extinct of each
+        # species is only needed for the source computation and could be absorbed
+        # into the phaseinterpwt which would remove the need for a 'particle' dimension
+        # and wasted space when some 'particles' have much more micro dimensions
+        # than others. Important thing is making sure the derivatives work similarly.
         self._temp, self._planck, self._extinct, self._albedo, self._legen, \
         self._iphase, self._total_ext, self._extmin, self._scatmin,         \
-        self._albmax = pyshdom.core.transfer_pa_to_grid(
+        self._albmax, ierr, errmsg, self._phaseinterpwt                  \
+         = pyshdom.core.transfer_pa_to_grid(
+            phasewtp=self._pa.phasewtp,
+            maxnmicro=self._pa.max_num_micro,
+            nlegp=self._pa.nlegp,
+            phasemax=self._phasemax,
             nstleg=self._nstleg,
             npart=self._npart,
             extinctp=self._pa.extinctp,
@@ -2022,6 +2134,7 @@ class RTE:
             nzckd=self._pa.nzckd,
             zckd=self._pa.zckd,
             gasabs=self._pa.gasabs,
+            maxpg=self._maxpg,
             ml=self._ml,
             mm=self._mm,
             numphase=self._pa.numphase,
@@ -2036,22 +2149,35 @@ class RTE:
             npy=self._pa.npy,
             npz=self._pa.npz,
             srctype=self._srctype,
-            npts=self._npts)
+            npts=self._npts,
+            interpmethod=self._interpmethod,
+            )
+        pyshdom.checks.check_errcode(ierr, errmsg)
 
         #calculate cell averaged extinctions so that warnings can be raised
         #about optical thickness of cells. High optical thickness across a cell
         #leads to lower accuracy for SHDOM.
-        reshaped_ext = self._total_ext[:self._nbpts].reshape(self._nx, self._ny, self._nz)
-        cell_averaged_extinct = (reshaped_ext[1:, 1:, 1:] + reshaped_ext[1:, 1:, :-1] +   \
-                                 reshaped_ext[1:, :-1, 1:] + reshaped_ext[1:, :-1, :-1] + \
-                                 reshaped_ext[:-1, 1:, 1:] + reshaped_ext[:-1, 1:, :-1] + \
-                                 reshaped_ext[:-1, :-1, 1:] + reshaped_ext[:-1, :-1, :-1])/8.0
+        reshaped_ext = self._total_ext[:self._nbpts].reshape(self._nx1, self._ny1, self._nz)
+        if self._nx1 == 1:
+            cell_averaged_extinct = (reshaped_ext[:, 1:, 1:] + reshaped_ext[:, 1:, :-1] +   \
+                                     reshaped_ext[:, :-1, 1:] + reshaped_ext[:, :-1, :-1])/4.0
+        elif self._ny1 == 1:
+            cell_averaged_extinct = (reshaped_ext[:1, :, 1:] + reshaped_ext[:1, :, :-1] + \
+                                 reshaped_ext[:-1, :, 1:] + reshaped_ext[:-1, :, :-1])/4.0
+        else:
+            cell_averaged_extinct = (reshaped_ext[1:, 1:, 1:] + reshaped_ext[1:, 1:, :-1] +   \
+                                     reshaped_ext[1:, :-1, 1:] + reshaped_ext[1:, :-1, :-1] + \
+                                     reshaped_ext[:-1, 1:, 1:] + reshaped_ext[:-1, 1:, :-1] + \
+                                     reshaped_ext[:-1, :-1, 1:] + reshaped_ext[:-1, :-1, :-1])/8.0
         cell_volume = (np.diff(self._pa.zlevels)*self._pa.delx.data*self._pa.dely.data)**(1/3)
         cell_tau_approx = cell_volume[np.newaxis, np.newaxis, :]*cell_averaged_extinct
         number_thick_cells = np.sum(cell_tau_approx >= 2.0)
 
+        # compute something for the gradient later.
+        self._maxsubgridints = int(np.nanmean(cell_tau_approx) / self._tautol)
+
         if number_thick_cells > 0:
-            warnings.warn("Number of property grid cells with optical depth greater than 2: '{}'. "
+            warnings.warn("Number of SHDOM grid cells with optical depth greater than 2: '{}'. "
                           "Max cell optical depth: '{}'".format(
                               number_thick_cells, np.max(cell_tau_approx)
                               )
@@ -2123,7 +2249,8 @@ class RTE:
         self._dirflux = np.zeros((self._maxig), dtype=np.float32, order='F')
         self._work1 = np.zeros((8*self._maxig), dtype=np.int32, order='F')
         self._work = np.zeros((self._maxido*self._nstokes), dtype=np.float32, order='F')
-        self._work2 = np.zeros((self._maxig*self._nstokes), dtype=np.float32, order='F')
+        self._work2_size = max((self._maxig*self._nstokes, self._maxic))
+        self._work2 = np.zeros((self._work2_size), dtype=np.float32, order='F')
         self._bcrad = np.zeros((self._nstokes, self._maxbcrad), dtype=np.float32, order='F')
         self._fluxes = np.zeros((2, self._maxig), dtype=np.float32, order='F')
 
@@ -2159,8 +2286,19 @@ class RTE:
         self._delyd, self._deljdot, self._deljold, self._deljnew, self._jnorm, \
         self._fftflag, self._cmu1, self._cmu2, self._wtmu, self._cphi1, \
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
-        self._uniform_sfc_brdf, self._sfc_brdf_do = pyshdom.core.init_solution(
+        self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg \
+         = pyshdom.core.init_solution(
+            ordinateset=self._angle_set,
+            phasewtp=self._pa.phasewtp,
+            maxnmicro=self._pa.max_num_micro,
+            adjflag=self._adjflag,
+            nlegp=self._pa.nlegp,
+            phasemax=self._phasemax,
+            interpmethod=self._interpmethod,
+            phaseinterpwt=self._phaseinterpwt,
             work=self._work,
+            work2_size=self._work2_size,
+            maxpg=self._maxpg,
             ndelsource=self._ndelsource,
             work1=self._work1,
             work2=self._work2,
@@ -2255,25 +2393,34 @@ class RTE:
             maxsfcpars=self._maxsfcpars,
             nphi0max=self._nphi0max
         )
+        pyshdom.checks.check_errcode(ierr, errmsg)
 
     def _precompute_phase(self):
         """
         Precompute angular scattering for the entire legendre table.
         Perform a negativity check. (negcheck=True).
         """
-        self._phasetab = pyshdom.core.precompute_phase_check(
+        # Use the property phase table as LEGEN is truncated to
+        # only include the L indices needed for the solver
+        # whereas legenp holds the full phase functions.
+        legen_reshape = self._pa.legenp.reshape(
+            (self._nstleg, self._pa.nlegp+1,self._pa.numphase),
+            order='F'
+        )
+        self._phasetab, errmsg, ierr = pyshdom.core.precompute_phase_check(
             negcheck=True,
             nscatangle=self._nscatangle,
             numphase=self._pa.numphase,
             nstphase=self._nstphase,
             nstokes=self._nstokes,
             nstleg=self._nstleg,
-            nleg=self._nleg,
+            nleg=self._pa.nlegp,
             ml=self._ml,
             nlm=self._nlm,
-            legen=self._legen,
-            deltam=self._deltam
+            legen=legen_reshape,
+            deltam=self._deltam,
         )
+        pyshdom.checks.check_errcode(ierr, errmsg)
 
     def _make_direct(self):
         """
@@ -2292,7 +2439,10 @@ class RTE:
                 ipflag=self._ipflag,
                 deltam=self._deltam,
                 ml=self._ml,
-                nleg=self._nleg,
+                nlegp=self._pa.nlegp,
+                maxnmicro=self._pa.max_num_micro,
+                maxpg=self._maxpg,
+                npart=self._npart,
                 solarflux=self._solarflux,
                 solarmu=self._solarmu,
                 solaraz=self._solaraz,
@@ -2311,6 +2461,7 @@ class RTE:
                 albedop=self._pa.albedop,
                 legenp=self._pa.legenp,
                 iphasep=self._pa.iphasep,
+                phasewtp=self._pa.phasewtp,
                 nzckd=self._pa.nzckd,
                 zckd=self._pa.zckd,
                 gasabs=self._pa.gasabs

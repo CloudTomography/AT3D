@@ -61,16 +61,14 @@ def to_grid(wavelengths, atmosphere, rte_grid):
         dims=['wavelength', 'z']
     )
 
-    rayleigh_table_index = xr.DataArray(
-        name='table_index',
-        data = np.ones(rayleigh_extinction.extinction.shape, dtype=np.int),
-        dims=['wavelength', 'z']
-    )
+    rayleigh = xr.merge([rayleigh_extinction,rayleigh_ssalb]).broadcast_like(rte_grid)
 
-    rayleigh = xr.merge([rayleigh_extinction,rayleigh_ssalb, rayleigh_table_index]).broadcast_like(rte_grid)
+    rayleigh['phase_weights'] = (['num_micro', 'x', 'y', 'z','wavelength'], np.ones((1,) +rayleigh.extinction.shape, dtype=np.float32))
+    rayleigh['table_index'] = (['num_micro', 'x', 'y', 'z','wavelength'], np.ones((1,) +rayleigh.extinction.shape, dtype=np.int32))
 
     rayleigh = rayleigh.set_coords('table_index')
     rayleigh_final = xr.merge([rayleigh, rayleigh_poly_tables.expand_dims(dim='table_index', axis=-2)])
+
 
     output = OrderedDict()
     for wavelength in wavelengths:

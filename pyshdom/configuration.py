@@ -10,22 +10,24 @@ def make_config(config_file_name, x_boundary_condition='open',
                 y_boundary_condition='open',
                 num_mu_bins=16, num_phi_bins=32,
                 split_accuracy=0.03, deltam=True,
-                spherical_harmonics_accuracy=0.01,
+                spherical_harmonics_accuracy=0.0,
                 solution_accuracy=0.0001,
                 acceleration_flag=True,
-                max_total_mb=10000.0,
+                max_total_mb=3000.0,
                 adapt_grid_factor=5,
-                num_sh_term_factor=5,
+                num_sh_term_factor=1,
                 cell_to_point_ratio=1.5,
                 high_order_radiance=False,
                 ip_flag=0,
-                iterfixsh=30):
+                iterfixsh=30,
+                tautol=0.2,
+                angle_set=2):
     """
     See default_config.json for description of parameters along with shdom.txt
     or read this function's code.
     """
     if config_file_name == 'default_config':
-        raise ValueError("Config file cannot overwrite default")
+       raise ValueError("Config file cannot overwrite default")
 
     shdom_parameters = {
         'x_boundary_condition': {
@@ -98,6 +100,14 @@ def make_config(config_file_name, x_boundary_condition='open',
         'iterfixsh': {
             'default_value': iterfixsh,
             'description': 'The number of iterations after which the spherical harmonic truncation is fixed.'
+        },
+        'tautol': {
+            'default_value': tautol,
+            'description': 'The maximum optical path length for integration of radiances. Only affects radiance accuracy.'
+        },
+        'angle_set': {
+            'default_value': angle_set,
+            'description': 'The angle set used for the discrete ordinates. Gaussian: 1, Reduced Gaussian: 2, Reduced Double Gaussian: 3.'
         }
     }
 

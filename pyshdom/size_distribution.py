@@ -17,6 +17,7 @@ all that is required is to add a callable similar to `gamma`/`lognormal` that
 generates the weight of the distribution at a set range of radii given the
 input parameters.
 """
+import typing
 from collections import OrderedDict
 import xarray as xr
 import numpy as np
@@ -68,7 +69,7 @@ def gamma(radii, reff, veff=None, alpha=None, particle_density=1.0):
     #fortran subroutine requires a 'gamma' variable to be passed.
     gamma_values = np.zeros(alpha.shape)
 
-    number_density = pyshdom.core.make_multi_size_dist(
+    number_density, ierr, errmsg = pyshdom.core.make_multi_size_dist(
                 distflag='G',
                 pardens=particle_density,
                 nsize=len(radii),
@@ -77,6 +78,7 @@ def gamma(radii, reff, veff=None, alpha=None, particle_density=1.0):
                 alpha=alpha,
                 gamma=gamma_values,
                 ndist=reff.size)
+    pyshdom.checks.check_errcode(ierr, errmsg)
     return number_density
 
 
@@ -126,7 +128,7 @@ def lognormal(radii, reff, veff=None, alpha=None, particle_density=1.0):
     #fortran subroutine requires a 'gamma' attribute to be passed.
     gamma_values = np.zeros(alpha.shape)
 
-    number_density = pyshdom.core.make_multi_size_dist(
+    number_density, ierr, errmsg = pyshdom.core.make_multi_size_dist(
                 distflag='L',
                 pardens=particle_density,
                 nsize=len(radii),
@@ -135,6 +137,7 @@ def lognormal(radii, reff, veff=None, alpha=None, particle_density=1.0):
                 alpha=alpha,
                 gamma=gamma_values,
                 ndist=reff.size)
+    pyshdom.checks.check_errcode(ierr, errmsg)
     return number_density
 
 
@@ -166,9 +169,13 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
                The number of points sampling this dimension.
            'spacing': string
                The type of spacing. Either 'logarithmic' or 'linear'.
+           'coord': 1D array
+                This overrides the above arguments and specifies the exact
+                points to sample along this dimension.
            'units': string
                The units of the microphysical dimension.
-
+        Alternatively, if a 1D numpy array is specified it will be interpreted as
+        the 'coord' argument.
     Returns
     -------
     size_dist_grid: xarray.Dataset
@@ -213,20 +220,27 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
             radius_units:       radius units [micron]
 
     """
+
     coord_list = []
     name_list = []
     for name, parameter in size_distribution_parameters.items():
-        if parameter['spacing'] == 'logarithmic':
-            coord = np.logspace(np.log10(parameter['coord_min']),
-                                np.log10(parameter['coord_max']),
-                                parameter['npoints'])
-        elif parameter['spacing'] == 'linear':
-            coord = np.linspace(parameter['coord_min'],
-                                parameter['coord_max'],
-                                parameter['npoints'])
+        if isinstance(parameter, np.ndarray):
+            if parameter.ndim == 1:
+                coord_list.append(parameter)
+        elif 'coords' in parameter:
+            coord_list.append(parameter['coords'])
         else:
-            raise NotImplementedError
-        coord_list.append(coord)
+            if parameter['spacing'] == 'logarithmic':
+                coord = np.logspace(np.log10(parameter['coord_min']),
+                                    np.log10(parameter['coord_max']),
+                                    parameter['npoints'])
+            elif parameter['spacing'] == 'linear':
+                coord = np.linspace(parameter['coord_min'],
+                                    parameter['coord_max'],
+                                    parameter['npoints'])
+            else:
+                raise NotImplementedError
+            coord_list.append(coord)
         name_list.append(name)
 
     meshgrid = np.meshgrid(*coord_list, indexing='ij')
@@ -255,8 +269,9 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
     # create "flat" attrs dictionary to enable saving to netCDF
     size_dist_attrs = OrderedDict()
     for name, parameter in size_distribution_parameters.items():
-        for _name, _param in parameter.items():
-            size_dist_attrs[f"{name}_{_name}"] = _param
+        if isinstance(parameter, typing.Dict):
+            for _name, _param in parameter.items():
+                size_dist_attrs[f"{name}_{_name}"] = _param
     size_dist_attrs['distribution_type'] = size_distribution_function.__name__
     size_dist_attrs['radius_units'] = 'radius units [{}]'.format(radius_units)
 

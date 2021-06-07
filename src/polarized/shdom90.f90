@@ -10,6 +10,8 @@
 !     as the solver.RTE object.
 !     Directives for the f2py wrapping have also been added.
 !     - JRLoveridge 2021/02/22
+!     Modifications have been made to accomodate new interpolation
+!     of phase functions in SHDOM. - JRLoveridge
 
 
       SUBROUTINE TRILIN_INTERP_PROP (X, Y, Z, INIT, NSTLEG, NLEG, &
@@ -17,7 +19,9 @@
                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY, &
                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
                      ALBEDOP, LEGENP, IPHASEP, NZCKD, &
-                     ZCKD, GASABS, EXTMIN, SCATMIN)
+                     ZCKD, GASABS, EXTMIN, SCATMIN, INTERPMETHOD, &
+                     IERR, ERRMSG, PHASEINTERPWT, NLEGP, MAXNMICRO, &
+                     PHASEWTP)
 !      Trilinearly interpolates the quantities on the input property
 !     grid at the single point (X,Y,Z) to get the output TEMP,EXTINCT,
 !     ALBEDO, and LEGEN or IPHASE.  Interpolation is done on the
@@ -27,23 +31,29 @@
 !     is that of the maximum weighted scattering property grid point.
 !     If INIT=.TRUE. then transfers the tabulated phase functions.
       IMPLICIT NONE
-      INTEGER NSTLEG, NLEG
-      INTEGER IPHASE
+      INTEGER NSTLEG, NLEG, NLEGP, MAXNMICRO
+      INTEGER IPHASE(8*MAXNMICRO)
       LOGICAL INIT
+      REAL PHASEINTERPWT(8*MAXNMICRO)
       REAL    X, Y, Z,  TEMP, EXTINCT, ALBEDO, LEGEN(NSTLEG,0:NLEG,*)
       INTEGER IX, IXP, IY, IYP, IZ, L, IL, IM, IU, J
       INTEGER I1, I2, I3, I4, I5, I6, I7, I8, I
       DOUBLE PRECISION U, V, W, F1, F2, F3, F4, F5, F6, F7, F8, F
       DOUBLE PRECISION SCAT1,SCAT2,SCAT3,SCAT4,SCAT5,SCAT6,SCAT7,SCAT8
       DOUBLE PRECISION SCATTER, MAXSCAT, KG, EXTMIN, SCATMIN
+      INTEGER Q, Q2, CURRENTI
+      CHARACTER INTERPMETHOD*2
+      INTEGER IERR
+      CHARACTER ERRMSG*600
 
       INTEGER NPX, NPY, NPZ
       INTEGER NUMPHASE
-      REAL DELX, DELY, XSTART, YSTART
+      REAL DELX, DELY, XSTART, YSTART, INTERPTEMP
       REAL ZLEVELS(*)
       REAL TEMPP(*), EXTINCTP(*), ALBEDOP(*)
       REAL LEGENP(*)
-      INTEGER IPHASEP(*)
+      INTEGER IPHASEP(MAXNMICRO, *)
+      REAL PHASEWTP(MAXNMICRO, *)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
 
@@ -52,7 +62,7 @@
         DO I = 1, NUMPHASE
           DO L = 0, NLEG
             DO J = 1, NSTLEG
-              LEGEN(J,L,I) = LEGENP(J+NSTLEG*(L+(NLEG+1)*(I-1)))/(2*L+1)
+              LEGEN(J,L,I) = LEGENP(J+NSTLEG*(L+(NLEGP+1)*(I-1)))/(2*L+1)
             ENDDO
           ENDDO
         ENDDO
@@ -78,8 +88,9 @@
       IX = INT((X-XSTART)/DELX) + 1
       IF (ABS(X-XSTART-NPX*DELX) .LT. 0.01*DELX) IX = NPX
       IF (IX .LT. 1 .OR. IX .GT. NPX) THEN
-        WRITE (6,*) 'TRILIN: Beyond X domain',IX,NPX,X,XSTART
-        STOP
+        IERR = 1
+        WRITE (ERRMSG,*) 'TRILIN: Beyond X domain',IX,NPX,X,XSTART
+        RETURN
       ENDIF
       IXP = MOD(IX,NPX) + 1
       U = DBLE(X-XSTART-DELX*(IX-1))/DELX
@@ -89,8 +100,9 @@
       IY = INT((Y-YSTART)/DELY) + 1
       IF (ABS(Y-YSTART-NPY*DELY) .LT. 0.01*DELY) IY = NPY
       IF (IY .LT. 1 .OR. IY .GT. NPY) THEN
-        WRITE (6,*) 'TRILIN: Beyond Y domain',IY,NPY,Y,YSTART
-        STOP
+        IERR = 1
+        WRITE (ERRMSG,*) 'TRILIN: Beyond Y domain',IY,NPY,Y,YSTART
+        RETURN
       ENDIF
       IYP = MOD(IY,NPY) + 1
       V = DBLE(Y-YSTART-DELY*(IY-1))/DELY
@@ -130,68 +142,165 @@
       SCAT7 = F7*EXTINCTP(I7)*ALBEDOP(I7)
       SCAT8 = F8*EXTINCTP(I8)*ALBEDOP(I8)
       SCATTER = SCAT1+SCAT2+SCAT3+SCAT4+SCAT5+SCAT6+SCAT7+SCAT8
+
       IF (EXTINCT .GT. EXTMIN) THEN
         ALBEDO = SCATTER/EXTINCT
       ELSE
         ALBEDO = SCATTER/EXTMIN
       ENDIF
 
-!         For tabulated phase functions pick the one we are on top of
-!         or the one with the most scattering weight.
-      IF (NUMPHASE .GT. 0) THEN
+      IPHASE(1:MAXNMICRO) = IPHASEP(:,I1)
+      IPHASE(MAXNMICRO+1:2*MAXNMICRO) = IPHASEP(:,I2)
+      IPHASE(2*MAXNMICRO+1:3*MAXNMICRO) = IPHASEP(:,I3)
+      IPHASE(3*MAXNMICRO+1:4*MAXNMICRO) = IPHASEP(:,I4)
+      IPHASE(4*MAXNMICRO+1:5*MAXNMICRO) = IPHASEP(:,I5)
+      IPHASE(5*MAXNMICRO+1:6*MAXNMICRO) = IPHASEP(:,I6)
+      IPHASE(6*MAXNMICRO+1:7*MAXNMICRO) = IPHASEP(:,I7)
+      IPHASE(7*MAXNMICRO+1:) = IPHASEP(:,I8)
+
+      IF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+        IF (SCATTER .GE. SCATMIN) THEN
+          PHASEINTERPWT(1:MAXNMICRO) = PHASEWTP(:,I1)*SCAT1/SCATTER
+          PHASEINTERPWT(MAXNMICRO+1:2*MAXNMICRO) = PHASEWTP(:,I2)*SCAT2/SCATTER
+          PHASEINTERPWT(2*MAXNMICRO+1:3*MAXNMICRO) = PHASEWTP(:,I3)*SCAT3/SCATTER
+          PHASEINTERPWT(3*MAXNMICRO+1:4*MAXNMICRO) = PHASEWTP(:,I4)*SCAT4/SCATTER
+          PHASEINTERPWT(4*MAXNMICRO+1:5*MAXNMICRO) = PHASEWTP(:,I5)*SCAT5/SCATTER
+          PHASEINTERPWT(5*MAXNMICRO+1:6*MAXNMICRO) = PHASEWTP(:,I6)*SCAT6/SCATTER
+          PHASEINTERPWT(6*MAXNMICRO+1:7*MAXNMICRO) = PHASEWTP(:,I7)*SCAT7/SCATTER
+          PHASEINTERPWT(7*MAXNMICRO+1:) = PHASEWTP(:,I8)*SCAT8/SCATTER
+        ELSE
+          PHASEINTERPWT(:MAXNMICRO) = PHASEWTP(:,I1)*SCAT1/SCATMIN
+          PHASEINTERPWT(MAXNMICRO+1:2*MAXNMICRO) = PHASEWTP(:,I2)*SCAT2/SCATMIN
+          PHASEINTERPWT(2*MAXNMICRO+1:3*MAXNMICRO) = PHASEWTP(:,I3)*SCAT3/SCATMIN
+          PHASEINTERPWT(3*MAXNMICRO+1:4*MAXNMICRO) = PHASEWTP(:,I4)*SCAT4/SCATMIN
+          PHASEINTERPWT(4*MAXNMICRO+1:5*MAXNMICRO) = PHASEWTP(:,I5)*SCAT5/SCATMIN
+          PHASEINTERPWT(5*MAXNMICRO+1:6*MAXNMICRO) = PHASEWTP(:,I6)*SCAT6/SCATMIN
+          PHASEINTERPWT(6*MAXNMICRO+1:7*MAXNMICRO) = PHASEWTP(:,I7)*SCAT7/SCATMIN
+          PHASEINTERPWT(7*MAXNMICRO+1:) = PHASEWTP(:,I8)*SCAT8/SCATMIN
+        ENDIF
+!       Search for non-unique phase function indices and consolidate
+!       weights so we don't waste time mixing phase functions if they
+!       are all the same anyway.
+        DO Q=1,8*MAXNMICRO
+          CURRENTI = IPHASE(Q)
+          DO Q2=Q+1,8*MAXNMICRO
+            IF (CURRENTI .EQ. IPHASE(Q2)) THEN
+              PHASEINTERPWT(Q) = PHASEINTERPWT(Q) + PHASEINTERPWT(Q2)
+              PHASEINTERPWT(Q2) = 0.0
+            ENDIF
+          ENDDO
+        ENDDO
+!       Reorder values so that the maximum phase weight
+!       is the first one so we can easily check
+!       if we can neglect the others later.
+        CALL SSORT(PHASEINTERPWT, IPHASE, 8*MAXNMICRO, -2)
+
+      ELSEIF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+
         MAXSCAT = -1.0
+        PHASEINTERPWT(:) = 0.0
+        PHASEINTERPWT(1) = 1.0
         IF (SCAT1 .GT. MAXSCAT .OR. ABS(F1-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I1), IPHASEP(:,I1), MAXNMICRO, -2)
           MAXSCAT = SCAT1
-          IPHASE = IPHASEP(I1)
+          IPHASE(1) = IPHASEP(1,I1)
         ENDIF
         IF (SCAT2 .GT. MAXSCAT .OR. ABS(F2-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I2), IPHASEP(:,I2), MAXNMICRO, -2)
           MAXSCAT = SCAT2
-          IPHASE = IPHASEP(I2)
+          IPHASE(1) = IPHASEP(1,I2)
         ENDIF
         IF (SCAT3 .GT. MAXSCAT .OR. ABS(F3-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I3), IPHASEP(:,I3), MAXNMICRO, -2)
           MAXSCAT = SCAT3
-          IPHASE = IPHASEP(I3)
+          IPHASE(1) = IPHASEP(1,I3)
         ENDIF
         IF (SCAT4 .GT. MAXSCAT .OR. ABS(F4-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I4), IPHASEP(:,I4), MAXNMICRO, -2)
           MAXSCAT = SCAT4
-          IPHASE = IPHASEP(I4)
+          IPHASE(1) = IPHASEP(1,I4)
         ENDIF
         IF (SCAT5 .GT. MAXSCAT .OR. ABS(F5-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I5), IPHASEP(:,I5), MAXNMICRO, -2)
           MAXSCAT = SCAT5
-          IPHASE = IPHASEP(I5)
+          IPHASE(1) = IPHASEP(1,I5)
         ENDIF
         IF (SCAT6 .GT. MAXSCAT .OR. ABS(F6-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I6), IPHASEP(:,I6), MAXNMICRO, -2)
           MAXSCAT = SCAT6
-          IPHASE = IPHASEP(I6)
+          IPHASE(1) = IPHASEP(1,I6)
         ENDIF
         IF (SCAT7 .GT. MAXSCAT .OR. ABS(F7-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I7), IPHASEP(:,I7), MAXNMICRO, -2)
           MAXSCAT = SCAT7
-          IPHASE = IPHASEP(I7)
+          IPHASE(1) = IPHASEP(1,I7)
         ENDIF
         IF (SCAT8 .GT. MAXSCAT .OR. ABS(F8-1) .LT. 0.001) THEN
+          CALL SSORT(PHASEWTP(:,I8), IPHASEP(:,I8), MAXNMICRO, -2)
           MAXSCAT = SCAT8
-          IPHASE = IPHASEP(I8)
+          IPHASE(1) = IPHASEP(1,I8)
         ENDIF
-      ELSE
-!        Standard property file format: unpolarized
-        LEGEN(1,0,1) = 1.0
-        DO L = 1, NLEG
-          LEGEN(1,L,1) = SCAT1*LEGENP(L+(NLEG+1)*(I1-1)) &
-                    + SCAT2*LEGENP(L+(NLEG+1)*(I2-1)) &
-                    + SCAT3*LEGENP(L+(NLEG+1)*(I3-1)) &
-                    + SCAT4*LEGENP(L+(NLEG+1)*(I4-1)) &
-                    + SCAT5*LEGENP(L+(NLEG+1)*(I5-1)) &
-                    + SCAT6*LEGENP(L+(NLEG+1)*(I6-1)) &
-                    + SCAT7*LEGENP(L+(NLEG+1)*(I7-1)) &
-                    + SCAT8*LEGENP(L+(NLEG+1)*(I8-1))
-          IF (SCATTER .GT. SCATMIN) THEN
-            LEGEN(1,L,1) = LEGEN(1,L,1)/SCATTER
-          ELSE
-            LEGEN(1,L,1) = LEGEN(1,L,1)/SCATMIN
-          ENDIF
-          LEGEN(1,L,1) = LEGEN(1,L,1)/(2*L+1)
-        ENDDO
       ENDIF
+
+!     SHDOM's interpolation scheme below, the tabulated version is covered
+!     by the latter case above.
+!         For tabulated phase functions pick the one we are on top of
+!         or the one with the most scattering weight.
+!       IF (NUMPHASE .GT. 0) THEN
+!         MAXSCAT = -1.0
+!         IF (SCAT1 .GT. MAXSCAT .OR. ABS(F1-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT1
+!           IPHASE = IPHASEP(I1)
+!         ENDIF
+!         IF (SCAT2 .GT. MAXSCAT .OR. ABS(F2-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT2
+!           IPHASE = IPHASEP(I2)
+!         ENDIF
+!         IF (SCAT3 .GT. MAXSCAT .OR. ABS(F3-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT3
+!           IPHASE = IPHASEP(I3)
+!         ENDIF
+!         IF (SCAT4 .GT. MAXSCAT .OR. ABS(F4-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT4
+!           IPHASE = IPHASEP(I4)
+!         ENDIF
+!         IF (SCAT5 .GT. MAXSCAT .OR. ABS(F5-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT5
+!           IPHASE = IPHASEP(I5)
+!         ENDIF
+!         IF (SCAT6 .GT. MAXSCAT .OR. ABS(F6-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT6
+!           IPHASE = IPHASEP(I6)
+!         ENDIF
+!         IF (SCAT7 .GT. MAXSCAT .OR. ABS(F7-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT7
+!           IPHASE = IPHASEP(I7)
+!         ENDIF
+!         IF (SCAT8 .GT. MAXSCAT .OR. ABS(F8-1) .LT. 0.001) THEN
+!           MAXSCAT = SCAT8
+!           IPHASE = IPHASEP(I8)
+!         ENDIF
+!       ELSE
+! !        Standard property file format: unpolarized
+!         LEGEN(1,0,1) = 1.0
+!         DO L = 1, NLEG
+!           LEGEN(1,L,1) = SCAT1*LEGENP(L+(NLEG+1)*(I1-1)) &
+!                     + SCAT2*LEGENP(L+(NLEG+1)*(I2-1)) &
+!                     + SCAT3*LEGENP(L+(NLEG+1)*(I3-1)) &
+!                     + SCAT4*LEGENP(L+(NLEG+1)*(I4-1)) &
+!                     + SCAT5*LEGENP(L+(NLEG+1)*(I5-1)) &
+!                     + SCAT6*LEGENP(L+(NLEG+1)*(I6-1)) &
+!                     + SCAT7*LEGENP(L+(NLEG+1)*(I7-1)) &
+!                     + SCAT8*LEGENP(L+(NLEG+1)*(I8-1))
+!           IF (SCATTER .GT. SCATMIN) THEN
+!             LEGEN(1,L,1) = LEGEN(1,L,1)/SCATTER
+!           ELSE
+!             LEGEN(1,L,1) = LEGEN(1,L,1)/SCATMIN
+!           ENDIF
+!           LEGEN(1,L,1) = LEGEN(1,L,1)/(2*L+1)
+!         ENDDO
+!       ENDIF
+
 
 !         Add in the gaseous absorption to extinction and albedo
       IF (NZCKD .GT. 0) THEN
@@ -224,7 +333,7 @@
 
 
       SUBROUTINE DIRECT_BEAM_PROP (INIT, XI, YI, ZI, BCFLAG, IPFLAG, &
-                     DELTAM, ML, NSTLEG, NLEG, SOLARFLUX, SOLARMU, SOLARAZ, &
+                     DELTAM, ML, NSTLEG, NLEGP, SOLARFLUX, SOLARMU, SOLARAZ, &
                      DIRFLUX,  UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM, &
                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY, &
                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP, &
@@ -232,7 +341,7 @@
                      ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV, &
                      CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD, &
                      XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,&
-                     NBPTS)
+                     MAXPG, PHASEWTP, MAXNMICRO)
 !       Computes the direct beam flux at point (XI,YI,ZI) by integrating
 !     the extinction through the property grid.  If called with
 !     INIT=1 then the property grid extinction array, solar direction
@@ -257,12 +366,13 @@
 !     3=-Y, 4=+Y).  XE,YE,ZE returns the location of the exitting ray,
 !     and path is the optical path from XI,YI,ZI to the sun.
       IMPLICIT NONE
-      INTEGER INIT, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, SIDE, NBPTS
+      INTEGER INIT, BCFLAG, IPFLAG, ML, NSTLEG, NLEGP, SIDE, MAXPG
       LOGICAL DELTAM, VALIDBEAM
       REAL    XI, YI, ZI, SOLARFLUX, SOLARMU, SOLARAZ
       REAL    DIRFLUX, UNIFZLEV, XO, YO, ZO, DIRPATH
+      INTEGER MAXNMICRO
 
-      INTEGER IX, IY, IZ, JZ, IL, IM, IU
+      INTEGER IX, IY, IZ, JZ, IL, IM, IU, Q
       INTEGER I, J, K, L, IPH, IP, JP, I1, I2, I3, I4, IPA
       INTEGER IPDIRECT, DI, DJ, DK
       LOGICAL CONSTX, CONSTY, HITBOUNDARY, BTEST
@@ -286,9 +396,10 @@
       INTEGER NUMPHASE, NPART
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
-      REAL TEMPP(*), EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
+      REAL TEMPP(*), EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG,NPART)
       REAL LEGENP(*), EXTDIRP(*)
-      INTEGER IPHASEP(NBPTS,NPART)
+      INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
+      REAL PHASEWTP(MAXNMICRO,MAXPG,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
 
@@ -338,13 +449,13 @@
                 ENDIF
 !                 Do the Delta-M scaling if needed
                 IF (DELTAM) THEN
-                  IF (NUMPHASE .GT. 0) THEN
-                    IPH = IPHASEP(IP,IPA)
-                  ELSE
-                    IPH = IP
-                  ENDIF
                   L = ML+1
-                  F = LEGENP(1+NSTLEG*(L+(NLEG+1)*(IPH-1)))/(2*L+1)
+                  F = 0.0D0
+                  DO Q=1,MAXNMICRO
+                    IPH = IPHASEP(Q,IP,IPA)
+                    F = F + PHASEWTP(Q,IP,IPA)* &
+                      LEGENP(1+NSTLEG*(L+(NLEGP+1)*(IPH-1)))/(2*L+1)
+                  ENDDO
                   EXTINCT = (1.0-ALBEDO*F)*EXTINCT
                 ENDIF
                 EXTDIRP(IP) = EXTDIRP(IP) + EXTINCT
@@ -546,10 +657,10 @@
 
 !           Compute the distance to the next grid plane in  X, Y, and Z
 !             If in horizontal uniform region or doing IP then fix X and/or Y.
-        IF (ZE .GE. UNIFORMZLEV) THEN
-          CONSTX = .TRUE.
-          CONSTY = .TRUE.
-        ENDIF
+        ! IF (ZE .GE. UNIFORMZLEV) THEN
+        !   CONSTX = .TRUE.
+        !   CONSTY = .TRUE.
+        ! ENDIF
         IF (CONSTX) THEN
           SOX = 1.0E30
         ELSE IF (CX .GT. 0.0) THEN

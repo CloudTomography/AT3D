@@ -29,6 +29,7 @@ from joblib import Parallel, delayed
 import numpy as np
 import xarray as xr
 import warnings
+import typing
 
 import pyshdom.core
 import pyshdom.gradient
@@ -81,28 +82,47 @@ class SensorsDict(OrderedDict):
             self._add_instrument(instrument)
         self[instrument]['uncertainty_model'] = uncertainty_model
 
-    def add_noise(self, instrument, nstokes):
-        """Add noise to the observables in the sensors for the
-        specified instrument according to the prescribed noise model.
+    def calculate_uncertainties(self, instrument):
+        """Evaluate the uncertainty matrix for each sensor using
+        the instrument's uncertainty model.
 
-        Paramaters
+        Parameters
         ----------
         instrument : Any Type
             The key for the instrument.
-        nstokes : int
-            The number of Stokes Components in the RTE solver.
+        """
+        if 'uncertainty_model' not in self[instrument]:
+            raise KeyError("There is no uncertainty model for instrument '{}'."
+                " please add one.")
+        for sensor in self[instrument]['sensor_list']:
+            self[instrument]['uncertainty_model'].calculate_uncertainties(sensor)
+
+    def add_noise(self, instrument):
+        """Add noise to the observables in the sensors for the
+        specified instrument according to the prescribed noise model.
+
+        Parameters
+        ----------
+        instrument : Any Type
+            The key for the instrument.
         """
         for sensor in self[instrument]['sensor_list']:
-            self[instrument]['uncertainty_model'].add_noise(sensor, nstokes)
+            self[instrument]['uncertainty_model'].add_noise(sensor)
 
-    def make_forward_sensors(self):
+    def make_forward_sensors(self, instrument_list=None):
         """Make a deep copy of self.
 
         Used when wanting to exactly replicate the sensor geometry to store the
         output of the forward model during optimization.
         """
         forward_sensors = SensorsDict()
-        for key, instrument in self.items():
+        if instrument_list is None:
+            instrument_list = self
+        for key in instrument_list:
+            if not key in self:
+                raise KeyError("Instrument '{}' is not in SensorsDict")
+            instrument = self[key]
+        # for key, instrument in self.items():
             forward_instrument = OrderedDict()
             forward_instrument['sensor_list'] = [single_sensor.copy(deep=True) for
                                                  single_sensor in instrument['sensor_list']]
@@ -779,11 +799,28 @@ class SolversDict(OrderedDict):
                 "`unknown_scatterers` should be of type 'pyshdom.containers.UnknownScatterers'"
                 " not '{}'".format(type(unknown_scatterers))
                 )
+        wavelength_ordered_derivatives = OrderedDict()
         for key in self:
-            self[key].calculate_microphysical_partial_derivatives(
-                unknown_scatterers.table_to_grid_method,
-                unknown_scatterers.table_data[key]
+            wavelength_ordered_derivatives[key] = OrderedDict()
+
+        for scatterer_name, variable_data in unknown_scatterers.items():
+            data_generator = variable_data['dataset_generator'].optical_property_generator
+            if (isinstance(data_generator, pyshdom.medium.OpticalDerivativeGenerator) &
+                    (len(self) > 1)):
+                raise ValueError(
+                    "Optical property derivatives are only supported for a single solver."
                 )
+            medium_data = list(self.values())[0].medium[scatterer_name]
+            derivatives_by_wavelength = data_generator.calculate_derivatives(
+                variable_data['variable_name_list'], medium_data
+                )
+            for key in self:
+                wavelength_ordered_derivatives[key][scatterer_name] = derivatives_by_wavelength[key]
+
+        for key, solver in self.items():
+            solver.prepare_microphysical_partial_derivatives(
+                wavelength_ordered_derivatives[key]
+            )
 
 class UnknownScatterers(OrderedDict):
     """
@@ -799,16 +836,7 @@ class UnknownScatterers(OrderedDict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        #currently only this slight adaptation of pyshdom.medium.table_to_grid is possible.
-        #The API must be updated to accomodate more flexibility if more
-        #methods become avaialble.
-        def regular_grid(scatterer, table_data, inverse_mode=False):
-            return pyshdom.medium.table_to_grid(scatterer, table_data, inverse_mode=inverse_mode)
-
-        self._table_to_grid_method = regular_grid
-        self.table_data = None
-
-    def add_unknown(self, scatterer_name, variable_name_list, table_data):
+    def add_unknowns(self, variable_name_list, dataset_generator):
         """
         Adds the variable names to calculate derivatives for each scatterer in an
         solver.RTE object and the correct table of optical properties as a function
@@ -823,105 +851,50 @@ class UnknownScatterers(OrderedDict):
             List of strings of microphysical names or optical property names to
             calculate derivatives for.
             Valid optical variables may be 'extinction', 'ssalb', 'legendre_x_y'
-            where x is the stokes index from 1-6 and y is the legendre_index.
-            Valid microphysical names must be in `table_data.`
-            There are also a few special names e.g. 'reff_no_ext' or 'reff_phase_only'.
-            To add other special cases you will need to modify self.create_derivative_tables.
-        table_data : OrderedDict
-            Each key is a solver key, e.g. a float wavelength. Each entry is a table
-            of optical properties as a function of microphysical properties.
-            See the output of pyshdom.mie.get_poly_table(size_distribution, mie_mono_table).
+            where x is the stokes index from 0-5 and y is the legendre_index.
+            Valid microphysical names must be accepted by the supplied
+            `optical_property_generator`.
+        optical_property_generator : pyshdom.medium.OpticalPropertyGenerator
+            Generates optical properties from microphysical properties as well
+            as their corresponding derivatives.
 
         See Also
         --------
         pyshdom.solver.RTE.calculate_microphysical_partial_derivatives
         """
-        if self._table_to_grid_method.__name__ == 'regular_grid':
-            self[scatterer_name] = {'variable_name_list': np.atleast_1d(variable_name_list),
-                                    'table_data_input': table_data}
-        else:
-            raise NotImplementedError
+        optical_derivative_generator = pyshdom.medium.OpticalDerivativeGenerator('test')
+        for variable_name in variable_name_list:
 
-    def create_derivative_tables(self):
-        """
-        Prepares the derivative look-up-tables for the specified unknowns
-        (see self.add_unknown).
-        Should be called once all unknowns have been added.
+            if isinstance(dataset_generator, pyshdom.medium.OpticalGenerator):
+                if not optical_derivative_generator.test_valid_names(variable_name):
+                    raise ValueError(
+                        "Unknown variable name '{}' is not supported by {}".format(
+                            variable_name, pyshdom.medium.OpticalGenerator
+                        ))
+#     "Variables to retrieve for must all be optical or microphysical, "
+#     "not a mixture. To jointly retrieve extinction with microphysical"
+#     " information look at the normalization options for the density "
+#     "variable in the OpticalPropertyGenerator."
+# )
+            elif isinstance(dataset_generator, pyshdom.medium.MicrophysicsGenerator):
+                if not dataset_generator.optical_property_generator.test_valid_names(variable_name):
+                    raise ValueError(
+                    "The variable name supplied to differentiate '{}' is not "
+                    "supported by the supplied `optical_property_generator` "
+                    "which supports only '{}' or 'density'".format(
+                        variable_name,
+                        dataset_generator.optical_property_generator.size_distribution_parameters.keys())
+                    )
 
-        See Also
-        --------
-        pyshdom.solver.RTE.calculate_microphysical_partial_derivatives
-        """
-        #for legacy reasons, rearrange the information in `self` into this format.
-        inputs = [(scatterer_name, self[scatterer_name]['table_data_input'],
-                   self[scatterer_name]['variable_name_list'])
-                  for scatterer_name in self]
-
-        partial_derivative_tables = OrderedDict()
-        for key in inputs[0][1].keys(): #keys are the wavelengths in the poly tables.
-            partial_derivative_dict = OrderedDict()
-            for unknown_scatterer, tables, variable_names in inputs:
-                table = tables[key]
-                variable_names = np.atleast_1d(variable_names)
-                #For each unknown_scatterer compute the tables of derivatives
-                valid_microphysics_coords = {name:table[name] for name in table.coords if name not in ('table_index', 'stokes_index')}
-                derivatives_tables = OrderedDict()
-                for variable_name in variable_names:
-
-                    if variable_name in valid_microphysics_coords.keys():
-                        differentiated = table.differentiate(coord=variable_name)
-
-                    elif variable_name == 'reff_phase_only':
-                        differentiated = table.differentiate(coord='reff')
-                        differentiated['extinction'][:] = np.zeros(table.extinction.shape)
-                        differentiated['ssalb'][:] = np.zeros(table.ssalb.shape)
-                    elif variable_name == 'veff_phase_only':
-                        differentiated = table.differentiate(coord='veff')
-                        differentiated['extinction'][:] = np.zeros(table.extinction.shape)
-                        differentiated['ssalb'][:] = np.zeros(table.ssalb.shape)
-                    elif variable_name == 'reff_no_ext':
-                        differentiated = table.differentiate(coord='reff')
-                        differentiated['extinction'][:] = np.zeros(table.extinction.shape)
-                    elif variable_name == 'veff_no_ext':
-                        differentiated = table.differentiate(coord='veff')
-                        differentiated['extinction'][:] = np.zeros(table.extinction.shape)
-                    elif variable_name == 'extinction':
-                        differentiated = table.copy(data={
-                            'extinction': np.ones(table.extinction.shape),
-                            'legcoef': np.zeros(table.legcoef.shape),
-                            'ssalb': np.zeros(table.ssalb.shape)
-                        })
-                    elif variable_name == 'ssalb':
-                        differentiated = table.copy(data={
-                            'extinction': np.zeros(table.extinction.shape),
-                            'legcoef': np.zeros(table.legcoef.shape),
-                            'ssalb': np.ones(table.ssalb.shape)
-                        })
-                    elif 'legendre_' in variable_name:
-                        leg_index = int(variable_name[len('legendre_X_'):])
-                        stokes_index = int(variable_name[len('legendre_')])
-                        legcoef = np.zeros(table.legcoef.shape)
-                        legcoef[stokes_index, leg_index, ...] = 1.0
-                        differentiated = table.copy(data={
-                            'extinction': np.zeros(table.extinction.shape),
-                            'legcoef': legcoef,
-                            'ssalb': np.zeros(table.ssalb.shape)
-                        })
-                    elif variable_name == 'density':
-                        differentiated = table.copy(data={
-                            'extinction': table.extinction,
-                            'legcoef': np.zeros(table.legcoef.shape),
-                            'ssalb': np.zeros(table.ssalb.shape)
-                        })
-                    else:
-                        raise ValueError('Invalid unknown scatterer name', variable_name)
-
-                    derivatives_tables[variable_name] = differentiated
-                partial_derivative_dict[unknown_scatterer] = derivatives_tables
-            partial_derivative_tables[key] = partial_derivative_dict
-
-        self.table_data = partial_derivative_tables
-
-    @property
-    def table_to_grid_method(self):
-        return self._table_to_grid_method
+            else:
+                raise TypeError(
+                    "`dataset_generator` should be of types '{}'".format(
+                        (pyshdom.medium.OpticalGenerator,
+                        pyshdom.medium.MicrophysicsGenerator)
+                    )
+                )
+        scatterer_name = dataset_generator.scatterer_name
+        self[scatterer_name] = {
+            'variable_name_list': variable_name_list,
+            'dataset_generator': dataset_generator
+            }

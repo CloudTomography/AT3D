@@ -291,10 +291,11 @@ C     phase function formats, only the header is read, while for the
 C     standard format, the whole file must be read to determine MAXLEG.
       IMPLICIT NONE
       INTEGER NSTLEG, NPX, NPY, NPZ
-Cf2py intent(out) NSTLEG, NPX, NPY, NPZ
+Cf2py intent(out) NPX, NPY, NPZ
       INTEGER NUMPHASE
       INTEGER NLEG, MAXLEG, MAXPGL
 Cf2py intent(out) NUMPHASE, MAXLEG, MAXPGL
+Cf2py intent(in, out) NLEG, NSTLEG
       REAL    DELX, DELY
 Cf2py intent(out) DELX, DELY
       CHARACTER PROPFILE*80
@@ -473,7 +474,7 @@ C           Property file type T or P is for tabulated phase function format
       ELSE IF (PROPTYPE .EQ. 'T' .OR. PROPTYPE .EQ. 'P') THEN
         READ (1,*) NUMPHASE
 C             If delta-M then find the largest number of Legendre terms
-        IF (DELTAM) THEN
+C        IF (DELTAM) THEN
           DO I = 1, NUMPHASE
             IF (PROPTYPE .EQ. 'T') THEN
               READ (1,*) NUML, (CHI, L=1,NUML)
@@ -490,11 +491,13 @@ C             If delta-M then find the largest number of Legendre terms
      .         NLEG,' to ',MAXLEG,' Legendre terms.'
           ENDIF
           NLEG = MIN(NLEG,MAXLEG)
-        ENDIF
+C        ENDIF
         N = NPX*NPY*NPZ
         IF (N .GT. MAXPG)  STOP 'READ_PROPERTIES: MAXPG exceeded'
-        IF (NUMPHASE*(NLEG+1)*NSTLEG .GT. MAXPGL)
-     .    STOP 'READ_PROPERTIES: MAXPGL exceeded'
+        IF (NUMPHASE*(NLEG+1)*NSTLEG .GT. MAXPGL) THEN
+          PRINT *, NUMPHASE, NLEG+1, NSTLEG, MAXPGL
+          STOP 'READ_PROPERTIES: MAXPGL exceeded'
+        ENDIF
         REWIND (1)
         READ (1,*)
         READ (1,*) NPX, NPY, NPZ

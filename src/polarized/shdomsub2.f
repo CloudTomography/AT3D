@@ -28,7 +28,6 @@ Cf2py intent(out) :: XGRID, YGRID, ZGRID
       CHARACTER GRIDTYPE*1
 Cf2py intent(in) :: GRIDTYPE
       INTEGER IX, IY, IZ
-
 C         Make the X, Y, and Z grids, depending on type:
 C           E for evenly spaced, P from property file, F from zgrid.inp
 C           Only Even allowed horizontally
@@ -78,7 +77,6 @@ C           Only Even allowed horizontally
       ELSE
         STOP 'NEW_GRIDS: Illegal grid type in Z'
       ENDIF
-
       RETURN
       END
 
@@ -151,7 +149,6 @@ Cf2py intent(in) :: XGRID, YGRID, ZGRID
 Cf2py intent(out) :: GRIDPOS
       INTEGER IX, IY, IZ, IX0, IX1, IY0, IY1, I, NXC, NYC
       LOGICAL BTEST
-
 C         First, make the grid point positions
       I = 0
       DO IX = 1, NX1
@@ -319,51 +316,68 @@ C               Base grid cells have no parents or children
      .               XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .               ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .               ZCKD, GASABS, EXTMIN, SCATMIN,NPART,
-     .		         TOTAL_EXT, NBPTS)
+     .		         TOTAL_EXT, MAXPG, INTERPMETHOD, IERR,ERRMSG,
+     .             PHASEINTERPWT, NLEGP, MAXNMICRO, PHASEWTP)
 C       Calls TRILIN_INTERP_PROP to interpolate the input arrays from
 C     the property grid to each internal grid point.
       IMPLICIT NONE
-      INTEGER NPTS, NSTLEG, NLEG, NPART, NBPTS
-      INTEGER IPHASE(NPTS,NPART)
+      INTEGER NPTS, NSTLEG, NLEG, NPART, MAXPG, NLEGP
+      INTEGER IPHASE(8*MAXNMICRO,NPTS,NPART), MAXNMICRO
+      REAL    PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART)
       REAL    GRIDPOS(3,NPTS), TOTAL_EXT(NPTS)
       REAL    TEMP(*), EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL    LEGEN(NSTLEG,0:NLEG,*)
       INTEGER IP, IPA
+      CHARACTER*2 INTERPMETHOD
+      INTEGER IERR
+      CHARACTER ERRMSG*600
 
       INTEGER NPX, NPY, NPZ
       INTEGER NUMPHASE
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
-      REAL TEMPP(*), EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
+      REAL TEMPP(MAXPG), EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG,NPART)
       REAL LEGENP(*)
-      INTEGER IPHASEP(NBPTS,NPART)
+      REAL PHASEWTP(MAXNMICRO,MAXPG,NPART)
+      INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
       DOUBLE PRECISION EXTMIN, SCATMIN
 
 C         Initialize: transfer the tabulated phase functions
+C     Note we aren't using EXTINCTP etc in the initialization so
+C     we don't have to make sure they have the correct shape as in
+C     below.
       CALL TRILIN_INTERP_PROP (0.0, 0.0, 0.0, .TRUE., NSTLEG, NLEG,
      .                         TEMP, EXTINCT, ALBEDO,
      .                         LEGEN(1,0,1), IPHASE,
      .                      NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .                      XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
      .                      ALBEDOP, LEGENP, IPHASEP, NZCKD,
-     .                      ZCKD, GASABS, EXTMIN, SCATMIN)
+     .                      ZCKD, GASABS, EXTMIN, SCATMIN,
+     .                      INTERPMETHOD, IERR,ERRMSG,PHASEINTERPWT,
+     .                      NLEGP, MAXNMICRO, PHASEWTP)
+      IF (IERR .NE. 0) RETURN
 
 C         Trilinearly interpolate from the property grid to the adaptive grid
       TOTAL_EXT(:NPTS) = 0.0
       DO IPA = 1, NPART
-	DO IP = 1, NPTS
-	  CALL TRILIN_INTERP_PROP
+	       DO IP = 1, NPTS
+	          CALL TRILIN_INTERP_PROP
      .          (GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP),
      .           .FALSE., NSTLEG, NLEG, TEMP(IP), EXTINCT(IP,IPA),
-     .            ALBEDO(IP,IPA), LEGEN(1,0,IP), IPHASE(IP,IPA),
+     .            ALBEDO(IP,IPA), LEGEN(1,0,IP),
+     .            IPHASE(:,IP,IPA),
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .            XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP(:,IPA),
-     .            ALBEDOP(:,IPA), LEGENP, IPHASEP(:,IPA),
-     .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN)
-	  TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
-	ENDDO
+     .            ALBEDOP(:,IPA), LEGENP, IPHASEP(:,:,IPA),
+     .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
+     .            INTERPMETHOD, IERR, ERRMSG,
+     .            PHASEINTERPWT(:,IP,IPA),
+     .            NLEGP, MAXNMICRO, PHASEWTP(:,:,IPA))
+            IF (IERR .NE. 0) RETURN
+	           TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
+	       ENDDO
       ENDDO
 
       RETURN
@@ -374,7 +388,7 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
 
 
       SUBROUTINE MAKE_DIRECT (NPTS, BCFLAG, IPFLAG, DELTAM,
-     .                ML, NSTLEG, NLEG, SOLARFLUX, SOLARMU,
+     .                ML, NSTLEG, NLEGP, SOLARFLUX, SOLARMU,
      .                SOLARAZ, GRIDPOS, DIRFLUX,
      .                NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
      .                XSTART, YSTART, ZLEVELS, TEMPP, EXTINCTP,
@@ -382,26 +396,26 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .                ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .                CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .                XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		          NPART, NBPTS)
+     .		          NPART, MAXPG, PHASEWTP, MAXNMICRO)
 C       Makes the direct beam solar flux for the internal base grid.
 C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
       IMPLICIT NONE
-      INTEGER NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, NBPTS
-Cf2py intent(in) :: NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEG, NBPTS
+      INTEGER NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEGP, MAXPG
+Cf2py intent(in) :: NPTS, BCFLAG, IPFLAG, ML, NSTLEG, NLEGP, MAXPG
       LOGICAL DELTAM
 Cf2py intent(in) :: DELTAM
       REAL    SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS(3,*)
 Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ, GRIDPOS
-      INTEGER NPX, NPY, NPZ, NPART, NUMPHASE
-Cf2py intent(in) :: NPX, NPY, NPZ, NPART, NUMPHASE
+      INTEGER NPX, NPY, NPZ, NPART, NUMPHASE,MAXNMICRO
+Cf2py intent(in) :: NPX, NPY, NPZ, NPART, NUMPHASE, MAXNMICRO
       REAL DELX, DELY, XSTART, YSTART
 Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
-      REAL ZLEVELS(*), TEMPP(*)
-      REAL EXTINCTP(NBPTS,NPART), ALBEDOP(NBPTS,NPART)
+      REAL ZLEVELS(*), TEMPP(*), PHASEWTP(MAXNMICRO,MAXPG,NPART)
+      REAL EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG,NPART)
 Cf2py intent(in) :: ZLEVELS, TEMPP, EXTINCTP, ALBEDOP
       REAL LEGENP(*), ZCKD(*), GASABS(*)
-      INTEGER IPHASEP(NBPTS,NPART), NZCKD
+      INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART), NZCKD
 Cf2py intent(in) :: LEGENP, ZCKD, GASABS, IPHASEP, NZCKD
 
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
@@ -421,7 +435,7 @@ Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
 
 
       CALL DIRECT_BEAM_PROP (1, 0.0, 0.0, 0.0, BCFLAG, IPFLAG,
-     .            DELTAM, ML, NSTLEG, NLEG,
+     .            DELTAM, ML, NSTLEG, NLEGP,
      .            SOLARFLUX, SOLARMU, SOLARAZ, DIRFLUX(1),
      .            UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM,
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
@@ -430,13 +444,13 @@ Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .	          NPART, NBPTS)
+     .	          NPART, MAXPG, PHASEWTP, MAXNMICRO)
       DO IP = 1, NPTS
 C27237,27283
         DIRPATH = 0.0
         CALL DIRECT_BEAM_PROP
      .           (0, GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP),
-     .            BCFLAG, IPFLAG, DELTAM, ML, NSTLEG, NLEG,
+     .            BCFLAG, IPFLAG, DELTAM, ML, NSTLEG, NLEGP,
      .            SOLARFLUX, SOLARMU, SOLARAZ,   DIRFLUX(IP),
      .            UNIFZLEV, XO, YO, ZO, DIRPATH, SIDE, VALIDBEAM,
      .            NPX, NPY, NPZ, NUMPHASE, DELX, DELY,
@@ -445,7 +459,7 @@ C27237,27283
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		  NPART, NBPTS)
+     .		  NPART, MAXPG, PHASEWTP, MAXNMICRO)
       ENDDO
       RETURN
       END
@@ -457,7 +471,8 @@ C27237,27283
       SUBROUTINE PREPARE_PROP (ML, MM, NSTLEG, NLEG, NPTS, DELTAM,
      .              NUMPHASE, SRCTYPE, UNITS, WAVENO, WAVELEN, ALBMAX,
      .              EXTINCT, ALBEDO, LEGEN, TEMP, PLANCK, IPHASE,
-     .		         NPART, TOTAL_EXT)
+     .		         NPART, TOTAL_EXT, PHASEINTERPWT, PHASEMAX,
+     .             INTERPMETHOD, MAXNMICRO)
 C       Prepares the grid arrays for the iterative solution process.
 C       If doing Delta-M scaling then the extinction, albedo, and Legendre
 C       terms are scaled first; only the 0 to ML LEGEN terms are scaled.
@@ -465,61 +480,86 @@ C       Outputs PLANCK with (1-omega)*B(T) for thermal source, where B(T) is
 C       the Planck function (meaning depends on UNITS).
 C       TEMP array is unchanged.
       IMPLICIT NONE
-      INTEGER ML, MM, NSTLEG, NLEG, NPTS, NUMPHASE
-      INTEGER IPHASE(NPTS,NPART), NPART
+      INTEGER ML, MM, NSTLEG, NLEG, NPTS, NUMPHASE, MAXNMICRO
+      INTEGER IPHASE(8*MAXNMICRO,NPTS,NPART), NPART
+      REAL PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART), PHASEMAX
       LOGICAL DELTAM
       REAL  WAVENO(2), WAVELEN, ALBMAX, TOTAL_EXT(NPTS)
       REAL  EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL  LEGEN(NSTLEG,0:NLEG,*), TEMP(NPTS), PLANCK(NPTS,NPART)
       CHARACTER*1 SRCTYPE, UNITS
-      INTEGER I, IPH, L, IPA
+      CHARACTER INTERPMETHOD*2
+      INTEGER I, IPH, L, IPA, Q
       REAL    F, BB
 
       ALBMAX = 0.0
 
-      IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
-        DO IPH = 1, NUMPHASE
-          F = LEGEN(1,ML+1,IPH)
-          DO L = 0, ML
+C     DELTAM scaling is now done at runtime, as we are linearly mixing
+C     phase functions from the property grid onto the medium grid.
+C     For old interp method, all points will have
+      IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+        IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
+          DO IPH = 1, NUMPHASE
+            F = LEGEN(1,ML+1,IPH)
+            DO L = 0, ML
 C            Scale the diagonal and off-diagonal phase matrix elements differently
-            LEGEN(1,L,IPH) = (LEGEN(1,L,IPH) - F)/(1-F)
-            IF (NSTLEG .GT. 1) THEN
-              LEGEN(2,L,IPH) = (LEGEN(2,L,IPH) - F)/(1-F)
-              LEGEN(3,L,IPH) = (LEGEN(3,L,IPH) - F)/(1-F)
-              LEGEN(4,L,IPH) = (LEGEN(4,L,IPH) - F)/(1-F)
-              LEGEN(5,L,IPH) = LEGEN(5,L,IPH)/(1-F)
-              LEGEN(6,L,IPH) = LEGEN(6,L,IPH)/(1-F)
-            ENDIF
+              LEGEN(1,L,IPH) = (LEGEN(1,L,IPH) - F)/(1-F)
+              IF (NSTLEG .GT. 1) THEN
+                LEGEN(2,L,IPH) = (LEGEN(2,L,IPH) - F)/(1-F)
+                LEGEN(3,L,IPH) = (LEGEN(3,L,IPH) - F)/(1-F)
+                LEGEN(4,L,IPH) = (LEGEN(4,L,IPH) - F)/(1-F)
+                LEGEN(5,L,IPH) = LEGEN(5,L,IPH)/(1-F)
+                LEGEN(6,L,IPH) = LEGEN(6,L,IPH)/(1-F)
+              ENDIF
+            ENDDO
           ENDDO
-        ENDDO
+        ENDIF
+C
+      ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+        IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
+          DO IPH = 1, NUMPHASE
+            F = LEGEN(1,ML+1,IPH)
+            DO L = 0, ML
+C            Scale the diagonal and off-diagonal phase matrix elements differently
+              LEGEN(1,L,IPH) = (LEGEN(1,L,IPH) - F)
+              IF (NSTLEG .GT. 1) THEN
+                LEGEN(2,L,IPH) = (LEGEN(2,L,IPH) - F)
+                LEGEN(3,L,IPH) = (LEGEN(3,L,IPH) - F)
+                LEGEN(4,L,IPH) = (LEGEN(4,L,IPH) - F)
+C                LEGEN(5,L,IPH) = LEGEN(5,L,IPH)
+C                LEGEN(6,L,IPH) = LEGEN(6,L,IPH)
+              ENDIF
+            ENDDO
+          ENDDO
+        ENDIF
       ENDIF
 
       IF (DELTAM) TOTAL_EXT(:NPTS) = 0.0
       DO IPA = 1, NPART
-      DO I = 1, NPTS
-        IF (DELTAM) THEN
-          IF (NUMPHASE .GT. 0) THEN
-            F = LEGEN(1,ML+1,IPHASE(I,IPA))
-          ELSE
-C             NUMPHASE=0 is standard property format, which is unpolarized
-            F = LEGEN(1,ML+1,I)
-            DO L = 0, ML
-              LEGEN(1,L,I) = (LEGEN(1,L,I) - F)/(1-F)
-            ENDDO
+        DO I = 1, NPTS
+          IF (DELTAM) THEN
+            IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+              F = LEGEN(1,ML+1,IPHASE(1,I,IPA))
+            ELSE
+              F = 0.0
+              DO Q=1,8*MAXNMICRO
+                F = F + LEGEN(1,ML+1,IPHASE(Q,I,IPA))*
+     .            PHASEINTERPWT(Q,I,IPA)
+              ENDDO
+            ENDIF
+            EXTINCT(I,IPA) = (1.0-ALBEDO(I,IPA)*F)*EXTINCT(I,IPA)
+            ALBEDO(I,IPA) = (1.0-F)*ALBEDO(I,IPA)/
+     .			   (1.0-ALBEDO(I,IPA)*F)
+            TOTAL_EXT(I) = TOTAL_EXT(I) + EXTINCT(I,IPA)
           ENDIF
-          EXTINCT(I,IPA) = (1.0-ALBEDO(I,IPA)*F)*EXTINCT(I,IPA)
-	  ALBEDO(I,IPA) = (1.0-F)*ALBEDO(I,IPA)/
-     .			  (1.0-ALBEDO(I,IPA)*F)
-          TOTAL_EXT(I) = TOTAL_EXT(I) + EXTINCT(I,IPA)
-        ENDIF
-	  ALBMAX = MAX(ALBMAX, ALBEDO(I,IPA))
-	  IF (SRCTYPE .NE. 'S') THEN
-	    CALL PLANCK_FUNCTION (TEMP(I), UNITS,WAVENO,WAVELEN,BB)
-	    PLANCK(I,IPA) = (1.0-ALBEDO(I,IPA))*BB
-
-	  ENDIF
-	ENDDO
+	        ALBMAX = MAX(ALBMAX, ALBEDO(I,IPA))
+	        IF (SRCTYPE .NE. 'S') THEN
+	           CALL PLANCK_FUNCTION (TEMP(I), UNITS,WAVENO,WAVELEN,BB)
+	            PLANCK(I,IPA) = (1.0-ALBEDO(I,IPA))*BB
+          ENDIF
+	      ENDDO
       ENDDO
+
       RETURN
       END
 
@@ -532,7 +572,8 @@ C             NUMPHASE=0 is standard property format, which is unpolarized
      .             EXTINCT, ALBEDO, LEGEN, TEMP, NUMPHASE, IPHASE,
      .             SRCTYPE, SOLARFLUX, SOLARMU, GNDALBEDO, GNDTEMP,
      .             SKYRAD, UNITS, WAVENO, WAVELEN,  RADIANCE, NPART,
-     .		       TOTAL_EXT)
+     .		       TOTAL_EXT, PHASEINTERPWT, DELTAM, ML, PHASEMAX,
+     .           INTERPMETHOD, MAXNMICRO)
 C       Initializes radiance field by solving plane-parallel two-stream.
 C     Solves the L=1 M=0 SH system by transforming the pentadiagonal
 C     system to tridiagonal and calling solver.
@@ -540,28 +581,35 @@ C     Does the initialization for the NXY columns of the base grid.
 C     Only the I Stokes parameter is initialized, the rest are zeroed.
       IMPLICIT NONE
       INTEGER NSTOKES, NXY, NZ, NSTLEG, NLEG, NUMPHASE, RSHPTR(*)
-      INTEGER IPHASE(NZ,NXY,NPART), NPART
+      INTEGER IPHASE(8*MAXNMICRO,NZ,NXY,NPART), NPART, ML
+      REAL    PHASEINTERPWT(8*MAXNMICRO,NZ,NXY,NPART)
       REAL    GNDALBEDO, GNDTEMP, SKYRAD, SOLARFLUX, SOLARMU
       REAL    WAVENO(2), WAVELEN
       REAL    ZGRID(NZ), TOTAL_EXT(NZ,NXY)
       REAL    EXTINCT(NZ,NXY,NPART), ALBEDO(NZ,NXY,NPART)
       REAL    LEGEN(NSTLEG,0:NLEG,*)
       REAL    TEMP(NZ,NXY)
-      REAL    RADIANCE(NSTOKES,*)
-      CHARACTER SRCTYPE*1, UNITS*1
+      REAL    RADIANCE(NSTOKES,*), PHASEMAX
+      CHARACTER SRCTYPE*1, UNITS*1, INTERPMETHOD*2
+      INTEGER MAXNMICRO
+
       INTEGER NLAYER, I, IZ, IR, J, K, L
       LOGICAL DELTAM
-      REAL    PI, C0, C1
+      REAL    PI, C0, C1, F0(NPART), F1(NPART), LEGENT0(NPART)
       REAL    EXT0, EXT1, SCAT0, SCAT1, G0, G1, GNDEMIS
+      REAL    LEGENT1(NPART)
       REAL, ALLOCATABLE :: OPTDEPTHS(:), ALBEDOS(:), ASYMMETRIES(:)
       REAL, ALLOCATABLE :: TEMPS(:), FLUXES(:,:)
       CHARACTER SRCT*1
+      INTEGER Q, IPA
 
       ALLOCATE (OPTDEPTHS(NZ), ALBEDOS(NZ), ASYMMETRIES(NZ))
       ALLOCATE (TEMPS(NZ), FLUXES(3,NZ))
 
       NLAYER = NZ-1
-      DELTAM=.FALSE.
+C      DELTAM=.FALSE. This is now hardcoded to False when input to
+C     to EDDRTF as we need DELTAM to apply the scaling to the phase function.
+C     JRLoveridge -03/04/2021
       SRCT = SRCTYPE
       IF (SRCT .EQ. 'B') SRCT='T'
       PI = ACOS(-1.0)
@@ -574,6 +622,7 @@ C         Loop over all the columns in the base grid
       DO I = 1, NXY
 C           Make layer properties for the Eddington routine
         DO IZ = 1, NLAYER
+
           L = NZ-IZ
           EXT0 = TOTAL_EXT(IZ,I)
           EXT1 = TOTAL_EXT(IZ+1,I)
@@ -585,17 +634,56 @@ C           Make layer properties for the Eddington routine
           ELSE
             ALBEDOS(L) = 0.0
           ENDIF
-          IF (NUMPHASE .GT. 0) THEN
-
-	    G0 = SUM(ALBEDO(IZ,I,:)*EXTINCT(IZ,I,:)*
-     .			LEGEN(1,1,IPHASE(IZ,I,:)))
-	    G1 = SUM(ALBEDO(IZ+1,I,:)*EXTINCT(IZ+1,I,:)*
-     .			LEGEN(1,1,IPHASE(IZ+1,I,:)))
-          ELSE
-            J = NZ*(I-1)+IZ
-            G0 = LEGEN(1,1,J)
-            G1 = LEGEN(1,1,J+1)
+          IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+            G0 = SUM(ALBEDO(IZ,I,:)*EXTINCT(IZ,I,:)*
+     .                LEGEN(1,1,IPHASE(1,IZ,I,:)))
+            G1 = SUM(ALBEDO(IZ+1,I,:)*EXTINCT(IZ+1,I,:)*
+     .            LEGEN(1,1,IPHASE(1,IZ+1,I,:)))
+          ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+            IF (PHASEINTERPWT(1,IZ,I,1) .GE. PHASEMAX) THEN
+              LEGENT0(:) = LEGEN(1,1,IPHASE(1,IZ,I,:))
+            ELSE
+              LEGENT0 = 0.0
+              DO Q=1,8*MAXNMICRO
+                LEGENT0 = LEGENT0 + LEGEN(1,1,IPHASE(Q,IZ,I,:))*
+     .            PHASEINTERPWT(Q,IZ,I,:)
+              ENDDO
+            ENDIF
+            IF (PHASEINTERPWT(1,IZ+1,I,1) .GE. PHASEMAX) THEN
+              LEGENT1(:) = LEGEN(1,1,IPHASE(1,IZ+1,I,:))
+            ELSE
+              LEGENT1 = 0.0
+              DO Q=1,8*MAXNMICRO
+                LEGENT1 = LEGENT1 + LEGEN(1,1,IPHASE(Q,IZ+1,I,:))*
+     .            PHASEINTERPWT(Q,IZ+1,I,:)
+              ENDDO
+            ENDIF
+            IF (DELTAM) THEN
+              IF (PHASEINTERPWT(1,IZ,I,1) .GE. PHASEMAX) THEN
+                F0 = LEGEN(1,ML+1,IPHASE(1,IZ,I,:))
+              ELSE
+                F0 = 0.0
+                DO Q=1,8*MAXNMICRO
+                  F0 = F0 + LEGEN(1,ML+1,IPHASE(Q,IZ,I,:))*
+     .            PHASEINTERPWT(Q,IZ,I,:)
+                ENDDO
+              ENDIF
+              IF (PHASEINTERPWT(1,IZ+1,I,1) .GE. PHASEMAX) THEN
+                F1(:) = LEGEN(1,ML+1,IPHASE(1,IZ+1,I,:))
+              ELSE
+                F1 = 0.0
+                DO Q=1,8*MAXNMICRO
+                  F1 = F1 + LEGEN(1,1,IPHASE(Q,IZ+1,I,:))*
+     .            PHASEINTERPWT(Q,IZ+1,I,:)
+                ENDDO
+              ENDIF
+              LEGENT0 = LEGENT0/(1-F0)
+              LEGENT1 = LEGENT1/(1-F1)
+            ENDIF
+            G0 = SUM(ALBEDO(IZ,I,:)*EXTINCT(IZ,I,:)*LEGENT0(:))
+            G1 = SUM(ALBEDO(IZ+1,I,:)*EXTINCT(IZ+1,I,:)*LEGENT1(:))
           ENDIF
+
           IF (SCAT0+SCAT1 .GT. 0.0) THEN
             ASYMMETRIES(L) = (G0+G1)/(SCAT0+SCAT1)
           ELSE
@@ -607,7 +695,7 @@ C           Make layer properties for the Eddington routine
         GNDEMIS = 1.0-GNDALBEDO
 C           Call the Eddington flux routine
         CALL EDDRTF (NLAYER, OPTDEPTHS, ALBEDOS, ASYMMETRIES,
-     .              TEMPS, DELTAM, SRCTYPE, SOLARFLUX, SOLARMU,
+     .              TEMPS, .FALSE., SRCTYPE, SOLARFLUX, SOLARMU,
      .              GNDTEMP, GNDEMIS, SKYRAD, UNITS, WAVENO,WAVELEN,
      .              FLUXES)
 C           Convert fluxes to first two moments of spherical harmonics
@@ -685,13 +773,21 @@ C                                   FLUXES(3,L) is downwelling direct,
 C                                   L=1 is top, L=NUML+1 is bottom
       IMPLICIT NONE
       INTEGER   NLAYER
+Cf2py intent(in) :: NLAYER
       LOGICAL   DELTAM
+Cf2py intent(in) :: DELTAM
       REAL      TEMPS(*)
+Cf2py intent(in) :: TEMPS
       REAL      OPTDEPTHS(*), ALBEDOS(*), ASYMMETRIES(*)
+Cf2py intent(in) :: OPTDEPTHS, ALBEDOS, ASYMMETRIES
       REAL      GNDTEMP, GNDEMIS, SKYRAD, SOLARFLUX, SOLARMU
+Cf2py intent(in) :: GNDTEMP, GNDEMIS, SKYRAD, SOLARFLUX, SOLARMU
       REAL      WAVENO(2), WAVELEN
+Cf2py intent(in) ::WAVENO, WAVELEN
       CHARACTER*1 SRCTYPE, UNITS
-      REAL      FLUXES(3,*)
+Cf2py intent(in) :: SRCTYPE, UNITS
+      REAL      FLUXES(3,NLAYER+1)
+Cf2py intent(out) :: FLUXES
 
       INTEGER   N, L, I
       DOUBLE PRECISION DELTAU, G, OMEGA, F
@@ -2059,7 +2155,9 @@ C        Choose the best range for the angle of linear polarization (-90 to 90 o
      .                        SFCTYPE, NSFCPAR, SFCGRIDPARMS,
      .                        MU2, PHI2, X0,Y0,Z0,
      .			              XE,YE,ZE, SIDE, TRANSMIT, RADIANCE,
-     .			              VALIDRAD, TOTAL_EXT, NPART)
+     .			              VALIDRAD, TOTAL_EXT, NPART, IERR, ERRMSG,
+     .                    INTERPMETHOD, PHASEINTERPWT, PHASEMAX,
+     .                    MAXNMICRO, TAUTOL, TIME_SOURCE)
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
 C     radiance (RADIANCE) at the point X0,Y0,Z0.
@@ -2069,14 +2167,16 @@ C     ray location (XE,YE,ZE) and side of the domain (1=-X,2=+X,3=-Y,4=+Y,
 C     5=-Z,6=+Z).
       IMPLICIT NONE
       INTEGER BCFLAG, IPFLAG, NSTOKES, NSTLEG, NSTPHASE, NSCATANGLE
-      INTEGER NX, NY, NZ, NPTS, NCELLS, SIDE
+      INTEGER NX, NY, NZ, NPTS, NCELLS, SIDE, MAXNMICRO
       INTEGER ML, MM, NLM, NLEG, NUMPHASE, NPART
       INTEGER MAXNBC, NTOPPTS, NBOTPTS
       INTEGER NMU, NPHI0MAX, NPHI0(NMU), NSFCPAR
       INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
       INTEGER SHPTR(NPTS+1)
       INTEGER*2 CELLFLAGS(NCELLS)
-      INTEGER IPHASE(NPTS,NPART)
+      INTEGER IPHASE(8*MAXNMICRO,NPTS,NPART)
+      REAL    PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART), PHASEMAX
+      CHARACTER INTERPMETHOD*2
       INTEGER BCPTR(MAXNBC,2)
       LOGICAL DELTAM, VALIDRAD
       REAL    WTDO(NMU,NPHI0MAX), MU(NMU), PHI(NMU,NPHI0MAX)
@@ -2084,7 +2184,7 @@ C     5=-Z,6=+Z).
       REAL    SFCGRIDPARMS(NSFCPAR,NBOTPTS), BCRAD(*)
       REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
-      REAL    LEGEN(NSTLEG,0:NLEG,NPTS)
+      REAL    LEGEN(NSTLEG,0:NLEG,NUMPHASE)
       REAL    DIRFLUX(NPTS), SOURCE(NSTOKES,*), TOTAL_EXT(NPTS)
       REAL    YLMSUN(NSTLEG,NLM)
       REAL    PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
@@ -2113,18 +2213,19 @@ C     5=-Z,6=+Z).
       DOUBLE PRECISION COSSCAT
       REAL, ALLOCATABLE :: YLMDIR(:,:), SINGSCAT(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: SUNDIRLEG(:)
-
+      INTEGER IERR
+      CHARACTER ERRMSG*600
+      REAL TIME1, TIME2, TIME_SOURCE
       DATA OPPFACE/2,1,4,3,6,5/
       DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
       DATA DONEFACE/0,0,0,0,0,0,0,0, 0,1,0,3,0,5,0,7, 2,0,4,0,6,0,8,0,
      .              0,0,1,2,0,0,5,6, 3,4,0,0,5,6,0,0,
      .              0,0,0,0,1,2,3,4, 5,6,7,8,0,0,0,0/
 
-
 C         TRANSCUT is the transmission to stop the integration at
       TRANSCUT = 5.0E-5
 C         TAUTOL is the maximum optical path for the subgrid intervals
-      TAUTOL = 0.2
+C      TAUTOL = 0.2
       RADIANCE(:) = 0.0D0
 
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
@@ -2223,9 +2324,10 @@ C         Loop until reach a Z boundary or transmission is very small
       DO WHILE (.NOT. VALIDRAD .AND. ICELL .GT. 0)
 C           Make sure current cell is valid
         IF (ICELL .LE. 0) THEN
-          WRITE (6,*)'INTEGRATE_1RAY: ICELL=',ICELL,
+          IERR = 1
+          WRITE (ERRMSG,*)'INTEGRATE_1RAY: ICELL=',ICELL,
      .                MU2,PHI2,XE,YE,ZE
-          STOP
+          RETURN
         ENDIF
         NGRID = NGRID + 1
 
@@ -2238,6 +2340,7 @@ C           Decide which of the eight grid points we need the source function
           OSRCEXT8(:,I) = SRCEXT8(:,I)
         ENDDO
 C         Compute the source function times extinction in direction (MU2,PHI2)
+C        CALL CPU_TIME(TIME1)
         IF (NSTOKES .EQ. 1) THEN
           CALL COMPUTE_SOURCE_1CELL_UNPOL (ICELL, GRIDPTR,
      .             ML, MM, NLM, NLEG, NUMPHASE,
@@ -2245,7 +2348,8 @@ C         Compute the source function times extinction in direction (MU2,PHI2)
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
      .             SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
      .             DONETHIS, OLDIPTS, OEXTINCT8, OSRCEXT8,
-     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART)
+     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART,
+     .             INTERPMETHOD, PHASEINTERPWT, PHASEMAX,MAXNMICRO)
         ELSE
           CALL COMPUTE_SOURCE_1CELL (ICELL, GRIDPTR,
      .             NSTOKES, NSTLEG, ML, MM, NLM, NLEG, NUMPHASE,
@@ -2253,8 +2357,11 @@ C         Compute the source function times extinction in direction (MU2,PHI2)
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
      .             SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
      .             DONETHIS, OLDIPTS, OEXTINCT8, OSRCEXT8,
-     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART)
+     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART,
+     .             INTERPMETHOD, PHASEINTERPWT, PHASEMAX,MAXNMICRO)
         ENDIF
+C        CALL CPU_TIME(TIME2)
+C        TIME_SOURCE = TIME_SOURCE + TIME2 - TIME1
 C         Interpolate the source and extinction to the current point
         IPT1 = GRIDPTR(1,ICELL)
         IPT2 = GRIDPTR(8,ICELL)
@@ -2313,9 +2420,10 @@ C             (always need to deal with the cell that is wrapped)
         SOZ = (GRIDPOS(3,IOPP)-ZE)*CZINV
         SO = MIN(SOX,SOY,SOZ)
         IF (SO .LT. -EPS) THEN
-          WRITE (6,*) 'INTEGRATE_1RAY: SO<0  ',
+          IERR=1
+          WRITE (ERRMSG,*) 'INTEGRATE_1RAY: SO<0  ',
      .      MU2,PHI2,XE,YE,ZE,SO,ICELL
-          STOP
+          RETURN
         ENDIF
         XN = XE + SO*CX
         YN = YE + SO*CY
@@ -2368,6 +2476,7 @@ C                 Linear extinction, linear source*extinction, to second order
             TRANSCELL = 1.0
             SRC(:) = 0.0
           ENDIF
+
           RADIANCE(:) = RADIANCE(:) + TRANSMIT*SRC(:)*ABSCELL
           TRANSMIT = TRANSMIT*TRANSCELL
           EXT1 = EXT0
@@ -2416,7 +2525,8 @@ C           Get the location coordinate
         ENDIF
 C           If the transmission is greater than zero and not at a
 C             boundary then prepare for next cell
-        IF (TRANSMIT .LT. TRANSCUT .OR. NGRID.GT.MAXCELLSCROSS) THEN
+C.OR. NGRID.GT.MAXCELLSCROSS
+        IF (TRANSMIT .LT. TRANSCUT) THEN
           VALIDRAD = .TRUE.
         ELSE IF (INEXTCELL .EQ. 0 .AND. IFACE .GE. 5) THEN
           VALIDRAD = .TRUE.
@@ -2561,7 +2671,9 @@ C           Do a binary search to locate the bottom boundary point
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
      .             SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
      .             DONETHIS, OLDIPTS, OEXTINCT8, OSRCEXT8,
-     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART)
+     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART,
+     .             INTERPMETHOD,PHASEINTERPWT, PHASEMAX,
+     .             MAXNMICRO)
 C       Computes the source function times extinction for gridpoints
 C     belonging to cell ICELL in the direction (MU,PHI).  The results
 C     are returned in SRCEXT8 and EXTINCT8.
@@ -2571,23 +2683,26 @@ C     procedure, replacing delta-M single scattering with single scattering
 C     for unscaled untruncated phase function.
       IMPLICIT NONE
       INTEGER ICELL, NSTOKES, NSTLEG, NPTS, ML, MM, NLM, NLEG, NUMPHASE
-      INTEGER GRIDPTR(8,*), SHPTR(NPTS+1)
+      INTEGER GRIDPTR(8,*), SHPTR(NPTS+1), MAXNMICRO
       INTEGER DONETHIS(8), OLDIPTS(8)
-      INTEGER IPHASE(NPTS,NPART), NPART
+      INTEGER IPHASE(8*MAXNMICRO,NPTS,NPART), NPART
+      REAL    PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART), PHASEMAX
       LOGICAL DELTAM
       REAL    SOLARMU
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
-      REAL    LEGEN(NSTLEG,0:NLEG,NPTS), TOTAL_EXT(NPTS)
+      REAL    LEGEN(NSTLEG,0:NLEG,*), TOTAL_EXT(NPTS)
       REAL    DIRFLUX(NPTS), SOURCE(NSTOKES,*)
       REAL    YLMDIR(NSTLEG,NLM), YLMSUN(NSTLEG,NLM)
       REAL    SINGSCAT(NSTOKES,NUMPHASE)
       REAL    OEXTINCT8(8), OSRCEXT8(NSTOKES,8)
       REAL    EXTINCT8(8), SRCEXT8(NSTOKES,8)
       DOUBLE PRECISION SUNDIRLEG(0:NLEG)
-      CHARACTER SRCTYPE*1
+      CHARACTER SRCTYPE*1, INTERPMETHOD*2
 
       INTEGER IP, J, JT, L, M, MS, ME, IPH, IS, NS, N, I,IPA
+      INTEGER Q
       REAL    SECMU0, F, DA, A, A1, B1, EXT, W
+      REAL LEGENT(NSTLEG,0:NLEG)
 
       SECMU0 = 1.0D0/ABS(SOLARMU)
 
@@ -2604,7 +2719,7 @@ C           at the viewing angle from the spherical harmonics source function.
           SRCEXT8(:,N) = SRCEXT8(:,ABS(I))
         ELSE
 
-	  EXT = TOTAL_EXT(IP)
+	        EXT = TOTAL_EXT(IP)
           OLDIPTS(N) = IP
           IS = SHPTR(IP)
           NS = SHPTR(IP+1)-IS
@@ -2631,65 +2746,89 @@ C             of the source function
           ENDIF
 
 C             Special case for solar source and Delta-M
-          IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
+      IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
 	    DO IPA = 1, NPART
 
-
 	      IF (EXT.EQ.0.0) THEN
-		W = 1.0
+		        W = 1.0
 	      ELSE
-		W = EXTINCT(IP,IPA)/EXT
+		        W = EXTINCT(IP,IPA)/EXT
 	      ENDIF
 	      IF (W.EQ.0.0) CYCLE
 
-	      IF (NUMPHASE .GT. 0) THEN
-		IPH = IPHASE(IP,IPA)
-	      ELSE
-		IPH = IP
-	      ENDIF
+        IF (INTERPMETHOD(2:2) .EQ. 'O' ) THEN
+          LEGENT = LEGEN(:,:,IPHASE(1,IP,IPA))
+          F = LEGENT(1,ML+1)
+        ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+          IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
+            LEGENT = LEGEN(:,:,IPHASE(1,IP,IPA))
+          ELSE
+            LEGENT = 0.0
+            DO Q=1,8*MAXNMICRO
+              IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
+              LEGENT = LEGENT + LEGEN(:,:,IPHASE(Q,IP,IPA))*
+     .          PHASEINTERPWT(Q,IP,IPA)
+            ENDDO
+          ENDIF
+          F = LEGENT(1,ML+1)
+          LEGENT = LEGENT/(1-F)
+        ENDIF
+
 C               First subtract off the truncated single scattering
 	      DA = ALBEDO(IP,IPA)*DIRFLUX(IP)*SECMU0*W
 	      J = 1
 
 	      DO L = 0, ML
-		ME = MIN(L,MM)
-		MS = -ME
-		A1 = DA*LEGEN(1,L,IPH)
-		B1 = DA*LEGEN(5,L,IPH)
-		IF (J .LE. NS) THEN
-		  JT = J
-		  DO M = MS, ME
-		    SRCEXT8(1,N) =SRCEXT8(1,N)-A1*YLMDIR(1,J)*YLMSUN(1,J)
-		    J = J + 1
-		  ENDDO
-		  IF (NSTOKES .GT. 1) THEN
-		    J = JT
-		    DO M = MS, ME
-		      SRCEXT8(2,N)=SRCEXT8(2,N)-B1*YLMDIR(2,J)*YLMSUN(1,J)
-		      SRCEXT8(3,N)=SRCEXT8(3,N)-B1*YLMDIR(6,J)*YLMSUN(1,J)
-		      J = J + 1
-		    ENDDO
-		  ENDIF
-		ENDIF
+	        ME = MIN(L,MM)
+	        MS = -ME
+	        A1 = DA*LEGENT(1,L)
+	        B1 = DA*LEGENT(5,L)
+	        IF (J .LE. NS) THEN
+	          JT = J
+	          DO M = MS, ME
+	            SRCEXT8(1,N) =SRCEXT8(1,N)-A1*YLMDIR(1,J)*YLMSUN(1,J)
+	            J = J + 1
+            ENDDO
+	          IF (NSTOKES .GT. 1) THEN
+	            J = JT
+              DO M = MS, ME
+	              SRCEXT8(2,N)=SRCEXT8(2,N)-B1*YLMDIR(2,J)*YLMSUN(1,J)
+	              SRCEXT8(3,N)=SRCEXT8(3,N)-B1*YLMDIR(6,J)*YLMSUN(1,J)
+	              J = J + 1
+             ENDDO
+	         ENDIF
+	       ENDIF
 	      ENDDO
 
 C               Then add in the single scattering contribution for the
 C               original unscaled phase function.
 	      IF (NUMPHASE .GT. 0) THEN
-		SRCEXT8(:,N) = SRCEXT8(:,N) + DA*SINGSCAT(:,IPH)
+          IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
+            SRCEXT8(:,N) = SRCEXT8(:,N) +
+     .          DA*SINGSCAT(:,IPHASE(1,IP,IPA))/(1-F)
+          ELSE
+            DO Q=1,8*MAXNMICRO
+              IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
+              SRCEXT8(:,N) = SRCEXT8(:,N) +
+     .          DA*SINGSCAT(:,IPHASE(Q,IP,IPA))*PHASEINTERPWT(Q,IP,IPA)
+     .           /(1-F)
+            ENDDO
+          ENDIF
 	      ELSE IF (NSTOKES .EQ. 1) THEN
-		F = LEGEN(1,ML+1,IPH)
-		DO L = 0, NLEG
-		  IF (L .LE. ML) THEN
-		    A = DA*(LEGEN(1,L,IPH) + F/(1-F))
-		  ELSE
-		    A = DA*LEGEN(1,L,IPH)/(1-F)
-		  ENDIF
-		  SRCEXT8(1,N) = SRCEXT8(1,N) + A*SUNDIRLEG(L)
-		ENDDO
+          WRITE(6,*) 'NUMPHASE=0 is not supported.'
+          STOP
+          F = LEGEN(1,ML+1,IPH)
+	        DO L = 0, NLEG
+	          IF (L .LE. ML) THEN
+	            A = DA*(LEGEN(1,L,IPH) + F/(1-F))
+            ELSE
+              A = DA*LEGEN(1,L,IPH)/(1-F)
+            ENDIF
+	          SRCEXT8(1,N) = SRCEXT8(1,N) + A*SUNDIRLEG(L)
+         ENDDO
 	      ENDIF
 	    ENDDO
-          ENDIF
+      ENDIF
 
           SRCEXT8(:,N) = SRCEXT8(:,N)*EXT
           EXTINCT8(N) = EXT
@@ -2707,7 +2846,9 @@ C               original unscaled phase function.
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX,
      .             SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
      .             DONETHIS, OLDIPTS, OEXTINCT8, OSRCEXT8,
-     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART)
+     .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART,
+     .             INTERPMETHOD, PHASEINTERPWT, PHASEMAX,
+     .             MAXNMICRO)
 C       Computes the source function times extinction for gridpoints
 C     belonging to cell ICELL in the direction (MU,PHI).  The results
 C     are returned in SRCEXT8 and EXTINCT8.
@@ -2717,9 +2858,10 @@ C     procedure, replacing delta-M single scattering with single scattering
 C     for unscaled untruncated phase function.
       IMPLICIT NONE
       INTEGER ICELL, NPTS, ML, MM, NLM, NLEG, NUMPHASE
-      INTEGER GRIDPTR(8,*), SHPTR(NPTS+1)
+      INTEGER GRIDPTR(8,*), SHPTR(NPTS+1), MAXNMICRO
       INTEGER DONETHIS(8), OLDIPTS(8)
-      INTEGER IPHASE(NPTS,NPART), NPART
+      INTEGER IPHASE(8*MAXNMICRO,NPTS,NPART), NPART
+      REAL    PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART), PHASEMAX
       LOGICAL DELTAM
       REAL    SOLARMU
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
@@ -2730,10 +2872,12 @@ C     for unscaled untruncated phase function.
       REAL    OEXTINCT8(8), OSRCEXT8(8)
       REAL    EXTINCT8(8), SRCEXT8(8)
       DOUBLE PRECISION SUNDIRLEG(0:NLEG)
-      CHARACTER SRCTYPE*1
+      CHARACTER SRCTYPE*1, INTERPMETHOD*2
 
       INTEGER IP, J, JT, L, M, MS, ME, IPH, IS, NS, N, IPA, I
       REAL    SECMU0, F, DA, A, A1, B1, EXT, W
+      REAL    LEGENT(0:NLEG)
+      INTEGER Q
 
       SECMU0 = 1.0D0/ABS(SOLARMU)
 
@@ -2750,7 +2894,7 @@ C           at the viewing angle from the spherical harmonics source function.
           SRCEXT8(N) = SRCEXT8(ABS(I))
         ELSE
 
-	  EXT = TOTAL_EXT(IP)
+	        EXT = TOTAL_EXT(IP)
           OLDIPTS(N) = IP
           IS = SHPTR(IP)
           NS = SHPTR(IP+1)-IS
@@ -2765,23 +2909,35 @@ C             Special case for solar source and Delta-M
           IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
 	    DO IPA = 1, NPART
 	      IF (EXT.EQ.0.0) THEN
-		W = 1.0
+	        W = 1.0
 	      ELSE
-		W = EXTINCT(IP,IPA)/EXT
+	        W = EXTINCT(IP,IPA)/EXT
 	      ENDIF
 	      IF (W.EQ.0.0) CYCLE
-              IF (NUMPHASE .GT. 0) THEN
-                IPH = IPHASE(IP,IPA)
-              ELSE
-                IPH = IP
-              ENDIF
+
+        IF (INTERPMETHOD(2:2) .EQ. 'O' ) THEN
+          LEGENT = LEGEN(:,IPHASE(1,IP,IPA))
+        ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+          IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
+            LEGENT = LEGEN(:,IPHASE(1,IP,IPA))
+          ELSE
+            LEGENT = 0.0
+            DO Q=1,8*MAXNMICRO
+              IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
+              LEGENT = LEGENT + LEGEN(:,IPHASE(Q,IP,IPA))*
+     .          PHASEINTERPWT(Q,IP,IPA)
+            ENDDO
+          ENDIF
+          F = LEGENT(ML+1)
+          LEGENT = LEGENT/(1-F)
+        ENDIF
 C               First subtract off the truncated single scattering
             DA = ALBEDO(IP,IPA)*DIRFLUX(IP)*SECMU0*W
             J = 1
             DO L = 0, ML
               ME = MIN(L,MM)
               MS = -ME
-              A1 = DA*LEGEN(L,IPH)
+              A1 = DA*LEGENT(L)
               IF (J .LE. NS) THEN
                 JT = J
                 DO M = MS, ME
@@ -2793,8 +2949,20 @@ C               First subtract off the truncated single scattering
 C               Then add in the single scattering contribution for the
 C               original unscaled phase function.
             IF (NUMPHASE .GT. 0) THEN
-              SRCEXT8(N) = SRCEXT8(N) + DA*SINGSCAT(IPH)
+              IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
+                SRCEXT8(N) = SRCEXT8(N) +
+     .          DA*SINGSCAT(IPHASE(1,IP,IPA))/(1-F)
+              ELSE
+                DO Q=1,8*MAXNMICRO
+                  IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
+                  SRCEXT8(N) = SRCEXT8(N) +
+     .          DA*SINGSCAT(IPHASE(Q,IP,IPA))*PHASEINTERPWT(Q,IP,IPA)
+     .          /(1-F)
+                ENDDO
+              ENDIF
             ELSE
+              WRITE(6,*) 'NUMPHASE=0 is not supported.'
+              STOP
               F = LEGEN(ML+1,IPH)
               DO L = 0, NLEG
                 IF (L .LE. ML) THEN
@@ -4389,6 +4557,8 @@ C     temperature in [Kelvins] at a wavelength in [microns] is returned.
       IMPLICIT NONE
       REAL  TEMP, WAVENO(2), WAVELEN, PLANCK
       CHARACTER*1  UNITS
+Cf2py intent(in) :: TEMP, WAVENO, WAVELEN, UNITS
+Cf2py intent(out) :: PLANCK
       DOUBLE PRECISION X1, X2, F
 
       IF (UNITS .EQ. 'T') THEN
@@ -4615,10 +4785,12 @@ C                 the ACM, 12, 3 (1969), pp. 185-187.
 C***END PROLOGUE  SSORT
 C     .. Scalar Arguments ..
       INTEGER KFLAG, N
+Cf2py intent(in) KFLAG, N
 C     .. Array Arguments ..
 c      REAL X(*), Y(*)
       REAL X(*)
       INTEGER Y(*)
+Cf2py intent(in,out) X, Y
 C     .. Local Scalars ..
 c      REAL R, T, TT, TTY, TY
       REAL R, T, TT
@@ -4853,6 +5025,316 @@ C     Begin again on another portion of the unsorted array
       IF (T .LT. X(K)) GO TO 180
       X(K+1) = T
       Y(K+1) = TY
+      GO TO 170
+
+C     Clean up
+  190 IF (KFLAG .LE. -1) THEN
+         DO 200 I=1,NN
+            X(I) = -X(I)
+  200    CONTINUE
+      ENDIF
+      RETURN
+      END
+
+      SUBROUTINE QUICKSORT_NEW (X, Y, YI, N, KFLAG)
+C     THIS IS MODIFIED FROM SSORT ABOVE TO SORT INTEGER ARRAY X
+C     AND TO CARRY ALONG REAL Y, AND INTEGER YI.
+C     I did not change the documentation below
+C     to reflect this. - JRLoveridge 2021/4/18.
+C
+C***BEGIN PROLOGUE  SSORT
+C***PURPOSE  Sort an array and optionally make the same interchanges in
+C            an auxiliary array.  The array may be sorted in increasing
+C            or decreasing order.  A slightly modified QUICKSORT
+C            algorithm is used.
+C***LIBRARY   SLATEC
+C***CATEGORY  N6A2B
+C***TYPE      SINGLE PRECISION (SSORT-S, DSORT-D, ISORT-I)
+C***KEYWORDS  SINGLETON QUICKSORT, SORT, SORTING
+C***AUTHOR  Jones, R. E., (SNLA)
+C           Wisniewski, J. A., (SNLA)
+C***DESCRIPTION
+C
+C   SSORT sorts array X and optionally makes the same interchanges in
+C   array Y.  The array X may be sorted in increasing order or
+C   decreasing order.  A slightly modified quicksort algorithm is used.
+C
+C   Description of Parameters
+C      X - array of values to be sorted   (usually abscissas)
+C      Y - array to be (optionally) carried along
+C      N - number of values in array X to be sorted
+C      KFLAG - control parameter
+C            =  2  means sort X in increasing order and carry Y along.
+C            =  1  means sort X in increasing order (ignoring Y)
+C            = -1  means sort X in decreasing order (ignoring Y)
+C            = -2  means sort X in decreasing order and carry Y along.
+C
+C***REFERENCES  R. C. Singleton, Algorithm 347, An efficient algorithm
+C                 for sorting with minimal storage, Communications of
+C                 the ACM, 12, 3 (1969), pp. 185-187.
+C***END PROLOGUE  SSORT
+C     .. Scalar Arguments ..
+      INTEGER KFLAG, N
+Cf2py intent(in) :: KFLAG, N
+C     .. Array Arguments ..
+c      REAL X(*), Y(*)
+      INTEGER X(*), YI(*)
+      REAL Y(*)
+Cf2py intent(in, out) :: X, YI, Y
+C     .. Local Scalars ..
+c      REAL R, T, TT, TTY, TY
+      REAL R
+      INTEGER T, TT, TYI, TTYI
+      REAL TY, TTY
+      INTEGER I, IJ, J, K, KK, L, M, NN
+C     .. Local Arrays ..
+      INTEGER IL(51), IU(51)
+C     .. External Subroutines ..
+C     .. Intrinsic Functions ..
+      INTRINSIC ABS, INT
+C***First executable statement  SSORT
+      NN = N
+      IF (NN .LT. 1) THEN
+         STOP 'The number of values to be sorted is not positive.'
+      ENDIF
+
+      KK = ABS(KFLAG)
+      IF (KK.NE.1 .AND. KK.NE.2) THEN
+        STOP 'The sort control parameter, K, is not 2, 1, -1, or -2.'
+      ENDIF
+
+C     Alter array X to get decreasing order if needed
+      IF (KFLAG .LE. -1) THEN
+         DO 10 I=1,NN
+            X(I) = -X(I)
+   10    CONTINUE
+      ENDIF
+
+      IF (KK .EQ. 2) GO TO 100
+
+C     Sort X only
+      M = 1
+      I = 1
+      J = NN
+      R = 0.375E0
+
+   20 IF (I .EQ. J) GO TO 60
+      IF (R .LE. 0.5898437E0) THEN
+         R = R+3.90625E-2
+      ELSE
+         R = R-0.21875E0
+      ENDIF
+
+   30 K = I
+
+C     Select a central element of the array and save it in location T
+      IJ = I + INT((J-I)*R)
+      T = X(IJ)
+
+C     If first element of array is greater than T, interchange with T
+      IF (X(I) .GT. T) THEN
+         X(IJ) = X(I)
+         X(I) = T
+         T = X(IJ)
+      ENDIF
+      L = J
+
+C     If last element of array is less than than T, interchange with T
+      IF (X(J) .LT. T) THEN
+         X(IJ) = X(J)
+         X(J) = T
+         T = X(IJ)
+
+C        If first element of array is greater than T, interchange with T
+         IF (X(I) .GT. T) THEN
+            X(IJ) = X(I)
+            X(I) = T
+            T = X(IJ)
+         ENDIF
+      ENDIF
+
+C     Find an element in the second half of the array which is smaller
+C     than T
+   40 L = L-1
+      IF (X(L) .GT. T) GO TO 40
+
+C     Find an element in the first half of the array which is greater
+C     than T
+   50 K = K+1
+      IF (X(K) .LT. T) GO TO 50
+
+C     Interchange these elements
+      IF (K .LE. L) THEN
+         TT = X(L)
+         X(L) = X(K)
+         X(K) = TT
+         GO TO 40
+      ENDIF
+
+C     Save upper and lower subscripts of the array yet to be sorted
+      IF (L-I .GT. J-K) THEN
+         IL(M) = I
+         IU(M) = L
+         I = K
+         M = M+1
+      ELSE
+         IL(M) = K
+         IU(M) = J
+         J = L
+         M = M+1
+      ENDIF
+      GO TO 70
+
+C     Begin again on another portion of the unsorted array
+   60 M = M-1
+      IF (M .EQ. 0) GO TO 190
+      I = IL(M)
+      J = IU(M)
+
+   70 IF (J-I .GE. 1) GO TO 30
+      IF (I .EQ. 1) GO TO 20
+      I = I-1
+
+   80 I = I+1
+      IF (I .EQ. J) GO TO 60
+      T = X(I+1)
+      IF (X(I) .LE. T) GO TO 80
+      K = I
+
+   90 X(K+1) = X(K)
+      K = K-1
+      IF (T .LT. X(K)) GO TO 90
+      X(K+1) = T
+      GO TO 80
+
+C     Sort X and carry Y along
+  100 M = 1
+      I = 1
+      J = NN
+      R = 0.375E0
+
+  110 IF (I .EQ. J) GO TO 150
+      IF (R .LE. 0.5898437E0) THEN
+         R = R+3.90625E-2
+      ELSE
+         R = R-0.21875E0
+      ENDIF
+C
+  120 K = I
+
+C     Select a central element of the array and save it in location T
+      IJ = I + INT((J-I)*R)
+      T = X(IJ)
+      TY = Y(IJ)
+      TYI = YI(IJ)
+
+
+C     If first element of array is greater than T, interchange with T
+      IF (X(I) .GT. T) THEN
+         X(IJ) = X(I)
+         X(I) = T
+         T = X(IJ)
+         Y(IJ) = Y(I)
+         Y(I) = TY
+         TY = Y(IJ)
+         YI(IJ) = YI(I)
+         YI(I) = TYI
+         TYI = YI(IJ)
+
+      ENDIF
+      L = J
+
+C     If last element of array is less than T, interchange with T
+      IF (X(J) .LT. T) THEN
+         X(IJ) = X(J)
+         X(J) = T
+         T = X(IJ)
+         Y(IJ) = Y(J)
+         Y(J) = TY
+         TY = Y(IJ)
+         YI(IJ) = YI(J)
+         YI(J) = TYI
+         TYI = YI(IJ)
+
+C        If first element of array is greater than T, interchange with T
+         IF (X(I) .GT. T) THEN
+            X(IJ) = X(I)
+            X(I) = T
+            T = X(IJ)
+            Y(IJ) = Y(I)
+            Y(I) = TY
+            TY = Y(IJ)
+            YI(IJ) = YI(I)
+            YI(I) = TYI
+            TYI = YI(IJ)
+
+         ENDIF
+      ENDIF
+
+C     Find an element in the second half of the array which is smaller
+C     than T
+  130 L = L-1
+      IF (X(L) .GT. T) GO TO 130
+
+C     Find an element in the first half of the array which is greater
+C     than T
+  140 K = K+1
+      IF (X(K) .LT. T) GO TO 140
+
+C     Interchange these elements
+      IF (K .LE. L) THEN
+         TT = X(L)
+         X(L) = X(K)
+         X(K) = TT
+         TTY = Y(L)
+         Y(L) = Y(K)
+         Y(K) = TTY
+         TTYI = YI(L)
+         YI(L) = YI(K)
+         YI(K) = TTYI
+         GO TO 130
+      ENDIF
+
+C     Save upper and lower subscripts of the array yet to be sorted
+      IF (L-I .GT. J-K) THEN
+         IL(M) = I
+         IU(M) = L
+         I = K
+         M = M+1
+      ELSE
+         IL(M) = K
+         IU(M) = J
+         J = L
+         M = M+1
+      ENDIF
+      GO TO 160
+
+C     Begin again on another portion of the unsorted array
+  150 M = M-1
+      IF (M .EQ. 0) GO TO 190
+      I = IL(M)
+      J = IU(M)
+
+  160 IF (J-I .GE. 1) GO TO 120
+      IF (I .EQ. 1) GO TO 110
+      I = I-1
+
+  170 I = I+1
+      IF (I .EQ. J) GO TO 150
+      T = X(I+1)
+      TY = Y(I+1)
+      TYI = YI(I+1)
+      IF (X(I) .LE. T) GO TO 170
+      K = I
+
+  180 X(K+1) = X(K)
+      Y(K+1) = Y(K)
+      YI(K+1) = YI(K)
+      K = K-1
+      IF (T .LT. X(K)) GO TO 180
+      X(K+1) = T
+      Y(K+1) = TY
+      YI(K+1) = TYI
       GO TO 170
 
 C     Clean up

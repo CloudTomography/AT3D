@@ -17,28 +17,36 @@ import numpy as np
 import xarray as xr
 import pyshdom.checks
 
-def make_grid(delx: float, nx: int, dely: float, ny: int, z: np.ndarray) -> xr.Dataset:
+def make_grid(delx: float, npx: int, dely: float, npy: int, z: np.ndarray,
+              nx=None, ny=None, nz=None) -> xr.Dataset:
     """
     Defines a 3D grid of 'x', 'y', 'z' coordinates according to SHDOM.
 
     Defines an equispaced grid in the 'x' and 'y' dimensions with spacing `delx`/'dely'
-    and number of points `nx`/`ny`, respectively. The starting value of 'x' and 'y'
+    and number of points `npx`/`npy`, respectively. The starting value of 'x' and 'y'
     is always 0.0. The vertical coordinate, `z` is directly input.
 
     Parameters
     ----------
     delx, dely : float
         grid spacing in the 'x' and 'y' dimensions, respectively.
-    nx, ny : int
+    npx, npy : int
         number of grid points in the 'x' and 'y' dimensions, respectively.
     z : array_like of floats
         1D strictly increasing and positive values of the vertical grid points.
+    nx, ny, nz : int
+        number of grid points for the SHDOM grid. If nz is specified it overrides
+        the property grid with an equispaced vertical grid. These variables
+        control the numerical resolution used in the SHDOM solution. By default
+        these are set to equal npx, npy and the possibly uneven `z` are used in
+        the numerical solution.
 
     Returns
     -------
     grid : xr.Dataset
         Contains coordinates of 'x', 'y' and 'z'. It also contains the 'delx'/'dely'
-        variables that are the spacing of the 'x' and 'y' coordinates.
+        variables that are the spacing of the 'x' and 'y' coordinates. Optionally
+        contains 'nx', 'ny', 'nz'.
 
     Raises
     ------
@@ -60,13 +68,20 @@ def make_grid(delx: float, nx: int, dely: float, ny: int, z: np.ndarray) -> xr.D
 
     grid = xr.Dataset(
         coords={
-            'x': np.linspace(0.0, delx*(nx-1), nx),
-            'y': np.linspace(0.0, dely*(ny-1), ny),
+            'x': np.linspace(0.0, delx*(npx-1), npx),
+            'y': np.linspace(0.0, dely*(npy-1), npy),
             'z': z,
         }
     )
     grid['delx'] = delx
     grid['dely'] = dely
+    if nx is not None:
+        grid['nx'] = nx
+    if ny is not None:
+        grid['ny'] = ny
+    if nz is not None:
+        grid['nz'] = nz
+
     return grid
 
 def resample_onto_grid(grid, data):
@@ -152,9 +167,20 @@ def resample_onto_grid(grid, data):
     for name, datavar in filled.data_vars.items(): #consistency check.
         assert np.bitwise_not(np.all(np.isnan(datavar.data))), "Unexpected NaN in '{}'".format(name)
 
-    filled['delx'] = grid.delx
-    filled['dely'] = grid.dely
+    filled = add_grid_variables(grid, filled)
     return filled
+
+def add_grid_variables(grid, dataset):
+    dataset['delx'] = grid.delx
+    dataset['dely'] = grid.dely
+    if 'nx' in grid.data_vars:
+        dataset['nx'] = grid.nx
+    if 'ny' in grid.data_vars:
+        dataset['ny'] = grid.ny
+    if 'nz' in grid.data_vars:
+        dataset['nz'] = grid.nz
+
+    return dataset
 
 def combine_z_coordinates(scatterer_list):
     """

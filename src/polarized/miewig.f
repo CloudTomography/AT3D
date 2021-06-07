@@ -3,7 +3,8 @@ C     written by Frank Evans.
 C     https://nit.coloradolinux.com/~evans/shdom.html
 
       SUBROUTINE MIE_ONE (WAVELENGTH, MINDEX, RADIUS,
-     .                   MAXRANK, EXTINCTION, SCATTER, NRANK, WIGCOEF)
+     .                   MAXRANK, EXTINCTION, SCATTER, NRANK, WIGCOEF,
+     .                   IERR, ERRMSG)
 C       Computes the Mie scattering properties for a single homogeneous
 C     sphere of radius RADIUS.  The six phase matrix elements times the
 C     scattering coefficient is returned as Wigner d-function series
@@ -12,6 +13,8 @@ C     coefficients.
       INTEGER     MAXRANK, NRANK
       REAL        WAVELENGTH, RADIUS
       REAL        EXTINCTION, SCATTER, WIGCOEF(6,0:*)
+      INTEGER     IERR
+      CHARACTER   ERRMSG*600
       COMPLEX     MINDEX
       INTEGER     MAXN
       PARAMETER   (MAXN=10000)
@@ -49,8 +52,9 @@ C         Get the Gauss-Legendre quadrature abscissas and weights
       ELSE
         NQUAD = MIN(NINT(1.25*NQUAD),MAXRANK)
         IF (NQUAD .GT. MAXN) THEN
-          PRINT *, 'MIE_ONE: MAXN exceeded by NQUAD'
-          STOP
+          IERR = 1
+          WRITE(ERRMSG,*), 'MIE_ONE: MAXN exceeded by NQUAD'
+          RETURN
         ENDIF
         CALL GAUSQUAD (NQUAD, MU, WTS)
         LASTNQUAD = NQUAD
