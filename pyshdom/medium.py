@@ -1142,6 +1142,11 @@ class StateGenerator:
                         self._state_to_grid.add_transform(
                             scatterer_name, variable_name, mask, 0.0
                             )
+            else:
+                raise ValueError(
+                    "If `state_to_grid` argument is of type {} it should be of same shape "
+                    "as the `rte_grid` argument.".format(np.ndarray)
+                )
         else:
             raise TypeError(
                 "`state_to_grid` argument is not of valid type."
