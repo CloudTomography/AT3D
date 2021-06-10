@@ -1,5 +1,7 @@
 """
-A module containing tools for generating synthetic data.
+Tools for generating synthetic data either by producing statistical surrogates
+from existing data or generating 'cloud-like' data using simple stochastic
+(or other) models.
 """
 import numpy as np
 import scipy.stats as st
