@@ -674,6 +674,9 @@ class RTE:
         total_pix = sensor.sizes['nrays']
 
         optical_path = pyshdom.core.optical_depth(
+            interpmethod=self._interpmethod,
+            phasemax=self._phasemax,
+            phaseinterpwt=self._phaseinterpwt[:, :self._npts],
             nx=self._nx,
             ny=self._ny,
             nz=self._nz,
@@ -697,7 +700,7 @@ class RTE:
             npix=total_pix,
             extinct=self._extinct[:self._npts],
             albedo=self._albedo[:self._npts],
-            iphase=self._iphase[:self._npts],
+            iphase=self._iphase[:, :self._npts],
             legen=self._legen,
             npart=self._npart,
             nstleg=self._nstleg,

@@ -2,6 +2,7 @@
 notebooks/.ipynb_checkpoints/
 notebooks/personal/
 scripts/personal/
+experiments/
 build/
 dist/
 mie_tables/

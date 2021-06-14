@@ -7,7 +7,8 @@ import numpy as np
 import scipy.stats as st
 import numpy.fft as fft
 import copy
-
+import scipy.ndimage as ndi
+import xarray as xr
 
 class SurrogateGenerator:
     """
@@ -110,7 +111,8 @@ class SurrogateGenerator:
 def generate_stochastic_blob(rte_grid, var_profile, var_beta=-5.0/3.0, snr=1.0,
                  var_vertical_correlation=0.0, xy_blob=0.2, z_blob=0.2,
                  cloud_mask_vertical_correlation=0.8, volume_cloud_fraction=0.1,
-                 cloud_mask_beta=-3.0, remove_edges=True):
+                 cloud_mask_beta=-3.0, remove_edges=True, gaussian_smooth_sigma=0.5,
+                 seed_value=None):
     """
     Generates a stochastic blob variable that is 'cumulus-like'.
 
@@ -155,12 +157,19 @@ def generate_stochastic_blob(rte_grid, var_profile, var_beta=-5.0/3.0, snr=1.0,
         to make the cloud smooth at the scale of the voxels.
     remove_edges : Boolean
         Sets the edge points to zero in `var` if True.
+    gaussian_smooth_sigma : float
+        The standard deviation of a gaussian filter that is applied to the blob cloud
+        after generation.
+    seed_value : int
+        If not None, this value is used to seed random number generator for reproducibility.
 
     Returns
     -------
     var : np.ndarray
         The masked stochastically generated field.
     """
+    if seed_value is not None:
+        np.random.seed(seed_value)
     nx, ny, nz = rte_grid.x.size, rte_grid.y.size, rte_grid.z.size
     domain_x, domain_y, domain_z = rte_grid.x.data.max(), rte_grid.y.data.max(), rte_grid.z.data.max()
 
@@ -210,12 +219,35 @@ def generate_stochastic_blob(rte_grid, var_profile, var_beta=-5.0/3.0, snr=1.0,
     var_values = exp_field*snr*var_mean[mask] + var_mean[mask]
     var = np.zeros(field.shape)
     var[mask] = var_values
+    if gaussian_smooth_sigma is not None:
+        var = ndi.gaussian_filter(var, sigma=gaussian_smooth_sigma)
 
     if remove_edges:
     #Set edge points to zero to avoid interaction with open boundary conditions.
         var[0,:,:] = var[-1,:,:] = var[:,0,:] = var[:,-1,:] = var[...,0] = var[...,-1] = 0.0
 
-    return var
+    out_dataset = xr.Dataset(
+        data_vars={
+            'density': (['x','y','z'], var)
+        },
+        coords=rte_grid.coords,
+        attrs={
+            'var_profile': var_profile,
+            'var_beta': var_beta,
+            'snr': snr,
+            'var_vertical_correlation':var_vertical_correlation,
+            'xy_blob':xy_blob,
+            'z_blob':z_blob,
+            'cloud_mask_vertical_correlation':cloud_mask_vertical_correlation,
+            'volume_cloud_fraction':volume_cloud_fraction,
+            'cloud_mask_beta': cloud_mask_beta,
+            'remove_edges': str(remove_edges),
+            'gaussian_smooth_sigma':gaussian_smooth_sigma,
+            'seed_value': seed_value
+        }
+    )
+
+    return out_dataset
 
 
 class GaussianFieldGenerator:
