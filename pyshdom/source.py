@@ -23,7 +23,7 @@ def solar(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
         the solar beam. Is required to be negative, if positive values are supplied
         they are set to negative.
     solar_azimuth : float
-        The azimuthal angle of the solar beam. Points in the direction of
+        The azimuthal angle [degrees] of the solar beam. Points in the direction of
         propagation of the solar beam.
     solarflux : float
         The flux of the solar beam on a horizontal surface.
