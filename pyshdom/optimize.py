@@ -267,16 +267,3 @@ class Optimizer:
     @property
     def options(self):
         return self._options
-
-
-class CallbackFn:
-    def __init__(self, callback_fn, ckpt_period=-1):
-        self._ckpt_period = ckpt_period
-        self._ckpt_time = time.time()
-        self._callback_fn = callback_fn
-
-    def __call__(self):
-        time_passed = time.time() - self._ckpt_time
-        if time_passed > self._ckpt_period:
-            self._ckpt_time = time.time()
-            self._callback_fn()
