@@ -78,7 +78,7 @@ class IndependentTransform(Transform):
 class StateToGridMask(IndependentTransform):
 
     def add_transform(self, scatterer_name, variable_name, mask, fill_value):
-
+        mask = mask.astype(np.bool)
         if scatterer_name not in self._transforms:
             self._add_scatterer(scatterer_name)
 
@@ -138,7 +138,7 @@ class StateRepresentation:
             for variable_name in variable_name_data:
                 test_gridded_data = np.zeros(grid_shape)
                 abstract_state = state_to_grid.inverse(test_gridded_data, scatterer_name, variable_name)
-                start_end_scatterer[variable_name] = (self._total_length, self._total_length+len(abstract_state)+1)
+                start_end_scatterer[variable_name] = (self._total_length, self._total_length+len(abstract_state))
                 self._total_length += len(abstract_state)
             self._start_end_points[scatterer_name] = start_end_scatterer
 
