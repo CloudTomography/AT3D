@@ -242,106 +242,116 @@ class OpticalPropertyGenerator:
     def _differentiate_exact(self, microphysics, key, variable_names, interp_coords, rel_step=0.01):
 
         optical_derivatives = OrderedDict()
-
         for var_name in variable_names:
             # for an exact optical to microphysical relation we perform finite differencing
             # along the variable.
-            if var_name not in self._table_variable_names:
-                exact_size_distribution_parameters = {}
-                # step size for forward difference.
-                step = rel_step * np.sign(self._exact_size_distribution_parameters[var_name]) * \
-                    np.maximum(0.05, np.abs(self._exact_size_distribution_parameters[var_name]))
-                exact_size_distribution_parameters[var_name] = step + \
-                    self._exact_size_distribution_parameters[var_name]
-                for name in self._exact_size_distribution_parameters:
-                    if name != var_name:
-                        exact_size_distribution_parameters[name] = \
-                            self._exact_size_distribution_parameters[name]
-
-                optical_properties_above, poly_table_above = self._exact_forward_optical_properties(
-                    microphysics,
-                    self._monodisperse_tables[key],
-                    exact_size_distribution_parameters,
-                    self._interpolation_weights,
-                    self._phase_indices,
-                    interp_coords
-                )
-
-                step_big = np.sum(
-                    self._interpolation_weights*step[self._phase_indices], axis=0
+            if var_name == 'density':
+                extinct_efficiency = np.sum(
+                    self._interpolation_weights*self._poly_tables[key].extinction.data[self._phase_indices],
+                    axis=0
                     ).reshape(microphysics.density.shape)
-
-                dext = (optical_properties_above.extinction -
-                        self._cached_optical_properties[key].extinction)/step_big
-                dalb = (optical_properties_above.ssalb -
-                        self._cached_optical_properties[key].ssalb)/step_big
-                dleg = (optical_properties_above.legcoef -
-                        self._cached_optical_properties[key].legcoef)/step[None, None, :]
-                dleg[0, 0] = 0.0
-
-                single_optical_derivative = xr.merge(
-                    [dext, dalb, dleg, self._cached_optical_properties[key].phase_weights]
-                    )
+                single_optical_derivative = self._cached_optical_properties[key].copy(deep=True)
+                single_optical_derivative['extinction'] = (['x','y','z'], extinct_efficiency)
+                single_optical_derivative['ssalb'][:] *= 0.0
+                single_optical_derivative['legcoef'][:] *= 0.0
                 single_optical_derivative['derivative_method'] = 'exact'
-
             else:
-                # this is a table variable so we have to find the derivatives
-                # based on the table nodes.
-                micro_data = interp_coords[var_name].data.ravel()
-                micro_data_bin = self._size_distribution_grids[key][var_name].data
-                digitized_micro_data = np.digitize(micro_data, bins=micro_data_bin)
+                if var_name not in self._table_variable_names:
+                    exact_size_distribution_parameters = {}
+                    # step size for forward difference.
+                    step = rel_step * np.sign(self._exact_size_distribution_parameters[var_name]) * \
+                        np.maximum(0.05, np.abs(self._exact_size_distribution_parameters[var_name]))
+                    exact_size_distribution_parameters[var_name] = step + \
+                        self._exact_size_distribution_parameters[var_name]
+                    for name in self._exact_size_distribution_parameters:
+                        if name != var_name:
+                            exact_size_distribution_parameters[name] = \
+                                self._exact_size_distribution_parameters[name]
 
-                step = micro_data_bin[digitized_micro_data] - micro_data_bin[digitized_micro_data-1]
-                diff = micro_data - micro_data_bin[digitized_micro_data-1]
-                interp1 = diff/step
-
-
-                lower_upper_flags = np.array(
-                    [i for i in itertools.product(*[np.arange(-1, 1)]* \
-                     len(self._table_variable_names))]
+                    optical_properties_above, poly_table_above = self._exact_forward_optical_properties(
+                        microphysics,
+                        self._monodisperse_tables[key],
+                        exact_size_distribution_parameters,
+                        self._interpolation_weights,
+                        self._phase_indices,
+                        interp_coords
                     )
-                flag_index = np.where(np.array(self._table_variable_names) == var_name)[0][0]
 
-                derivative_interpolation_indices = np.zeros(
-                    shape=self._interpolation_weights.shape,
-                    dtype=np.int32
-                )
-                derivative_interpolation_weights = np.zeros(
-                    self._interpolation_weights.shape,
-                    dtype=np.float32
-                )
+                    step_big = np.sum(
+                        self._interpolation_weights*step[self._phase_indices], axis=0
+                        ).reshape(microphysics.density.shape)
 
-                derivative_interpolation_weights[np.where(lower_upper_flags[:, flag_index] == 0), :] = \
-                self._interpolation_weights[np.where(lower_upper_flags[:, flag_index] == 0), :] / \
-                (step*interp1)
-                derivative_interpolation_weights[np.where(lower_upper_flags[:, flag_index] == -1), :] = \
-                -1*self._interpolation_weights[np.where(lower_upper_flags[:, flag_index] == 0), :] / \
-                (step*interp1)
+                    dext = (optical_properties_above.extinction -
+                            self._cached_optical_properties[key].extinction)/step_big
+                    dalb = (optical_properties_above.ssalb -
+                            self._cached_optical_properties[key].ssalb)/step_big
+                    dleg = (optical_properties_above.legcoef -
+                            self._cached_optical_properties[key].legcoef)/step[None, None, :]
+                    dleg[0, 0] = 0.0
 
-                derivative_interpolation_indices[:] = self._phase_indices[:]
+                    single_optical_derivative = xr.merge(
+                        [dext, dalb, dleg, self._cached_optical_properties[key].phase_weights]
+                        )
+                    single_optical_derivative['derivative_method'] = 'exact'
 
-                # dleg has to be mixed at each point using derivative_interpolation_weights and indices.
-                # rather than calculated here.
-                dext = np.sum(self._poly_tables[key].extinction.data[derivative_interpolation_indices]*
-                              derivative_interpolation_weights, axis=0)
-                dalb = np.sum(self._poly_tables[key].ssalb.data[derivative_interpolation_indices]*
-                              derivative_interpolation_weights, axis=0)
+                else:
+                    # this is a table variable so we have to find the derivatives
+                    # based on the table nodes.
+                    micro_data = interp_coords[var_name].data.ravel()
+                    micro_data_bin = self._size_distribution_grids[key][var_name].data
+                    digitized_micro_data = np.digitize(micro_data, bins=micro_data_bin)
 
-                single_optical_derivative = xr.Dataset(
-                    data_vars={
-                        'extinction': microphysics.density * dext.reshape(microphysics.density.shape),
-                        'ssalb': (['x', 'y', 'z'], dalb.reshape(microphysics.density.shape)),
-                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'], # no differentiated legcoef required.
-                                    np.zeros((6, 0, 0))),
-                        'phase_weights': (['num_micro', 'x', 'y', 'z'],
-                            derivative_interpolation_weights.reshape(
-                                (-1,)+microphysics.density.shape)),
-                        'table_index': (['num_micro', 'x', 'y', 'z'],
-                            1+derivative_interpolation_indices.reshape(
-                                (-1,)+microphysics.density.shape))
-                    }
-                )
-                single_optical_derivative['derivative_method'] = 'table'
+                    step = micro_data_bin[digitized_micro_data] - micro_data_bin[digitized_micro_data-1]
+                    diff = micro_data - micro_data_bin[digitized_micro_data-1]
+                    interp1 = diff/step
+
+
+                    lower_upper_flags = np.array(
+                        [i for i in itertools.product(*[np.arange(-1, 1)]* \
+                         len(self._table_variable_names))]
+                        )
+                    flag_index = np.where(np.array(self._table_variable_names) == var_name)[0][0]
+
+                    derivative_interpolation_indices = np.zeros(
+                        shape=self._interpolation_weights.shape,
+                        dtype=np.int32
+                    )
+                    derivative_interpolation_weights = np.zeros(
+                        self._interpolation_weights.shape,
+                        dtype=np.float32
+                    )
+
+                    derivative_interpolation_weights[np.where(lower_upper_flags[:, flag_index] == 0), :] = \
+                    self._interpolation_weights[np.where(lower_upper_flags[:, flag_index] == 0), :] / \
+                    (step*interp1)
+                    derivative_interpolation_weights[np.where(lower_upper_flags[:, flag_index] == -1), :] = \
+                    -1*self._interpolation_weights[np.where(lower_upper_flags[:, flag_index] == 0), :] / \
+                    (step*interp1)
+
+                    derivative_interpolation_indices[:] = self._phase_indices[:]
+
+                    # dleg has to be mixed at each point using derivative_interpolation_weights and indices.
+                    # rather than calculated here.
+                    dext = np.sum(self._poly_tables[key].extinction.data[derivative_interpolation_indices]*
+                                  derivative_interpolation_weights, axis=0)
+                    dalb = np.sum(self._poly_tables[key].ssalb.data[derivative_interpolation_indices]*
+                                  derivative_interpolation_weights, axis=0)
+
+                    single_optical_derivative = xr.Dataset(
+                        data_vars={
+                            'extinction': microphysics.density * dext.reshape(microphysics.density.shape),
+                            'ssalb': (['x', 'y', 'z'], dalb.reshape(microphysics.density.shape)),
+                            'legcoef': (['stokes_index', 'legendre_index', 'table_index'], # no differentiated legcoef required.
+                                        np.zeros((6, 0, 0))),
+                            'phase_weights': (['num_micro', 'x', 'y', 'z'],
+                                derivative_interpolation_weights.reshape(
+                                    (-1,)+microphysics.density.shape)),
+                            'table_index': (['num_micro', 'x', 'y', 'z'],
+                                1+derivative_interpolation_indices.reshape(
+                                    (-1,)+microphysics.density.shape))
+                        }
+                    )
+                    single_optical_derivative['derivative_method'] = 'table'
 
             single_optical_derivative['derivative_variable'] = var_name
             optical_derivatives[var_name] = single_optical_derivative
