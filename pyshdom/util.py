@@ -520,9 +520,11 @@ def load_forward_model(file_name):
     for key,sensor in sensors.items():
         sensor_list = []
         for i, image in sensor.groups.items():
-
-            sensor_dict.add_sensor(key, xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
-                'sensors/'+str(key)+'/'+str(i)])))
+            sensor_dataset = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
+                'sensors/'+str(key)+'/'+str(i)]))
+            sensor_dataset['stokes'] = (['stokes_index'],sensor_dataset['stokes'].data.astype(np.bool))
+            sensor_dataset['use_subpixel_rays'] = sensor_dataset['use_subpixel_rays'].data.astype(np.bool)
+            sensor_dict.add_sensor(key, sensor_dataset)
         #     sensor_list.append(xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
         #         'sensors/'+str(key)+'/'+str(i)])))
         # sensor_dict[key] = {'sensor_list':sensor_list}
@@ -530,6 +532,8 @@ def load_forward_model(file_name):
     for key, solver in solvers.items():
         numerical_params = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
                         'solvers/'+str(key)+'/numerical_parameters']))
+        numerical_params['deltam'] = numerical_params.deltam.data.astype(np.bool)
+        numerical_params['high_order_radiance'] = numerical_params.high_order_radiance.data.astype(np.bool)
         num_stokes = numerical_params.num_stokes.data
         surface = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/surface']))
         source = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/source']))

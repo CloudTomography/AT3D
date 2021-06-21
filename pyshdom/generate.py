@@ -1,14 +1,118 @@
 """
-A module containing tools for generating synthetic data.
+Tools for generating synthetic data either by producing statistical surrogates
+from existing data or generating 'cloud-like' data using simple stochastic
+(or other) models.
 """
 import numpy as np
 import scipy.stats as st
 import numpy.fft as fft
+import copy
+import scipy.ndimage as ndi
+import xarray as xr
+
+class SurrogateGenerator:
+    """
+    Generates statistical surrogates of a supplied data field using the
+    Iterative Amplitude Adjusted Fourier Transform algorithm (IAAFT).
+
+    This is useful for producing new realizations of cloud data which may
+    have been computationally expensive to produce (e.g. from Large Eddy Simulation).
+
+    The IAAFT matches the distribution of the data and attempts to match the
+    amplitudes of the power spectrum. This is done by starting from
+    a random shuffle of the data and then iteratively adjusting the spectrum and
+    the distribution until the power spectrum stops changing. This algorithm
+    may reach local minima. Other refinements to the IAAFT
+    such as the Wavelet-initialization or Stochastic variants could be implemented
+    to further improve this algorithm.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        The array of data to produce surrogates of.
+
+    Reference
+    ---------
+    VENEMA, V., MEYER, S., GARCÍA, S.G., KNIFFKA, A., SIMMER, C., CREWELL, S.,
+    LÖHNERT, U., TRAUTMANN, T. and MACKE, A. (2006),
+    Surrogate cloud fields generated with the iterative amplitude adapted Fourier
+    transform algorithm. Tellus A, 58: 104-120.
+    https://doi.org/10.1111/j.1600-0870.2006.00160.x
+    """
+    def __init__(self, data):
+
+        if not isinstance(data, np.ndarray):
+            raise TypeError("`data` input should be of type {}".format(type(np.ndarray)))
+
+        self._reference_data = data
+        self._normalized_data = (data - data.mean())/data.std()
+        self._reference_spectrum = fft.fftn(self._normalized_data)
+        self._ranked_data = np.sort(self._normalized_data.ravel())
+        self._reference_fourier_amplitudes = np.abs(self._reference_spectrum)
+
+    def __call__(self, err_tol=1e-4, maxiter=1000, normalized=False):
+        """
+        Produces a surrogate through iterative adjustment.
+
+        Notes
+        -----
+        This algorithm is initialized with a random shuffle so for reproducibility
+        the random number generator should be seeded before calls to this method.
+        e.g. by running `np.random.seed(1)`.
+
+        Returns
+        -------
+        surrogate_field : np.ndarray
+            The statistical surrogate of the reference data.
+
+        Parameters
+        ----------
+        err_tol : float
+            The termination criterion for the iterative adjustment of the
+            surrogate which is the relative reduction in the mean square
+            error of the absolute values of the power spectrum.
+        maxiter : int
+            The maximum number of iterations for adjusting the surrogate to the
+            reference data.
+        normalized : bool
+            If True then the surrogate is returned with unit standard deviation
+            and zero mean. If False then these two moments are exactly as in
+            the reference data.
+        """
+
+        data_to_shuffle = copy.deepcopy(self._normalized_data)
+        shuffled_indices = np.meshgrid(*[np.arange(shape) for shape in self._normalized_data.shape], indexing='ij')
+        for inds in shuffled_indices:
+            np.random.shuffle(inds.ravel())
+
+        surrogate_field = data_to_shuffle[tuple(shuffled_indices)]
+
+        old_cost = None
+        for i in range(maxiter): # This could be a while loop but whatever.
+            temp_spectra = fft.fftn(surrogate_field)
+            cost = np.sqrt(np.mean((self._reference_fourier_amplitudes - np.abs(temp_spectra))**2))
+            if old_cost is not None:
+                if np.abs(cost - old_cost)/old_cost < err_tol:
+                    break
+
+            adjusted_temp_spectra = self._reference_fourier_amplitudes*temp_spectra/np.abs(temp_spectra)
+            spectra_adjusted = fft.ifftn(adjusted_temp_spectra).real
+            temp_ranks = st.rankdata(spectra_adjusted).astype(np.int) -1
+            amplitude_adjusted_data = self._ranked_data[temp_ranks].reshape(self._normalized_data.shape)
+            surrogate_field = amplitude_adjusted_data
+            old_cost = cost
+
+        if not normalized:
+            surrogate_field = surrogate_field*self._reference_data.std() + self._reference_data.mean()
+
+        return surrogate_field
+
 
 def generate_stochastic_blob(rte_grid, var_profile, var_beta=-5.0/3.0, snr=1.0,
                  var_vertical_correlation=0.0, xy_blob=0.2, z_blob=0.2,
                  cloud_mask_vertical_correlation=0.8, volume_cloud_fraction=0.1,
-                 cloud_mask_beta=-3.0, remove_edges=True):
+                 cloud_mask_beta=-3.0, remove_edges=True, gaussian_smooth_sigma=0.5,
+                 seed_value=None):
     """
     Generates a stochastic blob variable that is 'cumulus-like'.
 
@@ -53,12 +157,19 @@ def generate_stochastic_blob(rte_grid, var_profile, var_beta=-5.0/3.0, snr=1.0,
         to make the cloud smooth at the scale of the voxels.
     remove_edges : Boolean
         Sets the edge points to zero in `var` if True.
+    gaussian_smooth_sigma : float
+        The standard deviation of a gaussian filter that is applied to the blob cloud
+        after generation.
+    seed_value : int
+        If not None, this value is used to seed random number generator for reproducibility.
 
     Returns
     -------
     var : np.ndarray
         The masked stochastically generated field.
     """
+    if seed_value is not None:
+        np.random.seed(seed_value)
     nx, ny, nz = rte_grid.x.size, rte_grid.y.size, rte_grid.z.size
     domain_x, domain_y, domain_z = rte_grid.x.data.max(), rte_grid.y.data.max(), rte_grid.z.data.max()
 
@@ -108,12 +219,35 @@ def generate_stochastic_blob(rte_grid, var_profile, var_beta=-5.0/3.0, snr=1.0,
     var_values = exp_field*snr*var_mean[mask] + var_mean[mask]
     var = np.zeros(field.shape)
     var[mask] = var_values
+    if gaussian_smooth_sigma is not None:
+        var = ndi.gaussian_filter(var, sigma=gaussian_smooth_sigma)
 
     if remove_edges:
     #Set edge points to zero to avoid interaction with open boundary conditions.
         var[0,:,:] = var[-1,:,:] = var[:,0,:] = var[:,-1,:] = var[...,0] = var[...,-1] = 0.0
 
-    return var
+    out_dataset = xr.Dataset(
+        data_vars={
+            'density': (['x','y','z'], var)
+        },
+        coords=rte_grid.coords,
+        attrs={
+            'var_profile': var_profile,
+            'var_beta': var_beta,
+            'snr': snr,
+            'var_vertical_correlation':var_vertical_correlation,
+            'xy_blob':xy_blob,
+            'z_blob':z_blob,
+            'cloud_mask_vertical_correlation':cloud_mask_vertical_correlation,
+            'volume_cloud_fraction':volume_cloud_fraction,
+            'cloud_mask_beta': cloud_mask_beta,
+            'remove_edges': str(remove_edges),
+            'gaussian_smooth_sigma':gaussian_smooth_sigma,
+            'seed_value': seed_value
+        }
+    )
+
+    return out_dataset
 
 
 class GaussianFieldGenerator:

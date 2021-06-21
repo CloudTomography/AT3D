@@ -726,25 +726,8 @@ C      TAUTOL = 0.2
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
       MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
 
-C     Set up the arrays for storing information about passed points so that
-C     the radiance at each subgrid interval can be accumulated and
-C     used to evaluate the gradient.
-
-C     Estimate the maximum number of subgrid intervals that we will pass.
-C     MAXCELLSCROSS already restricts the number of cells. The maximum
-C     optical path then sets the maximum number of subgrid intervals
-C     per cell.
-C      DZMAX = -1.0
-C      DO I=1,NZ-1
-C        IF (ZGRID(I+1) - ZGRID(I) .GE. DZMAX) THEN
-C          DZMAX = ZGRID(I+1) - ZGRID(I)
-C        ENDIF
-C      ENDDO
-C      MAXTAU = MAXVAL(EXTINCT)*MAX(DELX, DELY, DZMAX)
-C      MAXBYOPT = INT(MAXCELLSCROSS*MAXTAU/TAUTOL)
       MAXSUBGRIDINTS = MAX(MAXCELLSCROSS, MAXSUBGRIDINTS)
-CMAX(MAXCELLSCROSS,MAXBYOPT)) + 1
-C      CALL CPU_TIME(TIME1)
+
 
       ALLOCATE (PASSEDPOINTS(8,MAXSUBGRIDINTS))
       ALLOCATE (PASSEDINTERP0(8,MAXSUBGRIDINTS))
@@ -756,16 +739,6 @@ C      CALL CPU_TIME(TIME1)
 
 C     initialize counter for subgrid intervals.
       NPASSED = 1
-C     initialize radiance at passed subgrid intervals as zero
-C      PASSEDRAD = 0.0
-C     initialize all other passed points to horrific numbers so its obvious if there
-C     is an error.
-C      PASSEDPOINTS = 0
-C      PASSEDINTERP0 = 99999.0
-C      PASSEDINTERP1 = 99999.0
-C      PASSEDDELS = 99999.0
-C      PASSEDABSCELL = -99999.0
-C      PASSEDTRANSMIT = 99999.0
 
       PI = ACOS(-1.0D0)
 C       Calculate the generalized spherical harmonics for this direction
@@ -865,10 +838,8 @@ C         Start at the desired point, getting the extinction and source there
 C         Loop until reach a Z boundary or transmission is very small
       VALIDRAD = .FALSE.
 C      CALL CPU_TIME(TIME2)
-      TIME_ALLOCATE = TIME_ALLOCATE + TIME2 - TIME1
+C      TIME_ALLOCATE = TIME_ALLOCATE + TIME2 - TIME1
       DO WHILE (.NOT. VALIDRAD .AND. ICELL .GT. 0)
-
-C        CALL GET_BASE_GRID_CELL(BCELL, ICELL, TREEPTR)
 
 C           Make sure current cell is valid
         IF (ICELL .LE. 0) THEN
@@ -896,6 +867,7 @@ C     Compute the quantities at each base and adaptive grid combination
 C     that will be used for calculating sensitivities with respect to the
 C     scattering kernel/emission/solar source.
 C      CALL CPU_TIME(TIME1)
+
         CALL COMPUTE_SOURCE_GRAD_1CELL (ICELL, GRIDPTR,
      .             NSTOKES, NSTLEG, ML, MM, NLM, NLEG, NUMPHASE,
      .             NPTS, DELTAM, SRCTYPE, SOLARMU,
@@ -912,6 +884,7 @@ C      CALL CPU_TIME(TIME1)
      .             MAXNMICRO, DOEXACT, EXTMIN, SCATMIN,
      .             UNITS, WAVELEN, WAVENO, PHASEMAX, INTERPMETHOD,
      .             NODIFFUSE, DTEMP, DEXTM, DALBM, DFJ, TIME_SOURCE)
+
 C         CALL CPU_TIME(TIME2)
 C         TIME_SOURCE = TIME_SOURCE + TIME2 - TIME1
 C         Interpolate the source and extinction to the current point
@@ -1080,6 +1053,7 @@ C             subroutine.
               SRCGRAD = ( 0.5*(GRAD0+GRAD1)
      .          + 0.08333333333*(EXT0*GRAD1-EXT1*GRAD0)*DELS
      .           *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
+
                IF (EXACT_SINGLE_SCATTER .AND.
      .           SRCTYPE .NE. 'T') THEN
                  SRCSINGSCAT = ( 0.5*(SINGSCAT0+SINGSCAT1)
@@ -1101,7 +1075,8 @@ C         so that component of the gradient can be calculated.
 C         (This is done finally at the end of this subroutine).
           PASSEDABSCELL(NPASSED) = ABSCELL
           PASSEDTRANSMIT(NPASSED) = TRANSMIT
-C         Zero the newest point for radiance calculation.
+C         Zero the newest point for radiance calculation plus a few points
+C         just in case.
           PASSEDRAD(:,NPASSED) = 0.0
           DO KK=1,NPASSED
             PASSEDRAD(:,KK) = PASSEDRAD(:,KK) +
@@ -1265,14 +1240,18 @@ C     Add in the gradient components due to the radiance that is now
 C     fully calculated using the saved properties from each
 C     subgrid integration interval.
 C      CALL CPU_TIME(TIME1)
+C     Zero the final radiance value.
+      PASSEDRAD(:,NPASSED) = 0.0
       CALL COMPUTE_RADIANCE_DERIVATIVE(NUMDER,
      .  PASSEDDELS, PASSEDPOINTS, PASSEDINTERP0,
      .  PASSEDINTERP1, TOTAL_EXT, PASSEDRAD, RAYGRAD,
      .  PASSEDTRANSMIT, PASSEDABSCELL, NPTS, OPTINTERPWT,
      .  INTERPPTR, MAXPG, NSTOKES, NPASSED, DELTAM,
-     .  MAXSUBGRIDINTS, DEXTM)
+     .  MAXSUBGRIDINTS, DEXTM, IERR, ERRMSG)
+      IF (IERR .NE. 0) RETURN
 C      CALL CPU_TIME(TIME2)
 C      TIME_RADIANCE = TIME_RADIANCE + TIME2 - TIME1
+
       DEALLOCATE (PASSEDPOINTS, PASSEDRAD,PASSEDINTERP0,
      .            PASSEDINTERP1, PASSEDDELS, PASSEDABSCELL,
      .            PASSEDTRANSMIT)
@@ -2226,7 +2205,7 @@ C        trying to divide, as it is otherwise undefined.
          CALL PLANCK_FUNCTION(TEMP, UNITS, WAVENO,
      .                          WAVELEN, PLANCK)
 C       Catch NaNs that occur when PLANCK is very small.
-         IF (PLANCK .LT. 1e-9) THEN
+         IF (PLANCK .LT. 1e-7) THEN
            DPLANCK = 0.0
          ENDIF
           GRADTEMP(1) = GRADTEMP(1) +
@@ -2244,7 +2223,7 @@ C       Catch NaNs that occur when PLANCK is very small.
      .  PASSEDDELS, PASSEDPOINTS, PASSEDINTERP0, PASSEDINTERP1,
      .  TOTAL_EXT, PASSEDRAD, RAYGRAD, PASSEDTRANSMIT, PASSEDABSCELL,
      .  NPTS, OPTINTERPWT, INTERPPTR, MAXPG,NSTOKES, NPASSED,
-     .  DELTAM, MAXSUBGRIDINTS, DEXTM)
+     .  DELTAM, MAXSUBGRIDINTS, DEXTM, IERR, ERRMSG)
 C     .  DEXT, DALB, LEGEN, DLEG, DIPHASEP, MAXNMICRO,
 C     .  IPHASEP, PHASEWTP, DPHASEWTP, INTERPMETHOD, ALBEDOP,
 C     .  EXTINCTP, DOEXACT,
@@ -2273,7 +2252,8 @@ C      INTEGER NPTS, NSTLEG, NLEG, MAXNMICRO, MAXPG, NUMDER, NPART
 C      INTEGER PARTDER(NUMDER), NSTOKES, NUMPHASE, DNUMPHASE,ML
       INTEGER NPASSED, MAXSUBGRIDINTS
       LOGICAL DELTAM
-      CHARACTER INTERPMETHOD*2
+      INTEGER IERR
+      CHARACTER INTERPMETHOD*2, ERRMSG*600
 C      REAL DEXT(MAXPG,NUMDER), DALB(MAXPG,NUMDER)
 C      REAL ALBEDOP(MAXPG,NPART), EXTINCTP(MAXPG,NPART)
       REAL OPTINTERPWT(8,NPTS)
