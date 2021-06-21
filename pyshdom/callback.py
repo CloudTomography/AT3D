@@ -4,6 +4,7 @@ the progress of long optimizations.
 """
 import tensorboardX
 import time
+import matplotlib.pyplot as plt
 
 class SummaryWriter(tensorboardX.SummaryWriter):
     """
@@ -15,6 +16,16 @@ class SummaryWriter(tensorboardX.SummaryWriter):
                  filename_suffix='', write_to_disk=True, **kwargs):
         super().__init__(logdir, comment, purge_step, max_queue, flush_secs,
                          filename_suffix, write_to_disk, **kwargs)
+
+    def add_xarray_image(self, tag, image, global_step=None):
+        plt.style.use('default')
+        image.plot()
+        self.add_figure(tag, plt.gcf(), global_step)
+
+    def add_xarray_images(self, tag, image, global_step=None):
+        plt.style.use('default')
+        image.plot()
+        self.add_figure(tag, plt.gcf(), global_step)
 
     #TODO add some defaults/examples.
 
