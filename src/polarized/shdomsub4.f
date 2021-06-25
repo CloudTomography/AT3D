@@ -281,7 +281,7 @@ C      PRINT *, 'TIME_SOURCE', TIME_SOURCE
      .           JACOBIANPTR, NUM_JACOBIAN_PTS, RAYS_PER_PIXEL,
      .           RAY_WEIGHTS, STOKES_WEIGHTS,
      .           COSTFUNC, NCOST, NGRAD, NUNCERTAINTY,
-     .           TAUTOL, NODIFFUSE, IERR, ERRMSG, INTERPMETHOD,
+     .           TAUTOL, SINGLESCATTER, IERR, ERRMSG, INTERPMETHOD,
      .           MAXNMICRO, DIPHASEP, IPHASEP, PHASEWTP, DPHASEWTP,
      .           PHASEINTERPWT, ALBEDOP, EXTINCTP, OPTINTERPWT,
      .           INTERPPTR, EXTMIN, SCATMIN, DOEXACT, TEMP, PHASEMAX,
@@ -418,8 +418,8 @@ Cf2py intent(in) :: RAY_WEIGHTS, STOKES_WEIGHTS
 Cf2py intent(in) :: TAUTOL
       DOUBLE PRECISION TRANSCUT
 Cf2py intent(in) :: TRANSCUT
-      LOGICAL NODIFFUSE
-Cf2py intent(in) :: NODIFFUSE
+      LOGICAL SINGLESCATTER
+Cf2py intent(in) :: SINGLESCATTER
       INTEGER IERR
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
@@ -533,7 +533,7 @@ C         while traversing the SHDOM grid.
      .             DALB, DLEG, MAXPG, DNUMPHASE, SOLARFLUX,
      .             NPX, NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
-     .             EXACT_SINGLE_SCATTER, TAUTOL, NODIFFUSE,
+     .             EXACT_SINGLE_SCATTER, TAUTOL, SINGLESCATTER,
      .             GNDALBEDO, IERR, ERRMSG, TEMP, PHASEMAX,
      .             PHASEINTERPWT, OPTINTERPWT, INTERPPTR,
      .             MAXNMICRO, EXTINCTP, ALBEDOP, PHASEWTP, DPHASEWTP,
@@ -596,7 +596,7 @@ C      PRINT *, 'TIME_ALLOCATE', TIME_ALLOCATE
      .             DALB, DLEG, MAXPG, DNUMPHASE, SOLARFLUX,
      .             NPX, NPY, NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .             EXTDIRP, UNIFORMZLEV, DPHASETAB, DPATH, DPTR,
-     .             EXACT_SINGLE_SCATTER, TAUTOL, NODIFFUSE,
+     .             EXACT_SINGLE_SCATTER, TAUTOL, SINGLESCATTER,
      .             GNDALBEDO, IERR, ERRMSG, TEMP, PHASEMAX,
      .             PHASEINTERPWT, OPTINTERPWT, INTERPPTR,
      .             MAXNMICRO, EXTINCTP, ALBEDOP, PHASEWTP, DPHASEWTP,
@@ -696,7 +696,7 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
       REAL YLMDIR(NSTLEG,NLM)
       REAL, ALLOCATABLE ::  SINGSCAT(:,:), DSINGSCAT(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: SUNDIRLEG(:)
-      LOGICAL :: NODIFFUSE
+      LOGICAL :: SINGLESCATTER
       DOUBLE PRECISION :: DIRRAD(NSTOKES,4), BOUNDINTERP(4)
       INTEGER :: BOUNDPTS(4), IB,IP
       REAL :: GNDALBEDO
@@ -892,7 +892,7 @@ C      CALL CPU_TIME(TIME1)
      .             DIPHASEP, DPHASEWTP, SINGSCAT8, OSINGSCAT8,
      .             MAXNMICRO, DOEXACT, EXTMIN, SCATMIN,
      .             UNITS, WAVELEN, WAVENO, PHASEMAX, INTERPMETHOD,
-     .             NODIFFUSE, DTEMP, DEXTM, DALBM, DFJ, TIME_SOURCE)
+     .             SINGLESCATTER, DTEMP, DEXTM, DALBM, DFJ, TIME_SOURCE)
 
 C         CALL CPU_TIME(TIME2)
 C         TIME_SOURCE = TIME_SOURCE + TIME2 - TIME1
@@ -1282,7 +1282,7 @@ C      TIME_RADIANCE = TIME_RADIANCE + TIME2 - TIME1
      .             DIPHASEP, DPHASEWTP, SINGSCAT8, OSINGSCAT8,
      .             MAXNMICRO, DOEXACT, EXTMIN, SCATMIN,
      .             UNITS, WAVELEN, WAVENO, PHASEMAX, INTERPMETHOD,
-     .             NODIFFUSE, DTEMP, DEXTM, DALBM, DFJ, TIME_SOURCE)
+     .             SINGLESCATTER, DTEMP, DEXTM, DALBM, DFJ, TIME_SOURCE)
 C       Computes the source function times extinction for gridpoints
 C     belonging to cell ICELL in the direction (MU,PHI).  The results
 C     are returned in SRCEXT8 and EXTINCT8.
@@ -1314,7 +1314,7 @@ C     This is unapproximated (apart from practicalities of discretization).
       DOUBLE PRECISION SUNDIRLEG(0:NLEG)
       CHARACTER SRCTYPE*1, INTERPMETHOD*2, UNITS*1
       INTEGER*2 CELLFLAGS(*)
-      LOGICAL OUTOFDOMAIN, NODIFFUSE
+      LOGICAL OUTOFDOMAIN, SINGLESCATTER
       REAL    SINGSCAT8(NSTOKES,8), OSINGSCAT8(NSTOKES,8)
       REAL    DLEG(NSTLEG,0:NLEG,DNUMPHASE), DEXT(MAXPG,NUMDER)
       REAL    DALB(MAXPG,NUMDER)
@@ -1630,10 +1630,10 @@ C      Final part of the forward model where we multiply the source
 C      by the extinction.
           SINGSCAT8(:,N) = SINGSCAT8(:,N)*EXT
 C         The SRCEXT8 is used to calculate the radiance, which is itself
-C         used in the gradient. If we only want the single scatter (NODIFFUSE) then
+C         used in the gradient. If we only want the single scatter (SINGLESCATTER) then
 C         the source should only include the single scatter so we set that
 C         here. This doesn't save computation time at all though.
-          IF (NODIFFUSE) THEN
+          IF (SINGLESCATTER) THEN
             SRCEXT8(:,N) = SINGSCAT8(:,N)
           ELSE
             SRCEXT8(:,N) = SRCEXT8(:,N)*EXT
