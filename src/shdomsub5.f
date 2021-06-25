@@ -1610,7 +1610,7 @@ Cf2py intent(out) :: IERR, ERRMSG
       REAL    XO, YO, ZO, XI, YI, ZI
       INTEGER IERR
       CHARACTER ERRMSG*600
-      
+
       INTEGER IX, IY, IZ, JZ, IL, IM, IU
       INTEGER I, J, K, IP, JP, I1, I2, I3, I4
       INTEGER IPDIRECT, DI, DJ, DK

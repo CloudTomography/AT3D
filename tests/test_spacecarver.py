@@ -56,6 +56,6 @@ class VerifySpaceCarver(TestCase):
         cls.oneside = np.dot(xtilde.sum(axis=0).ravel(),xinput.ravel())
         cls.otherside = np.dot(ytilde1,yinput1) + np.dot(ytilde2,yinput2)
     def dotproduct_test1(self):
-        self.assertEqual(83123068.05097099, self.oneside)
+        self.assertEqual(83123068.05097, np.round(self.oneside,5))
     def dotproduct_test2(self):
-        self.assertEqual(83123068.05097099, self.otherside)
+        self.assertEqual(83123068.05097, np.round(self.oneside,5))
