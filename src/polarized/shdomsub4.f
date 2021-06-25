@@ -104,7 +104,8 @@ C       e.g. Dubovik et al. 2011 https://doi.org/10.5194/amt-4-975-2011.
      .                   CAMPHI, NPIX, NPART, TOTAL_EXT, STOKES,
      .                   NSCATANGLE, YLMSUN, PHASETAB, NSTPHASE,
      .                  IERR, ERRMSG, INTERPMETHOD, PHASEINTERPWT,
-     .                   PHASEMAX, MAXNMICRO, TAUTOL)
+     .                   PHASEMAX, MAXNMICRO, TAUTOL,
+     .                  CORRECTINTERPOLATE, TRANSCUT, SINGLESCATTER)
 C    Calculates the Stokes Vector at the given directions (CAMMU, CAMPHI)
 C    and positions CAMX,CAMY,CAMZ by integrating the source function.
 
@@ -112,6 +113,10 @@ Cf2py threadsafe
       IMPLICIT NONE
       INTEGER NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
 Cf2py intent(in) :: NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
+      LOGICAL CORRECTINTERPOLATE, SINGLESCATTER
+Cf2py intent(in) :: CORRECTINTERPOLATE, SINGLESCATTER
+      DOUBLE PRECISION TRANSCUT
+Cf2py intent(in) :: TRANSCUT
       INTEGER ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
 Cf2py intent(in) :: ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
       INTEGER NMU, NPHI0MAX, NPHI0(*), MAXNMICRO
@@ -239,7 +244,8 @@ C        CALL CPU_TIME(TIME1)
      .                       XE,YE,ZE, SIDE, TRANSMIT, VISRAD, VALIDRAD,
      .   	                 TOTAL_EXT, NPART, IERR,ERRMSG, INTERPMETHOD,
      .                     PHASEINTERPWT, PHASEMAX,MAXNMICRO, TAUTOL,
-     .                     TIME_SOURCE)
+     .                     TIME_SOURCE, CORRECTINTERPOLATE,
+     .                     TRANSCUT, SINGLESCATTER)
       IF (IERR .NE. 0) RETURN
 C       CALL CPU_TIME(TIME2)
 C       TIME_RAY_TOTAL = TIME_RAY_TOTAL + TIME2-TIME1
@@ -279,7 +285,8 @@ C      PRINT *, 'TIME_SOURCE', TIME_SOURCE
      .           MAXNMICRO, DIPHASEP, IPHASEP, PHASEWTP, DPHASEWTP,
      .           PHASEINTERPWT, ALBEDOP, EXTINCTP, OPTINTERPWT,
      .           INTERPPTR, EXTMIN, SCATMIN, DOEXACT, TEMP, PHASEMAX,
-     .           DTEMP, DEXTM, DALBM, DFJ, MAXSUBGRIDINTS)
+     .           DTEMP, DEXTM, DALBM, DFJ, MAXSUBGRIDINTS,
+     .           TRANSCUT)
 C    Calculates the cost function and its gradient using the Levis approximation
 C    to the Frechet derivatives of the radiative transfer equation.
 C    Calculates the Stokes Vector at the given directions (CAMMU, CAMPHI)
@@ -409,6 +416,8 @@ Cf2py intent(in) :: RAYS_PER_PIXEL
 Cf2py intent(in) :: RAY_WEIGHTS, STOKES_WEIGHTS
       DOUBLE PRECISION TAUTOL
 Cf2py intent(in) :: TAUTOL
+      DOUBLE PRECISION TRANSCUT
+Cf2py intent(in) :: TRANSCUT
       LOGICAL NODIFFUSE
 Cf2py intent(in) :: NODIFFUSE
       INTEGER IERR
@@ -530,7 +539,7 @@ C         while traversing the SHDOM grid.
      .             MAXNMICRO, EXTINCTP, ALBEDOP, PHASEWTP, DPHASEWTP,
      .             IPHASEP, DIPHASEP, WAVENO, UNITS, EXTMIN, SCATMIN,
      .             DOEXACT, INTERPMETHOD, DTEMP, DEXTM, DALBM,
-     .             DFJ, MAXSUBGRIDINTS, TIME_SOURCE,
+     .             DFJ, MAXSUBGRIDINTS, TRANSCUT,TIME_SOURCE,
      .             TIME_DIRECT_POINT, TIME_DIRECT_SURFACE,
      .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE)
           IF (IERR .NE. 0) RETURN
@@ -593,7 +602,7 @@ C      PRINT *, 'TIME_ALLOCATE', TIME_ALLOCATE
      .             MAXNMICRO, EXTINCTP, ALBEDOP, PHASEWTP, DPHASEWTP,
      .             IPHASEP, DIPHASEP, WAVENO, UNITS, EXTMIN, SCATMIN,
      .             DOEXACT, INTERPMETHOD, DTEMP, DEXTM,DALBM,
-     .             DFJ, MAXSUBGRIDINTS, TIME_SOURCE,
+     .             DFJ, MAXSUBGRIDINTS, TRANSCUT, TIME_SOURCE,
      .             TIME_DIRECT_POINT, TIME_DIRECT_SURFACE,
      .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE)
 C       Integrates the source function through the extinction field
@@ -717,7 +726,7 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
      .              0,0,0,0,1,2,3,4, 5,6,7,8,0,0,0,0/
 
 C         TRANSCUT is the transmission to stop the integration at
-      TRANSCUT = 5.0E-5
+C      TRANSCUT = 5.0E-5
 C0.0D0
 C         TAUTOL is the maximum optical path for the subgrid intervals
 C      it is now a numerical parameter.

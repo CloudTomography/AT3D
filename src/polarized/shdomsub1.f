@@ -4596,6 +4596,9 @@ C     and updates the neighbor pointers (NEIGHPTR) for the new cells and
 C     their neighboring cells.
       IMPLICIT NONE
       INTEGER NPTS, NCELLS, ICELL, IDIR, NEWPOINTS(3,4)
+Cf2py intent(in) :: ICELL, IDIR
+Cf2py intent(out) :: NEWPOINTS
+Cf2py intent(in, out) :: NPTS, NCELLS
       INTEGER GRIDPTR(8,*), NEIGHPTR(6,*), TREEPTR(2,*)
       INTEGER*2 CELLFLAGS(*)
       REAL    GRIDPOS(3,*)

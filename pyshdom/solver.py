@@ -151,6 +151,16 @@ class RTE:
         self._phasemax = 0.999
         self._adjflag = False # Used for testing the adjoint source.
 
+        self._correctinterpolate = True
+        # Flag for switching between the 'Radiance' and 'Visualization'
+        # methods for calculating radiances in original SHDOM.
+        # This is added for verification against original SHDOM.
+        # The methods only differ in calculations when line integrations
+        # pass through a region with varying grid resolution.
+        # `True` corresponds to the 'Visualization' method which utilizes
+        # a more accurate interpolation for the source-extinction
+        # product than the 'Radiance' method.
+
         self.source = self._setup_source(source)
         self.medium, self._grid = self._setup_medium(medium)
 
@@ -486,7 +496,7 @@ class RTE:
         #     warnings.warn("Actual adapt_grid_factor: {:.4f}".format(self._adapt_grid_factor_out))
         #     warnings.warn("Actual cell_point_ratio: {:.4f}".format(self._cell_point_out))
 
-    def integrate_to_sensor(self, sensor):
+    def integrate_to_sensor(self, sensor, single_scatter=False):
         """Calculates the StokesVector at specified geometry using an RTE solution.
 
         Integrates the source function along rays with positions and
@@ -535,6 +545,9 @@ class RTE:
         self._precompute_phase()
 
         output, ierr, errmsg = pyshdom.core.render(
+            correctinterpolate=self._correctinterpolate,
+            singlescatter=single_scatter,
+            transcut=self._transcut,
             tautol=self._tautol,
             maxnmicro=self._pa.max_num_micro,
             interpmethod=self._interpmethod,
@@ -1386,23 +1399,21 @@ class RTE:
         output_dataset['ml'] = self._ml
         output_dataset['mm'] = self._mm
         output_dataset['nlm'] = self._nlm
-        if save_radiances:
-            save_grid = True
 
-        if save_grid:
-            output_dataset['npts'] = self._npts
-            output_dataset['ncells'] = self._ncells
-            output_dataset['nbcells'] = self._nbcells
-            output_dataset['xgrid'] = (['nx1'], self._xgrid)
-            output_dataset['ygrid'] = (['ny1'], self._ygrid)
-            output_dataset['zgrid'] = (['nz_dim'], self._zgrid)
-            output_dataset['gridpos'] = (['xyz', 'npts_dim'], self._gridpos[:, :self._npts])
-            output_dataset['gridptr'] = (['8points', 'ncells_dim'], self._gridptr[:, :self._ncells])
-            output_dataset['neighptr'] = (['6neighbours', 'ncells_dim'],
-                                          self._neighptr[:, :self._ncells])
-            output_dataset['treeptr'] = (['parent_child', 'ncells_dim'],
-                                         self._treeptr[:, :self._ncells])
-            output_dataset['cellflags'] = (['ncells_dim'], self._cellflags[:self._ncells])
+        output_dataset['npts'] = self._npts
+        output_dataset['ncells'] = self._ncells
+        output_dataset['nbcells'] = self._nbcells
+        output_dataset['xgrid'] = (['nx1'], self._xgrid)
+        output_dataset['ygrid'] = (['ny1'], self._ygrid)
+        output_dataset['zgrid'] = (['nz_dim'], self._zgrid)
+        output_dataset['gridpos'] = (['xyz', 'npts_dim'], self._gridpos[:, :self._npts])
+        output_dataset['gridptr'] = (['8points', 'ncells_dim'], self._gridptr[:, :self._ncells])
+        output_dataset['neighptr'] = (['6neighbours', 'ncells_dim'],
+                                      self._neighptr[:, :self._ncells])
+        output_dataset['treeptr'] = (['parent_child', 'ncells_dim'],
+                                     self._treeptr[:, :self._ncells])
+        output_dataset['cellflags'] = (['ncells_dim'], self._cellflags[:self._ncells])
+
         if save_radiances:
             output_dataset['fluxes'] = (['updown', 'npts_dim'], self._fluxes[:, :self._npts])
             output_dataset['shptr'] = (['nptsand1'], self._shptr[:self._npts+1])
@@ -1692,6 +1703,7 @@ class RTE:
         self._iterfixsh = int(numerical_params.iterfixsh.data)
         self._tautol = numerical_params.tautol.data
         self._angle_set = numerical_params.angle_set.data
+        self._transcut = numerical_params.transcut.data
 
         if self._deltam.dtype != np.bool:
             raise TypeError("numerical_params.deltam should be of boolean type.")
@@ -1717,6 +1729,8 @@ class RTE:
                 "Numerical Parameter 'angle_set' must be in the set (1, 2, 3). See "
                 "default_config.json or shdom.txt for more details."
             )
+        if not (self._transcut >= 0.0 or self._transcut <= 5e-5):
+            warnings.warn("TRANSCUT should be a small number in (0, 5e-5) not {}".format(self._transcut))
 
         return numerical_params
 

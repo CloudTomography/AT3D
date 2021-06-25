@@ -44,7 +44,7 @@ def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength, fill_ray_variables
     mu : array_like of floats
         The cosine of zenith angle pointing TOWARDS the sensor's pixels.
     phi : array_like of floats
-        The azimuthal angle angle (in degrees) pointing TOWARDS the sensor's pixels.
+        The azimuthal angle angle (in radians) pointing TOWARDS the sensor's pixels.
     stokes : list of strings
         The Stokes components that will be calculated for the sensor at each pixel.
         Valid values ('I', 'Q', 'U', 'V')
