@@ -2,8 +2,9 @@
 This module contains summary writer that can be used for monitoring
 the progress of long optimizations.
 """
-
 import tensorboardX
+import time
+import matplotlib.pyplot as plt
 
 class SummaryWriter(tensorboardX.SummaryWriter):
     """
@@ -16,4 +17,26 @@ class SummaryWriter(tensorboardX.SummaryWriter):
         super().__init__(logdir, comment, purge_step, max_queue, flush_secs,
                          filename_suffix, write_to_disk, **kwargs)
 
+    def add_xarray_image(self, tag, image, global_step=None):
+        plt.style.use('default')
+        image.plot()
+        self.add_figure(tag, plt.gcf(), global_step)
+
+    def add_xarray_images(self, tag, image, global_step=None):
+        plt.style.use('default')
+        image.plot()
+        self.add_figure(tag, plt.gcf(), global_step)
+
     #TODO add some defaults/examples.
+
+class CallbackFn:
+    def __init__(self, callback_fn, ckpt_period=-1):
+        self._ckpt_period = ckpt_period
+        self._ckpt_time = time.time()
+        self._callback_fn = callback_fn
+
+    def __call__(self):
+        time_passed = time.time() - self._ckpt_time
+        if time_passed > self._ckpt_period:
+            self._ckpt_time = time.time()
+            self._callback_fn()

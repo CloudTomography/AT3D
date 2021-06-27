@@ -56,9 +56,11 @@ git clone https://github.com/CloudTomography/pyshdom.git
 cd pyshdom
 ```
 
-Start a clean virtual environment
+Start a clean virtual environment and setup enviroment variables
 ```
 conda create -n pyshdom python=3
+conda activate pyshdom
+conda env config vars set PYSHDOM_DIR=$(pwd)
 conda activate pyshdom
 ```
 

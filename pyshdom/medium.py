@@ -1010,7 +1010,8 @@ class MicrophysicsGenerator(DataGenerator):
         bounds = OrderedDict()
         opt_gen = self._optical_property_generator
         coords = list(opt_gen._size_distribution_grids.values())[0]
-        variable_names = list(opt_gen._size_distribution_parameters).append('density')
+        variable_names = list(opt_gen._size_distribution_parameters)
+        variable_names.append('density')
         for name in variable_names:
             if name in variable_data_bounds:
                 bound = variable_data_bounds[name]
@@ -1018,8 +1019,8 @@ class MicrophysicsGenerator(DataGenerator):
                 bound = (np.zeros(self._rte_grid_shape) + 1e-9,
                          np.zeros(self._rte_grid_shape) + 1e2)
             else:
-                bound = (np.zeros(self._rte_grid_shape) + coords[name].min(),
-                         np.zeros(self._rte_grid_shape) + coords[name].max())
+                bound = (np.zeros(self._rte_grid_shape) + coords[name].min().data,
+                         np.zeros(self._rte_grid_shape) + coords[name].max().data)
             self._check_bound(bound)
             bounds[name] = bound
 
@@ -1144,7 +1145,7 @@ class StateGenerator:
         elif isinstance(state_to_grid, np.ndarray):
             # assume that this is a mask to use for all variables.
             if state_to_grid.shape == self._grid_shape:
-                mask = state_to_grid.astype(np.bool)
+                mask = state_to_grid
                 self._state_to_grid = pyshdom.transforms.StateToGridMask()
                 # add all unknown names here.
                 for scatterer_name, variable_data in self._unknown_scatterers.items():

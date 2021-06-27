@@ -12,16 +12,64 @@ import warnings
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import subprocess
+import os
+import warnings
+from IPython.display import display
+from ipywidgets import fixed, interactive
+from pathlib import Path
 
 import pyshdom.core
 import pyshdom.solver
 import pyshdom.grid
 
-def set_pyshdom_path():
-    """set path to pyshdom parent directory"""
-    import os
-    from pathlib import Path
-    os.chdir(str(Path(pyshdom.__path__[0]).parent))
+def github_version():
+    """
+    Get github version.
+
+    Returns
+    -------
+    github_version: str,
+        The current GitHub version.
+
+    Raises
+    ------
+    warning if there are uncomitted changes in pyshdom.
+    """
+    github_dir = Path(os.environ['PYSHDOM_DIR']).joinpath('pyshdom')
+    uncomitted_changes = subprocess.check_output(["git", "diff", "--name-only", github_dir]).strip().decode('UTF-8')
+    if uncomitted_changes:
+        warnings.warn('There are uncomitted changes in the {}/pyshdom directories: {}'.format(github_dir, uncomitted_changes))
+    github_version = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode('UTF-8')
+    github_version = github_version + ' + uncomitted changes' if uncomitted_changes else github_version
+    return github_version
+
+def slider_select_file(dir, filetype=None):
+    """
+    Slider for interactive selection of a file
+
+    Parameters
+    ----------
+    dir: str,
+        The directory from which to choose.
+    filetype:  str, optional,
+        Filetypes to display. If filetype is None then all files in the directory are displayed.
+
+    Returns
+    -------
+    file: interactive,
+        An interactive slider utility.
+    """
+
+    def select_path(i, paths):
+        print(paths[i])
+        return paths[i]
+
+    filetype = '*' if filetype is None else '*.' + filetype
+    paths = [str(path) for path in Path(dir).rglob('{}'.format(filetype))]
+    file = interactive(select_path, i=(0, len(paths)-1), paths=fixed(paths));
+    display(file)
+    return file
 
 def get_phase_function(legcoef, angles, phase_elements='All'):
     """Calculates phase function from legendre tables.
