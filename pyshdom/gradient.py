@@ -103,7 +103,7 @@ class LevisApproxGradient:
         self._rte_sensors = None
         self._sensor_mapping = None
 
-        self._nodiffuse = False
+        self._single_scatter = False
 
         for name, instrument in self.measurements.items():
             if instrument['uncertainty_model'] is None:
@@ -280,9 +280,10 @@ class LevisApproxGradient:
             jacobianptr=jacobian_ptr,
             num_jacobian_pts=num_jacobian_pts,
             makejacobian=jacobian_flag,
-            nodiffuse=self._nodiffuse,
+            singlescatter=self._single_scatter,
             maxsubgridints=maxsubgridints,
             tautol=rte_solver._tautol,
+            transcut=rte_solver._transcut,
             dextm=rte_solver._dextm,
             dalbm=rte_solver._dalbm,
             dfj=rte_solver._dfj,
@@ -496,7 +497,7 @@ def make_gradient_dataset(gradient, unknown_scatterers, solvers):
 
 def make_jacobian_dataset(jacobian_list, unknown_scatterers, indices_for_jacobian, solvers, rte_sensors):
     """
-    A utility function that forms an xr.Dataset for the Frechet derivatives
+    A utility function that forms an xr.Dasingle_scatterFrechet derivatives
     under the Levis approximation for downstream ease of use when postprocessing
     at the script level.
 

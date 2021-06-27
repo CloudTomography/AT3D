@@ -212,7 +212,7 @@ class Verify_Solver(TestCase):
         config['num_mu_bins'] = 8
         config['num_phi_bins'] = 16
         config['solution_accuracy'] = 1e-4
-        config['tautol'] = 0.2
+        config['tautol'] = 0.1
         solvers = pyshdom.containers.SolversDict()
         for wavelength in wavelengths:
 
@@ -248,6 +248,7 @@ class Verify_Solver(TestCase):
         shdom_source = parse_shdom_output('data/shdom_verification_source_out.out', comment='*')
         cls.truth = shdom_source.T
         cls.testing = solver._source[:, :solver._npts]
+        solver._correctinterpolate = False
         integrated_rays = solver.integrate_to_sensor(sensor)
         cls.integrated_rays = integrated_rays
         cls.radiances = parse_shdom_output('data/rico32x36x26w672ar.out', comment='!')
@@ -437,6 +438,7 @@ class Parallelization_No_SubpixelRays(TestCase):
             config['spherical_harmonics_accuracy'] = 0.0
             config['solution_accuracy'] = 1e-4
             config['tautol'] = 0.2
+            config['transcut'] = 5e-5
             solver = pyshdom.solver.RTE(numerical_params=config,
                                             medium={'cloud': optical_properties},
                                            source=pyshdom.source.solar(wavelength, -1*np.cos(np.deg2rad(60.0)),0.0,solarflux=1.0),
@@ -546,6 +548,7 @@ class Parallelization_SubpixelRays(TestCase):
             config['spherical_harmonics_accuracy'] = 0.0
             config['solution_accuracy'] = 1e-4
             config['tautol'] = 0.2
+            config['transcut'] = 5e-5
             solver = pyshdom.solver.RTE(numerical_params=config,
                                             medium={'cloud': optical_properties},
                                            source=pyshdom.source.solar(wavelength, -1*np.cos(np.deg2rad(60.0)),0.0,solarflux=1.0),
@@ -835,7 +838,7 @@ class Verify_NonuniformGasAbsorption(TestCase):
     def setUpClass(cls):
 
         sensor, rayleigh, config = get_basic_state_for_surface()
-
+        config['transcut'] = 0.0
         x = np.linspace(0,1.0-1.0/50,50)
         y = np.zeros(50)
         z = np.ones(50)*30.0
@@ -850,7 +853,7 @@ class Verify_NonuniformGasAbsorption(TestCase):
             data_vars={
             'gas_absorption': (['x', 'y', 'z'], np.ones((rayleigh[0.85].x.size, rayleigh[0.85].y.size,
                                                         rayleigh[0.85].z.size))*
-                                                        np.linspace(0.0, 1e-2,rayleigh[0.85].x.size)[:, np.newaxis, np.newaxis])
+                                                        np.linspace(0.0, 1,rayleigh[0.85].x.size)[:, np.newaxis, np.newaxis])
             },
             coords={
             'x': rayleigh[0.85].x,
@@ -872,7 +875,7 @@ class Verify_NonuniformGasAbsorption(TestCase):
         solver.solve(maxiter=100, verbose=False)
         integrated_rays = solver.integrate_to_sensor(sensor)
 
-        tau = np.linspace(0.0, 1e-2, rayleigh[0.85].x.size)*30.0
+        tau = np.linspace(0.0, 1, rayleigh[0.85].x.size)*30.0
 
         rad = 1.0*np.exp(-tau)*0.04/np.pi * np.exp(-tau)
         cls.tau = tau
@@ -881,7 +884,9 @@ class Verify_NonuniformGasAbsorption(TestCase):
         cls.rad = rad
 
     def test_radiance(self):
-        self.assertTrue(np.allclose(self.rad, self.integrated_rays.I.data, atol=9e-6))
+        print(np.max(np.abs(self.integrated_rays.I.data-self.rad)))
+        print(self.integrated_rays.I.data, self.rad)
+        self.assertTrue(np.allclose(self.integrated_rays.I.data, self.rad, atol=2e-7))
 
 class Verify_Thermal(TestCase):
     @classmethod
@@ -890,20 +895,21 @@ class Verify_Thermal(TestCase):
         config = pyshdom.configuration.get_config('../default_config.json')
         config['split_accuracy'] = 0.0
         config['spherical_harmonics_accuracy'] = 0.0
-        config['num_mu_bins'] = 16
-        config['num_phi_bins'] = 32
+        config['num_mu_bins'] = 128
+        config['num_phi_bins'] = 256
         config['solution_accuracy'] = 1e-5
         config['x_boundary_condition'] = 'periodic'
         config['y_boundary_condition'] = 'periodic'
-        config['ip_flag'] = 3
-        config['tautol'] = 0.2
+        config['ip_flag'] = 1
+        config['tautol'] = 0.1
+        config['deltam'] = False
 
         rte_grid = pyshdom.grid.make_grid(0.02, 50, 0.02, 1,
                                    np.array([0,3.0,6.0,9.0,12.0,15.0,18.0,21.0,24.0,27.0,30.0]))
 
         atmosphere = xr.Dataset(
             data_vars = {
-                'temperature': ('z', np.array([288.0,269.0,249.0,230.0,217.0,217.0,217.0,218.0,221.0,224.0,227.0])),
+                'temperature': ('z', np.array([288.0]*11)),
                 'pressure': ('z', np.ones(rte_grid.z.size)*0.0)
                             },
             coords = {'z': rte_grid.z.data}
@@ -920,8 +926,12 @@ class Verify_Thermal(TestCase):
         sensor = pyshdom.sensor.make_sensor_dataset(x.ravel(),y.ravel(),z.ravel(),mu.ravel(),np.deg2rad(phi.ravel()),['I'],
                                                  11.0, fill_ray_variables=True)
 
-        lambertian = pyshdom.surface.lambertian(albedo=0.04, ground_temperature=300.0)
-
+        lambertian = pyshdom.surface.lambertian(albedo=0.5, ground_temperature=300.0)
+        rayleigh[11.0]['extinction'] = (['x','y','z'], np.ones((rayleigh[11.0].x.size, rayleigh[11.0].y.size,
+                                                                rayleigh[11.0].z.size))*
+                                                        np.linspace(0.001, 0.5,rayleigh[11.0].x.size)[:, np.newaxis, np.newaxis])
+        rayleigh[11.0]['ssalb']= (['x','y','z'], np.zeros((rayleigh[11.0].x.size, rayleigh[11.0].y.size,
+                                                                rayleigh[11.0].z.size)))
         solver = pyshdom.solver.RTE(numerical_params=config,
                                         medium={'rayleigh': rayleigh[11.0]},
                                        source=pyshdom.source.thermal(11.0),
@@ -933,35 +943,48 @@ class Verify_Thermal(TestCase):
         solver.solve(maxiter=100, verbose=False)
         integrated_rays = solver.integrate_to_sensor(sensor)
 
-        rad = (1.0 - 0.04)*pyshdom.util.planck_function(300.0, 11.0)
+        optical_path = 30.0*np.linspace(0.001, 0.5,rayleigh[11.0].x.size)
+        transmittance = np.exp(-1*optical_path)
+        from scipy.special import exp1
+        rad = (1.0 - 0.5)*pyshdom.util.planck_function(300.0, 11.0)*transmittance + \
+              pyshdom.util.planck_function(288.0, 11.0)*(1.0-transmittance) + \
+              transmittance*(0.5*pyshdom.util.planck_function(288.0, 11.0)*(
+                -transmittance*(1.0 - optical_path) - optical_path**2 * exp1(optical_path) + 1)
+              )
+
         cls.integrated_rays = integrated_rays
         cls.solver = solver
         cls.rad = rad
 
     def test_radiance(self):
-        self.assertTrue(np.allclose(self.rad, self.integrated_rays.I.data, atol=3e-4))
 
-class Verify_Combined(TestCase):
+        #print(self.rad,self.rad2, self.integrated_rays.I.data)
+        print(100*np.max(np.abs(self.rad - self.integrated_rays.I.data)/self.rad))
+        print(np.max(np.abs(self.rad - self.integrated_rays.I.data)))
+        self.assertTrue(np.allclose(self.integrated_rays.I.data, self.rad, atol=3e-4))
+
+class VerifyCombined(TestCase):
     @classmethod
     def setUpClass(cls):
 
         config = pyshdom.configuration.get_config('../default_config.json')
         config['split_accuracy'] = 0.0
         config['spherical_harmonics_accuracy'] = 0.0
-        config['num_mu_bins'] = 16
-        config['num_phi_bins'] = 32
+        config['num_mu_bins'] = 128
+        config['num_phi_bins'] = 256
         config['solution_accuracy'] = 1e-5
         config['x_boundary_condition'] = 'periodic'
         config['y_boundary_condition'] = 'periodic'
-        config['ip_flag'] = 3
-        config['tautol'] = 0.2
+        config['ip_flag'] = 1
+        config['tautol'] = 0.1
+        config['deltam'] = False
 
         rte_grid = pyshdom.grid.make_grid(0.02, 50, 0.02, 1,
                                    np.array([0,3.0,6.0,9.0,12.0,15.0,18.0,21.0,24.0,27.0,30.0]))
 
         atmosphere = xr.Dataset(
             data_vars = {
-                'temperature': ('z', np.array([288.0,269.0,249.0,230.0,217.0,217.0,217.0,218.0,221.0,224.0,227.0])),
+                'temperature': ('z', np.array([288.0]*11)),
                 'pressure': ('z', np.ones(rte_grid.z.size)*0.0)
                             },
             coords = {'z': rte_grid.z.data}
@@ -978,8 +1001,12 @@ class Verify_Combined(TestCase):
         sensor = pyshdom.sensor.make_sensor_dataset(x.ravel(),y.ravel(),z.ravel(),mu.ravel(),np.deg2rad(phi.ravel()),['I'],
                                                  11.0, fill_ray_variables=True)
 
-        lambertian = pyshdom.surface.lambertian(albedo=0.04, ground_temperature=300.0)
-
+        lambertian = pyshdom.surface.lambertian(albedo=0.5, ground_temperature=300.0)
+        rayleigh[11.0]['extinction'] = (['x','y','z'], np.ones((rayleigh[11.0].x.size, rayleigh[11.0].y.size,
+                                                                rayleigh[11.0].z.size))*
+                                                        np.linspace(0.001, 0.5,rayleigh[11.0].x.size)[:, np.newaxis, np.newaxis])
+        rayleigh[11.0]['ssalb']= (['x','y','z'], np.zeros((rayleigh[11.0].x.size, rayleigh[11.0].y.size,
+                                                                rayleigh[11.0].z.size)))
         solver = pyshdom.solver.RTE(numerical_params=config,
                                         medium={'rayleigh': rayleigh[11.0]},
                                        source=pyshdom.source.combined(11.0, -1.0, 0.0, solarflux=1.0),
@@ -991,10 +1018,266 @@ class Verify_Combined(TestCase):
         solver.solve(maxiter=100, verbose=False)
         integrated_rays = solver.integrate_to_sensor(sensor)
 
-        rad = (1.0 - 0.04)*pyshdom.util.planck_function(300.0, 11.0) + 0.04/np.pi
+        optical_path = 30.0*np.linspace(0.001, 0.5,rayleigh[11.0].x.size)
+        transmittance = np.exp(-1*optical_path)
+        from scipy.special import exp1
+        rad = 0.5*transmittance*transmittance/np.pi + (1.0 - 0.5)*pyshdom.util.planck_function(300.0, 11.0)*transmittance + \
+              pyshdom.util.planck_function(288.0, 11.0)*(1.0-transmittance) + \
+              transmittance*(0.5*pyshdom.util.planck_function(288.0, 11.0)*(
+                -transmittance*(1.0 - optical_path) - optical_path**2 * exp1(optical_path) + 1)
+              )
+
         cls.integrated_rays = integrated_rays
         cls.solver = solver
         cls.rad = rad
 
     def test_radiance(self):
-        self.assertTrue(np.allclose(self.rad, self.integrated_rays.I.data, atol=3e-4))
+
+        #print(self.rad,self.rad2, self.integrated_rays.I.data)
+        print(100*np.max(np.abs(self.rad - self.integrated_rays.I.data)/self.rad))
+        print(np.max(np.abs(self.rad - self.integrated_rays.I.data)))
+        self.assertTrue(np.allclose(self.integrated_rays.I.data, self.rad, atol=3e-4))
+
+class VerifyRadianceIntegration(TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        rte_grid = pyshdom.grid.make_grid(0.1,2,
+                                  0.1,2,
+                                  np.linspace(0.0,1.0,3))
+
+
+
+        errors = []
+        errors2 = []
+        planck_error = []
+        optical_paths = np.logspace(-3,1,11)
+        for planck1 in np.logspace(2,np.log10(300.0),11):
+            for optpath in optical_paths:
+
+                cloud_scatterer = rte_grid.copy(deep=True)
+                extinction = np.zeros((2,2,3))
+                extinction[:,:,:] = optpath
+                cloud_scatterer['extinction'] = (['x','y','z'], extinction)
+                cloud_scatterer['ssalb'] = (['x','y','z'], np.zeros((2,2,3)))
+                legendre = np.zeros((6,2,1))
+                legendre[0,0] = 1.0
+                cloud_scatterer['legcoef'] = (['stokes_index', 'legendre_index','table_index'], legendre)
+
+                cloud_scatterer['table_index'] = (['num_micro', 'x','y','z'],
+                                                  np.ones((1,2,2,3),dtype=int))
+
+                cloud_scatterer['stokes_index'] = (['stokes_index'], np.array(['P11', 'P22', 'P33', 'P44', 'P12', 'P34']))
+                cloud_scatterer['phase_weights'] = (['num_micro', 'x','y','z'],
+                                                  np.ones((1,2,2,3)))
+                cloud_scatterer['interp_method'] = 'exact'
+
+                test_atmosphere = rte_grid.copy(deep=True)
+                test_temperature = np.repeat(np.repeat(np.linspace(planck1,300.0, 2)[:,np.newaxis, np.newaxis],2, axis=1),3,axis=-1)
+                test_atmosphere['temperature'] = (['x','y','z'], test_temperature)
+
+                config = pyshdom.configuration.get_config('../default_config.json')
+                config['split_accuracy'] = 0.0
+                config['deltam'] = False
+                solver_grid = pyshdom.solver.RTE(
+                    numerical_params=config,
+                    surface=pyshdom.surface.lambertian(0.0, ground_temperature=0.0),
+                    source=pyshdom.source.thermal(11.0),
+                    medium={'cloud': cloud_scatterer},
+                    num_stokes=1,
+                    atmosphere=test_atmosphere
+                )
+
+                solver_grid._init_solution()
+
+
+                npts,ncells,newpoints = pyshdom.core.divide_cell(
+                    npts=solver_grid._npts,
+                    ncells=solver_grid._ncells,
+                    gridptr=solver_grid._gridptr,
+                    neighptr=solver_grid._neighptr,
+                    treeptr=solver_grid._treeptr,
+                    cellflags=solver_grid._cellflags,
+                    gridpos=solver_grid._gridpos,
+                    icell=9,
+                    idir=1
+                )
+                solver_grid._npts=npts
+                solver_grid._ncells = ncells
+
+                pyshdom.core.interpolate_point(
+                    newpoints=newpoints,
+                    npts=solver_grid._npts,
+                    nstokes=solver_grid._nstokes,
+                    ml=solver_grid._ml,
+                    mm=solver_grid._mm,
+                    nlm=solver_grid._nlm,
+                    nstleg=solver_grid._nstleg,
+                    nleg=solver_grid._nleg,
+                    numphase=solver_grid._pa.numphase,
+                    deltam=solver_grid._deltam,
+                    bcflag=solver_grid._bcflag,
+                    ipflag=solver_grid._ipflag,
+                    accelflag=solver_grid._accelflag,
+                    gridpos=solver_grid._gridpos,
+                    srctype=solver_grid._srctype,
+                    solarflux=solver_grid._solarflux,
+                    solarmu=solver_grid._solarmu,
+                    solaraz=solver_grid._solaraz,
+                    ylmsun=solver_grid._ylmsun,
+                    units=solver_grid._units,
+                    waveno=solver_grid._waveno,
+                    wavelen=solver_grid.wavelength,
+                    extinct=solver_grid._extinct,
+                    albedo=solver_grid._albedo,
+                    legen=solver_grid._legen,
+                    iphase=solver_grid._iphase,
+                    temp=solver_grid._temp,
+                    planck=solver_grid._planck,
+                    dirflux=solver_grid._dirflux,
+                    rshptr=solver_grid._rshptr,
+                    radiance=solver_grid._radiance,
+                    shptr=solver_grid._shptr,
+                    source=solver_grid._source,
+                    oshptr=solver_grid._oshptr,
+                    npx=solver_grid._pa.npx,
+                    npy=solver_grid._pa.npy,
+                    npz=solver_grid._pa.npz,
+                    delx=solver_grid._pa.delx,
+                    dely=solver_grid._pa.dely,
+                    xstart=solver_grid._pa.xstart,
+                    ystart=solver_grid._pa.ystart,
+                    zlevels=solver_grid._pa.zlevels,
+                    tempp=solver_grid._pa.tempp,
+                    extinctp=solver_grid._pa.extinctp,
+                    albedop=solver_grid._pa.albedop,
+                    legenp=solver_grid._pa.legenp,
+                    extdirp=solver_grid._pa.extdirp,
+                    iphasep=solver_grid._pa.iphasep,
+                    nzckd=solver_grid._pa.nzckd,
+                    zckd=solver_grid._pa.zckd,
+                    gasabs=solver_grid._pa.gasabs,
+                    extmin=solver_grid._extmin,
+                    scatmin=solver_grid._scatmin,
+                    cx=solver_grid._cx,
+                    cy=solver_grid._cy,
+                    cz=solver_grid._cz,
+                    cxinv=solver_grid._cxinv,
+                    cyinv=solver_grid._cyinv,
+                    czinv=solver_grid._czinv,
+                    di=solver_grid._di,
+                    dj=solver_grid._dj,
+                    dk=solver_grid._dk,
+                    ipdirect=solver_grid._ipdirect,
+                    delxd=solver_grid._delxd,
+                    delyd=solver_grid._delyd,
+                    xdomain=solver_grid._xdomain,
+                    ydomain=solver_grid._ydomain,
+                    epss=solver_grid._epss,
+                    epsz=solver_grid._epsz,
+                    uniformzlev=solver_grid._uniformzlev,
+                    npart=solver_grid._npart,
+                    maxig=solver_grid._maxig,
+                    maxpg=solver_grid._maxpg,
+                    total_ext=solver_grid._total_ext,
+                    interpmethod=solver_grid._interpmethod,
+                    ierr=0,
+                    errmsg="          ",
+                    phaseinterpwt=solver_grid._phaseinterpwt,
+                    phasemax=solver_grid._phasemax,
+                    nlegp=solver_grid._pa.nlegp,
+                    maxnmicro=solver_grid._pa.max_num_micro,
+                    phasewtp=solver_grid._pa.phasewtp
+
+                )
+                solver_grid.solve(100,init_solution=False,verbose=False)
+
+
+                config = pyshdom.configuration.get_config('../default_config.json')
+                config['split_accuracy'] = 0.0
+                solver_ref = pyshdom.solver.RTE(
+                    numerical_params=config,
+                    surface=pyshdom.surface.lambertian(0.0, ground_temperature=0.0),
+                    source=pyshdom.source.thermal(11.0),
+                    medium={'cloud': cloud_scatterer},
+                    num_stokes=1,
+                    atmosphere=test_atmosphere
+                )
+                solver_ref.solve(100,verbose=False)
+
+                sensor_ref = pyshdom.sensor.make_sensor_dataset(x=np.array([0.025]),
+                                                    y=np.array([0.0]),
+                                                    z=np.array([0.50]),
+                                                    mu=np.array([1.0]),
+                                                    phi=np.array([0.0]),
+                                                           stokes=['I'],
+                                                           wavelength=11.0,
+                                                           fill_ray_variables=True)
+
+                sensor_grid_good_interpolate = sensor_ref.copy(deep=True)
+                sensor_grid_bad_interpolate = sensor_ref.copy(deep=True)
+
+                integrated_sensor_ref = solver_ref.integrate_to_sensor(sensor_ref)
+                integrated_sensor_grid_good = solver_grid.integrate_to_sensor(sensor_grid_good_interpolate)
+                solver_grid._correctinterpolate = False
+                integrated_sensor_grid_bad = solver_grid.integrate_to_sensor(sensor_grid_bad_interpolate)
+
+                #analytical solution nadir.
+                # design and verification . ..  Jones & Di Girolamo, 2018 https://doi.org/10.1175/JAS-D-17-0251.1
+                optical_path = optpath
+
+                transmittance1 = transmittance2 = np.exp(-optical_path/2)
+
+                Ts = 0.0
+
+                planck_surface = pyshdom.core.planck_function(
+                    temp=Ts,
+                    wavelen=11.0,
+                    units='R',
+                    waveno=[10000,10001]
+                )
+                planck_atmosphere2 = 0.75*pyshdom.core.planck_function(
+                    temp=planck1,
+                    wavelen=11.0,
+                    units='R',
+                    waveno=[10000,10001]
+                ) + 0.25*pyshdom.core.planck_function(
+                    temp=300.0,
+                    wavelen=11.0,
+                    units='R',
+                    waveno=[10000,10001]
+                )
+
+                planck_atmosphere1 = 0.5*pyshdom.core.planck_function(
+                    temp=planck1,
+                    wavelen=11.0,
+                    units='R',
+                    waveno=[10000,10001]
+                ) + 0.5*pyshdom.core.planck_function(
+                    temp=0.5*planck1+0.5*300.0,
+                    wavelen=11.0,
+                    units='R',
+                    waveno=[10000,10001]
+                )
+
+                full_temperature = pyshdom.core.planck_function(
+                    temp=0.75*planck1+0.25*300.0,
+                    wavelen=11.0,
+                    units='R',
+                    waveno=[10000,10001]
+                )
+
+                analytic = planck_surface*transmittance1*transmittance2 + \
+                            planck_atmosphere1*(1.0-transmittance1)
+                analytic_unapprox = full_temperature*(1.0-transmittance1)
+                error = (integrated_sensor_grid_bad.I.data[0]-analytic)/analytic
+                errors2.append((integrated_sensor_grid_good.I.data[0]-analytic)/analytic)
+                planck_error.append((planck_atmosphere1 - planck_atmosphere2)/planck_atmosphere2)
+                errors.append(error)
+
+        cls.errors = errors2
+
+    def test_radiance(self):
+        print(np.abs(self.errors).max())
+        self.assertTrue(np.allclose(0.0, self.errors, atol=3e-4))

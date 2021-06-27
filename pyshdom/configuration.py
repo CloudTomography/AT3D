@@ -21,13 +21,14 @@ def make_config(config_file_name, x_boundary_condition='open',
                 ip_flag=0,
                 iterfixsh=30,
                 tautol=0.2,
-                angle_set=2):
+                angle_set=2,
+                transcut=1e-5):
     """
     See default_config.json for description of parameters along with shdom.txt
     or read this function's code.
     """
-    if config_file_name == 'default_config':
-       raise ValueError("Config file cannot overwrite default")
+    #if config_file_name == 'default_config':
+        #raise ValueError("Config file cannot overwrite default")
 
     shdom_parameters = {
         'x_boundary_condition': {
@@ -103,11 +104,15 @@ def make_config(config_file_name, x_boundary_condition='open',
         },
         'tautol': {
             'default_value': tautol,
-            'description': 'The maximum optical path length for integration of radiances. Only affects radiance accuracy.'
+            'description': 'The maximum optical length of each subgrid interval for integration of radiances. Only affects radiance accuracy.'
         },
         'angle_set': {
             'default_value': angle_set,
             'description': 'The angle set used for the discrete ordinates. Gaussian: 1, Reduced Gaussian: 2, Reduced Double Gaussian: 3.'
+        },
+        'transcut': {
+            'default_value': transcut,
+            'description': 'The minimum transmission to integrate to when calculating radiances.'
         }
     }
 

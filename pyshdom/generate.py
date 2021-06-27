@@ -210,7 +210,7 @@ def generate_stochastic_blob(rte_grid, var_profile, var_beta=-5.0/3.0, snr=1.0,
     field = field_temp.copy()
     for i in range(field.shape[-1]-1):
         field[:,:,i+1] = var_vertical_correlation*field[:,:,i] \
-        + np.sqrt(1.0 - var_vertical_correlation)*field_temp[:,:,i+1]
+        + np.sqrt(1.0 - var_vertical_correlation**2)*field_temp[:,:,i+1]
 
     exp_field = np.exp(field[mask])
     exp_field -= exp_field.mean()
