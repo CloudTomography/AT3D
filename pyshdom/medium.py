@@ -620,22 +620,25 @@ class OpticalPropertyGenerator:
             # convert variables to table until maxnphase is no longer exceeded.
             variables_to_turn_to_table = np.argsort(test)
             table_counter = 0
-            while num_unique > self._maxnphase:
-                index = variables_to_turn_to_table[table_counter]
-                combinations[:, index, :] = lower_upper_combinations[:, index, :]
-                unique = np.unique(
-                    combinations.transpose([0, -1, 1]).reshape(
-                        combinations.shape[0]*combinations.shape[-1], -1),
-                    axis=0
-                )
-                num_unique = unique.shape[0]
-                table_counter += 1
-                if (table_counter > microphysics_data.shape[0]) & (num_unique > self._maxnphase):
-                    raise ValueError(
-                        "All variables are represented using tables but `maxnphase`='{}'' is "
-                        "still exceeded num_unique='{}'. Please increase `maxnphase` or set to "
-                        "`None` so that all of the table may be used.".format(self._maxnphase, num_unique)
+            if self._maxnphase <= 0:
+                table_counter = microphysics_data.shape[0]
+            else:
+                while num_unique > self._maxnphase:
+                    index = variables_to_turn_to_table[table_counter]
+                    combinations[:, index, :] = lower_upper_combinations[:, index, :]
+                    unique = np.unique(
+                        combinations.transpose([0, -1, 1]).reshape(
+                            combinations.shape[0]*combinations.shape[-1], -1),
+                        axis=0
                     )
+                    num_unique = unique.shape[0]
+                    table_counter += 1
+                    if (table_counter > microphysics_data.shape[0]) & (num_unique > self._maxnphase):
+                        raise ValueError(
+                            "All variables are represented using tables but `maxnphase`='{}'' is "
+                            "still exceeded num_unique='{}'. Please increase `maxnphase` or set to "
+                            "`None` so that all of the table may be used.".format(self._maxnphase, num_unique)
+                        )
 
             # redo the table with the smaller number of required bounding variables.
             # This is could be more efficiently.
@@ -838,7 +841,7 @@ def mix_optical_properties(*scatterers, asymmetry_tol=0.002, phase_tol=0.01, lin
             {'num_micro': (0, max_num_micro-scatterer.num_micro.size)},
             constant_values=0.0
             ).data.reshape((max_num_micro, -1), order='F')
-        scatter_coefficients[..., i] = scatterer.extinction.data.ravel()*scatterer.ssalb.data.ravel()
+        scatter_coefficients[..., i] = scatterer.extinction.data.ravel(order='F')*scatterer.ssalb.data.ravel(order='F')
 
 
 
@@ -874,9 +877,9 @@ def mix_optical_properties(*scatterers, asymmetry_tol=0.002, phase_tol=0.01, lin
             # extrapolate based on current (nphase/ngridpoints) plus a little bit extra.
             maxnphase = int(nphase/gridpoint * scatterers[0].sizes['x']*scatterers[0].sizes['y']*scatterers[0].sizes['z']) + 10
     extinction = np.sum(np.stack([scatterer.extinction.data for scatterer in scatterers], axis=0), axis=0)
-    albedo = np.sum(scatter_coefficients, axis=-1).reshape(extinction.shape)/extinction
+    albedo = np.sum(scatter_coefficients, axis=-1).reshape(extinction.shape,order='F')/extinction
     albedo[np.where(extinction == 0.0)] = 0.0
-    mixed_phase_indices = mixed_phase_indices.reshape(extinction.shape)[np.newaxis, :]
+    mixed_phase_indices = mixed_phase_indices.reshape(extinction.shape,order='F')[np.newaxis, :]
     mixed_phase_table[0, 0] = 1.0
     mixed_optical_properties = xr.Dataset(
        data_vars={

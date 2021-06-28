@@ -1281,3 +1281,144 @@ class VerifyRadianceIntegration(TestCase):
     def test_radiance(self):
         print(np.abs(self.errors).max())
         self.assertTrue(np.allclose(0.0, self.errors, atol=3e-4))
+
+class VerifyMultiSpeciesSolver(TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        wavelengths = np.array([0.86])#sensor_dict.get_unique_solvers()
+        size_distribution_function = pyshdom.size_distribution.gamma
+        mie_mono_tables = OrderedDict()
+        for wavelength in wavelengths:
+            mie_mono_tables[wavelength] = pyshdom.mie.get_mono_table(
+                'Water',(wavelength,wavelength),
+                max_integration_radius=65.0,
+                minimum_effective_radius=0.1,
+                relative_dir='../mie_tables',
+                verbose=False
+            )
+
+        rte_grid = pyshdom.grid.make_grid(0.02, 5, 0.02, 5, np.linspace(0.0, 1.0,11))
+
+        optical_property_generator_cloud = pyshdom.medium.OpticalPropertyGenerator(
+            'cloud',
+            mie_mono_tables,
+            size_distribution_function,
+            reff=np.linspace(5.0,30.0,30),
+            veff=np.linspace(0.08,0.2,20),
+        )
+
+        optical_property_generator_small = pyshdom.medium.OpticalPropertyGenerator(
+            'aerosol',
+            mie_mono_tables,
+            size_distribution_function,
+            reff=np.linspace(0.1,2.0,30),
+            veff=np.linspace(0.08,0.2,20),
+        )
+
+        np.random.seed(1)
+
+        cloud_scatterer = rte_grid.copy(deep=True)
+        shape = (rte_grid.x.size, rte_grid.y.size, rte_grid.z.size)
+        cloud_scatterer['density'] = (['x','y','z'], np.ones(shape)*0.01)
+        cloud_scatterer['reff'] = (['x','y','z'], np.random.uniform(10.0,30.0,size=shape))
+        cloud_scatterer['veff'] = (['x','y','z'], np.ones(shape)*0.1)
+        cloud_scatterer_on_rte_grid = pyshdom.grid.resample_onto_grid(rte_grid, cloud_scatterer)
+
+        aerosol_scatterer = rte_grid.copy(deep=True)
+        aerosol_scatterer['density'] = (['x','y','z'], np.ones(shape)*0.01)
+        #r = np.repeat(np.repeat(np.linspace(0.3,0.5, shape[-1])[None,None],shape[0],axis=0),shape[1],axis=1)
+        aerosol_scatterer['reff'] = (['x','y','z'], np.random.uniform(0.3,0.5,size=shape))
+        aerosol_scatterer['veff'] = (['x','y','z'], np.ones(shape)*0.1)
+        aerosol_scatterer_on_rte_grid = pyshdom.grid.resample_onto_grid(rte_grid, aerosol_scatterer)
+
+        optical_properties_cloud = optical_property_generator_cloud(cloud_scatterer_on_rte_grid)
+        optical_properties_aerosol = optical_property_generator_small(aerosol_scatterer_on_rte_grid)
+
+        cloud = optical_properties_cloud[0.86]
+        aerosol = optical_properties_aerosol[0.86]
+        cloud['extinction'][:] = np.random.uniform(0.01,10.0,cloud.extinction.shape)
+        cloud['ssalb'][:] = np.random.uniform(0.0,1.0,cloud.extinction.shape)
+        aerosol['extinction'][:] = np.random.uniform(0.01,10.0,aerosol.extinction.shape)
+        aerosol['ssalb'][:] = np.random.uniform(0.0,1.0,cloud.extinction.shape)
+
+        mixture_exact = pyshdom.medium.mix_optical_properties(cloud, aerosol, maxnphase=800, asymmetry_tol=0.0, phase_tol=0.0)
+
+        solvers_dict = pyshdom.containers.SolversDict()
+
+        config = pyshdom.configuration.get_config('../default_config.json')
+        config['split_accuracy'] = 0.0
+        config['x_boundary_condition'] = 'periodic'
+        config['y_boundary_condition'] = 'periodic'
+        config['solution_accuracy'] = 1e-8
+        config['num_mu_bins'] = 16
+        config['num_phi_bins'] = 32
+        config['deltam'] = True
+        config['adapt_grid_factor'] = 5.0
+
+        solver1 = pyshdom.solver.RTE(
+                numerical_params=config,
+                surface=pyshdom.surface.lambertian(0.0),
+                source=pyshdom.source.solar(wavelength, 0.8,0.0),
+                medium={'cloud': cloud, 'aerosol': aerosol},
+                num_stokes=3
+            )
+        solver2 = pyshdom.solver.RTE(
+                numerical_params=config,
+                surface=pyshdom.surface.lambertian(0.0),
+                source=pyshdom.source.solar(wavelength, 0.8,0.0),
+                medium={'mixture':mixture_exact},
+                num_stokes=3
+            )
+        solvers_dict.add_solver(1, solver1)
+        solvers_dict.add_solver(2, solver2)
+
+        solvers_dict.parallel_solve(maxiter=100)
+
+        cls.extinct_exact = solver1.medium['cloud'].extinction.data +solver1.medium['aerosol'].extinction.data
+        cls.scatter_exact = solver1.medium['cloud'].ssalb.data*solver1.medium['cloud'].extinction.data +solver1.medium['aerosol'].ssalb.data*solver1.medium['aerosol'].extinction.data
+        cls.phase_exact = (solver1.medium['cloud'].legcoef.data[...,solver1.medium['cloud'].table_index-1]*solver1.medium['cloud'].ssalb.data*solver1.medium['cloud'].extinction.data + \
+                            solver1.medium['aerosol'].legcoef.data[...,solver1.medium['aerosol'].table_index-1]*solver1.medium['aerosol'].ssalb.data*solver1.medium['aerosol'].extinction.data)/(
+            solver1.medium['cloud'].ssalb.data*solver1.medium['cloud'].extinction.data +solver1.medium['aerosol'].ssalb.data*solver1.medium['aerosol'].extinction.data
+        )
+        cls.source_exact = solver1._source
+        cls.phase_mixture = mixture_exact.legcoef[:,:,:].data.reshape((6,mixture_exact.legendre_index.size,1)+shape,order='F')
+        cls.extinct_mixture = mixture_exact.extinction.data
+        cls.scatter_mixture = (mixture_exact.ssalb*mixture_exact.extinction).data
+        cls.source_mixture = solver2._source
+        mu = np.linspace(0.05,1.0, 361)
+        size = mu.size
+        sensor_exact = pyshdom.sensor.make_sensor_dataset(x=[0.5]*size, y=[0.5]*size,z=np.array([1.0]*size),
+                                           mu=mu,
+                                           phi=np.array([0.0]*size),stokes=['I','Q','U'],fill_ray_variables=True,
+                                                   wavelength=0.86)
+        sensor_mixture = sensor_exact.copy(deep=True)
+        cls.sensor_exact = solver1.integrate_to_sensor(sensor_exact)
+        cls.sensor_mixture = solver1.integrate_to_sensor(sensor_mixture)
+
+    def test_extinction(self):
+        self.assertTrue(np.allclose(self.extinct_exact, self.extinct_mixture))
+
+    def test_scatter(self):
+        self.assertTrue(np.allclose(self.scatter_exact, self.scatter_mixture))
+
+    def test_phase(self):
+        print(np.max(np.abs(self.phase_exact-self.phase_mixture)))
+        self.assertTrue(np.allclose(self.phase_exact, self.phase_mixture))
+
+    def test_source(self):
+        print(np.max(np.abs(self.source_exact-self.source_mixture)))
+        self.assertTrue(np.allclose(self.source_exact, self.source_mixture,atol=6e-8))
+
+    def test_intensity(self):
+        print(np.max(np.abs(self.sensor_exact.I-self.sensor_mixture.I)))
+        self.assertTrue(np.allclose(self.sensor_exact.I, self.sensor_mixture.I))
+
+    def test_Q(self):
+        print(np.max(np.abs(self.sensor_exact.Q-self.sensor_mixture.Q)))
+        self.assertTrue(np.allclose(self.sensor_exact.Q, self.sensor_mixture.Q))
+
+    def test_U(self):
+        print(np.max(np.abs(self.sensor_exact.U-self.sensor_mixture.U)))
+        self.assertTrue(np.allclose(self.sensor_exact.U, self.sensor_mixture.U))

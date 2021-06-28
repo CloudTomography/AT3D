@@ -275,7 +275,8 @@ def check_sensor(dataset):
                  cam_x='npixels', cam_y='npixels', cam_z='npixels', pixel_index='nrays',
                  ray_weight='nrays')
     check_positivity(dataset, 'cam_z', 'ray_z')
-    check_positivity(dataset, 'wavelength')
+    #check_exists(dataset, 'wavelength')
+    #check_positivity(dataset, 'wavelength')
     check_range(dataset, cam_mu=(-1.0, 1.0), ray_mu=(-1.0, 1.0))
     #check_range(dataset, ray_phi=(-np.pi, np.pi), cam_phi=(-np.pi, np.pi))
 
@@ -371,7 +372,7 @@ def check_optical_properties(dataset, name=1):
         raise type(err)(str(err).replace('"', "") + \
         " for scatterer '{}' in `medium`.".format(
             name)).with_traceback(sys.exc_info()[2])
-    if not np.all(dataset.phase_weights.sum('num_micro') == 1):
+    if not np.allclose(dataset.phase_weights.sum('num_micro'), 1.0):
         raise ValueError(
             "`phase_weights` do not sum to 1.0 for scatterer '{}' "
             "in `medium`".format(name)
