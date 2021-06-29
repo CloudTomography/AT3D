@@ -377,8 +377,8 @@ class OpticalPropertyGenerator:
         interp_coords = {name:microphysics[name] for name in number_density_grid.coords
                          if name not in ('radius',)}
         for interp_coord in interp_coords:
-            if np.any(microphysics[interp_coord] <= number_density_grid[interp_coord].min()) or \
-                np.any(microphysics[interp_coord] >= number_density_grid[interp_coord].max()):
+            if np.any(microphysics[interp_coord] < number_density_grid[interp_coord].min()) or \
+                np.any(microphysics[interp_coord] > number_density_grid[interp_coord].max()):
                 raise ValueError(
                     "Microphysical coordinate '{}' is not"
                     " within the range of the size distribution parameters.".format(interp_coord)
