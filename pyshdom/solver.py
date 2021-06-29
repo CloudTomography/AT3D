@@ -1160,7 +1160,7 @@ class RTE:
                     ((0,deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
                     mode='constant' # default pads with zeros.
                 )
-            i += 1
+                i += 1
 
         #COPIED FROM solver.RTE
         #In regions which are not covered by any optical scatterer they have an iphasep of 0.
