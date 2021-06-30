@@ -327,7 +327,7 @@ class RTE:
         self._radiance, self._fluxes, self._dirflux, self._uniformzlev, \
         self._pa.extdirp, self._oldnpts, self._total_ext, self._deljdot, \
         self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
-        self._work2, ierr, errmsg, self._phaseinterpwt \
+        self._work2, ierr, errmsg, self._phaseinterpwt, self._cpu_time \
          = pyshdom.core.solution_iterations(
             verbose=verbose,
             solve=solve,
@@ -1160,7 +1160,7 @@ class RTE:
                     ((0,deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
                     mode='constant' # default pads with zeros.
                 )
-            i += 1
+                i += 1
 
         #COPIED FROM solver.RTE
         #In regions which are not covered by any optical scatterer they have an iphasep of 0.
@@ -2186,7 +2186,7 @@ class RTE:
                                      reshaped_ext[1:, :-1, 1:] + reshaped_ext[1:, :-1, :-1] + \
                                      reshaped_ext[:-1, 1:, 1:] + reshaped_ext[:-1, 1:, :-1] + \
                                      reshaped_ext[:-1, :-1, 1:] + reshaped_ext[:-1, :-1, :-1])/8.0
-        cell_volume = (np.diff(self._pa.zlevels)*self._pa.delx.data*self._pa.dely.data)**(1/3)
+        cell_volume = (np.diff(self._zgrid)*np.diff(self._xgrid.data)[0]*np.diff(self._ygrid.data)[0])**(1/3)
         cell_tau_approx = cell_volume[np.newaxis, np.newaxis, :]*cell_averaged_extinct
         number_thick_cells = np.sum(cell_tau_approx >= 2.0)
 

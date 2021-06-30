@@ -75,10 +75,14 @@
   },
   "tautol": {
     "default_value": 0.1,
-    "description": "The maximum optical path length for integration of radiances. Only affects radiance accuracy."
+    "description": "The maximum optical length of each subgrid interval for integration of radiances. Only affects radiance accuracy."
   },
   "angle_set": {
     "default_value": 2,
     "description": "The angle set used for the discrete ordinates. Gaussian: 1, Reduced Gaussian: 2, Reduced Double Gaussian: 3."
+  },
+  "transcut": {
+    "default_value": 1e-05,
+    "description": "The minimum transmission to integrate to when calculating radiances."
   }
 }

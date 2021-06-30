@@ -66,11 +66,11 @@ subroutine phase_function_mixing(scatter_coefficients, phase_tables, &
     wigcoef = 0.0
     scatter = 0.0
     do jpart=1,nparticles
+      scatter = scatter + scatter_coefficients(i,jpart)
       do k=1,maxnmicro
         wigcoef = wigcoef + scatter_coefficients(i,jpart)* &
           interpolation_weights(k,i,jpart)* &
           phase_tables(:,:,phase_indices(k,i,jpart))
-        scatter = scatter + scatter_coefficients(i,jpart)
       enddo
     enddo
     if (scatter > 0.0) then
@@ -265,18 +265,27 @@ subroutine average_subpixel_rays (npixels,nrays, weighted_stokes, nstokes, &
   real observables(nstokes, npixels)
 !f2py intent(out) observables
 
-  integer i,j, iray
+  integer i,j, iray, pixind
   double precision temp(nstokes)
 
   iray=1
+  pixind = 0
   do i=1,npixels
     temp = 0.0D0
-    do while (pixel_index(iray) + 1 .EQ. i)
+    do while (pixind + 1 .eq. i)
       temp(:) = temp(:) + weighted_stokes(:,iray)
       iray = iray + 1
+      if (iray .ge. nrays) then
+        ! this breaks the loop at iray=nray-1
+        pixind = i+100
+      else
+        pixind = pixel_index(iray)
+      endif
     enddo
     observables(:,i) = temp(:)
   enddo
+! add last ray to the last pixel. Very lazy way to do things.
+  observables(:,npixels) = observables(:,npixels) + weighted_stokes(:,nrays)
   return
 end subroutine average_subpixel_rays
 

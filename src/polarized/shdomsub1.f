@@ -440,7 +440,7 @@ C           inequality holds.
      .               WORK, WORK1, WORK2, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
      .               ITERFIXSH, INTERPMETHOD, IERR, ERRMSG, MAXPG,
      .               PHASEINTERPWT, PHASEMAX, NLEGP,
-     .               MAXNMICRO, PHASEWTP, SOLVE)
+     .               MAXNMICRO, PHASEWTP, SOLVE, COMPTIME)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -568,6 +568,8 @@ Cf2py intent(in) :: UNIFORM_SFC_BRDF, SFC_BRDF_DO
 Cf2py intent(out) :: IERR, ERRMSG
       LOGICAL SOLVE
 Cf2py intent(in) :: SOLVE
+      REAL COMPTIME
+Cf2py intent(out) :: COMPTIME
 
       REAL A
       INTEGER SP, STACK(50)
@@ -580,6 +582,8 @@ Cf2py intent(in) :: SOLVE
       REAL    STARTADAPTSOL, ENDADAPTSOL, ADAPTRANGE, SPLITCRIT
       REAL    STARTSPLITACC, CURSPLITACC, AVGSOLCRIT, BETA, ACCELPAR
 
+      REAL TIME1, TIME2
+      CALL CPU_TIME(TIME1)
       IERR = 0
 
 C         Starting values for the adaptive cell splitting controlling method.
@@ -749,6 +753,9 @@ c     .           CELLFLAGS, GRIDPOS)
 C          Comment in for output of cell splitting criterion for every cell
 c      CALL OUTPUT_CELL_SPLIT ('cellsplit.dat',GRIDPTR,
 c     .                        GRIDPOS, EXTINCT, SHPTR, SOURCE, NCELLS)
+      CALL CPU_TIME(TIME2)
+      COMPTIME = TIME2 - TIME1
+
       RETURN
       END
 

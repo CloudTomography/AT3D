@@ -20,7 +20,7 @@ def make_config(config_file_name, x_boundary_condition='open',
                 high_order_radiance=False,
                 ip_flag=0,
                 iterfixsh=30,
-                tautol=0.2,
+                tautol=0.1,
                 angle_set=2,
                 transcut=1e-5):
     """

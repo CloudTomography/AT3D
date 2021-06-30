@@ -8,126 +8,322 @@ from scipy import stats
 import warnings
 warnings.filterwarnings('ignore')
 
-# class PlanckDerivative(TestCase):
-#
-#     @classmethod
-#     def setUpClass(cls):
-#         np.random.seed(1)
-#         units_all = ('B', 'T', 'R')
-#         size = 1000
-#         temp_test = np.random.uniform(0.0, 900.0, size=size)
-#         wavelens = np.random.uniform(0.0, 20.0, size=size)
-#         wavenos = np.zeros((size, 2))
-#         wavenos[:,0] = np.random.uniform(0.0, 10000.0, size=size)
-#         wavenos[:,1] = wavenos[:,0]+ np.random.uniform(0.0, 300.0 ,size)
-#
-#         finite_diff_step = 0.15
-#         cls.all_ref = []
-#         cls.all_finite_diff = []
-#         cls.all_ref_grad = []
-#
-#         for units in units_all:
-#             finite_diff_grad = []
-#             planck_ref = []
-#             planck_upper = []
-#             ref_grad = []
-#             for temp, wavelen, waveno in zip(temp_test,wavelens, wavenos):
-#                 planck_ref.append(pyshdom.core.planck_function(temp=temp, units=units, waveno=waveno, wavelen=wavelen))
-#                 planck_upper.append(pyshdom.core.planck_function(temp=temp+finite_diff_step, units=units, waveno=waveno, wavelen=wavelen))
-#
-#                 ref_grad.append(pyshdom.core.planck_derivative(temp=temp, units=units, waveno=waveno, wavelen=wavelen))
-#             ref_grad = np.array(ref_grad)
-#             planck_ref = np.array(planck_ref)
-#             planck_upper = np.array(planck_upper)
-#             finite_diff_grad = ((planck_upper - planck_ref)/finite_diff_step)
-#             cls.all_ref.append(planck_ref)
-#             cls.all_finite_diff.append(finite_diff_grad)
-#             cls.all_ref_grad.append(ref_grad)
-#
-#     def testTemperatureUnits(self):
-#         self.assertTrue(np.allclose(self.all_ref_grad[1], 1.0))
-#
-#     def testBandUnits(self):
-#         good_data = self.all_ref_grad[0][np.where(~np.isnan(self.all_ref_grad[0]))]
-#         good_finite = self.all_finite_diff[0][np.where(~np.isnan(self.all_ref_grad[0]))]
-#         maxerror = np.max(np.abs(good_data - good_finite))
-#         self.assertTrue(maxerror < 1.7e-3)
-#
-#     def testBadBandUnits(self):
-#         self.assertTrue(np.all(self.all_ref[0][np.where(np.isnan(self.all_ref_grad[0]))] < 1e-9))
-#
-#     def testBadRadianceUnits(self):
-#         self.assertTrue(np.all(self.all_ref[-1][np.where(np.isnan(self.all_ref_grad[-1]))] < 1e-9))
-#
-#     def testRadianceUnits(self):
-#         good_data = self.all_ref_grad[-1][np.where(~np.isnan(self.all_ref_grad[-1]))]
-#         good_finite = self.all_finite_diff[-1][np.where(~np.isnan(self.all_ref_grad[-1]))]
-#         maxerror = np.max(np.abs(good_data - good_finite))
-#         self.assertTrue(maxerror < 1.23e-2)
-#
-#
-#
-# class CostFunctionL2(TestCase):
-#     @classmethod
-#     def setUpClass(cls):
-#         cost = 0.0
-#         gradout = np.zeros((10, 1, 1))
-#         raygrad_pixel = np.ones((4, 10, 1))
-#         uncertainties = np.ones((4, 4))*5
-#         costfunc = 'L2'
-#         stokesout = np.ones(4)*10.0
-#         stokesout[3] = 0.0
-#         measurement = np.ones(4)*13.0
-#         gradout, cost, ierr, errmsg = pyshdom.core.update_costfunction(
-#             cost=cost,
-#             gradout=gradout,
-#             stokesout=stokesout,
-#             measurement=measurement,
-#             raygrad_pixel=raygrad_pixel,
-#             uncertainties=uncertainties,
-#             costfunc=costfunc,
-#         )
-#         pyshdom.checks.check_errcode(ierr, errmsg)
-#         cls.gradout = gradout
-#         cls.cost = cost
-#     def test_cost(self):
-#         self.assertAlmostEqual(self.cost, 1960.0, places=5)
-#     def test_gradient(self):
-#         self.assertAlmostEqual(self.gradout[0, 0, 0], -440.0, places=5)
-#
-# class CostFunctionLL(TestCase):
-#     @classmethod
-#     def setUpClass(cls):
-#         cost = 0.0
-#         gradout = np.zeros((10, 1, 1))
-#         raygrad_pixel = np.ones((3, 10, 1))
-#         uncertainties = np.zeros((2, 2))
-#         uncertainties[0, 0] = (1.0/0.03)**2
-#         uncertainties[1, 1] = (1.0/0.005)**2
-#         costfunc = 'LL'
-#         stokesout = np.ones(3)
-#         stokesout[1] = 0.5
-#         stokesout[2] = 0.0
-#         measurement = np.ones(3)*1.25
-#         measurement[1] = 0.25
-#         measurement[2] = 0.25
-#
-#         gradout, cost, ierr, errmsg = pyshdom.core.update_costfunction(
-#             cost=cost,
-#             gradout=gradout,
-#             stokesout=stokesout,
-#             measurement=measurement,
-#             raygrad_pixel=raygrad_pixel,
-#             uncertainties=uncertainties,
-#             costfunc=costfunc,
-#         )
-#         pyshdom.checks.check_errcode(ierr, errmsg)
-#         cls.gradout = gradout
-#         cls.cost = cost
-#     def test_cost(self):
-#         self.assertAlmostEqual(self.cost, 6519.21, places=2)
-#     def test_gradient(self):
-#         self.assertAlmostEqual(self.gradout[0, 0, 0], 45329.43, places=2)
+class PlanckDerivative(TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        np.random.seed(1)
+        units_all = ('B', 'T', 'R')
+        size = 1000
+        temp_test = np.random.uniform(0.0, 900.0, size=size)
+        wavelens = np.random.uniform(0.0, 20.0, size=size)
+        wavenos = np.zeros((size, 2))
+        wavenos[:,0] = np.random.uniform(0.0, 10000.0, size=size)
+        wavenos[:,1] = wavenos[:,0]+ np.random.uniform(0.0, 300.0 ,size)
+
+        finite_diff_step = 0.15
+        cls.all_ref = []
+        cls.all_finite_diff = []
+        cls.all_ref_grad = []
+
+        for units in units_all:
+            finite_diff_grad = []
+            planck_ref = []
+            planck_upper = []
+            ref_grad = []
+            for temp, wavelen, waveno in zip(temp_test,wavelens, wavenos):
+                planck_ref.append(pyshdom.core.planck_function(temp=temp, units=units, waveno=waveno, wavelen=wavelen))
+                planck_upper.append(pyshdom.core.planck_function(temp=temp+finite_diff_step, units=units, waveno=waveno, wavelen=wavelen))
+
+                ref_grad.append(pyshdom.core.planck_derivative(temp=temp, units=units, waveno=waveno, wavelen=wavelen))
+            ref_grad = np.array(ref_grad)
+            planck_ref = np.array(planck_ref)
+            planck_upper = np.array(planck_upper)
+            finite_diff_grad = ((planck_upper - planck_ref)/finite_diff_step)
+            cls.all_ref.append(planck_ref)
+            cls.all_finite_diff.append(finite_diff_grad)
+            cls.all_ref_grad.append(ref_grad)
+
+    def testTemperatureUnits(self):
+        self.assertTrue(np.allclose(self.all_ref_grad[1], 1.0))
+
+    def testBandUnits(self):
+        good_data = self.all_ref_grad[0][np.where(~np.isnan(self.all_ref_grad[0]))]
+        good_finite = self.all_finite_diff[0][np.where(~np.isnan(self.all_ref_grad[0]))]
+        maxerror = np.max(np.abs(good_data - good_finite))
+        self.assertTrue(maxerror < 1.7e-3)
+
+    def testBadBandUnits(self):
+        self.assertTrue(np.all(self.all_ref[0][np.where(np.isnan(self.all_ref_grad[0]))] < 1e-9))
+
+    def testBadRadianceUnits(self):
+        self.assertTrue(np.all(self.all_ref[-1][np.where(np.isnan(self.all_ref_grad[-1]))] < 1e-9))
+
+    def testRadianceUnits(self):
+        good_data = self.all_ref_grad[-1][np.where(~np.isnan(self.all_ref_grad[-1]))]
+        good_finite = self.all_finite_diff[-1][np.where(~np.isnan(self.all_ref_grad[-1]))]
+        maxerror = np.max(np.abs(good_data - good_finite))
+        self.assertTrue(maxerror < 1.23e-2)
+
+
+
+class CostFunctionL2(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cost = 0.0
+        gradout = np.zeros((10, 1, 1))
+        raygrad_pixel = np.ones((4, 10, 1))
+        uncertainties = np.ones((4, 4))*5
+        costfunc = 'L2'
+        stokesout = np.ones(4)*10.0
+        stokesout[3] = 0.0
+        measurement = np.ones(4)*13.0
+        gradout, cost, ierr, errmsg = pyshdom.core.update_costfunction(
+            cost=cost,
+            gradout=gradout,
+            stokesout=stokesout,
+            measurement=measurement,
+            raygrad_pixel=raygrad_pixel,
+            uncertainties=uncertainties,
+            costfunc=costfunc,
+        )
+        pyshdom.checks.check_errcode(ierr, errmsg)
+        cls.gradout = gradout
+        cls.cost = cost
+    def test_cost(self):
+        self.assertAlmostEqual(self.cost, 1960.0, places=5)
+    def test_gradient(self):
+        self.assertAlmostEqual(self.gradout[0, 0, 0], -440.0, places=5)
+
+class CostFunctionLL(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cost = 0.0
+        gradout = np.zeros((10, 1, 1))
+        raygrad_pixel = np.ones((3, 10, 1))
+        uncertainties = np.zeros((2, 2))
+        uncertainties[0, 0] = (1.0/0.03)**2
+        uncertainties[1, 1] = (1.0/0.005)**2
+        costfunc = 'LL'
+        stokesout = np.ones(3)
+        stokesout[1] = 0.5
+        stokesout[2] = 0.0
+        measurement = np.ones(3)*1.25
+        measurement[1] = 0.25
+        measurement[2] = 0.25
+
+        gradout, cost, ierr, errmsg = pyshdom.core.update_costfunction(
+            cost=cost,
+            gradout=gradout,
+            stokesout=stokesout,
+            measurement=measurement,
+            raygrad_pixel=raygrad_pixel,
+            uncertainties=uncertainties,
+            costfunc=costfunc,
+        )
+        pyshdom.checks.check_errcode(ierr, errmsg)
+        cls.gradout = gradout
+        cls.cost = cost
+    def test_cost(self):
+        self.assertAlmostEqual(self.cost, 6519.21, places=2)
+    def test_gradient(self):
+        self.assertAlmostEqual(self.gradout[0, 0, 0], 45329.43, places=2)
+
+def legacy_perspective_projection(wavelength, fov, x_resolution, y_resolution,
+                           position_vector, lookat_vector, up_vector,
+                           stokes='I', sub_pixel_ray_args={'method':None}):
+    """
+    A SEPARATE IMPLEMENTATION AFTER A BUGFIX WHICH PRODUCES THE EXACT
+    GEOMETRY USED FOR THE FINITE DIFFERENCE LINEARIZATIONS HERE.
+
+    Generates a sensor dataset that observes a target location with
+    a perspective (pinhole camera) projection.
+
+    Parameters
+    ----------
+    wavelength: float,
+        Wavelength in [micron]
+    fov: float
+        Field of view [deg]
+    x_resolution: int
+        Number of pixels in camera x axis
+    y_resolution: int
+        Number of pixels in camera y axis
+    position_vector: list of 3 float elements
+        [x , y , z] which are:
+        Location in global x coordinates [km] (North)
+        Location in global y coordinates [km] (East)
+        Location in global z coordinates [km] (Up)
+    lookat_vector: list of 3 float elements
+        [x , y , z] which are:
+        Point in global x coordinates [km] (North) where the camera is pointing at
+        Point in global y coordinates [km] (East) where the camera is pointing at
+        Point in global z coordinates [km] (Up) where the camera is pointing at
+    up_vector: list of 3 float elements
+        The up vector determines the roll of the camera.
+    stokes: list or string
+       list or string of stokes components to observe ['I', 'Q', 'U', 'V'].
+    sub_pixel_ray_args : dict
+        dictionary defining the method for generating sub-pixel rays. The callable
+        which generates the position_perturbations and weights (e.g. pyshdom.sensor.gaussian)
+        should be set as the 'method', while arguments to that callable, should be set as
+        other entries in the dict. Each argument have two values, one for each of the
+        x and y axes of the image plane, respectively.
+        E.g. sub_pixel_ray_args={'method':pyshdom.sensor.gaussian, 'degree': (2, 3)}
+
+    Returns
+    -------
+    sensor : xr.Dataset
+        A dataset containing all of the information required to define a sensor
+        for which synthetic measurements can be simulated;
+        positions and angles of all pixels, sub-pixel rays and their associated weights,
+        and the sensor's observables.
+
+    """
+    norm = lambda x: x / np.linalg.norm(x, axis=0)
+
+    #assert samples>=1, "Sample per pixel is an integer >= 1"
+    #assert int(samples) == samples, "Sample per pixel is an integer >= 1"
+
+    assert int(x_resolution) == x_resolution, "x_resolution is an integer >= 1"
+    assert int(y_resolution) == y_resolution, "y_resolution is an integer >= 1"
+
+    # The bounding_box is not nessesary in the prespactive projection, but we still may consider
+    # to use if we project the rays on the bounding_box when the differences in mu , phi angles are below certaine precision.
+    #     if(bounding_box is not None):
+
+    #         xmin, ymin, zmin = bounding_box.x.data.min(),bounding_box.y.data.min(),bounding_box.z.data.min()
+    #         xmax, ymax, zmax = bounding_box.x.data.max(),bounding_box.y.data.max(),bounding_box.z.data.max()
+
+    nx = x_resolution
+    ny = y_resolution
+    position = np.array(position_vector, dtype=np.float32)
+    lookat = np.array(lookat_vector, dtype=np.float32)
+    up = np.array(up_vector)
+    direction = lookat - position
+
+    zaxis = norm(direction)
+    xaxis = norm(np.cross(up, zaxis))
+    yaxis = np.cross(zaxis, xaxis)
+    rotation_matrix = np.stack((xaxis, yaxis, zaxis), axis=1)
+
+    M = max(nx, ny)
+    npix = nx*ny
+    R = np.array([nx, ny])/M # R will be used to scale the sensor meshgrid.
+    dy = 2*R[1]/ny # pixel length in y direction in the normalized image plane.
+    dx = 2*R[0]/nx # pixel length in x direction in the normalized image plane.
+
+    # THIS DIFFERS FROM sensor.perspective_projection HERE.
+    x_s, y_s, z_s = np.meshgrid(np.linspace(-R[0], R[0]-dx, nx),
+                                np.linspace(-R[1], R[1]-dy, ny), 1.0)
+
+    # Here x_c, y_c, z_c coordinates on the image plane before transformation to the requaired observation angle
+    focal = 1.0 / np.tan(np.deg2rad(fov) / 2.0) # focal (normalized) length when the sensor size is 2 e.g. r in [-1,1).
+    fov_x = np.rad2deg(2*np.arctan(R[0]/focal))
+    fov_y = np.rad2deg(2*np.arctan(R[1]/focal))
+
+    k = np.array([[focal, 0, 0],
+                  [0, focal, 0],
+                  [0, 0, 1]], dtype=np.float32)
+    inv_k = np.linalg.inv(k)
+
+    homogeneous_coordinates = np.stack([x_s.ravel(), y_s.ravel(), z_s.ravel()])
+
+    x_c, y_c, z_c = norm(np.matmul(
+        rotation_matrix, np.matmul(inv_k, homogeneous_coordinates)))
+    # Here x_c, y_c, z_c coordinates on the image plane after transformation to the requaired observation
+
+    # x,y,z mu, phi in the global coordinates:
+    mu = -z_c.astype(np.float64)
+    phi = (np.arctan2(y_c, x_c) + np.pi).astype(np.float64)
+    x = np.full(npix, position[0], dtype=np.float32)
+    y = np.full(npix, position[1], dtype=np.float32)
+    z = np.full(npix, position[2], dtype=np.float32)
+
+    image_shape = [nx,ny]
+    sensor = pyshdom.sensor.make_sensor_dataset(x.ravel(), y.ravel(), z.ravel(),
+                                 mu.ravel(), phi.ravel(), stokes, wavelength)
+    # compare to orthographic projection, prespective projection may not have bounding box.
+    #     if(bounding_box is not None):
+    #         sensor['bounding_box'] = xr.DataArray(np.array([xmin,ymin,zmin,xmax,ymax,zmax]),
+    #                                               coords={'bbox': ['xmin','ymin','zmin','xmax','ymax','zmax']},dims='bbox')
+
+    sensor['image_shape'] = xr.DataArray(image_shape,
+                                         coords={'image_dims': ['nx', 'ny']},
+                                         dims='image_dims')
+    sensor.attrs = {
+        'projection': 'Perspective',
+        'fov_deg': fov,
+        'fov_x_deg': fov_x,
+        'fov_y_deg': fov_y,
+        'x_resolution': x_resolution,
+        'y_resolution': y_resolution,
+        'position': position,
+        'lookat': lookat,
+        'rotation_matrix': rotation_matrix,
+        'sensor_to_camera_transform_matrix':k
+
+    }
+
+    if sub_pixel_ray_args['method'] is not None:
+
+        #generate the weights and perturbations to the pixel positions in the image plane.
+        sub_pixel_ray_method, subpixel_ray_kwargs_x, subpixel_ray_kwargs_y =  \
+                            pyshdom.sensor._parse_sub_pixel_ray_args(sub_pixel_ray_args)
+        position_perturbations_x, weights_x = sub_pixel_ray_method(x_s.size,
+                                                                   **subpixel_ray_kwargs_x)
+        position_perturbations_y, weights_y = sub_pixel_ray_method(y_s.size,
+                                                                   **subpixel_ray_kwargs_y)
+
+        #merge the two dimensions
+        perturbations_x = np.repeat(position_perturbations_x[..., np.newaxis]*dx/2.0,
+                                    position_perturbations_y.shape[-1], axis=-1)
+        perturbations_y = np.repeat(position_perturbations_y[..., np.newaxis, :]*dy/2.0,
+                                    position_perturbations_x.shape[-1], axis=-2)
+        big_weightx = np.repeat(weights_x[..., np.newaxis], weights_y.shape[-1], axis=-1)
+        big_weighty = np.repeat(weights_y[..., np.newaxis, :], weights_x.shape[-1], axis=-2)
+
+        #apply perturbations to original image plane coordinates.
+        x_ray = (x_s.ravel()[:, np.newaxis, np.newaxis] + perturbations_x).ravel()
+        y_ray = (y_s.ravel()[:, np.newaxis, np.newaxis] + perturbations_y).ravel()
+        z_ray = np.repeat(np.repeat(z_s.ravel()[:, np.newaxis, np.newaxis],
+                                    perturbations_x.shape[-2], axis=-2),
+                          perturbations_y.shape[-1], axis=-1).ravel()
+        ray_homogeneous = np.stack([x_ray, y_ray, z_ray])
+
+        x_c, y_c, z_c = norm(np.matmul(
+            rotation_matrix, np.matmul(inv_k, ray_homogeneous)))
+        # Here x_c, y_c, z_c coordinates on the image plane after transformation to the requaired observation
+
+        # x,y,z mu, phi in the global coordinates:
+        mu = -z_c.astype(np.float64)
+        phi = (np.arctan2(y_c, x_c) + np.pi).astype(np.float64)
+        x = np.full(x_c.size, position[0], dtype=np.float32)
+        y = np.full(x_c.size, position[1], dtype=np.float32)
+        z = np.full(x_c.size, position[2], dtype=np.float32)
+
+        #make the pixel indices and ray weights.
+        pixel_index = np.repeat(np.repeat(range(len(sensor.cam_mu.data)),
+                                          weights_x.shape[-1]), weights_y.shape[-1])
+        ray_weight = (big_weightx*big_weighty).ravel()
+        #update ray variables to sensor dataset.
+        sensor['ray_mu'] = ('nrays', mu)
+        sensor['ray_phi'] = ('nrays', phi)
+        sensor['ray_x'] = ('nrays', x)
+        sensor['ray_y'] = ('nrays', y)
+        sensor['ray_z'] = ('nrays', z)
+        sensor['pixel_index'] = ('nrays', pixel_index)
+        sensor['ray_weight'] = ('nrays', ray_weight)
+        sensor['use_subpixel_rays'] = True
+
+        sub_pixel_ray_args['method'] = sub_pixel_ray_args['method'].__name__
+        for attribute in sub_pixel_ray_args:
+            sensor.attrs['sub_pixel_ray_args_{}'.format(attribute)] = sub_pixel_ray_args[attribute]
+    else:
+            #duplicate ray variables to sensor dataset.
+        sensor = pyshdom.sensor._add_null_subpixel_rays(sensor)
+    return sensor
+
 
 #A function for computing clouds for the thermal jacobian reference case.
 def cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=0.0, index=(1,1,1),
@@ -159,7 +355,7 @@ def cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperatu
     zs = target[2] + R*np.cos(np.deg2rad(zeniths))
     for x,y,z in zip(xs,ys,zs):
         Sensordict.add_sensor('MISR',
-        pyshdom.sensor.perspective_projection(11.0, 5.0, 26, 26,[x,y,z], target,
+        legacy_perspective_projection(11.0, 5.0, 26, 26,[x,y,z], target,
                                               [0,1,0],stokes=['I'])
                              )
 
@@ -207,6 +403,7 @@ def cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperatu
         config['acceleration_flag'] = True
         config['deltam'] = False
         config['tautol'] = 0.2
+        config['transcut'] = 5e-5
         solver = pyshdom.solver.RTE(
                             numerical_params=config,
                             medium={'cloud': optical_properties},
@@ -417,7 +614,7 @@ def cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_te
     zs = target[2] + R*np.cos(np.deg2rad(zeniths))
     for x,y,z in zip(xs,ys,zs):
         Sensordict.add_sensor('MISR',
-        pyshdom.sensor.perspective_projection(0.86, 4.0, 13, 13,[x,y,z], target,
+        legacy_perspective_projection(0.86, 4.0, 13, 13,[x,y,z], target,
                                               [0,1,0],stokes=['I'])
                              )
 
@@ -489,6 +686,7 @@ def cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_te
         config['acceleration_flag'] = False
         config['deltam'] = True
         config['tautol'] = 0.2
+        config['transcut'] = 5e-5
         solver = pyshdom.solver.RTE(
                             numerical_params=config,
                             medium={'cloud': optical_properties},

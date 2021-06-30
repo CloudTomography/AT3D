@@ -143,6 +143,11 @@ def stochastic(npixels, nrays, seed=None):
     weights = np.ones((npixels, nrays))/nrays
     return position_perturbations, weights
 
+def uniform(npixels, nrays):
+    position_perturbations = np.linspace(-1.0+1/nrays,1.0-1/nrays,nrays)
+    weights = np.ones((npixels, nrays))/nrays
+    return position_perturbations, weights
+
 def gaussian(npixels, degree):
     """
     Generates gauss-legendre weights and positions for integration of sub-pixel
@@ -438,8 +443,8 @@ def perspective_projection(wavelength, fov, x_resolution, y_resolution,
     R = np.array([nx, ny])/M # R will be used to scale the sensor meshgrid.
     dy = 2*R[1]/ny # pixel length in y direction in the normalized image plane.
     dx = 2*R[0]/nx # pixel length in x direction in the normalized image plane.
-    x_s, y_s, z_s = np.meshgrid(np.linspace(-R[0], R[0]-dx, nx),
-                                np.linspace(-R[1], R[1]-dy, ny), 1.0)
+    x_s, y_s, z_s = np.meshgrid(np.linspace(-R[0]+dx/2, R[0]-dx/2, nx),
+                                np.linspace(-R[1]+dy/2, R[1]-dy/2, ny), 1.0)
 
     # Here x_c, y_c, z_c coordinates on the image plane before transformation to the requaired observation angle
     focal = 1.0 / np.tan(np.deg2rad(fov) / 2.0) # focal (normalized) length when the sensor size is 2 e.g. r in [-1,1).

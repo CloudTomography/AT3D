@@ -1112,7 +1112,7 @@ C             extinction along the path between the gridpoint and the sun.
      .            DPTR(:,IP),
      .            NUMDER, DEXTM, TRANSMIT,
      .            ABSCELL, SRCSINGSCAT, NSTOKES, NPX,NPY,
-     .            NPZ,MAXPG)
+     .            NPZ,MAXPG,RAYGRAD)
 
               ENDIF
             ENDDO
@@ -1224,7 +1224,7 @@ C             extinction along the path between the gridpoint and the sun.
      .            DPTR(:,IP),
      .            NUMDER, DEXTM, TRANSMIT,
      .            1.0D0, SNGL(BOUNDINTERP(KK)*DIRRAD(:,KK)),
-     .            NSTOKES, NPX,NPY, NPZ,MAXPG)
+     .            NSTOKES, NPX,NPY, NPZ,MAXPG,RAYGRAD)
             ENDDO
           ENDIF
 C          CALL CPU_TIME(TIME2)
@@ -2161,7 +2161,7 @@ C     EXTINCTION/ALBEDO product.
      .            DALB*(LEGENP-LEGENT)*EXTINCTP+
      .            DLEGP*EXTINCTP*ALBEDOP +
      .            (LEGENT-1)*DFJ
-C
+
 
 C     Weight each phase legendre/Wigner coefficient derivative
 C     by the corresponding radiance harmonics.
@@ -2173,11 +2173,11 @@ C     source function truncation is active while HIGHORDERRAD is True.
 C     (HIGHORDERRAD keeps the full set of NLM radiance harmonics.)
 C     On the other hand, the pseudo-solar source
 C     uses the exact same number of terms as SOURCE.
-C      CALL COMPUTE_SOURCE_DIRECTION(DLEGT, DSOURCE,
-C     .   NLM, LOFJ, RIS, RNS, NSTOKES, RADIANCE, YLMDIR,
-C     .   NSTLEG, DELTAM, SRCTYPE, ML, MM, NS, YLMSUN,
-C     .   DIRFLUX, SECMU0, NLEG)
-
+      CALL COMPUTE_SOURCE_DIRECTION(DLEGT, DSOURCE,
+     .   NLM, LOFJ, RIS, RNS, NSTOKES, RADIANCE, YLMDIR,
+     .   NSTLEG, DELTAM, SRCTYPE, ML, MM, NS, YLMSUN,
+     .   DIRFLUX, SECMU0, NLEG)
+C
 C      Add the extinction/albedo/phase gradients.
       GRADTEMP(:) = GRADTEMP(:) +
      .  XI*(SOURCET(:)*(ALBEDO*EXTINCT_GRAD + ALBEDO_GRAD)
@@ -2399,7 +2399,8 @@ C     respect to the unknowns.
 
       SUBROUTINE COMPUTE_DIRECT_BEAM_DERIV(DPATH, DPTR,
      .     NUMDER,DEXTM, TRANSMIT, ABSCELL,
-     .     INPUTWEIGHT, NSTOKES, NPX,NPY,NPZ,MAXPG)
+     .     INPUTWEIGHT, NSTOKES, NPX,NPY,NPZ,MAXPG,
+     .     RAYGRAD)
 C     .  ALBEDOP, PHASEWTP, LEGEN, NSTLEG, NUMPHASE,
 C     .  MAXNMICRO, IPHASEP, RAYGRAD, ML, NLEG, DELTAM,
 C     .  DNUMPHASE, DIPHASEP, DALB, EXTINCTP, DPHASEWTP,
@@ -2442,6 +2443,7 @@ Cf2py intent(in,out) :: RAYGRAD
       DO WHILE (DPTR(II) .GT. 0)
         IB = DPTR(II)
         DO IDR=1,NUMDER
+
           RAYGRAD(:,IB,IDR) = RAYGRAD(:,IB,IDR) -
      .      DEXTM(IB,IDR)*DPATH(II)*ABSCELL*
      .      TRANSMIT*INPUTWEIGHT(:)
