@@ -753,9 +753,7 @@ C     initialize counter for subgrid intervals.
 C       Calculate the generalized spherical harmonics for this direction
       CALL YLMALL (.FALSE.,SNGL(MU2),SNGL(PHI2),ML,MM,NSTLEG, YLMDIR)
       SECMU0 = 1.0D0/ABS(SOLARMU)
-      IF (SRCTYPE .NE. 'T') THEN
-C       This is modified so that its done even for no delta-M so the
-C       'exact single scatter' derivative can still be calculated.
+      IF (SRCTYPE .NE. 'T' .AND. DELTAM) THEN
 C          Get the solar single scattering Stokes vector for the outgoing
 C          direction my interpolating in scattering angle in the PHASETAB
 C          table and then rotating the Q/U polarization to the outgoing plane.
@@ -1339,7 +1337,7 @@ C     This is unapproximated (apart from practicalities of discretization).
       INTEGER DOEXACT(IDR)
       REAL WAVELEN, WAVENO(2)
 
-      REAL XI
+      REAL XI, TRUNCSINGSCAT(NSTOKES)
       REAL LEGENT(NSTLEG,0:NLEG)
       REAL SINGSCATJ(NSTOKES)
       REAL SCATTERJ
@@ -1406,8 +1404,7 @@ C
           ENDIF
 C
 C         Special case for solar source and delta-M
-          IF ((SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B')
-     .      .AND. DELTAM) THEN
+          IF ((SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B')) THEN
 
            DO IPA = 1, NPART
              IF (EXT.EQ.0.0) THEN
@@ -1419,7 +1416,7 @@ C         Special case for solar source and delta-M
 
              IF (INTERPMETHOD(2:2) .EQ. 'O' ) THEN
                LEGENT = LEGEN(:,:,IPHASE(1,IP,IPA))
-               F = LEGENT(1,ML+1)
+C               F = LEGENT(1,ML+1)
              ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
                IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
                  LEGENT = LEGEN(:,:,IPHASE(1,IP,IPA))
@@ -1431,13 +1428,16 @@ C         Special case for solar source and delta-M
      .              PHASEINTERPWT(Q,IP,IPA)
                  ENDDO
                ENDIF
+C               F = LEGENT(1,ML+1)
+             ENDIF
+             IF (DELTAM) THEN
                F = LEGENT(1,ML+1)
                LEGENT(:,0:ML) = LEGENT(:,0:ML)/(1-F)
              ENDIF
 C               First subtract off the truncated single scattering
              DA = ALBEDO(IP,IPA)*DIRFLUX(IP)*SECMU0*W
              J = 1
-
+             TRUNCSINGSCAT = 0.0
              DO L = 0, ML
                ME = MIN(L,MM)
                MS = -ME
@@ -1446,17 +1446,20 @@ C               First subtract off the truncated single scattering
                IF (J .LE. NS) THEN
                  JT = J
                  DO M = MS, ME
-                   SRCEXT8(1,N) =SRCEXT8(1,N)
-     .               -A1*YLMDIR(1,J)*YLMSUN(1,J)
+                   TRUNCSINGSCAT(1) = TRUNCSINGSCAT(1) +
+C                   SRCEXT8(1,N) = SRCEXT8(1,N) -
+     .              A1*YLMDIR(1,J)*YLMSUN(1,J)
                    J = J + 1
                  ENDDO
                  IF (NSTOKES .GT. 1) THEN
                    J = JT
                    DO M = MS, ME
-                     SRCEXT8(2,N)=SRCEXT8(2,N)
-     .                 -B1*YLMDIR(2,J)*YLMSUN(1,J)
-                     SRCEXT8(3,N)=SRCEXT8(3,N)
-     .                 -B1*YLMDIR(6,J)*YLMSUN(1,J)
+                   TRUNCSINGSCAT(2) = TRUNCSINGSCAT(2) +
+C                     SRCEXT8(2,N) = SRCEXT8(2,N) -
+     .                 B1*YLMDIR(2,J)*YLMSUN(1,J)
+                   TRUNCSINGSCAT(3) = TRUNCSINGSCAT(3) +
+C                     SRCEXT8(3,N) = SRCEXT8(3,N) -
+     .                 B1*YLMDIR(6,J)*YLMSUN(1,J)
                      J = J + 1
                   ENDDO
                 ENDIF
@@ -1465,25 +1468,33 @@ C               First subtract off the truncated single scattering
 C
 C               Then add in the single scattering contribution for the
 C               original unscaled phase function.
-             IF (NUMPHASE .GT. 0) THEN
-               IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
-                 SINGSCAT8(:,N) = SINGSCAT8(:,N) +
-     .          DA*SINGSCAT(:,IPHASE(1,IP,IPA))/(1-F)
-               ELSE
-                 DO Q=1,8*MAXNMICRO
-                   IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
+             IF (DELTAM) THEN
+               IF (NUMPHASE .GT. 0) THEN
+                 IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
                    SINGSCAT8(:,N) = SINGSCAT8(:,N) +
+     .          DA*SINGSCAT(:,IPHASE(1,IP,IPA))/(1-F)
+                 ELSE
+                   DO Q=1,8*MAXNMICRO
+                     IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
+                     SINGSCAT8(:,N) = SINGSCAT8(:,N) +
      .              DA*SINGSCAT(:,IPHASE(Q,IP,IPA))*
      .              PHASEINTERPWT(Q,IP,IPA)/(1-F)
-                 ENDDO
+                   ENDDO
+                 ENDIF
+               ELSE
+                 WRITE(6,*) 'NUMPHASE=0 is not supported.'
+                 STOP
                ENDIF
+               SRCEXT8(:,N) = SRCEXT8(:,N) - TRUNCSINGSCAT(:)
              ELSE
-               WRITE(6,*) 'NUMPHASE=0 is not supported.'
-               STOP
+               SINGSCAT8(:,N) = SINGSCAT8(:,N) + TRUNCSINGSCAT(:)
              ENDIF
            ENDDO
-           SRCEXT8(:,N) = SRCEXT8(:,N) + SINGSCAT8(:,N)
+           IF (DELTAM) THEN
+              SRCEXT8(:,N) = SRCEXT8(:,N) + SINGSCAT8(:,N)
+           ENDIF
           ENDIF
+
 C          CALL CPU_TIME(TIME2)
 C          TIME_SOURCE(1) = TIME_SOURCE(1) + TIME2 - TIME1
 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
