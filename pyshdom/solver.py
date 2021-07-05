@@ -1189,8 +1189,6 @@ class RTE:
         self._dalb = dalb
         self._diphasep = diphase
         self._dphasewtp = dphasewt
-        # temperature derivatives are not yet supported in the python interface.
-        self._dtemp = np.zeros((dext.shape))
 
         # compute lut of phase function derivatives evaluated at scattering angles.
         self._dphasetab, ierr, errmsg = pyshdom.core.precompute_phase_check_grad(
@@ -1211,9 +1209,15 @@ class RTE:
         # to the RTE accuracy.
         self._dleg = dleg[:, :self._nleg+1]
         # make property grid to RTE grid pointers and interpolation weights.
+        sfcgridparms = self._sfcgridparms.reshape((self._nsfcpar,-1),order='F')[:,:self._nbotpts]
+
         self._optinterpwt, self._interpptr, ierr, errmsg, \
-        self._dalbm, self._dextm, self._dfj = \
-        pyshdom.core.prepare_deriv_interps(
+        self._dalbm, self._dextm, self._dfj, self._dplanck, = \
+        self._dplancksfc = pyshdom.core.prepare_deriv_interps(
+            sfcgridparms=sfcgridparms,
+            nbotpts=self._nbotpts,
+            nsfcparms=self._nsfcpar,
+            temp=self._temp[:self._npts],
             gridpos=self._gridpos[:, :self._npts],
             npx=self._pa.npx,
             npy=self._pa.npy,

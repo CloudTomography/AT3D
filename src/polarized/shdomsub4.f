@@ -13,7 +13,9 @@ C     -JRLoveridge 2021/02/22
       SUBROUTINE UPDATE_COSTFUNCTION (STOKESOUT, RAYGRAD_PIXEL,
      .             GRADOUT,COST, UNCERTAINTIES, COSTFUNC, NSTOKES,
      .             MAXPG, NUMDER, NCOST, NGRAD, MEASUREMENT,
-     .             NUNCERTAINTY, IERR, ERRMSG)
+     .             NUNCERTAINTY, IERR, ERRMSG, SFCGRAD,
+     .             SFCGRAD_PIXEL, NSFCDER, NSFCPTS, TEMPGRAD_PIXEL,
+     .             TEMPGRAD)
 C    Updates the cost function (COST) and its gradient (GRADOUT)
 C    with the contribution from one pixel using the forward modeled StokesVector
 C    (STOKESOUT), and the Frechet derivative for that pixel (RAYGRAD_PIXEL)
@@ -26,7 +28,7 @@ C    and update gradient.py and uncertainties.py to accept the new gradient flag
       CHARACTER*2 COSTFUNC
 Cf2py intent(in) :: COSTFUNC
       INTEGER MAXPG, NUMDER, NSTOKES, NGRAD, NCOST
-      INTEGER NUNCERTAINTIY
+      INTEGER NUNCERTAINTIY, NSFCDER, NSFCPTS
       DOUBLE PRECISION COST(NCOST)
       DOUBLE PRECISION GRADOUT(MAXPG,NUMDER,NGRAD)
 Cf2py intent(in,out) :: COST, GRADOUT
@@ -35,7 +37,15 @@ Cf2py intent(in) :: RAYGRAD_PIXEL
       DOUBLE PRECISION STOKESOUT(NSTOKES), MEASUREMENT(NSTOKES)
 Cf2py intent(in) :: STOKESOUT, MEASUREMENT
       DOUBLE PRECISION UNCERTAINTIES(NUNCERTAINTY,NUNCERTAINTY)
-Cf2py intetn(in) :: UNCERTAINTIES
+Cf2py intent(in) :: UNCERTAINTIES
+      DOUBLE PRECISION SFCGRAD(NSFCDER, NSFCPTS, NGRAD)
+Cf2py intent(in,out) :: SFCGRAD
+      DOUBLE PRECISION SFCGRAD_PIXEL(NSTOKES,NSFCDER, NSFCPTS)
+Cf2py intent(in) :: SFCGRAD_PIXEL
+      REAL TEMPGRAD_PIXEL(MAXPG)
+Cf2py intent(in) :: TEMPGRAD_PIXEL
+      REAL TEMPGRAD(MAXPG)
+Cf2py intent(in, out) :: TEMPGRAD
       INTEGER IERR
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
@@ -285,8 +295,9 @@ C      PRINT *, 'TIME_SOURCE', TIME_SOURCE
      .           MAXNMICRO, DIPHASEP, IPHASEP, PHASEWTP, DPHASEWTP,
      .           PHASEINTERPWT, ALBEDOP, EXTINCTP, OPTINTERPWT,
      .           INTERPPTR, EXTMIN, SCATMIN, DOEXACT, TEMP, PHASEMAX,
-     .           DTEMP, DEXTM, DALBM, DFJ, MAXSUBGRIDINTS,
-     .           TRANSCUT)
+     .           DEXTM, DALBM, DFJ, MAXSUBGRIDINTS,
+     .           TRANSCUT, SFCGRAD, SFCDER, NSFCDER, NSFCPTS,
+     .           NXSFC, NYSFC, DPLANCK, TEMPGRAD, DELXSFC, DELYSFC)
 C    Calculates the cost function and its gradient using the Levis approximation
 C    to the Frechet derivatives of the radiative transfer equation.
 C    Calculates the Stokes Vector at the given directions (CAMMU, CAMPHI)
@@ -367,8 +378,7 @@ Cf2py intent(in) :: MEASUREMENTS, DEXT ,DALB,  DLEG
       INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
       REAL    PHASEWTP(MAXNMICRO,MAXPG,NPART)
       REAL    DPHASEWTP(MAXNMICRO,MAXPG,NUMDER)
-      REAL    DTEMP(MAXPG,NUMDER)
-Cf2py intent(in) :: DIPHASEP, IPHASEP, PHASEWTP, DPHASEWTP,DTEMP
+Cf2py intent(in) :: DIPHASEP, IPHASEP, PHASEWTP, DPHASEWTP
       REAL    OPTINTERPWT(8,NPTS)
       INTEGER INTERPPTR(8,NPTS)
 Cf2py intent(in) :: OPTINTERPWT, INTERPPTR
@@ -425,12 +435,26 @@ Cf2py intent(in) :: SINGLESCATTER
 Cf2py intent(out) :: IERR, ERRMSG
       INTEGER MAXSUBGRIDINTS
 Cf2py intent(in) :: MAXSUBGRIDINTS
-
+      DOUBLE PRECISION SFCGRAD(NSFCDER, NSFCPTS, NGRAD)
+Cf2py intent(out) SFCGRAD
+      INTEGER SFCDER(NSFCDER, NSFCPTS)
+Cf2py intent(in) :: SFCDER
+      INTEGER NSFCDER, NSFCPTS, NXSFC, NYSFC
+Cf2py intent(in) :: NSFCDER, NSFCPTS, NXSFC, NYSFC
+      REAL DPLANCK(NPTS)
+Cf2py intent(in) :: DPLANCK
+      REAL TEMPGRAD(MAXPG)
+Cf2py intent(out) :: TEMPGRAD
+      REAL DELXSFC, DELYSFC
+Cf2py intent(in) :: DELXSFC, DELYSFC
 
       DOUBLE PRECISION WEIGHT
       DOUBLE PRECISION PIXEL_ERROR
       DOUBLE PRECISION RAYGRAD(NSTOKES,MAXPG,NUMDER), VISRAD(NSTOKES)
       DOUBLE PRECISION RAYGRAD_PIXEL(NSTOKES,MAXPG,NUMDER)
+      DOUBLE PRECISION SFCGRAD_RAY(NSTOKES,NSFCDER,NSFCPTS)
+      DOUBLE PRECISION SFCGRAD_PIXEL(NSTOKES,NSFCDER,NSFCPTS)
+      REAL TEMPGRAD_PIXEL(MAXPG), TEMPGRAD_RAY(MAXPG)
       INTEGER IPIX, J, L, SIDE, IRAY
       LOGICAL VALIDRAD
       DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
@@ -447,6 +471,9 @@ Cf2py intent(in) :: MAXSUBGRIDINTS
       IERR = 0
       GRADOUT = 0.0D0
       STOKESOUT = 0.0D0
+      TEMPGRAD = 0.0
+      SFCGRAD = 0.0D0
+
       TIME_SOURCE = 0.0
       TIME_DIRECT_POINT = 0.0
       TIME_DIRECT_SURFACE = 0.0
@@ -454,6 +481,7 @@ Cf2py intent(in) :: MAXSUBGRIDINTS
       TIME_RAY_TOTAL = 0.0
       TIME_SUBGRID = 0.0
       TIME_ALLOCATE = 0.0
+
 
 C      CALL CPU_TIME(TIME1)
       J = 0
@@ -487,6 +515,8 @@ C         Loop over pixels in image
       IRAY = 0
       DO IPIX = 1, NPIX
         RAYGRAD_PIXEL = 0.0D0
+        SFCGRAD_PIXEL = 0.0D0
+        TEMPGRAD_PIXEL = 0.0
         DO I2=1 ,RAYS_PER_PIXEL(IPIX)
           IRAY = IRAY + 1
           X0 = CAMX(IRAY)
@@ -517,6 +547,7 @@ C         to calculate the Stokes radiance vector for this pixel.
 C         Simultaneously calculate the approximate Frechet derivatives
 C         while traversing the SHDOM grid.
           TRANSMIT = 1.0D0 ; VISRAD = 0.0D0; RAYGRAD = 0.0D0
+          SFCGRAD_RAY = 0.0D0; TEMPGRAD_RAY = 0.0
           CALL GRAD_INTEGRATE_1RAY (BCFLAG, IPFLAG, NSTOKES, NSTLEG,
      .             NSTPHASE, NSCATANGLE, PHASETAB, NX, NY, NZ,
      .             NPTS, NCELLS, GRIDPTR, NEIGHPTR, TREEPTR,
@@ -538,8 +569,12 @@ C         while traversing the SHDOM grid.
      .             PHASEINTERPWT, OPTINTERPWT, INTERPPTR,
      .             MAXNMICRO, EXTINCTP, ALBEDOP, PHASEWTP, DPHASEWTP,
      .             IPHASEP, DIPHASEP, WAVENO, UNITS, EXTMIN, SCATMIN,
-     .             DOEXACT, INTERPMETHOD, DTEMP, DEXTM, DALBM,
-     .             DFJ, MAXSUBGRIDINTS, TRANSCUT,TIME_SOURCE,
+     .             DOEXACT, INTERPMETHOD, DEXTM, DALBM,
+     .             DFJ, MAXSUBGRIDINTS, TRANSCUT,
+     .             NSFCDER, SFCDER, NSFCPTS, SFCGRAD_RAY,
+     .             NXSFC, NYSFC, DPLANCK,
+     .             TEMPGRAD_RAY,DELXSFC, DELYSFC,
+     .              TIME_SOURCE,
      .             TIME_DIRECT_POINT, TIME_DIRECT_SURFACE,
      .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE)
           IF (IERR .NE. 0) RETURN
@@ -550,14 +585,20 @@ C         while traversing the SHDOM grid.
      .        RAY_WEIGHTS(IRAY)*STOKES_WEIGHTS(NS,IPIX)
             RAYGRAD_PIXEL(NS,:,:) = RAYGRAD_PIXEL(NS,:,:) +
      .        RAYGRAD(NS,:,:)*RAY_WEIGHTS(IRAY)*STOKES_WEIGHTS(NS,IPIX)
+            SFCGRAD_PIXEL(NS,:,:) = SFCGRAD_PIXEL(NS,:,:) +
+     .        SFCGRAD_PIXEL(NS,:,:)*RAY_WEIGHTS(IRAY)*
+     .        STOKES_WEIGHTS(NS,IPIX)
           ENDDO
         ENDDO
+        TEMPGRAD_PIXEL(:) = TEMPGRAD_PIXEL(:) + TEMPGRAD_RAY(:)*
+     .    RAY_WEIGHTS(IRAY)
 
         CALL UPDATE_COSTFUNCTION(DBLE(STOKESOUT(:,IPIX)), RAYGRAD_PIXEL,
      .             GRADOUT, COST, UNCERTAINTIES(:,:,IPIX), COSTFUNC,
      .             NSTOKES, MAXPG, NUMDER, NCOST, NGRAD,
      .             DBLE(MEASUREMENTS(:,IPIX)), NUNCERTAINTY, IERR,
-     .              ERRMSG)
+     .              ERRMSG, SFCGRAD, SFCGRAD_PIXEL, NSFCPAR,
+     .              NSFCPTS, TEMPGRAD_PIXEL, TEMPGRAD)
         IF (IERR .NE. 0) RETURN
 
         IF (MAKEJACOBIAN .EQV. .TRUE.) THEN
@@ -601,8 +642,11 @@ C      PRINT *, 'TIME_ALLOCATE', TIME_ALLOCATE
      .             PHASEINTERPWT, OPTINTERPWT, INTERPPTR,
      .             MAXNMICRO, EXTINCTP, ALBEDOP, PHASEWTP, DPHASEWTP,
      .             IPHASEP, DIPHASEP, WAVENO, UNITS, EXTMIN, SCATMIN,
-     .             DOEXACT, INTERPMETHOD, DTEMP, DEXTM,DALBM,
-     .             DFJ, MAXSUBGRIDINTS, TRANSCUT, TIME_SOURCE,
+     .             DOEXACT, INTERPMETHOD, DEXTM,DALBM,
+     .             DFJ, MAXSUBGRIDINTS, TRANSCUT, SFCDER,
+     .             NSFCDER, NSFCPTS, NXSFC, NYSFC, DPLANCK,
+     .             SFCGRAD_RAY, TEMPGRAD_RAY, DELXSFC, DELYSFC,
+     .             TIME_SOURCE,
      .             TIME_DIRECT_POINT, TIME_DIRECT_SURFACE,
      .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE)
 C       Integrates the source function through the extinction field
@@ -650,7 +694,7 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
       DOUBLE PRECISION TRANSMIT, RADOUT(NSTOKES)
       CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1, INTERPMETHOD*2
       REAL      DLEG(NSTLEG,0:NLEG,*), DEXT(MAXPG,NUMDER)
-      REAL      DALB(MAXPG,NUMDER), DTEMP(MAXPG,NUMDER)
+      REAL      DALB(MAXPG,NUMDER)
 
       REAL      OPTINTERPWT(8,NPTS)
       INTEGER   INTERPPTR(8,NPTS), MAXNMICRO
@@ -702,6 +746,12 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
       REAL :: GNDALBEDO
       INTEGER IERR
       CHARACTER ERRMSG*600
+
+      INTEGER NSFCDER, NSFCPTS, NXSFC, NYSFC
+      INTEGER SFCDER(NSFCDER, NSFCPTS)
+      DOUBLE PRECISION SFCGRAD_RAY(NSTOKES,NSFCDER, NSFCPTS)
+      REAL TEMPGRAD_RAY(MAXPG), DELXSFC, DELYSFC
+      REAL DPLANCK(NPTS)
 
       REAL TIME_SOURCE(3), TIME_DIRECT_POINT, TIME_DIRECT_SURFACE
       REAL TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE
@@ -890,7 +940,8 @@ C      CALL CPU_TIME(TIME1)
      .             DIPHASEP, DPHASEWTP, SINGSCAT8, OSINGSCAT8,
      .             MAXNMICRO, DOEXACT, EXTMIN, SCATMIN,
      .             UNITS, WAVELEN, WAVENO, PHASEMAX, INTERPMETHOD,
-     .             SINGLESCATTER, DTEMP, DEXTM, DALBM, DFJ, TIME_SOURCE)
+     .             SINGLESCATTER, DEXTM, DALBM, DFJ,
+     .             DPLANCK, TEMPGRAD_RAY, TIME_SOURCE)
 
 C         CALL CPU_TIME(TIME2)
 C         TIME_SOURCE = TIME_SOURCE + TIME2 - TIME1
@@ -1198,7 +1249,9 @@ C          CALL CPU_TIME(TIME1)
      .                      SRCTYPE, WAVELEN, SOLARMU,SOLARAZ, DIRFLUX,
      .                      SFCTYPE, NSFCPAR, SFCGRIDPARMS,
      .                      RADBND, BOUNDPTS, BOUNDINTERP, DIRRAD,
-     .                      GNDALBEDO)
+     .                      GNDALBEDO, NSFCDER, NSFCPTS, NXSFC, NYSFC,
+     .                      SFCDER, SFCGRAD_RAY, DPLANCK, DELXSFC,
+     .                      DELYSFC, TRANSMIT)
           RADOUT(:) = RADOUT(:) + TRANSMIT*RADBND(:)
           PASSEDTRANSMIT(NPASSED) = TRANSMIT
           PASSEDABSCELL(NPASSED) = 0.0
@@ -1280,7 +1333,8 @@ C      TIME_RADIANCE = TIME_RADIANCE + TIME2 - TIME1
      .             DIPHASEP, DPHASEWTP, SINGSCAT8, OSINGSCAT8,
      .             MAXNMICRO, DOEXACT, EXTMIN, SCATMIN,
      .             UNITS, WAVELEN, WAVENO, PHASEMAX, INTERPMETHOD,
-     .             SINGLESCATTER, DTEMP, DEXTM, DALBM, DFJ, TIME_SOURCE)
+     .             SINGLESCATTER, DEXTM, DALBM, DFJ,
+     .             DPLANCK, TEMPGRAD_RAY, TIME_SOURCE)
 C       Computes the source function times extinction for gridpoints
 C     belonging to cell ICELL in the direction (MU,PHI).  The results
 C     are returned in SRCEXT8 and EXTINCT8.
@@ -1318,7 +1372,6 @@ C     This is unapproximated (apart from practicalities of discretization).
       REAL    DALB(MAXPG,NUMDER)
       REAL    PHASEWTP(MAXNMICRO,MAXPG,NPART)
       REAL    DPHASEWTP(MAXNMICRO,MAXPG,NUMDER)
-      REAL    DTEMP(MAXPG,NUMDER)
       REAL    EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG, NPART)
       REAL    DEXTM(MAXPG,NUMDER), DALBM(8,NPTS,NUMDER)
       REAL    DFJ(8,NPTS,NUMDER)
@@ -1336,6 +1389,8 @@ C     This is unapproximated (apart from practicalities of discretization).
       REAL OGRAD8(NSTOKES,8,8,NUMDER)
       INTEGER DOEXACT(IDR)
       REAL WAVELEN, WAVENO(2)
+      REAL DPLANCK(NPTS)
+      REAL TEMPGRAD_RAY(MAXPG)
 
       REAL XI, TRUNCSINGSCAT(NSTOKES)
       REAL LEGENT(NSTLEG,0:NLEG)
@@ -1624,10 +1679,11 @@ C              CALL CPU_TIME(TIME3)
      .          NSTLEG, RADIANCE, NSTOKES, DELTAM, DOEXACT(IDR),
      .          NLM, LOFJ, RIS,
      .          RNS, ML, MM, NS, YLMSUN, DIRFLUX(IP), SECMU0, YLMDIR,
-     .          SRCTYPE, SINGSCAT, DSINGSCAT, DTEMP(IB,IDR),
+     .          SRCTYPE, SINGSCAT, DSINGSCAT,
      .          TEMP(IP), INTERPMETHOD, GRAD8(:,NB,N,IDR), SINGSCATJ,
      .          SOURCET, LEGENT, UNITS, WAVELEN, WAVENO, DEXTM(IB,IDR),
-     .          DALBM(NB,IP,IDR), DFJ(NB,IP,IDR))
+     .          DALBM(NB,IP,IDR), DFJ(NB,IP,IDR), DPLANCK(IP),
+     .          TEMPGRAD_RAY(IB))
 C              CALL CPU_TIME(TIME4)
 C              TIME_SOURCE(3) = TIME_SOURCE(3) + TIME4 - TIME3
             ENDDO
@@ -1665,7 +1721,8 @@ C         here. This doesn't save computation time at all though.
      .                      SRCTYPE, WAVELEN, SOLARMU,SOLARAZ, DIRFLUX,
      .                      SFCTYPE, NSFCPAR, SFCGRIDPARMS,
      .                      RADBND, BOUNDPTS, BOUNDINTERP,DIRRAD,
-     .                      GNDALBEDO)
+     .                      GNDALBEDO, NSFCDER, NSFCPTS, NXSFC, NYSFC,
+     .                      SFCDER, SFCGRAD_RAY, DPLANCK, TRANSMIT)
 C       Returns the interpolated Stokes radiance at the boundary (RADBND).
 C     Inputs are the boundary location (XB,YB), ray direction away from
 C     boundary (MU2,PHI2), cell number (ICELL) and face (KFACE) at
@@ -1677,11 +1734,17 @@ C     the boundary point.
       REAL    MU2, PHI2
       INTEGER BOUNDPTS(4)
       DOUBLE PRECISION BOUNDINTERP(4), DIRRAD(NSTOKES,4)
-      DOUBLE PRECISION XB, YB
+      DOUBLE PRECISION XB, YB, TRANSMIT
       REAL    GRIDPOS(3,*), RADBND(NSTOKES)
       REAL    WTDO(NMU,*), MU(NMU), PHI(NMU,*)
       REAL    WAVELEN, SOLARMU, SOLARAZ, DIRFLUX(*)
       REAL    SFCGRIDPARMS(NSFCPAR,*), BCRAD(NSTOKES,*)
+      REAL    SFCGRAD_RAY(NSTOKES,NSFCDER,NSFCPTS)
+      REAL    SFCGRIDGRAD(NSTOKES,NSFCDER)
+      INTEGER NXSFC, NYSFC, NSFCDER, SFCDER(NSFCDER)
+      INTEGER NSFCPTS
+      REAL    DPLANCK(*)
+      REAL    DELXSFC, DELYSFC
       CHARACTER SRCTYPE*1, SFCTYPE*2
       REAL GNDALBEDO
 
@@ -1691,6 +1754,10 @@ C     the boundary point.
       REAL    X(4), Y(4), RAD(NSTOKES,4), OPI
       REAL    REFLECT(4,4)
       INTEGER GRIDFACE(4,6)
+      REAL RX, RY, SFCU, SFCV, SFCINTERP(4)
+      INTEGER SFCPTR(4)
+      INTEGER IX, IY, ISFC, Q
+
       DATA    GRIDFACE/1,3,5,7, 2,4,6,8,  1,2,5,6, 3,4,7,8,
      .                 1,2,3,4, 5,6,7,8/
 
@@ -1698,11 +1765,51 @@ C     the boundary point.
       OPI = 1.0/ACOS(-1.0)
 C       Loop over the four gridpoints of the cell face on the boundary
       DIRRAD = 0.0
+
+      DO J = 1, 4
+        IP = GRIDPTR(GRIDFACE(J,KFACE),ICELL)
+        X(J) = GRIDPOS(1,IP)
+        Y(J) = GRIDPOS(2,IP)
+
+        IF (X(2)-X(1) .GT. 0.0) THEN
+          U = (XB-X(1))/(X(2)-X(1))
+        ELSE
+          U = 0.0
+        ENDIF
+        IF (Y(3)-Y(1) .GT. 0.0) THEN
+          V = (YB-Y(1))/(Y(3)-Y(1))
+        ELSE
+          V = 0.0
+        ENDIF
+        BOUNDINTERP(1) = (1-U)*(1-V)
+        BOUNDINTERP(2) = U*(1-V)
+        BOUNDINTERP(3) = (1-U)*V
+        BOUNDINTERP(4) = U*V
+      ENDDO
+
       DO J = 1, 4
         IP = GRIDPTR(GRIDFACE(J,KFACE),ICELL)
         BOUNDPTS(J) = IP
         X(J) = GRIDPOS(1,IP)
         Y(J) = GRIDPOS(2,IP)
+
+        RX = X(J)/DELXSFC
+        RY = Y(J)/DELYSFC
+        IX = MAX(1,MIN(NXSFC,INT(RX)+1))
+        IY = MAX(1,MIN(NYSFC,INT(RY)+1))
+
+        SFCPTR(1) = IX   + (NXSFC+1)*IY
+        SFCPTR(2) = IX   + (NXSFC+1)*(IY+1)
+        SFCPTR(3) = IX+1 + (NXSFC+1)*IY
+        SFCPTR(4) = IX+1 + (NXSFC+1)*(IY+1)
+
+        SFCU = MAX(0.0,MIN(1.0,RX-(IX-1)))
+        SFCV = MAX(0.0,MIN(1.0,RY-(IY-1)))
+
+        SFCINTERP(1) = (1-SFCU)*(1-SFCV)
+        SFCINTERP(2) = SFCU*(1-SFCV)
+        SFCINTERP(3) = (1-SFCU)*SFCV
+        SFCINTERP(4) = SFCU*SFCV
 
         IF (MU2 .LT. 0.0) THEN
 C           Do a binary search to locate the top boundary point
@@ -1748,35 +1855,23 @@ C           Do a binary search to locate the bottom boundary point
               ENDIF
             ENDIF
           ELSE
-            CALL VARIABLE_BRDF_SURFACE (NBOTPTS,IBC,IBC, BCPTR(1,2),
+            CALL VARIABLE_BRDF_SURFACE_GRAD(NBOTPTS, IBC, IBC,
      .             NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, MU2, PHI2,
      .             SRCTYPE, WAVELEN, SOLARMU, SOLARAZ, DIRFLUX,
      .             SFCTYPE, NSFCPAR, SFCGRIDPARMS, NSTOKES,
-     .             BCRAD(:,1+NTOPPTS))
-
-            CALL SURFACE_BRDF (SFCTYPE(2:2), SFCGRIDPARMS(2,IBC),
-     .                    WAVELEN, MU2, PHI2, SOLARMU,SOLARAZ,
-     .                      NSTOKES, REFLECT)
-            DIRRAD(:,J) = OPI*REFLECT(1:NSTOKES,1)*DIRFLUX(IP)
+     .             BCRAD(:,1+NTOPPTS), DIRRAD(1,J), NSFCDER,
+     .             SFCDER, SFCGRIDGRAD, DPLANCK(IP))
+            DO Q=1,4
+              ISFC = SFCPTR(Q)
+              SFCGRAD_RAY(:,:,ISFC) = SFCGRAD_RAY(:,:,ISFC) +
+     .        TRANSMIT*BOUNDINTERP(J)*SFCGRIDGRAD(:,:)*SFCINTERP(Q)
+            ENDDO
 
           ENDIF
           RAD(:,J) = BCRAD(:,NTOPPTS+IBC)
         ENDIF
       ENDDO
-      IF (X(2)-X(1) .GT. 0.0) THEN
-        U = (XB-X(1))/(X(2)-X(1))
-      ELSE
-        U = 0.0
-      ENDIF
-      IF (Y(3)-Y(1) .GT. 0.0) THEN
-        V = (YB-Y(1))/(Y(3)-Y(1))
-      ELSE
-        V = 0.0
-      ENDIF
-      BOUNDINTERP(1) = (1-U)*(1-V)
-      BOUNDINTERP(2) = U*(1-V)
-      BOUNDINTERP(3) = (1-U)*V
-      BOUNDINTERP(4) = U*V
+
       RADBND(:) = (1-U)*(1-V)*RAD(:,1) + U*(1-V)*RAD(:,2)
      .              + (1-U)*V*RAD(:,3) +     U*V*RAD(:,4)
       RETURN
@@ -2027,10 +2122,10 @@ C           If doing polarization, sum the second Wigner function series
      .  LEGEN, NUMPHASE, DNUMPHASE, NLEG, NSTLEG, RADIANCE,
      .  NSTOKES, DELTAM, DOEXACT, NLM, LOFJ, RIS, RNS,
      .  ML, MM, NS, YLMSUN, DIRFLUX, SECMU0, YLMDIR,
-     .  SRCTYPE, SINGSCAT, DSINGSCAT, DTEMP, TEMP,
+     .  SRCTYPE, SINGSCAT, DSINGSCAT, TEMP,
      . INTERPMETHOD, GRADTEMP, SINGSCATJ,
      . SOURCET, LEGENT, UNITS, WAVELEN, WAVENO, EXTINCT_GRAD,
-     . ALBEDO_GRAD, DFJ)
+     . ALBEDO_GRAD, DFJ, DPLANCK, TEMPGRAD_RAY)
 C      Calculates the gradient of the source/extinction product at a given RTE grid point
 C      for a given species with respect to unknowns on a given property grid point
 C      using partial derivatives of optical properties on property grid with
@@ -2062,8 +2157,8 @@ Cf2py intent(in) :: ML, MM, NS, NLM, DOEXACT, NSTOKES
 Cf2py intent(in) :: DELTAM
       REAL DIRFLUX, SECMU0, YLMDIR(NSTLEG, NLM), YLMSUN(NSTLEG, NLM)
 Cf2py intent(in) :: DIRFLUX, SECMU0, YLMDIR, YLMSUN
-      REAL XI, ALBEDOP, EXTINCTP, DEXT, DALB, DTEMP, TEMP
-Cf2py intent(in) :: XI, ALBEDOP, EXTINCTP, DEXT, DALB, DTEMP, TEMP
+      REAL XI, ALBEDOP, EXTINCTP, DEXT, DALB, TEMP
+Cf2py intent(in) :: XI, ALBEDOP, EXTINCTP, DEXT, DALB, TEMP
       REAL ALBEDO, EXTINCT
 Cf2py intent(in) :: ALBEDO, EXTINCT
       INTEGER DIPHASEP(MAXNMICRO), IPHASEP(MAXNMICRO)
@@ -2092,10 +2187,13 @@ Cf2py intent(in) :: WAVELEN, WAVENO
 Cf2py intent(in,out) :: GRADTEMP
       REAL EXTINCT_GRAD, ALBEDO_GRAD, DFJ
 Cf2py intent(in) ::EXTINCT_GRAD, ALBEDO_GRAD
+      REAL DPLANCK, TEMPGRAD_RAY
+Cf2py intent(in) :: DPLANCK
+Cf2py intent(in,out) :: TEMPGRAD_RAY
 
       INTEGER Q
       REAL DSINGSCATP(NSTOKES), FP, DSOURCE(NSTOKES)
-      REAL SINGSCATP(NSTOKES), DPLANCK, PLANCK
+      REAL SINGSCATP(NSTOKES), PLANCK
       REAL FTEMP
       REAL, ALLOCATABLE :: DLEGP(:,:), UNSCALED_LEGEN(:,:), DLEGT(:,:)
       REAL, ALLOCATABLE :: LEGENP(:,:)
@@ -2216,8 +2314,8 @@ C     by the deltam scaled albedo/extinct product.
 C      Calculate thermal component of the gradient.
       IF (SRCTYPE .EQ. 'T' .OR. SRCTYPE .EQ. 'B') THEN
 C        DPLANCK COULD BE PREPROCESSED.
-         CALL PLANCK_DERIVATIVE(TEMP, UNITS, WAVENO,
-     .                          WAVELEN, DPLANCK)
+C         CALL PLANCK_DERIVATIVE(TEMP, UNITS, WAVENO,
+C     .                          WAVELEN, DPLANCK)
 C        To capture the case when ALBEDO ~ 1, but we still
 C        want a derivative we just recalculate PLANCK
 C        without the (1-ALBEDO) factor, rather than
@@ -2225,12 +2323,14 @@ C        trying to divide, as it is otherwise undefined.
          CALL PLANCK_FUNCTION(TEMP, UNITS, WAVENO,
      .                          WAVELEN, PLANCK)
 C       Catch NaNs that occur when PLANCK is very small.
-         IF (PLANCK .LT. 1e-7) THEN
-           DPLANCK = 0.0
-         ENDIF
+C         IF (PLANCK .LT. 1e-7) THEN
+C           DPLANCK = 0.0
+C         ENDIF
+         TEMPGRAD_RAY = TEMPGRAD_RAY +
+     .    EXTINCT*(1.0 - ALBEDO)*DPLANCK*XI
+
           GRADTEMP(1) = GRADTEMP(1) +
-     .      XI*(EXTINCT*(1.0 - ALBEDO)*DPLANCK*DTEMP
-     .          - PLANCK*ALBEDO_GRAD
+     .      XI*( - PLANCK*ALBEDO_GRAD
      .         + PLANCK*(1.0-ALBEDO)*EXTINCT_GRAD)
 
       ENDIF
@@ -2567,7 +2667,9 @@ Cf2py intent(in) :: RADIANCE, SOURCET
      .    ALBEDOP, EXTINCTP, NPART, DALB, DEXT,
      .    NUMDER, PARTDER, DOEXACT, ML, DELTAM,
      .    ALBEDO, IPHASE, PHASEINTERPWT, PHASEMAX,
-     .    INTERPMETHOD)
+     .    INTERPMETHOD, DPLANCK, TEMP, UNITS, WAVENO,
+     .    WAVELEN, DPLANCKSFC, SFCGRIDPARMS, NSFCPAR,
+     .    NBOTPTS)
 C     This subroutine just precomputes the interpolation weights
 C     (OPTINTERPWT) and pointers (INTERPPTR) from the property
 C     grid onto the RTE grid in SHDOM analagously to in
@@ -2579,6 +2681,10 @@ C     calculation.
 Cf2py intent(in) :: NPTS, MAXPG, NUMDER, PARTDER
       INTEGER NPX, NPY, NPZ, ML, NLEG, NPART
 Cf2py intent(in) :: NPX, NPY, NPZ, ML, NLEG, NPART
+      INTEGER NBOTPTS, NSFCPAR
+Cf2py intent(in) :: NBOTPTS, NSFCPAR
+      REAL SFCGRIDPARMS(NSFCPAR,NBOTPTS)
+Cf2py intent(in) :: SFCGRIDPARMS
       REAL GRIDPOS(3, NPTS)
 Cf2py intent(in) :: GRIDPOS
       LOGICAL DELTAM
@@ -2593,6 +2699,14 @@ Cf2py intent(out) :: DALBM
 Cf2py intent(out) :: DEXTM
       REAL DFJ(8, NPTS,NUMDER)
 Cf2py intent(out) :: DFJ
+      REAL DPLANCK(NPTS)
+Cf2py intent(out) :: DPLANCK
+      REAL DPLANCKSFC(NBOTPTS)
+Cf2py intent(out) :: DPLANCKSFC
+      REAL TEMP(NPTS), WAVENO(2), WAVELEN
+Cf2py intent(in) :: TEMP, WAVENO, WAVELEN
+      CHARACTER UNITS*1
+Cf2py intent(in) :: UNITS
       REAL DELX, DELY, XSTART, YSTART
 Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
@@ -2667,6 +2781,18 @@ C         compute F and ALBEDOJ
             IF (IERR .NE. 0) RETURN
         ENDDO
       ENDDO
+
+      DO IP=1,NPTS
+        CALL PLANCK_DERIVATIVE(TEMP(IP), UNITS, WAVENO,WAVELEN,
+     .    DPLANCK(IP))
+      ENDDO
+
+      DO IP=1, NBOTPTS
+        CALL PLANCK_DERIVATIVE(SFCGRIDPARMS(1,IP), UNITS,
+     .   WAVENO,WAVELEN,
+     .    DPLANCKSFC(IP))
+      ENDDO
+
       RETURN
       END
 
