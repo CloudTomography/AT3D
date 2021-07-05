@@ -141,7 +141,8 @@ F2PY_CORE_API = [
     'compute_direct_beam_deriv',
     'extinction_derivative_point',
     'interpolate_point',
-    'divide_cell'
+    'divide_cell',
+    'grid_smoothing'
 ]
 
 def _run_command(cmd):

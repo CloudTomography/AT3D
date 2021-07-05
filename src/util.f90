@@ -6,6 +6,84 @@
 ! There is also a ray integration routine to allow linear tomography methods
 ! utilizing an SHDOM-type grid.
 
+subroutine grid_smoothing(xgrid, ygrid, zgrid, nx, ny, nz, &
+  field, cost, gradient, weights)
+
+  implicit none
+  integer nx, ny, nz
+  double precision xgrid(nx), ygrid(ny), zgrid(nz), field(nz,ny,nx)
+  double precision weights(nz,ny,nx)
+  double precision gradient(nz,ny,nx), cost
+!f2py intent(in) :: nx, ny, nz, xgrid, ygrid, zgrid, field, weights
+!f2py intent(out) :: gradient, cost
+  integer i,j,k
+  double precision dx,dy,dz,invdx,invdy,invdz
+  double precision x_derivs, y_derivs, z_derivs, volume
+
+  cost = 0.0D0
+  gradient = 0.0D0
+
+  ! for each cell calculate the volume integral of
+  ! the square of each derivative.
+  do i = 1, nx-1
+    dx = xgrid(i+1) - xgrid(i)
+    invdx = 1.0D0/dx
+
+    do j = 1, ny-1
+      dy = ygrid(j+1) - ygrid(j)
+      invdy = 1.0D0/dy
+
+      do k = 1, nz-1
+        dz = zgrid(k+1) - zgrid(k)
+        invdz = 1.0D0/dz
+
+        ! each directional derivative can vary linearly across
+        ! the remaining plane.
+        volume = dx*dy*dz*0.125D0*(weights(k,j,i) + weights(k,j,i+1) &
+                 + weights(k,j+1,i) + weights(k,j+1,i+1) &
+                 + weights(k+1,j,i+1)+weights(k+1,j+1,i) &
+                 + weights(k+1,j+1,i+1) + weights(k+1,j,i))
+        x_derivs = 0.25D0*invdx*((field(k,j,i+1) - field(k,j,i))&
+                 + (field(k,j+1,i+1) - field(k,j+1,i)) &
+                 + (field(k+1,j,i+1) - field(k+1,j,i)) &
+                 + (field(k+1,j+1,i+1) - field(k+1,j+1,i)))
+        y_derivs = 0.25D0*invdy*((field(k,j+1,i) - field(k,j,i))&
+                 + (field(k,j+1,i+1) - field(k,j,i+1)) &
+                 + (field(k+1,j+1,i) - field(k+1,j,i)) &
+                 + (field(k+1,j+1,i+1) - field(k+1,j,i+1)))
+        z_derivs = 0.25D0*invdz*((field(k+1,j,i) - field(k,j,i))&
+                 + (field(k+1,j,i+1) - field(k,j,i+1)) &
+                 + (field(k+1,j+1,i) - field(k,j+1,i)) &
+                 + (field(k+1,j+1,i+1) - field(k,j+1,i+1)))
+
+        cost = cost + volume*(x_derivs*x_derivs + y_derivs*y_derivs + &
+                              z_derivs*z_derivs)
+
+        gradient(k,j,i) = gradient(k,j,i) + volume*(    &
+          -x_derivs*invdx - y_derivs*invdy - z_derivs*invdz)
+        gradient(k,j,i+1) = gradient(k,j,i+1) + volume*(    &
+          x_derivs*invdx - y_derivs*invdy - z_derivs*invdz)
+        gradient(k,j+1,i) = gradient(k,j+1,i) + volume*(    &
+          -x_derivs*invdx +y_derivs*invdy - z_derivs*invdz)
+        gradient(k,j+1,i+1) = gradient(k,j+1,i+1) + volume*(    &
+          x_derivs*invdx +y_derivs*invdy - z_derivs*invdz)
+        gradient(k+1,j,i) = gradient(k+1,j,i) + volume*(    &
+          -x_derivs*invdx - y_derivs*invdy + z_derivs*invdz)
+        gradient(k+1,j,i+1) = gradient(k+1,j,i+1) + volume*(    &
+          x_derivs*invdx - y_derivs*invdy + z_derivs*invdz)
+        gradient(k+1,j+1,i) = gradient(k+1,j+1,i) + volume*(    &
+          -x_derivs*invdx +y_derivs*invdy + z_derivs*invdz)
+        gradient(k+1,j+1,i+1) = gradient(k+1,j+1,i+1) + volume*(    &
+          x_derivs*invdx +y_derivs*invdy + z_derivs*invdz)
+
+      enddo
+    enddo
+  enddo
+  cost = 0.5D0*cost
+  gradient = 0.25D0*gradient
+
+end subroutine grid_smoothing
+
 
 subroutine phase_function_mixing(scatter_coefficients, phase_tables, &
   phase_indices, interpolation_weights, &
