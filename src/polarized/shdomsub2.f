@@ -448,6 +448,7 @@ Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
       DO IP = 1, NPTS
 C27237,27283
         DIRPATH = 0.0
+C        PRINT *, 'DIRECT_BEAM', IP
         CALL DIRECT_BEAM_PROP
      .           (0, GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP),
      .            BCFLAG, IPFLAG, DELTAM, ML, NSTLEG, NLEGP,
@@ -1875,268 +1876,268 @@ C              ends of the edge; assume the cell was split in half.
 
 
 
-      SUBROUTINE VISUALIZE_RADIANCE (NSTOKES, NX, NY, NZ, NPTS, NCELLS,
-     .             ML, MM, NLM, NSTLEG, NLEG, NUMPHASE,
-     .             NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
-     .             BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, SOLARAZ,
-     .             SFCTYPE, NSFCPAR, SFCGRIDPARMS,
-     .             MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD,
-     .             GNDTEMP, GNDALBEDO, SKYRAD, WAVENO, WAVELEN, UNITS,
-     .             XGRID, YGRID, ZGRID, GRIDPOS,
-     .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
-     .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, FLUXES,
-     .             SHPTR, SOURCE,  OUTPARMS,  IVIS, VISOUT)
+C      SUBROUTINE VISUALIZE_RADIANCE (NSTOKES, NX, NY, NZ, NPTS, NCELLS,
+C     .             ML, MM, NLM, NSTLEG, NLEG, NUMPHASE,
+C     .             NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
+C     .             BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, SOLARAZ,
+C     .             SFCTYPE, NSFCPAR, SFCGRIDPARMS,
+C     .             MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD,
+C     .             GNDTEMP, GNDALBEDO, SKYRAD, WAVENO, WAVELEN, UNITS,
+C     .             XGRID, YGRID, ZGRID, GRIDPOS,
+C     .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
+C     .             EXTINCT, ALBEDO, LEGEN, IPHASE, DIRFLUX, FLUXES,
+C     .             SHPTR, SOURCE,  OUTPARMS,  IVIS, VISOUT)
 C       Computes Stokes radiances (output in VISOUT) for the visualization
 C      modes: 1) camera mode, and 2) cross track scanning.
-      IMPLICIT NONE
-      INTEGER NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
-      INTEGER ML, MM, NLM, NSTLEG, NLEG, NUMPHASE
-      INTEGER NMU, NPHI0MAX, NPHI0(NMU), IVIS
-      INTEGER MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
-      INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
-      INTEGER SHPTR(NPTS+1), BCPTR(MAXNBC,2)
-      INTEGER*2 CELLFLAGS(NCELLS)
-      INTEGER IPHASE(NPTS)
-      LOGICAL DELTAM
-      REAL    SOLARMU, SOLARAZ
-      REAL    GNDTEMP, GNDALBEDO, SKYRAD, WAVENO(2), WAVELEN
-      REAL    MU(NMU), PHI(NMU,NPHI0MAX), WTDO(NMU,NPHI0MAX)
-      REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
-      REAL    SFCGRIDPARMS(*), BCRAD(NSTOKES,*)
-      REAL    EXTINCT(NPTS), ALBEDO(NPTS), LEGEN(NSTLEG,0:NLEG,*)
-      REAL    DIRFLUX(NPTS), FLUXES(2,NPTS), SOURCE(NSTOKES,*)
-      REAL    OUTPARMS(*), VISOUT(NSTOKES,*)
-      CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
-
-      INTEGER NSCATANGLE, NSTPHASE, I, J, L, N, SIDE
-      INTEGER NL, NS, LINE, SAMP
-      LOGICAL CAMERA_MODE, VALIDRAD
-      REAL    MURAY, PHIRAY
-      DOUBLE PRECISION XE,YE,ZE, TRANSMIT, VISRAD(NSTOKES)
-      DOUBLE PRECISION X0, Y0, Z0, X1, Y1, Z1, X2, Y2, Z2
-      DOUBLE PRECISION THETA0, THETA1, PHIR, PHI0
-      DOUBLE PRECISION COSTH, SINTH, SINTH0, SINTH1, MU2, PHI2
-      DOUBLE PRECISION U, V, UP, VP, COSDELPHI, PI, ROTANG, DEGRAD, R
-      DOUBLE PRECISION DIST, D, RX, RY, RZ, SCANANG
-      INTEGER MAXSCATANG
-      PARAMETER (MAXSCATANG=721)
-      REAL, ALLOCATABLE :: YLMSUN(:,:), PHASETAB(:,:,:)
-      REAL              :: MEAN, STD1, STD2
-      REAL, ALLOCATABLE :: AOLP(:)
-
-
-      ALLOCATE (YLMSUN(NSTLEG,NLM))
-
-      IF (SRCTYPE .NE. 'T') THEN
-        CALL YLMALL (.TRUE., SOLARMU, SOLARAZ, ML, MM, NSTLEG, YLMSUN)
-        IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
-          NSCATANGLE = MAX(36,MIN(MAXSCATANG,2*NLEG))
-          NSTPHASE = MIN(NSTLEG,2)
-          ALLOCATE (PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE))
-          CALL PRECOMPUTE_PHASE (NSCATANGLE, NUMPHASE, NSTPHASE,
-     .                    NSTOKES, ML, NSTLEG, NLEG, LEGEN, PHASETAB)
-        ENDIF
-      ENDIF
-
+C      IMPLICIT NONE
+C      INTEGER NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS, NCELLS
+C      INTEGER ML, MM, NLM, NSTLEG, NLEG, NUMPHASE
+C      INTEGER NMU, NPHI0MAX, NPHI0(NMU), IVIS
+C      INTEGER MAXNBC, NTOPPTS, NBOTPTS, NSFCPAR
+C      INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
+C      INTEGER SHPTR(NPTS+1), BCPTR(MAXNBC,2)
+C      INTEGER*2 CELLFLAGS(NCELLS)
+C      INTEGER IPHASE(NPTS)
+C      LOGICAL DELTAM
+C      REAL    SOLARMU, SOLARAZ
+C      REAL    GNDTEMP, GNDALBEDO, SKYRAD, WAVENO(2), WAVELEN
+C      REAL    MU(NMU), PHI(NMU,NPHI0MAX), WTDO(NMU,NPHI0MAX)
+C      REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
+C      REAL    SFCGRIDPARMS(*), BCRAD(NSTOKES,*)
+C      REAL    EXTINCT(NPTS), ALBEDO(NPTS), LEGEN(NSTLEG,0:NLEG,*)
+C      REAL    DIRFLUX(NPTS), FLUXES(2,NPTS), SOURCE(NSTOKES,*)
+C      REAL    OUTPARMS(*), VISOUT(NSTOKES,*)
+C      CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
+C
+C      INTEGER NSCATANGLE, NSTPHASE, I, J, L, N, SIDE
+C      INTEGER NL, NS, LINE, SAMP
+C      LOGICAL CAMERA_MODE, VALIDRAD
+C      REAL    MURAY, PHIRAY
+C      DOUBLE PRECISION XE,YE,ZE, TRANSMIT, VISRAD(NSTOKES)
+C      DOUBLE PRECISION X0, Y0, Z0, X1, Y1, Z1, X2, Y2, Z2
+C      DOUBLE PRECISION THETA0, THETA1, PHIR, PHI0
+C      DOUBLE PRECISION COSTH, SINTH, SINTH0, SINTH1, MU2, PHI2
+C      DOUBLE PRECISION U, V, UP, VP, COSDELPHI, PI, ROTANG, DEGRAD, R
+C      DOUBLE PRECISION DIST, D, RX, RY, RZ, SCANANG
+C      INTEGER MAXSCATANG
+C      PARAMETER (MAXSCATANG=721)
+C      REAL, ALLOCATABLE :: YLMSUN(:,:), PHASETAB(:,:,:)
+C      REAL              :: MEAN, STD1, STD2
+C      REAL, ALLOCATABLE :: AOLP(:)
+C
+C
+C      ALLOCATE (YLMSUN(NSTLEG,NLM))
+C
+C      IF (SRCTYPE .NE. 'T') THEN
+C        CALL YLMALL (.TRUE., SOLARMU, SOLARAZ, ML, MM, NSTLEG, YLMSUN)
+C        IF (DELTAM .AND. NUMPHASE .GT. 0) THEN
+C          NSCATANGLE = MAX(36,MIN(MAXSCATANG,2*NLEG))
+C          NSTPHASE = MIN(NSTLEG,2)
+C          ALLOCATE (PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE))
+C          CALL PRECOMPUTE_PHASE (NSCATANGLE, NUMPHASE, NSTPHASE,
+C     .                    NSTOKES, ML, NSTLEG, NLEG, LEGEN, PHASETAB)
+C        ENDIF
+C      ENDIF
+C
 
 C         Make the isotropic radiances for the top boundary
-      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
-     .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
+C      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
+C     .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
 C         Make the bottom boundary radiances for the Lambertian surfaces.
 C          Compute the upwelling bottom radiances using the downwelling fluxes.
-      IF (SFCTYPE .EQ. 'FL') THEN
-        CALL FIXED_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
-     .             DIRFLUX, FLUXES, SRCTYPE, GNDTEMP, GNDALBEDO,
-     .             WAVENO, WAVELEN, UNITS, NSTOKES, BCRAD(1,1+NTOPPTS))
-      ELSE IF (SFCTYPE .EQ. 'VL') THEN
-        CALL VARIABLE_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
-     .               DIRFLUX, FLUXES, SRCTYPE, NSFCPAR, SFCGRIDPARMS,
-     .               NSTOKES, BCRAD(1,1+NTOPPTS))
-      ENDIF
-
-
-      CAMERA_MODE = NINT(OUTPARMS(1)) .EQ. 1
-      IF (CAMERA_MODE) THEN
-        NL = NINT(OUTPARMS(10))
-        NS = NINT(OUTPARMS(11))
-      ELSE
-        NL = 1 + INT( SQRT((OUTPARMS(4)-OUTPARMS(7))**2
-     .               +(OUTPARMS(5)-OUTPARMS(8))**2
-     .               +(OUTPARMS(6)-OUTPARMS(9))**2) /OUTPARMS(10) )
-        NS = 1 + INT(ABS(OUTPARMS(12)-OUTPARMS(11))/OUTPARMS(13))
-      ENDIF
-      PI = ACOS(-1.0D0)
-      DEGRAD = PI/180.
-
+C      IF (SFCTYPE .EQ. 'FL') THEN
+C        CALL FIXED_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
+C     .             DIRFLUX, FLUXES, SRCTYPE, GNDTEMP, GNDALBEDO,
+C     .             WAVENO, WAVELEN, UNITS, NSTOKES, BCRAD(1,1+NTOPPTS))
+C      ELSE IF (SFCTYPE .EQ. 'VL') THEN
+C        CALL VARIABLE_LAMBERTIAN_BOUNDARY (NBOTPTS, BCPTR(1,2),
+C     .               DIRFLUX, FLUXES, SRCTYPE, NSFCPAR, SFCGRIDPARMS,
+C     .               NSTOKES, BCRAD(1,1+NTOPPTS))
+C      ENDIF
+C
+C
+C      CAMERA_MODE = NINT(OUTPARMS(1)) .EQ. 1
+C      IF (CAMERA_MODE) THEN
+C        NL = NINT(OUTPARMS(10))
+C        NS = NINT(OUTPARMS(11))
+C      ELSE
+C        NL = 1 + INT( SQRT((OUTPARMS(4)-OUTPARMS(7))**2
+C     .               +(OUTPARMS(5)-OUTPARMS(8))**2
+C     .               +(OUTPARMS(6)-OUTPARMS(9))**2) /OUTPARMS(10) )
+C        NS = 1 + INT(ABS(OUTPARMS(12)-OUTPARMS(11))/OUTPARMS(13))
+C      ENDIF
+C      PI = ACOS(-1.0D0)
+C      DEGRAD = PI/180.
+C
 
 C         Loop over pixels in image
-      DO LINE = 1, NL
-      DO SAMP = 1, NS
-        IVIS = IVIS + 1
-
-        IF (CAMERA_MODE) THEN
+C      DO LINE = 1, NL
+C      DO SAMP = 1, NS
+C        IVIS = IVIS + 1
+C
+C        IF (CAMERA_MODE) THEN
 C         Camera mode:
 C          1, bytes, scale, X,Y,Z, theta, phi, rotang, NL, NS, delline, delsamp
 C
 C           Use spherical trig to find the pixel direction (MURAY,PHIRAY)
 C             from the camera center (THETA0,PHI0) and the relative pixel
 C             angles (U,V).
-          UP = (SAMP-NS/2-1)*OUTPARMS(13)*DEGRAD
-          VP = (LINE-NL/2-1)*OUTPARMS(12)*DEGRAD
-          ROTANG = OUTPARMS(9)*DEGRAD
-          IF (ROTANG .EQ. 0.0) THEN
-            U = UP
-            V = VP
-          ELSE
-            U = COS(ROTANG)*UP - SIN(ROTANG)*VP
-            V = SIN(ROTANG)*UP + COS(ROTANG)*VP
-          ENDIF
-          THETA0 = DEGRAD*OUTPARMS(7)
-          PHI0 = DEGRAD*OUTPARMS(8)
-          THETA1 = THETA0 + V
-          IF (V .EQ. 0.0) THEN
-            COSTH = COS(U)*COS(THETA0)
-          ELSE
-            COSTH = COS(U)*(SIN(THETA1)*COS(V)-SIN(THETA0))/SIN(V)
-            COSTH = MIN(+1.0D0,MAX(-1.0D0,COSTH))
-          ENDIF
-          SINTH = SQRT(1-COSTH**2)
-          SINTH0 = SIN(THETA0)
-          SINTH1 = SIN(THETA1)
-          IF (ABS(SINTH) .LT. 1.0E-6) THEN
-            PHIR = 0.0
-          ELSE
-            IF (ABS(SINTH0).LT.1E-6 .AND. ABS(SINTH1).LE.1E-6) THEN
-              COSDELPHI = 0.0D0
-            ELSE IF (ABS(SINTH1) .GT. 1.0E-6) THEN
-              COSDELPHI = (COS(U)-COSTH*COS(THETA1))/(SINTH1*SINTH)
-            ELSE IF (ABS(SINTH0) .GT. 1.0E-6) THEN
-              COSDELPHI = (COS(U)*COS(V)-COSTH*COS(THETA0))
-     .                     /(SINTH0*SINTH)
-            ENDIF
-            COSDELPHI = MIN(+1.0D0,MAX(-1.0D0,COSDELPHI))
-            IF (U .GE. 0.0) THEN
-              PHIR = PHI0 - ACOS(COSDELPHI)
-            ELSE
-              PHIR = PHI0 + ACOS(COSDELPHI)
-            ENDIF
-          ENDIF
-
-          X0 = OUTPARMS(4)
-          Y0 = OUTPARMS(5)
-          Z0 = OUTPARMS(6)
-
-        ELSE
-
+C          UP = (SAMP-NS/2-1)*OUTPARMS(13)*DEGRAD
+C          VP = (LINE-NL/2-1)*OUTPARMS(12)*DEGRAD
+C          ROTANG = OUTPARMS(9)*DEGRAD
+C          IF (ROTANG .EQ. 0.0) THEN
+C            U = UP
+C            V = VP
+C          ELSE
+C            U = COS(ROTANG)*UP - SIN(ROTANG)*VP
+C            V = SIN(ROTANG)*UP + COS(ROTANG)*VP
+C          ENDIF
+C          THETA0 = DEGRAD*OUTPARMS(7)
+C          PHI0 = DEGRAD*OUTPARMS(8)
+C          THETA1 = THETA0 + V
+C          IF (V .EQ. 0.0) THEN
+C            COSTH = COS(U)*COS(THETA0)
+C          ELSE
+C            COSTH = COS(U)*(SIN(THETA1)*COS(V)-SIN(THETA0))/SIN(V)
+C            COSTH = MIN(+1.0D0,MAX(-1.0D0,COSTH))
+C          ENDIF
+C          SINTH = SQRT(1-COSTH**2)
+C          SINTH0 = SIN(THETA0)
+C          SINTH1 = SIN(THETA1)
+C          IF (ABS(SINTH) .LT. 1.0E-6) THEN
+C            PHIR = 0.0
+C          ELSE
+C            IF (ABS(SINTH0).LT.1E-6 .AND. ABS(SINTH1).LE.1E-6) THEN
+C              COSDELPHI = 0.0D0
+C            ELSE IF (ABS(SINTH1) .GT. 1.0E-6) THEN
+C              COSDELPHI = (COS(U)-COSTH*COS(THETA1))/(SINTH1*SINTH)
+C            ELSE IF (ABS(SINTH0) .GT. 1.0E-6) THEN
+C              COSDELPHI = (COS(U)*COS(V)-COSTH*COS(THETA0))
+C     .                     /(SINTH0*SINTH)
+C            ENDIF
+C            COSDELPHI = MIN(+1.0D0,MAX(-1.0D0,COSDELPHI))
+C            IF (U .GE. 0.0) THEN
+C              PHIR = PHI0 - ACOS(COSDELPHI)
+C            ELSE
+C              PHIR = PHI0 + ACOS(COSDELPHI)
+C            ENDIF
+C          ENDIF
+C
+C          X0 = OUTPARMS(4)
+C          Y0 = OUTPARMS(5)
+C          Z0 = OUTPARMS(6)
+C
+C        ELSE
+C
 C         Cross track scanning in the vertical plane:
 C          2, bytes, scale, X1,Y1,Z1, X2,Y2,Z2, spacing, scan1, scan2, delscan
 C            Start and end of scan angle (scan1, scan2) are +/- relative
 C            to nadir, and positive is on right side.
-          X1 = OUTPARMS(4)
-          Y1 = OUTPARMS(5)
-          Z1 = OUTPARMS(6)
-          X2 = OUTPARMS(7)
-          Y2 = OUTPARMS(8)
-          Z2 = OUTPARMS(9)
-          DIST = SQRT( (X2-X1)**2 + (Y2-Y1)**2 + (Z2-Z1)**2)
-          RX = (X2-X1)/DIST
-          RY = (Y2-Y1)/DIST
-          RZ = (Z2-Z1)/DIST
+C          X1 = OUTPARMS(4)
+C          Y1 = OUTPARMS(5)
+C          Z1 = OUTPARMS(6)
+C          X2 = OUTPARMS(7)
+C          Y2 = OUTPARMS(8)
+C          Z2 = OUTPARMS(9)
+C          DIST = SQRT( (X2-X1)**2 + (Y2-Y1)**2 + (Z2-Z1)**2)
+C          RX = (X2-X1)/DIST
+C          RY = (Y2-Y1)/DIST
+C          RZ = (Z2-Z1)/DIST
 c         D = (LINE-1)*OUTPARMS(10)
-          D = (NL-LINE)*OUTPARMS(10)
-          X0 = X1 + D*RX
-          Y0 = Y1 + D*RY
-          Z0 = Z1 + D*RZ
-          SCANANG = DEGRAD*(OUTPARMS(11) + (SAMP-1)*OUTPARMS(13))
-          COSTH = COS(PI-ABS(SCANANG))
-          IF (SCANANG .GT. 0.0) THEN
-            PHIR = ATAN2(-RX,RY)
-          ELSE
-            PHIR = ATAN2(RX,-RY)
-          ENDIF
-        ENDIF
+C          D = (NL-LINE)*OUTPARMS(10)
+C          X0 = X1 + D*RX
+C          Y0 = Y1 + D*RY
+C          Z0 = Z1 + D*RZ
+C          SCANANG = DEGRAD*(OUTPARMS(11) + (SAMP-1)*OUTPARMS(13))
+C          COSTH = COS(PI-ABS(SCANANG))
+C          IF (SCANANG .GT. 0.0) THEN
+C            PHIR = ATAN2(-RX,RY)
+C          ELSE
+C            PHIR = ATAN2(RX,-RY)
+C          ENDIF
+C        ENDIF
 
 
 C             Extrapolate ray to domain top if above
-        IF (Z0 .GT. ZGRID(NZ)) THEN
-          IF (COSTH .GE. 0.0) THEN
-            VISRAD(:) = 0.0
-            GOTO 900
-          ENDIF
-          R = (ZGRID(NZ) - Z0)/COSTH
-          X0 = X0 + R*SQRT(1-COSTH**2)*COS(PHIR)
-          Y0 = Y0 + R*SQRT(1-COSTH**2)*SIN(PHIR)
-          Z0 = ZGRID(NZ)
-        ELSE IF (Z0 .LT. ZGRID(1)) THEN
-          WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
-          STOP
-        ENDIF
+C        IF (Z0 .GT. ZGRID(NZ)) THEN
+C          IF (COSTH .GE. 0.0) THEN
+C            VISRAD(:) = 0.0
+C            GOTO 900
+C          ENDIF
+C          R = (ZGRID(NZ) - Z0)/COSTH
+C          X0 = X0 + R*SQRT(1-COSTH**2)*COS(PHIR)
+C          Y0 = Y0 + R*SQRT(1-COSTH**2)*SIN(PHIR)
+C          Z0 = ZGRID(NZ)
+C        ELSE IF (Z0 .LT. ZGRID(1)) THEN
+C          WRITE (6,*) 'VISUALIZE_RADIANCE: Level below domain'
+C          STOP
+C        ENDIF
 
 C         MURAY,PHRAY is camera pixel viewing direction;
 C         MU2,PHI2 is radiance travel direction (the opposite)
-        MURAY = SNGL(COSTH)
-        PHIRAY = SNGL(PHIR)
-        MU2 = -COSTH
-        PHI2 = PHIR + PI
+C        MURAY = SNGL(COSTH)
+C        PHIRAY = SNGL(PHIR)
+C        MU2 = -COSTH
+C        PHI2 = PHIR + PI
 
 C         Integrate the extinction and source function along this ray
 C         to calculate the Stokes radiance vector for this pixel
-        TRANSMIT = 1.0D0 ; VISRAD(:) = 0.0D0
-        CALL INTEGRATE_1RAY (BCFLAG, IPFLAG, NSTOKES, NSTLEG,
-     .                       NSTPHASE, NSCATANGLE, PHASETAB,
-     .                       NX, NY, NZ, NPTS, NCELLS,
-     .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
-     .                       XGRID, YGRID, ZGRID, GRIDPOS,
-     .                       ML, MM, NLM, NLEG, NUMPHASE,
-     .                       NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
-     .                       DELTAM, SRCTYPE, WAVELEN, SOLARMU,SOLARAZ,
-     .                       EXTINCT, ALBEDO, LEGEN, IPHASE,
-     .                       DIRFLUX, SHPTR, SOURCE, YLMSUN,
-     .                       MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD,
-     .                       SFCTYPE, NSFCPAR, SFCGRIDPARMS,
-     .                       MU2, PHI2, X0,Y0,Z0,
-     .                       XE,YE,ZE, SIDE, TRANSMIT, VISRAD, VALIDRAD)
-900     CONTINUE
+C        TRANSMIT = 1.0D0 ; VISRAD(:) = 0.0D0
+C        CALL INTEGRATE_1RAY (BCFLAG, IPFLAG, NSTOKES, NSTLEG,
+C     .                       NSTPHASE, NSCATANGLE, PHASETAB,
+C     .                       NX, NY, NZ, NPTS, NCELLS,
+C     .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
+C     .                       XGRID, YGRID, ZGRID, GRIDPOS,
+C     .                       ML, MM, NLM, NLEG, NUMPHASE,
+C     .                       NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
+C     .                       DELTAM, SRCTYPE, WAVELEN, SOLARMU,SOLARAZ,
+C     .                       EXTINCT, ALBEDO, LEGEN, IPHASE,
+C     .                       DIRFLUX, SHPTR, SOURCE, YLMSUN,
+C     .                       MAXNBC, NTOPPTS, NBOTPTS, BCPTR, BCRAD,
+C     .                       SFCTYPE, NSFCPAR, SFCGRIDPARMS,
+C     .                       MU2, PHI2, X0,Y0,Z0,
+C     .                       XE,YE,ZE, SIDE, TRANSMIT, VISRAD, VALIDRAD)
+C900     CONTINUE
 c        WRITE (6,'(1X,2F8.4,1X,2F11.7,4(1X,F11.6))')
 c     .         X0,Y0,MURAY,PHIRAY,VISRAD(:)
-        VISOUT(1,IVIS) = VISRAD(1)
-        IF (VISRAD(1) .GT. 0.0) THEN
-         IF (NSTOKES .GT. 1) THEN
+C        VISOUT(1,IVIS) = VISRAD(1)
+C        IF (VISRAD(1) .GT. 0.0) THEN
+C         IF (NSTOKES .GT. 1) THEN
 C           Output degree (0 to 1) and angle (-180 to 180) of linear polarization
-           VISOUT(2,IVIS) = SQRT(VISRAD(2)**2+VISRAD(3)**2)/VISRAD(1)
-           VISOUT(3,IVIS) = (180/PI)*0.5*ATAN2(VISRAD(3),VISRAD(2))
-         ENDIF
-         IF (NSTOKES .EQ. 4) THEN
+C           VISOUT(2,IVIS) = SQRT(VISRAD(2)**2+VISRAD(3)**2)/VISRAD(1)
+C           VISOUT(3,IVIS) = (180/PI)*0.5*ATAN2(VISRAD(3),VISRAD(2))
+C         ENDIF
+C         IF (NSTOKES .EQ. 4) THEN
 C           Output degree of circular polarization (-1 to 1)
-           VISOUT(4,IVIS) = VISRAD(4)/VISRAD(1)
-         ENDIF
-        ELSE
-          VISOUT(2:,IVIS) = 0.0
-        ENDIF
-      ENDDO
-      ENDDO
-
-      DEALLOCATE (YLMSUN)
-      IF (ALLOCATED(PHASETAB))  DEALLOCATE (PHASETAB)
-      IF (NSTOKES .GT. 1) THEN
+C           VISOUT(4,IVIS) = VISRAD(4)/VISRAD(1)
+C         ENDIF
+C        ELSE
+C          VISOUT(2:,IVIS) = 0.0
+C        ENDIF
+C      ENDDO
+C      ENDDO
+C
+C      DEALLOCATE (YLMSUN)
+C      IF (ALLOCATED(PHASETAB))  DEALLOCATE (PHASETAB)
+C      IF (NSTOKES .GT. 1) THEN
 C        Choose the best range for the angle of linear polarization (-90 to 90 or 0 to 180)
-        N = NL*NS
-        ALLOCATE (AOLP(N))
-        AOLP(:) = VISOUT(3,IVIS-N+1:IVIS)
-        MEAN = SUM(AOLP(:))/N
-        STD1 = SQRT(SUM((AOLP(:)-MEAN)**2)/N)
-        WHERE (AOLP(:) < 0.0)
-          AOLP(:) = AOLP(:)+180.0
-        END WHERE
-        MEAN = SUM(AOLP(:))/N
-        STD2 = SQRT(SUM((AOLP(:)-MEAN)**2)/N)
-        IF (STD2 < STD1) THEN
-          VISOUT(3,IVIS-N+1:IVIS) = AOLP(:)
-        ENDIF
-        DEALLOCATE (AOLP)
-      ENDIF
-      RETURN
-      END
+C        N = NL*NS
+C        ALLOCATE (AOLP(N))
+C        AOLP(:) = VISOUT(3,IVIS-N+1:IVIS)
+C        MEAN = SUM(AOLP(:))/N
+C        STD1 = SQRT(SUM((AOLP(:)-MEAN)**2)/N)
+C        WHERE (AOLP(:) < 0.0)
+C          AOLP(:) = AOLP(:)+180.0
+C        END WHERE
+C        MEAN = SUM(AOLP(:))/N
+C        STD2 = SQRT(SUM((AOLP(:)-MEAN)**2)/N)
+C        IF (STD2 < STD1) THEN
+C          VISOUT(3,IVIS-N+1:IVIS) = AOLP(:)
+C        ENDIF
+C        DEALLOCATE (AOLP)
+C      ENDIF
+C      RETURN
+C      END
 
 
 

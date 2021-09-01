@@ -127,20 +127,20 @@ class DirectBeamDerivativeDeltaMOpen(TestCase):
 
         indices_for_jacobian = np.where(solver.medium['cloud'].extinction.data > 0.0)
         #CODE FOR GENERATING THE FINITE DIFFERENCE REFERENCE.
-        out = []
-        for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
-            print(i)
-
-            data = cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
-                         resolution=resolutionfactor)
-            solver2 = data[0][0.86]
-            solver2._init_solution()
-            solver2._make_direct()
-            upper = solver2._dirflux[:solver._npts]
-
-            out.append((upper - reference)/step)
-        finite_jacobian = np.stack(out, axis=0)
-        np.save('./data/dirflux_gradient_{}_{}.npy'.format(deltam, boundary), finite_jacobian)
+        # out = []
+        # for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
+        #     print(i)
+        #
+        #     data = cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
+        #                  resolution=resolutionfactor)
+        #     solver2 = data[0][0.86]
+        #     solver2._init_solution()
+        #     solver2._make_direct()
+        #     upper = solver2._dirflux[:solver._npts]
+        #
+        #     out.append((upper - reference)/step)
+        # finite_jacobian = np.stack(out, axis=0)
+        # np.save('./data/dirflux_gradient_{}_{}.npy'.format(deltam, boundary), finite_jacobian)
         cls.finite_jacobian = np.load('./data/dirflux_gradient_{}_{}.npy'.format(deltam, boundary))
 
 
@@ -152,14 +152,16 @@ class DirectBeamDerivativeDeltaMOpen(TestCase):
         forward_sensors = Sensordict.make_forward_sensors()
 
 
-        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
-        solvers, forward_sensors, unknown_scatterers,
-        parallel_solve_kwargs={'maxiter':800,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
-        gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
-        'indices_for_jacobian': indices_for_jacobian}, uncertainty_kwargs={'add_noise': False})
-        cost, gradient, jacobian = gradient_call()
-        jacobian = jacobian['jacobian_0.860'][0,0].data
+        # gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        # solvers, forward_sensors, unknown_scatterers,
+        # parallel_solve_kwargs={'maxiter':800,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
+        # gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
+        # 'indices_for_jacobian': indices_for_jacobian}, uncertainty_kwargs={'add_noise': False})
+        # cost, gradient, jacobian = gradient_call()
 
+        #jacobian = jacobian['jacobian_0.860'][0,0].data
+        solvers.add_microphysical_partial_derivatives(unknown_scatterers)
+        #solver.calculate_direct_beam_derivative()
 
         solver.calculate_direct_beam_derivative()
         raygrad = np.zeros((solver._nstokes, solver._maxpg, 1))
@@ -185,6 +187,15 @@ class DirectBeamDerivativeDeltaMOpen(TestCase):
         cls.jacobian = np.stack(jacobian, axis=1)
 
     def test_direct_beam_derivative(self):
+        print('DirectBeamDerivativeDeltaMOpen', np.all(np.isfinite(self.jacobian)), np.all(np.isfinite(self.finite_jacobian)),
+        np.max(np.abs(self.jacobian.ravel()-self.finite_jacobian.ravel())))
+        print(self.jacobian.ravel())
+        print('reference below:')
+        print(self.finite_jacobian.ravel())
+        import pylab as py
+        py.figure()
+        py.plot(self.jacobian.ravel(), self.finite_jacobian.ravel(), 'x')
+        py.show()
         self.assertTrue(np.allclose(self.jacobian, self.finite_jacobian, atol=1e-5))
 
 class DirectBeamDerivativeDeltaMPeriodic(TestCase):
@@ -222,20 +233,22 @@ class DirectBeamDerivativeDeltaMPeriodic(TestCase):
 
         indices_for_jacobian = np.where(solver.medium['cloud'].extinction.data > 0.0)
         #CODE FOR GENERATING THE FINITE DIFFERENCE REFERENCE.
-        out = []
-        for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
-            print(i)
-
-            data = cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
-                         resolution=resolutionfactor)
-            solver2 = data[0][0.86]
-            solver2._init_solution()
-            solver2._make_direct()
-            upper = solver2._dirflux[:solver._npts]
-
-            out.append((upper - reference)/step)
-        finite_jacobian = np.stack(out, axis=0)
-        np.save('./data/dirflux_gradient_{}_{}.npy'.format(deltam, boundary), finite_jacobian)
+        # out = []
+        # for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
+        #     print(i)
+        #
+        #     data = cloud_direct_beam(
+        #         mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature,
+        #         step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
+        #         resolution=resolutionfactor, deltam=deltam, boundary=boundary)
+        #     solver2 = data[0][0.86]
+        #     solver2._init_solution()
+        #     solver2._make_direct()
+        #     upper = solver2._dirflux[:solver._npts]
+        #
+        #     out.append((upper - reference)/step)
+        # finite_jacobian = np.stack(out, axis=0)
+        # np.save('./data/dirflux_gradient_{}_{}.npy'.format(deltam, boundary), finite_jacobian)
         cls.finite_jacobian = np.load('./data/dirflux_gradient_{}_{}.npy'.format(deltam, boundary))
 
 
@@ -247,15 +260,16 @@ class DirectBeamDerivativeDeltaMPeriodic(TestCase):
         forward_sensors = Sensordict.make_forward_sensors()
 
 
-        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
-        solvers, forward_sensors, unknown_scatterers,
-        parallel_solve_kwargs={'maxiter':800,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
-        gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
-        'indices_for_jacobian': indices_for_jacobian}, uncertainty_kwargs={'add_noise': False})
-        cost, gradient, jacobian = gradient_call()
-        jacobian = jacobian['jacobian_0.860'][0,0].data
+        # gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        # solvers, forward_sensors, unknown_scatterers,
+        # parallel_solve_kwargs={'maxiter':800,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
+        # gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
+        # 'indices_for_jacobian': indices_for_jacobian}, uncertainty_kwargs={'add_noise': False})
+        #cost, gradient, jacobian = gradient_call()
+        #self.solvers.add_microphysical_partial_derivatives(self.unknown_scatterers)
+        #jacobian = jacobian['jacobian_0.860'][0,0].data
 
-
+        solvers.add_microphysical_partial_derivatives(unknown_scatterers)
         solver.calculate_direct_beam_derivative()
         raygrad = np.zeros((solver._nstokes, solver._maxpg, 1))
         jacobian = []
@@ -305,10 +319,11 @@ class DirectBeamDerivativePeriodic(TestCase):
                                                   relative_dir='./data/',
                                                   verbose=False)
 
-        solvers, Sensordict,cloud_poly_tables,final_step,rte_grid = cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature,
-                                                                 step=0.0,nmu=nmu,split=split,
-                                                                resolution=resolutionfactor,deltam=True,
-                                                                boundary=boundary)
+        solvers, Sensordict,cloud_poly_tables,final_step,rte_grid = cloud_direct_beam(
+            mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature,
+            step=0.0,nmu=nmu,split=split,
+            resolution=resolutionfactor,deltam=deltam,
+            boundary=boundary)
 
         solver = solvers[0.86]
         solver._init_solution()
@@ -317,20 +332,22 @@ class DirectBeamDerivativePeriodic(TestCase):
 
         indices_for_jacobian = np.where(solver.medium['cloud'].extinction.data > 0.0)
         #CODE FOR GENERATING THE FINITE DIFFERENCE REFERENCE.
-        out = []
-        for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
-            print(i)
-
-            data = cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
-                         resolution=resolutionfactor)
-            solver2 = data[0][0.86]
-            solver2._init_solution()
-            solver2._make_direct()
-            upper = solver2._dirflux[:solver._npts]
-
-            out.append((upper - reference)/step)
-        finite_jacobian = np.stack(out, axis=0)
-        np.save('./data/dirflux_gradient_{}_{}.npy'.format(deltam, boundary), finite_jacobian)
+        # out = []
+        # for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
+        #     print(i)
+        #
+        #     data = cloud_direct_beam(
+        #         mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature,
+        #         step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
+        #         resolution=resolutionfactor, deltam=deltam, boundary=boundary)
+        #     solver2 = data[0][0.86]
+        #     solver2._init_solution()
+        #     solver2._make_direct()
+        #     upper = solver2._dirflux[:solver._npts]
+        #
+        #     out.append((upper - reference)/step)
+        # finite_jacobian = np.stack(out, axis=0)
+        # np.save('./data/dirflux_gradient_{}_{}.npy'.format(deltam, boundary), finite_jacobian)
         cls.finite_jacobian = np.load('./data/dirflux_gradient_{}_{}.npy'.format(deltam, boundary))
 
 
@@ -412,20 +429,20 @@ class DirectBeamDerivativeOpen(TestCase):
 
         indices_for_jacobian = np.where(solver.medium['cloud'].extinction.data > 0.0)
         #CODE FOR GENERATING THE FINITE DIFFERENCE REFERENCE.
-        out = []
-        for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
-            print(i)
-
-            data = cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
-                         resolution=resolutionfactor)
-            solver2 = data[0][0.86]
-            solver2._init_solution()
-            solver2._make_direct()
-            upper = solver2._dirflux[:solver._npts]
-
-            out.append((upper - reference)/step)
-        finite_jacobian = np.stack(out, axis=0)
-        np.save('./data/dirflux_gradient_{}_{}.npy'.format(deltam, boundary), finite_jacobian)
+        # out = []
+        # for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
+        #     print(i)
+        #
+        #     data = cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
+        #                  resolution=resolutionfactor)
+        #     solver2 = data[0][0.86]
+        #     solver2._init_solution()
+        #     solver2._make_direct()
+        #     upper = solver2._dirflux[:solver._npts]
+        #
+        #     out.append((upper - reference)/step)
+        # finite_jacobian = np.stack(out, axis=0)
+        # np.save('./data/dirflux_gradient_{}_{}.npy'.format(deltam, boundary), finite_jacobian)
         cls.finite_jacobian = np.load('./data/dirflux_gradient_{}_{}.npy'.format(deltam, boundary))
 
 
@@ -437,15 +454,15 @@ class DirectBeamDerivativeOpen(TestCase):
         forward_sensors = Sensordict.make_forward_sensors()
 
 
-        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
-        solvers, forward_sensors, unknown_scatterers,
-        parallel_solve_kwargs={'maxiter':800,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
-        gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
-        'indices_for_jacobian': indices_for_jacobian}, uncertainty_kwargs={'add_noise': False})
-        cost, gradient, jacobian = gradient_call()
-        jacobian = jacobian['jacobian_0.860'][0,0].data
+        # gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        # solvers, forward_sensors, unknown_scatterers,
+        # parallel_solve_kwargs={'maxiter':800,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
+        # gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
+        # 'indices_for_jacobian': indices_for_jacobian}, uncertainty_kwargs={'add_noise': False})
+        # cost, gradient, jacobian = gradient_call()
+        # jacobian = jacobian['jacobian_0.860'][0,0].data
 
-
+        solvers.add_microphysical_partial_derivatives(unknown_scatterers)
         solver.calculate_direct_beam_derivative()
         raygrad = np.zeros((solver._nstokes, solver._maxpg, 1))
         jacobian = []
@@ -470,4 +487,6 @@ class DirectBeamDerivativeOpen(TestCase):
         cls.jacobian = np.stack(jacobian, axis=1)
 
     def test_direct_beam_derivative(self):
+        print('DirectBeamDerivativeOpen', np.all(np.isfinite(self.jacobian)), np.all(np.isfinite(self.finite_jacobian)),
+        np.max(np.abs(self.jacobian.ravel()-self.finite_jacobian.ravel())))
         self.assertTrue(np.allclose(self.jacobian, self.finite_jacobian, atol=1e-5))

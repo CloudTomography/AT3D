@@ -134,12 +134,13 @@ class LevisApproxGradient:
         """
         self.solvers.parallel_solve(**self.parallel_solve_kwargs)
 
+        #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
+        self.solvers.add_microphysical_partial_derivatives(self.unknown_scatterers)
+
         #does some preprocessing for calculating the sensitivity of a gridpoint's
         #solar source to the optical properties along the path to the sun.
         self.solvers.add_direct_beam_derivatives()
 
-        #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
-        self.solvers.add_microphysical_partial_derivatives(self.unknown_scatterers)
         #prepare the sensors for the fortran subroutine for calculating gradient.
         rte_sensors, sensor_mapping = self.forward_sensors.sort_sensors(
             self.solvers, self.measurements

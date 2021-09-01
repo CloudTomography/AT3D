@@ -885,6 +885,15 @@ class RTE:
                                               radiance=self._radiance,
                                              )
             self._shterms = shterms
+
+        xcoord = self._xgrid
+        if self._bcflag in (0, 2):
+            xcoord = self._xgrid[:-1]
+
+        ycoord = self._ygrid
+        if self._bcflag in (0, 1):
+            ycoord = self._ygrid[:-1]
+
         sh_out_dataset = xr.Dataset(
             data_vars={
                 'mean_intensity': (['x', 'y', 'z'], self._shterms[0, :self._nbpts].reshape(
@@ -896,8 +905,9 @@ class RTE:
                 'Fz': (['x', 'y', 'z'], self._shterms[3, :self._nbpts].reshape(
                     self._nx1, self._ny1, self._nz)),
                 },
-            coords={'x': self._xgrid[:-1],
-                    'y': self._ygrid[:-1],
+
+            coords={'x': xcoord,
+                    'y': ycoord,
                     'z': self._zgrid,
                    },
             attrs={
@@ -938,6 +948,14 @@ class RTE:
         self.fluxes property.
         """
         self.check_solved()
+        xcoord = self._xgrid
+        if self._bcflag in (0, 2):
+            xcoord = self._xgrid[:-1]
+
+        ycoord = self._ygrid
+        if self._bcflag in (0, 1):
+            ycoord = self._ygrid[:-1]
+
         fluxes = xr.Dataset(
             data_vars={
                 'flux_down': (['x', 'y', 'z'], self._fluxes[0, :self._nbpts].reshape(
@@ -947,8 +965,8 @@ class RTE:
                 'flux_direct': (['x', 'y', 'z'], self._dirflux[:self._nbpts].reshape(
                     self._nx1, self._ny1, self._nz)),
                 },
-            coords={'x': self._xgrid[:-1],
-                    'y': self._ygrid[:-1],
+            coords={'x': xcoord,
+                    'y': ycoord,
                     'z': self._zgrid,
                    },
             attrs={
@@ -994,13 +1012,21 @@ class RTE:
                 )
             self._netfluxdiv = netfluxdiv
 
+        xcoord = self._xgrid
+        if self._bcflag in (0, 2):
+            xcoord = self._xgrid[:-1]
+
+        ycoord = self._ygrid
+        if self._bcflag in (0, 1):
+            ycoord = self._ygrid[:-1]
+
         netfluxdiv_dataset = xr.Dataset(
             data_vars={
                 'net_flux_div':(['x', 'y', 'z'], self._netfluxdiv[:self._nbpts].reshape(
                     self._nx1, self._ny1, self._nz))
                 },
-            coords={'x': self._xgrid[:-1],
-                    'y': self._ygrid[:-1],
+            coords={'x': xcoord,
+                    'y': ycoord,
                     'z': self._zgrid,
                    },
             attrs={
@@ -1724,7 +1750,7 @@ class RTE:
         # bcflag is set in _setup_grid and ipflag may be modified there to handle the
         # nx/ny = 1 special case.
 
-        if self._angle_set not in (1,2,3):
+        if self._angle_set not in (1, 2, 3):
             raise ValueError(
                 "Numerical Parameter 'angle_set' must be in the set (1, 2, 3). See "
                 "default_config.json or shdom.txt for more details."

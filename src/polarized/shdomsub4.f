@@ -428,7 +428,6 @@ Cf2py intent(in) :: MAXSUBGRIDINTS
 
 
       DOUBLE PRECISION WEIGHT
-      DOUBLE PRECISION PIXEL_ERROR
       DOUBLE PRECISION RAYGRAD(NSTOKES,MAXPG,NUMDER), VISRAD(NSTOKES)
       DOUBLE PRECISION RAYGRAD_PIXEL(NSTOKES,MAXPG,NUMDER)
       INTEGER IPIX, J, L, SIDE, IRAY
@@ -1334,7 +1333,7 @@ C     This is unapproximated (apart from practicalities of discretization).
       INTEGER IDP
       REAL GRAD8(NSTOKES,8,8,NUMDER), SOURCET(NSTOKES)
       REAL OGRAD8(NSTOKES,8,8,NUMDER)
-      INTEGER DOEXACT(IDR)
+      INTEGER DOEXACT(NUMDER)
       REAL WAVELEN, WAVENO(2)
 
       REAL XI, TRUNCSINGSCAT(NSTOKES)
@@ -2663,7 +2662,8 @@ C         compute F and ALBEDOJ
      .       DLEG, PHASEWTP(:,:,IPA), IPHASEP(:,:,IPA),
      .       DIPHASEP(:,:,IDR), DPHASEWTP(:,:,IDR),
      .       EXTINCTP(:,IPA), ALBEDOP(:,IPA), DOEXACT(IDR),
-     .       ML, F, DIVIDE, ALBEDOJ, DELTAM)
+     .       ML, F, DIVIDE, ALBEDOJ, DELTAM, NUMPHASE,
+     .       DNUMPHASE)
             IF (IERR .NE. 0) RETURN
         ENDDO
       ENDDO
@@ -2675,7 +2675,7 @@ C         compute F and ALBEDOJ
      .  INTERPPTR, MAXPG, DALBM, DEXTM, DFJ, DEXT, DALB, MAXNMICRO,
      .  NSTLEG,NLEG, LEGEN, DLEG, PHASEWTP, IPHASEP, DIPHASEP,
      .  DPHASEWTP, EXTINCTP, ALBEDOP, DOEXACT, ML, F, DIVIDE,
-     .  ALBEDOJ, DELTAM)
+     .  ALBEDOJ, DELTAM, NUMPHASE, DNUMPHASE)
 C     Modified from TRILIN_INTERP_PROP to only return the interpolation
 C     weights (OPTINTERPWT) and pointers (INTERPPTR)from the property grid
 C     onto the RTE grid for use in gradient calculations.

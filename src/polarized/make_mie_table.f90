@@ -10,7 +10,7 @@
 SUBROUTINE GET_MIE_TABLE (NRETAB, MAXLEG, WAVELEN1, WAVELEN2, WAVELENCEN, DELTAWAVE, &
                           PARDENS, SRETAB, ERETAB, ALPHA, GAMMA, MAXRADIUS, RINDEX, PARTYPE, &
                           AVGFLAG, DISTFLAG, REFF, EXTINCT,SSALB,NLEG,LEGCOEF,LOGRE, &
-                          VERBOSE)
+                          VERBOSE, IERR, ERRMSG)
 !
 ! Does Mie computations to create a scattering table as a function of
 ! effective radius for gamma, modified gamma, or lognormal size distributions
@@ -50,7 +50,9 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXLEG, WAVELEN1, WAVELEN2, WAVELENCEN, DELTAW
   REAL, INTENT(OUT) :: REFF(NRETAB), EXTINCT(NRETAB), SSALB(NRETAB)
 !  f2py intent(out) :: REFF, EXTINCT, SSALB
   REAL, INTENT(OUT) :: NLEG(NRETAB), LEGCOEF(6,0:MAXLEG,NRETAB)
-!  f2py intent(out) :: NLEG, LEGCOEF
+!  f2py intent(out) :: NLEG, LEGCOEF'
+  INTEGER :: IERR
+  CHARACTER(LEN=600) :: ERRMSG
   INTEGER, ALLOCATABLE :: NLEG1(:)
   REAL, ALLOCATABLE :: RADII(:), ND(:)
   REAL, ALLOCATABLE :: QEXT(:), QSCA(:)
@@ -83,7 +85,8 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXLEG, WAVELEN1, WAVELEN2, WAVELENCEN, DELTAW
 
   CALL COMPUTE_MIE_ALL_SIZES (AVGFLAG, WAVELEN1, WAVELEN2, DELTAWAVE, PARTYPE, &
                               WAVELENCEN, RINDEX, NSIZE, RADII, MAXLEG, &
-                              EXTINCT1, SCATTER1, NLEG1, LEGCOEF1, VERBOSE)
+                              EXTINCT1, SCATTER1, NLEG1, LEGCOEF1, VERBOSE, &
+                              IERR, ERRMSG)
 
 
   ! Loop over the number of output tabulated effective radii
@@ -100,7 +103,7 @@ SUBROUTINE GET_MIE_TABLE (NRETAB, MAXLEG, WAVELEN1, WAVELEN2, WAVELENCEN, DELTAW
     ! according to a truncated gamma, modified gamma, or lognormal
     ! distribution that gives the desired effective radius (REFF) and LWC (1 g/m^3).
     CALL MAKE_SIZE_DIST (DISTFLAG, PARDENS, NSIZE, RADII, REFF(I), ALPHA, GAMMA, &
-                         ND)
+                         ND, IERR, ERRMSG)
 
     ! Sum the scattering properties over the discrete size distribution
     EXTINCT(I) = 0.0

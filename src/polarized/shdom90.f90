@@ -654,7 +654,7 @@
         E6 = EXTDIRP(I2+1)
         E7 = EXTDIRP(I3+1)
         E8 = EXTDIRP(I4+1)
-
+        ! PRINT *, I1, I2,I3,I4, I1+1,I2+1,I3+1,I4+1
 !           Compute the distance to the next grid plane in  X, Y, and Z
 !             If in horizontal uniform region or doing IP then fix X and/or Y.
         ! IF (ZE .GE. UNIFORMZLEV) THEN
@@ -763,6 +763,9 @@
           STOP
         ENDIF
         SO = MAX(SO,0.0D0)
+        ! PRINT *, CONSTX, CONSTY, SO
+        ! PRINT *, I,J,K,IP,JP
+        ! PRINT *, X,Y,Z,XP,YP,ZP,XE,YE,ZE,CX,CY,CZ
 !           Make the starting and ending interpolation factors
         AX = 1.0D0/(X1-X0)
         AY = 1.0D0/(Y1-Y0)
@@ -829,12 +832,12 @@
         D = DU*DV*DW*(E2+E3+E5+E8-E1-E4-E6-E7)
 !            Compute the path through the cell: integration of extinction
         PATH = PATH + SO*(A +0.5D0*B +0.3333333333333333D0*C +0.25D0*D)
-
         XE = XP + XOFFS
         YE = YP + YOFFS
         ZE = ZP
       ENDDO
       DIRFLUX = SOLARFLUX*EXP(-PATH)
+
       DIRPATH = PATH
       XO=XE+XSTART ; YO=YE+YSTART ; ZO=ZE
       VALIDBEAM = ABS(ZE-ZLEVELS(NPZ)) .LT. EPSZ

@@ -971,19 +971,19 @@ class SolarJacobianThinNoSurfaceExtinctionNoDeltaM(TestCase):
 
         indices_for_jacobian = np.where(solver.medium['cloud'].extinction.data > 0.0)
         # CODE FOR GENERATING THE FINITE DIFFERENCE REFERENCE.
-        out = []
-        for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
-            print(i)
-            data = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
-                         resolution=resolutionfactor, random=True, random_ssalb=True, perturb='extinct',deltam=deltam)
-            data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
-            for sensor in data[1]['MISR']['sensor_list']:
-                data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
-            rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
-
-            out.append((rte_sensor_high[0.86].measurement_data[0].data - rte_sensor_ref.measurement_data[0].data)/step)
-        finite_jacobian = np.stack(out, axis=0)
-        np.save('./data/thin_reference_ext_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step), finite_jacobian)
+        # out = []
+        # for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
+        #     print(i)
+        #     data = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
+        #                  resolution=resolutionfactor, random=True, random_ssalb=True, perturb='extinct',deltam=deltam)
+        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     for sensor in data[1]['MISR']['sensor_list']:
+        #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
+        #     rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
+        #
+        #     out.append((rte_sensor_high[0.86].measurement_data[0].data - rte_sensor_ref.measurement_data[0].data)/step)
+        # finite_jacobian = np.stack(out, axis=0)
+        # np.save('./data/thin_reference_ext_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_ext_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step))
 
         deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
@@ -1045,20 +1045,20 @@ class SolarJacobianThinNoSurfaceAlbedoNoDeltaM(TestCase):
 
         indices_for_jacobian = np.where(solver.medium['cloud'].extinction.data > 0.0)
         # CODE FOR GENERATING THE FINITE DIFFERENCE REFERENCE.
-        out = []
-        for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
-            print(i)
-            data = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
-                         resolution=resolutionfactor, random=True, random_ssalb=True, perturb='ssalb',deltam=deltam)
-            data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
-            for sensor in data[1]['MISR']['sensor_list']:
-                data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
-            rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
-            # note only forward difference not central difference here, because I was testing
-            # derivatives at ext=0.0 as well.
-            out.append((rte_sensor_high[0.86].measurement_data[0].data - rte_sensor_ref.measurement_data[0].data)/step)
-        finite_jacobian = np.stack(out, axis=0)
-        np.save('./data/thin_reference_ssalb_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step), finite_jacobian)
+        # out = []
+        # for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
+        #     print(i)
+        #     data = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
+        #                  resolution=resolutionfactor, random=True, random_ssalb=True, perturb='ssalb',deltam=deltam)
+        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     for sensor in data[1]['MISR']['sensor_list']:
+        #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
+        #     rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
+        #     # note only forward difference not central difference here, because I was testing
+        #     # derivatives at ext=0.0 as well.
+        #     out.append((rte_sensor_high[0.86].measurement_data[0].data - rte_sensor_ref.measurement_data[0].data)/step)
+        # finite_jacobian = np.stack(out, axis=0)
+        # np.save('./data/thin_reference_ssalb_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_ssalb_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step))
 
         deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
@@ -1119,20 +1119,20 @@ class SolarJacobianThinNoSurfaceAsymmetryNoDeltaM(TestCase):
 
         indices_for_jacobian = np.where(solver.medium['cloud'].extinction.data > 0.0)
         # CODE FOR GENERATING THE FINITE DIFFERENCE REFERENCE.
-        out = []
-        for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
-            print(i)
-            data = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
-                         resolution=resolutionfactor, random=True, random_ssalb=True, perturb='g',deltam=deltam)
-            data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
-            for sensor in data[1]['MISR']['sensor_list']:
-                data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
-            rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
-            # note only forward difference not central difference here, because I was testing
-            # derivatives at ext=0.0 as well.
-            out.append((rte_sensor_high[0.86].measurement_data[0].data - rte_sensor_ref.measurement_data[0].data)/step)
-        finite_jacobian = np.stack(out, axis=0)
-        np.save('./data/thin_reference_g_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step), finite_jacobian)
+        # out = []
+        # for i,(a,b,c) in enumerate(zip(*indices_for_jacobian)):
+        #     print(i)
+        #     data = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
+        #                  resolution=resolutionfactor, random=True, random_ssalb=True, perturb='g',deltam=deltam)
+        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     for sensor in data[1]['MISR']['sensor_list']:
+        #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
+        #     rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
+        #     # note only forward difference not central difference here, because I was testing
+        #     # derivatives at ext=0.0 as well.
+        #     out.append((rte_sensor_high[0.86].measurement_data[0].data - rte_sensor_ref.measurement_data[0].data)/step)
+        # finite_jacobian = np.stack(out, axis=0)
+        # np.save('./data/thin_reference_g_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_g_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step))
 
         deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
