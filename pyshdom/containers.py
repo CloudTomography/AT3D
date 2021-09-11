@@ -309,7 +309,7 @@ class SensorsDict(OrderedDict):
             else:
                 for var in var_list:
                     concatenated = xr.concat([sensor[var] for sensor in sensor_list], dim='nrays')
-                    output[var] = ('nrays', concatenated)
+                    output[var] = concatenated
 
                 output['stokes'] = xr.concat([sensor.stokes for sensor in sensor_list], dim='nimage')
                 output['rays_per_image'] = ('nimage', np.array([sensor.sizes['nrays']

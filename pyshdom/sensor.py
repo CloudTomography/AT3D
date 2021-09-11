@@ -489,8 +489,8 @@ def perspective_projection(wavelength, fov, x_resolution, y_resolution,
         'y_resolution': y_resolution,
         'position': position,
         'lookat': lookat,
-        'rotation_matrix': rotation_matrix,
-        'sensor_to_camera_transform_matrix':k
+        'rotation_matrix': rotation_matrix.ravel(),
+        'sensor_to_camera_transform_matrix':k.ravel()
 
     }
 
