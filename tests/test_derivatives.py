@@ -673,7 +673,7 @@ def cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_te
         if perturb == 'g':
             new_legcoef = xr.concat([optical_properties.legcoef.copy(deep=True), optical_properties.legcoef.copy(deep=True)], dim='table_index')
             new_legcoef[0,1,1] += step
-            optical_properties['legcoef'] = (['stokes_index', 'legendre_index', 'table_index'],new_legcoef)
+            optical_properties['legcoef'] = (['stokes_index', 'legendre_index', 'table_index'],new_legcoef.data)
             optical_properties['table_index'][:,index[0],index[1],index[2]] = 2
         #print('after',optical_properties.legcoef[0,1,:])
         cloud_poly_tables[wavelength] = poly_table
