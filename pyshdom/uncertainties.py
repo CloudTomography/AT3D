@@ -172,7 +172,7 @@ class RadiometricNoiseUncertainty(Uncertainty):
         big_perturbations = np.random.multivariate_normal(
             mean=np.zeros(self.num_uncertainty), cov=self._covariance, size=(sensor.sizes['npixels'])
             )
-        big_perturbations *= (sensor.I.data[:, None])
+        big_perturbations *= (np.sqrt(sensor.I.data[:, None]))
         big_perturbations += np.random.multivariate_normal(
             mean=np.zeros(self.num_uncertainty), cov=np.diag([self._sigma_floor**2, 0.0, 0.0, 0.0]), size=(sensor.sizes['npixels'])
             )
