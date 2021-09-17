@@ -143,7 +143,8 @@ F2PY_CORE_API = [
     'interpolate_point',
     'divide_cell',
     'grid_smoothing',
-    'ylmall'
+    'ylmall',
+    'transmission_integral'
 ]
 
 def _run_command(cmd):

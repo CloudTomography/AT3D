@@ -7,21 +7,32 @@
 ! utilizing an SHDOM-type grid.
 
 subroutine grid_smoothing(xgrid, ygrid, zgrid, nx, ny, nz, &
-  field, cost, gradient, weights)
+  field, cost, gradient, weights, mode, ierr, errmsg, &
+  direction_weights)
 
   implicit none
   integer nx, ny, nz
   double precision xgrid(nx), ygrid(ny), zgrid(nz), field(nz,ny,nx)
   double precision weights(nz,ny,nx)
   double precision gradient(nz,ny,nx), cost
+  double precision direction_weights(3)
+  character(len=2) mode
+  integer ierr
+  character(len=600) errmsg
 !f2py intent(in) :: nx, ny, nz, xgrid, ygrid, zgrid, field, weights
-!f2py intent(out) :: gradient, cost
+!f2py intent(in) :: direction_weights
+!f2py intent(out) :: gradient, cost, ierr, errmsg
   integer i,j,k
-  double precision dx,dy,dz,invdx,invdy,invdz
+  double precision dx,dy,dz,invdx,invdy,invdz,a,b,c
+  double precision a1,a2,a3,a4,b1,b2,b3,b4,c1,c2,c3,c4
   double precision x_derivs, y_derivs, z_derivs, volume
 
   cost = 0.0D0
   gradient = 0.0D0
+  ierr = 0
+  a = direction_weights(1)
+  b = direction_weights(2)
+  c = direction_weights(3)
 
   ! for each cell calculate the volume integral of
   ! the square of each derivative.
@@ -56,31 +67,81 @@ subroutine grid_smoothing(xgrid, ygrid, zgrid, nx, ny, nz, &
                  + (field(k+1,j+1,i) - field(k,j+1,i)) &
                  + (field(k+1,j+1,i+1) - field(k,j+1,i+1)))
 
-        cost = cost + volume*(x_derivs*x_derivs + y_derivs*y_derivs + &
-                              z_derivs*z_derivs)
+        if (mode .eq. 'l1') then
+          cost = cost + volume*(a*abs(x_derivs) + b*abs(y_derivs) + &
+                                c*abs(z_derivs))
+!         This gives the sign function for minimization of the l1 norm.
+!         Note that this is non-smooth near zero.
+!         If this is bad then I will add a smoothed region with a hyperparameter
+!         which will reduce to quadratic behavior for small gradients.
+!         Note this also assumes that direction_weights are positive.
 
-        gradient(k,j,i) = gradient(k,j,i) + volume*(    &
-          -x_derivs*invdx - y_derivs*invdy - z_derivs*invdz)
-        gradient(k,j,i+1) = gradient(k,j,i+1) + volume*(    &
-          x_derivs*invdx - y_derivs*invdy - z_derivs*invdz)
-        gradient(k,j+1,i) = gradient(k,j+1,i) + volume*(    &
-          -x_derivs*invdx +y_derivs*invdy - z_derivs*invdz)
-        gradient(k,j+1,i+1) = gradient(k,j+1,i+1) + volume*(    &
-          x_derivs*invdx +y_derivs*invdy - z_derivs*invdz)
-        gradient(k+1,j,i) = gradient(k+1,j,i) + volume*(    &
-          -x_derivs*invdx - y_derivs*invdy + z_derivs*invdz)
-        gradient(k+1,j,i+1) = gradient(k+1,j,i+1) + volume*(    &
-          x_derivs*invdx - y_derivs*invdy + z_derivs*invdz)
-        gradient(k+1,j+1,i) = gradient(k+1,j+1,i) + volume*(    &
-          -x_derivs*invdx +y_derivs*invdy + z_derivs*invdz)
-        gradient(k+1,j+1,i+1) = gradient(k+1,j+1,i+1) + volume*(    &
-          x_derivs*invdx +y_derivs*invdy + z_derivs*invdz)
+          a1 = sign(a,field(k,j,i+1) - field(k,j,i))
+          a2 = sign(a,field(k,j+1,i+1) - field(k,j+1,i))
+          a3 = sign(a,field(k+1,j,i+1) - field(k+1,j,i))
+          a4 = sign(a,field(k+1,j+1,i+1) - field(k+1,j+1,i))
 
+          b1 = sign(b,field(k,j+1,i) - field(k,j,i))
+          b2 = sign(b,field(k,j+1,i+1) - field(k,j,i+1))
+          b3 = sign(b,field(k+1,j+1,i) - field(k+1,j,i))
+          b4 = sign(b,field(k+1,j+1,i+1) - field(k+1,j,i+1))
+
+          c1 = sign(c,field(k+1,j,i) - field(k,j,i))
+          c2 = sign(c,field(k+1,j,i+1) - field(k,j,i+1))
+          c3 = sign(c,field(k+1,j+1,i) - field(k,j+1,i))
+          c4 = sign(c,field(k+1,j+1,i+1) - field(k,j+1,i+1))
+
+          gradient(k,j,i) = gradient(k,j,i) + volume*(    &
+            -a1*invdx - b1*invdy - c1*invdz)
+          gradient(k,j,i+1) = gradient(k,j,i+1) + volume*(    &
+            a1*invdx - b2*invdy - c2*invdz)
+          gradient(k,j+1,i) = gradient(k,j+1,i) + volume*(    &
+            -a2*invdx +b1*invdy - c3*invdz)
+          gradient(k,j+1,i+1) = gradient(k,j+1,i+1) + volume*(    &
+            a2*invdx +b2*invdy - c4*invdz)
+          gradient(k+1,j,i) = gradient(k+1,j,i) + volume*(    &
+            -a3*invdx - b3*invdy + c1*invdz)
+          gradient(k+1,j,i+1) = gradient(k+1,j,i+1) + volume*(    &
+            a3*invdx - b4*invdy + c2*invdz)
+          gradient(k+1,j+1,i) = gradient(k+1,j+1,i) + volume*(    &
+            -a4*invdx +b3*invdy + c3*invdz)
+          gradient(k+1,j+1,i+1) = gradient(k+1,j+1,i+1) + volume*(    &
+            a4*invdx +b4*invdy + c4*invdz)
+
+!          print *, k,j,i, gradient(:,1,1)
+
+        else if (mode .eq. 'l2') then
+          cost = cost + volume*(a*x_derivs*x_derivs + b*y_derivs*y_derivs + &
+                                c*z_derivs*z_derivs)
+
+          gradient(k,j,i) = gradient(k,j,i) + volume*(    &
+            -a*x_derivs*invdx - b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k,j,i+1) = gradient(k,j,i+1) + volume*(    &
+            a*x_derivs*invdx - b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k,j+1,i) = gradient(k,j+1,i) + volume*(    &
+            -a*x_derivs*invdx +b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k,j+1,i+1) = gradient(k,j+1,i+1) + volume*(    &
+            a*x_derivs*invdx +b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k+1,j,i) = gradient(k+1,j,i) + volume*(    &
+            -a*x_derivs*invdx - b*y_derivs*invdy + c*z_derivs*invdz)
+          gradient(k+1,j,i+1) = gradient(k+1,j,i+1) + volume*(    &
+            a*x_derivs*invdx - b*y_derivs*invdy + c*z_derivs*invdz)
+          gradient(k+1,j+1,i) = gradient(k+1,j+1,i) + volume*(    &
+            -a*x_derivs*invdx +b*y_derivs*invdy + c*z_derivs*invdz)
+          gradient(k+1,j+1,i+1) = gradient(k+1,j+1,i+1) + volume*(    &
+            a*x_derivs*invdx +b*y_derivs*invdy + c*z_derivs*invdz)
+        else
+          ierr = 1
+          write(errmsg, *) "GRID_SMOOTHING: Unrecognized argument &
+                            for 'mode'", mode
+        endif
       enddo
     enddo
   enddo
-  cost = 0.5D0*cost
   gradient = 0.25D0*gradient
+  if (mode .eq. 'l2') then
+    gradient = gradient*2
+  endif
 
 end subroutine grid_smoothing
 

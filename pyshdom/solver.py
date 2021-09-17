@@ -687,6 +687,7 @@ class RTE:
         total_pix = sensor.sizes['nrays']
 
         optical_path = pyshdom.core.optical_depth(
+            maxnmicro=self._pa.max_num_micro,
             interpmethod=self._interpmethod,
             phasemax=self._phasemax,
             phaseinterpwt=self._phaseinterpwt[:, :self._npts],
@@ -728,6 +729,58 @@ class RTE:
             sensor['optical_path'] = (['nrays'], optical_path)
         return sensor
 
+    def transmission_integral(self, sensor, field):
+
+        if not isinstance(sensor, xr.Dataset):
+            raise TypeError("`sensor` should be an xr.Dataset "
+                            " not of type '{}''".format(type(sensor)))
+        pyshdom.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
+                                    ray_x='nrays', ray_y='nrays', ray_z='nrays')
+
+        camx = sensor['ray_x'].data
+        camy = sensor['ray_y'].data
+        camz = sensor['ray_z'].data
+        cammu = sensor['ray_mu'].data
+        camphi = sensor['ray_phi'].data
+        total_pix = sensor.sizes['nrays']
+
+        if self.check_solved(verbose=False):
+            raise pyshdom.exceptions.SHDOMError(
+                "This function can only be run before RTE.solve()"
+                )
+
+        transmission_integral = pyshdom.core.transmission_integral(
+            nx=self._nx,
+            ny=self._ny,
+            nz=self._nz,
+            npts=self._npts,
+            ncells=self._ncells,
+            gridptr=self._gridptr,
+            neighptr=self._neighptr,
+            treeptr=self._treeptr,
+            cellflags=self._cellflags,
+            bcflag=self._bcflag,
+            ipflag=self._ipflag,
+            xgrid=self._xgrid,
+            ygrid=self._ygrid,
+            zgrid=self._zgrid,
+            gridpos=self._gridpos,
+            camx=camx,
+            camy=camy,
+            camz=camz,
+            cammu=cammu,
+            camphi=camphi,
+            npix=total_pix,
+            total_ext=self._total_ext[:self._npts],
+            field=field,
+            transcut=self._transcut,
+            tautol=self._tautol
+            )
+        sensor['transmission_integral'] = (['nrays'], transmission_integral)
+        return sensor
+
+
+
     def min_optical_path(self, sensor, deltam_scaled_path=False, do_all=False):
 
         if not isinstance(sensor, xr.Dataset):
@@ -743,7 +796,7 @@ class RTE:
         camphi = sensor['ray_phi'].data
         total_pix = sensor.sizes['nrays']
 
-        if not self.check_solved(verbose=False):
+        if self.check_solved(verbose=False):
             raise pyshdom.exceptions.SHDOMError(
                 "This function can only be run before RTE.solve()"
                 )
@@ -753,6 +806,10 @@ class RTE:
         else:
             paths_size = 1
         optical_path = pyshdom.core.min_optical_depth(
+            maxnmicro=self._pa.max_num_micro,
+            interpmethod=self._interpmethod,
+            phasemax=self._phasemax,
+            phaseinterpwt=self._phaseinterpwt[:, :self._npts],
             nx=self._nx,
             ny=self._ny,
             nz=self._nz,
@@ -776,7 +833,7 @@ class RTE:
             npix=total_pix,
             extinct=self._extinct[:self._npts],
             albedo=self._albedo[:self._npts],
-            iphase=self._iphase[:self._npts],
+            iphase=self._iphase[:, :self._npts],
             legen=self._legen,
             npart=self._npart,
             nstleg=self._nstleg,
