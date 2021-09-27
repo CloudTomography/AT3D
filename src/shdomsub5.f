@@ -237,7 +237,7 @@ C         Interpolate the source and extinction to the current point
                 ENDDO
               ENDIF
               UNSCALED_ALBEDO = ALBEDO(GRIDPTR(J,ICELL),IPART)/
-     .                  (FM*ALBEDO(GRIDPTR(J,ICELL),IPART)+ 1.0)
+     .                  (FM*(ALBEDO(GRIDPTR(J,ICELL),IPART)-1.0)+ 1.0)
               EXT1 = EXT1 + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)/
      .                   (1.0 - UNSCALED_ALBEDO*FM)
             ELSE
@@ -300,7 +300,7 @@ C             many subgrid intervals to use
                 ENDDO
               ENDIF
               UNSCALED_ALBEDO = ALBEDO(GRIDPTR(J,ICELL),IPART)/
-     .                  (FM*ALBEDO(GRIDPTR(J,ICELL),IPART)+ 1.0)
+     .                  (FM*(ALBEDO(GRIDPTR(J,ICELL),IPART)-1.0)+ 1.0)
               EXTN = EXTN + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)/
      .                   (1.0 - UNSCALED_ALBEDO*FM)
             ELSE
@@ -588,8 +588,6 @@ C           Make sure current cell is valid
 C         Interpolate the source and extinction to the current point
         CALL GET_INTERP_KERNEL(ICELL, GRIDPTR, GRIDPOS, XE, YE, ZE, F)
         EXT1 = 0.0
-
-        EXT1 = 0.0
         DO IPART=1,NPART
           DO J=1,8
             IF (DELTAM .AND. .NOT. DELTAMPATH)THEN
@@ -604,7 +602,7 @@ C         Interpolate the source and extinction to the current point
                 ENDDO
               ENDIF
               UNSCALED_ALBEDO = ALBEDO(GRIDPTR(J,ICELL),IPART)/
-     .                  (FM*ALBEDO(GRIDPTR(J,ICELL),IPART)+ 1.0)
+     .                  (FM*(ALBEDO(GRIDPTR(J,ICELL),IPART)-1.0)+ 1.0)
               EXT1 = EXT1 + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)/
      .                   (1.0 - UNSCALED_ALBEDO*FM)
             ELSE
@@ -665,7 +663,7 @@ C             many subgrid intervals to use
                 ENDDO
               ENDIF
               UNSCALED_ALBEDO = ALBEDO(GRIDPTR(J,ICELL),IPART)/
-     .                  (FM*ALBEDO(GRIDPTR(J,ICELL),IPART)+ 1.0)
+     .                  (FM*(ALBEDO(GRIDPTR(J,ICELL),IPART)-1.0)+ 1.0)
               EXTN = EXTN + F(J)*EXTINCT(GRIDPTR(J,ICELL),IPART)/
      .                   (1.0 - UNSCALED_ALBEDO*FM)
             ELSE
@@ -673,7 +671,6 @@ C             many subgrid intervals to use
             ENDIF
           ENDDO
        ENDDO
-
         TAU = TAU + SO*0.5*(EXT1+EXTN)
         OUTOFDOMAIN = (BTEST(INT(CELLFLAGS(ICELL)),0).OR.
      .                 BTEST(INT(CELLFLAGS(ICELL)),1))
@@ -727,7 +724,7 @@ C           Get the location coordinate
 
 C           If the transmission is greater than zero and not at a
 C             boundary then prepare for next cell
-        IF ((INEXTCELL .EQ. 0).OR.(NGRID.GT.MAXCELLSCROSS)) THEN
+        IF ((INEXTCELL .EQ. 0)) THEN
           DONE = .TRUE.
         ELSE
           XE = XN
