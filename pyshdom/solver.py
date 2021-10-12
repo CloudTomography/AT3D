@@ -943,14 +943,24 @@ class RTE:
                                              )
             self._shterms = shterms
 
-        xcoord = self._xgrid
-        if self._bcflag in (0, 2):
+        if len(self._xgrid) == self._nx1:
+            xcoord = self._xgrid
+        elif len(self._xgrid)-1 == self._nx1:
             xcoord = self._xgrid[:-1]
-
-        ycoord = self._ygrid
-        if self._bcflag in (0, 1):
+        else:
+            raise pyshdom.exceptions.SHDOMError(
+                "Inconsistent sizes of RTE grid and property grid. "
+                "There has been a mistake in interpretation."
+                )
+        if len(self._ygrid) == self._ny1:
+            ycoord = self._ygrid
+        elif len(self._ygrid)-1 == self._ny1:
             ycoord = self._ygrid[:-1]
-
+        else:
+            raise pyshdom.exceptions.SHDOMError(
+                "Inconsistent sizes of RTE grid and property grid. "
+                "There has been a mistake in interpretation."
+                )
         sh_out_dataset = xr.Dataset(
             data_vars={
                 'mean_intensity': (['x', 'y', 'z'], self._shterms[0, :self._nbpts].reshape(
@@ -1005,13 +1015,25 @@ class RTE:
         self.fluxes property.
         """
         self.check_solved()
-        xcoord = self._xgrid
-        if self._bcflag in (0, 2):
-            xcoord = self._xgrid[:-1]
 
-        ycoord = self._ygrid
-        if self._bcflag in (0, 1):
+        if len(self._xgrid) == self._nx1:
+            xcoord = self._xgrid
+        elif len(self._xgrid)-1 == self._nx1:
+            xcoord = self._xgrid[:-1]
+        else:
+            raise pyshdom.exceptions.SHDOMError(
+                "Inconsistent sizes of RTE grid and property grid. "
+                "There has been a mistake in interpretation."
+                )
+        if len(self._ygrid) == self._ny1:
+            ycoord = self._ygrid
+        elif len(self._ygrid)-1 == self._ny1:
             ycoord = self._ygrid[:-1]
+        else:
+            raise pyshdom.exceptions.SHDOMError(
+                "Inconsistent sizes of RTE grid and property grid. "
+                "There has been a mistake in interpretation."
+                )
 
         fluxes = xr.Dataset(
             data_vars={
@@ -1069,13 +1091,24 @@ class RTE:
                 )
             self._netfluxdiv = netfluxdiv
 
-        xcoord = self._xgrid
-        if self._bcflag in (0, 2):
+        if len(self._xgrid) == self._nx1:
+            xcoord = self._xgrid
+        elif len(self._xgrid)-1 == self._nx1:
             xcoord = self._xgrid[:-1]
-
-        ycoord = self._ygrid
-        if self._bcflag in (0, 1):
+        else:
+            raise pyshdom.exceptions.SHDOMError(
+                "Inconsistent sizes of RTE grid and property grid. "
+                "There has been a mistake in interpretation."
+                )
+        if len(self._ygrid) == self._ny1:
+            ycoord = self._ygrid
+        elif len(self._ygrid)-1 == self._ny1:
             ycoord = self._ygrid[:-1]
+        else:
+            raise pyshdom.exceptions.SHDOMError(
+                "Inconsistent sizes of RTE grid and property grid. "
+                "There has been a mistake in interpretation."
+                )
 
         netfluxdiv_dataset = xr.Dataset(
             data_vars={
