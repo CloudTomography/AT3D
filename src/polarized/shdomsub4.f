@@ -2172,7 +2172,6 @@ C     EXTINCTION/ALBEDO product.
      .            DLEGP*EXTINCTP*ALBEDOP +
      .            (LEGENT-1)*DFJ
 
-
 C     Weight each phase legendre/Wigner coefficient derivative
 C     by the corresponding radiance harmonics.
 C     Note that this may be slightly inconsistent as we use
@@ -2187,6 +2186,7 @@ C     uses the exact same number of terms as SOURCE.
      .   NLM, LOFJ, RIS, RNS, NSTOKES, RADIANCE, YLMDIR,
      .   NSTLEG, DELTAM, SRCTYPE, ML, MM, NS, YLMSUN,
      .   DIRFLUX, SECMU0, NLEG)
+
 C
 C      Add the extinction/albedo/phase gradients.
       GRADTEMP(:) = GRADTEMP(:) +
@@ -2526,30 +2526,17 @@ Cf2py intent(in) :: RADIANCE, SOURCET
        ENDIF
 
        IF ((.NOT. DELTAM) .AND.
-     .    (SRCTYPE .EQ. 'S') .OR. SRCTYPE .EQ. 'B') THEN
-        J = 1
-        DA = DIRFLUX*SECMU0
-        DO L = 0, ML
-          ME = MIN(L,MM)
-          MS = -ME
-          A1 = DA*LEGEN(1,L)
-          B1 = DA*LEGEN(5,L)
-          IF (J .LE. NS) THEN
-            JT = J
-            DO M = MS, ME
-              SOURCET(1) = SOURCET(1) + A1*YLMDIR(1,J)*YLMSUN(1,J)
-              J = J + 1
-            ENDDO
-            IF (NSTOKES .GT. 1) THEN
-              J = JT
-              DO M = MS, ME
-                SOURCET(2)=SOURCET(2) + B1*YLMDIR(2,J)*YLMSUN(1,J)
-                SOURCET(3)=SOURCET(3) + B1*YLMDIR(6,J)*YLMSUN(1,J)
-                J = J + 1
-              ENDDO
-            ENDIF
-          ENDIF
+     .    (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B')) THEN
+        DO J = 1, NLM
+          SOURCET(1) = SOURCET(1)
+     .      + DIRFLUX*SECMU0*LEGEN(1,LOFJ(J))*YLMSUN(1,J)*YLMDIR(1,J)
         ENDDO
+        IF (NSTOKES .GT. 1) THEN
+          DO J = 5, NLM
+            SOURCET(2) = SOURCET(2)
+     .      + DIRFLUX*SECMU0*LEGEN(5,LOFJ(J))*YLMSUN(1,J)*YLMDIR(2,J)
+          ENDDO
+        ENDIF
 
        ENDIF
 

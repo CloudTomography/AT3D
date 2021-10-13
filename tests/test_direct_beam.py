@@ -192,10 +192,10 @@ class DirectBeamDerivativeDeltaMOpen(TestCase):
         print(self.jacobian.ravel())
         print('reference below:')
         print(self.finite_jacobian.ravel())
-        import pylab as py
-        py.figure()
-        py.plot(self.jacobian.ravel(), self.finite_jacobian.ravel(), 'x')
-        py.show()
+        # import pylab as py
+        # py.figure()
+        # py.plot(self.jacobian.ravel(), self.finite_jacobian.ravel(), 'x')
+        # py.show()
         self.assertTrue(np.allclose(self.jacobian, self.finite_jacobian, atol=1e-5))
 
 class DirectBeamDerivativeDeltaMPeriodic(TestCase):
