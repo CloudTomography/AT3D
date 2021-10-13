@@ -17,6 +17,7 @@ import numpy as np
 import xarray as xr
 import pyshdom.checks
 
+
 def make_grid(delx: float, npx: int, dely: float, npy: int, z: np.ndarray,
               nx=None, ny=None, nz=None) -> xr.Dataset:
     """
@@ -282,3 +283,16 @@ def merge_two_z_coordinates(z1, z2):
     assert np.all(np.sort(combined) == combined), 'unexpectedly not strictly increasing.'
 
     return combined
+
+def from_scatterer(scatterer):
+    """
+    Defines an RTE grid from a scatterer object.
+    Only covers the simplest case.
+    """
+    grid = make_grid(scatterer.x.diff('x')[0].data,
+                          scatterer.x.size,
+                          scatterer.y.diff('y')[0].data,
+                          scatterer.y.size,
+                          scatterer.z.data)
+    resampled_scatterer = resample_onto_grid(grid, scatterer)
+    return resampled_scatterer

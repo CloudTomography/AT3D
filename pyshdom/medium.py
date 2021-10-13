@@ -44,7 +44,7 @@ class OpticalPropertyGenerator:
 
     def __init__(self, scatterer_name, monodisperse_tables, size_distribution_function,
                  particle_density=1.0, maxnphase=None,
-                 interpolation_mode='exact', density_normalization=False, **size_distribution_parameters):
+                 interpolation_mode='exact', density_normalization='density', **size_distribution_parameters):
 
         if not isinstance(monodisperse_tables, typing.Dict):
             raise TypeError(
@@ -59,14 +59,16 @@ class OpticalPropertyGenerator:
                     self._valid_interpolation_modes, interpolation_mode)
                 )
         self._interpolation_mode = interpolation_mode
-        self._size_distribution_function = size_distribution_function
         self._particle_density = particle_density
         self._maxnphase = maxnphase
         self._scatterer_name = scatterer_name
-        if density_normalization:
-            self._density_normalization = list(monodisperse_tables.keys())[0]
-        else:
-            self._density_normalization = density_normalization
+
+        self._density_normalization = density_normalization
+        import functools
+        self._size_distribution_function = functools.update_wrapper(
+            functools.partial(size_distribution_function, normalization=self._density_normalization),
+            size_distribution_function
+        )
 
         for variable_name, parameters in size_distribution_parameters.items():
             if isinstance(parameters, np.ndarray):
