@@ -1566,27 +1566,20 @@ Cf2py intent(out) :: DPATH, DPTR
 Cf2py intent(out) :: IERR, ERRMSG
 
       INTEGER SIDE, IP
-      LOGICAL VALIDBEAM, VERBOSE
+      LOGICAL VALIDBEAM
       REAL    UNIFZLEV, XO, YO, ZO, DIR, DIRPATH
       IERR = 0
       DPTR = 0
       DPATH = 0.0
-      VERBOSE = .FALSE.
 
       DO IP = 1, NPTS
         DIRPATH = 0.0
-C        PRINT *, IP
-        IF (IP .EQ. 13) THEN
-          VERBOSE = .TRUE.
-        ELSE
-          VERBOSE = .FALSE.
-        ENDIF
         CALL DIRECT_BEAM_AND_PATHS_PROP(GRIDPOS(1,IP), GRIDPOS(2,IP),
      .            GRIDPOS(3,IP), BCFLAG, XO, YO, ZO, SIDE, NPX, NPY,
      .            NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS, CX, CY, CZ,
      .            CXINV, CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .            DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .            DPATH(:,IP), DPTR(:,IP), IERR, ERRMSG, VERBOSE)
+     .            DPATH(:,IP), DPTR(:,IP), IERR, ERRMSG)
         IF (IERR .NE. 0) RETURN
       ENDDO
       RETURN
@@ -1598,7 +1591,7 @@ C        PRINT *, IP
      .           XSTART, YSTART, ZLEVELS, CX, CY, CZ, CXINV, CYINV,
      .           CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD, XDOMAIN,
      .           YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, DPATH, DPTR,
-     .           IERR, ERRMSG, VERBOSE)
+     .           IERR, ERRMSG)
       IMPLICIT NONE
 
       REAL    DPATH(8*(NPX+NPY+NPZ))
@@ -1607,7 +1600,6 @@ C        PRINT *, IP
       REAL    XO, YO, ZO, XI, YI, ZI
       INTEGER IERR
       CHARACTER ERRMSG*600
-      LOGICAL VERBOSE
 
       INTEGER IX, IY, IZ, JZ, IL, IM, IU
       INTEGER I, J, K, IP, JP, I1, I2, I3, I4
@@ -1622,6 +1614,7 @@ C        PRINT *, IP
       DOUBLE PRECISION U0, V0, W0, U1, V1, W1, AX, AY, AZ
       DOUBLE PRECISION U0M, V0M, W0M, U1M, V1M, W1M, DU, DV, DW
       DOUBLE PRECISION B1,B2,B3,B4,B5,B6,B7,B8,C1,C2,C3,C4,C5,C6,C7,C8
+      DOUBLE PRECISION A1, A2, A3, A4, A5, A6, A7, A8
       DOUBLE PRECISION UV,UMV,UVM,UMVM,UW,UMW,UWM,UMWM,VW,VMW,VWM,VMWM
       DOUBLE PRECISION VWU,VWUM,UWV,UWVM,UVW,UVWM
 
@@ -1903,6 +1896,18 @@ C           Compute the cubic polynomial extinction coefficients
         VWM  = V0 *W0M
         VMWM = V0M*W0M
 
+C       Unlike DIRECT_BEAM_PROP calculate A1 - A8
+C       as VW is reused in the C1 - C8 calculations
+C       leading to errors.
+        A1 = U0M*VMWM
+        A2 = U0*VMWM
+        A3 = U0M*VWM
+        A4 = U0*VWM
+        A5 = U0M*VMW
+        A6 = U0*VMW
+        A7 = U0M*VW
+        A8 = U0*VW
+
         B1 = -DU*VMWM - DV*UMWM - DW*UMVM
         B2 =  DU*VMWM - DV*UWM  - DW*UVM
         B3 = -DU*VWM  + DV*UMWM - DW*UMV
@@ -1941,54 +1946,33 @@ C        IF (K .LE. NPZ+1) THEN
      .       'exceeded: IDP=', 8*(NPX+NPY+NPZ)
             RETURN
           ENDIF
-        DPATH(IDP+1) = SO*(U0M*VMWM + 0.5D0*B1 +
+        DPATH(IDP+1) = SO*(A1 + 0.5D0*B1 +
      .                 0.3333333333333333D0*C1 - 0.25D0*DU*DV*DW)
-        DPATH(IDP+2) = SO*(U0*VMWM + 0.5D0*B2 +
+        DPATH(IDP+2) = SO*(A2 + 0.5D0*B2 +
      .                 0.3333333333333333D0*C2 + 0.25D0*DU*DV*DW)
-        DPATH(IDP+3) = SO*(U0M*VWM + 0.5D0*B3 +
+        DPATH(IDP+3) = SO*(A3 + 0.5D0*B3 +
      .                 0.3333333333333333D0*C3 + 0.25D0*DU*DV*DW)
-        DPATH(IDP+4) = SO*(U0*VWM + 0.5D0*B4 +
+        DPATH(IDP+4) = SO*(A4 + 0.5D0*B4 +
      .                 0.3333333333333333D0*C4 - 0.25D0*DU*DV*DW)
-        DPATH(IDP+5) = SO*(U0M*VMW + 0.5D0*B5 +
+        DPATH(IDP+5) = SO*(A5 + 0.5D0*B5 +
      .                 0.3333333333333333D0*C5 + 0.25D0*DU*DV*DW)
-        DPATH(IDP+6) = SO*(U0*VMW + 0.5D0*B6 +
+        DPATH(IDP+6) = SO*(A6 + 0.5D0*B6 +
      .                 0.3333333333333333D0*C6 - 0.25D0*DU*DV*DW)
-        DPATH(IDP+7) = SO*(U0M*VW + 0.5D0*B7 +
+        DPATH(IDP+7) = SO*(A7 + 0.5D0*B7 +
      .                 0.3333333333333333D0*C7 - 0.25D0*DU*DV*DW)
-        DPATH(IDP+8) = SO*(U0*VW + 0.5D0*B8 +
+        DPATH(IDP+8) = SO*(A8 + 0.5D0*B8 +
      .                 0.3333333333333333D0*C8 + 0.25D0*DU*DV*DW)
 
-C          PRINT *, ABS(ZE-ZLEVELS(NPZ)), K, NPZ, ZLEVELS(NPZ-1)
-C        PRINT *, DPATH(IDP+1:IDP+8)
+        DPTR(IDP+1) = I1
+        DPTR(IDP+2) = I2
+        DPTR(IDP+3) = I3
+        DPTR(IDP+4) = I4
+        DPTR(IDP+5) = I1+1
+        DPTR(IDP+6) = I2+1
+        DPTR(IDP+7) = I3+1
+        DPTR(IDP+8) = I4+1
 
-C          DPATH(IDP+1) = MAX(0.0, SO*(U0M*VMWM + 0.5D0*B1 +
-C     .                 0.3333333333333333D0*C1 - 0.25D0*DU*DV*DW))
-C          DPATH(IDP+2) = MAX(0.0, SO*(U0*VMWM + 0.5D0*B2 +
-C     .                 0.3333333333333333D0*C2 + 0.25D0*DU*DV*DW))
-C          DPATH(IDP+3) = MAX(0.0, SO*(U0M*VWM + 0.5D0*B3 +
-C     .                 0.3333333333333333D0*C3 + 0.25D0*DU*DV*DW))
-C          DPATH(IDP+4) = MAX(0.0, SO*(U0*VWM + 0.5D0*B4 +
-C     .                 0.3333333333333333D0*C4 - 0.25D0*DU*DV*DW))
-C          DPATH(IDP+5) = MAX(0.0, SO*(U0M*VMW + 0.5D0*B5 +
-C     .                 0.3333333333333333D0*C5 + 0.25D0*DU*DV*DW))
-C          DPATH(IDP+6) = MAX(0.0, SO*(U0*VMW + 0.5D0*B6 +
-C     .                 0.3333333333333333D0*C6 - 0.25D0*DU*DV*DW))
-C          DPATH(IDP+7) = MAX(0.0, SO*(U0M*VW + 0.5D0*B7 +
-C     .                 0.3333333333333333D0*C7 - 0.25D0*DU*DV*DW))
-C          DPATH(IDP+8) = MAX(0.0, SO*(U0*VW + 0.5D0*B8 +
-C     .                 0.3333333333333333D0*C8 + 0.25D0*DU*DV*DW))
-
-          DPTR(IDP+1) = I1
-          DPTR(IDP+2) = I2
-          DPTR(IDP+3) = I3
-          DPTR(IDP+4) = I4
-          DPTR(IDP+5) = I1+1
-          DPTR(IDP+6) = I2+1
-          DPTR(IDP+7) = I3+1
-          DPTR(IDP+8) = I4+1
-C          PRINT *, DPTR(IDP+1:IDP+8)
-
-          IDP = IDP + 8
+        IDP = IDP + 8
 C        ENDIF
 
         XE = XP + XOFFS

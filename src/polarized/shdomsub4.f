@@ -1596,6 +1596,7 @@ C             gonna be zero anyway.
                 ENDIF
               ENDIF
             ENDIF
+
             SOURCET(1) = MAX(0.0, SOURCET(1))
 C           Undo delta-M scaling so we have the unscaled legendre/wigner coefficients
 C           on the RTE grid for phase function gradients.

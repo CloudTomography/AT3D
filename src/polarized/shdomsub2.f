@@ -433,7 +433,6 @@ Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
       LOGICAL VALIDBEAM
       REAL    UNIFZLEV, XO, YO, ZO, DIR, DIRPATH
 
-
       CALL DIRECT_BEAM_PROP (1, 0.0, 0.0, 0.0, BCFLAG, IPFLAG,
      .            DELTAM, ML, NSTLEG, NLEGP,
      .            SOLARFLUX, SOLARMU, SOLARAZ, DIRFLUX(1),
@@ -448,7 +447,6 @@ Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
       DO IP = 1, NPTS
 C27237,27283
         DIRPATH = 0.0
-C        PRINT *, 'DIRECT_BEAM', IP
         CALL DIRECT_BEAM_PROP
      .           (0, GRIDPOS(1,IP), GRIDPOS(2,IP), GRIDPOS(3,IP),
      .            BCFLAG, IPFLAG, DELTAM, ML, NSTLEG, NLEGP,
