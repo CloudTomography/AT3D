@@ -1502,7 +1502,8 @@ class StateGenerator:
                 " ".format(type(pyshdom.containers.SolversDict)))
         self._solvers_dict = solvers_dict
 
-        self._grid_shape = list(unknown_scatterers.values())[0].grid_to_optical_properties.grid_shape
+        self._rte_grid = list(unknown_scatterers.values())[0].grid_to_optical_properties._rte_grid
+        self._grid_shape = self._rte_grid.grid.shape
 
         # This object defines how the state is concenated as a 1D vector.
         self._state_representation = StateRepresentation(unknown_scatterers)
@@ -1646,7 +1647,7 @@ class StateGenerator:
                 gradient = self._state_representation.update_state_vector(
                     gradient, scatterer_name, variable_name, transformed_gradient
                 )
-        state = self._unknown_scatterers.global_transform.gradient_transform(state)
+        state = self._unknown_scatterers.global_transform.gradient_transform(state, gradient)
         return gradient
 
     def transform_bounds(self):
@@ -1667,6 +1668,11 @@ class StateGenerator:
                     )
         lower_bounds = self._unknown_scatterers.global_transform.inverse_transform(lower_bounds)
         upper_bounds = self._unknown_scatterers.global_transform.inverse_transform(upper_bounds)
+
+        # hack in case the transforms reverse the signs of the bounds.
+        lower_bounds = np.minimum(lower_bounds, upper_bounds)
+        upper_bounds = np.maximum(lower_bounds, upper_bounds)
+
         return lower_bounds, upper_bounds
 
 

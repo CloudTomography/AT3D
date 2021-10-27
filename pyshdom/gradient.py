@@ -42,7 +42,7 @@ class LevisApproxGradient:
         and the partial derivatives of optical properties with respect to them
         for use in the gradient calculation.
     parallel_solve_kwargs : Dict
-        key word arguments to pass to solvers.parallel_solve and are also used
+        key word arguments to pass to solvers.solve and are also used
         in the parallelization of the gradient calculation.
         'n_jobs' is the number of parallel workers for multi-threading (default).
         'mpi_comm' is the MPI communicator if using mpi4py.
@@ -132,14 +132,14 @@ class LevisApproxGradient:
         This does the heavy lifting of preparing the gradient calculation.
         This code should not really need to be modified.
         """
-        self.solvers.parallel_solve(**self.parallel_solve_kwargs)
+        self.solvers.solve(**self.parallel_solve_kwargs)
 
         #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
-        self.solvers.add_microphysical_partial_derivatives(self.unknown_scatterers)
+        self.solvers.calculate_microphysical_partial_derivatives(self.unknown_scatterers)
 
         #does some preprocessing for calculating the sensitivity of a gridpoint's
         #solar source to the optical properties along the path to the sun.
-        self.solvers.add_direct_beam_derivatives()
+        self.solvers.calculate_direct_beam_derivative()
 
         #prepare the sensors for the fortran subroutine for calculating gradient.
         rte_sensors, sensor_mapping = self.forward_sensors.sort_sensors(

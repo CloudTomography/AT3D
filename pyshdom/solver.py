@@ -1186,7 +1186,7 @@ class RTE:
         self._direct_derivative_ptr = direct_derivative_ptr
         self._direct_derivative_path = direct_derivative_path
 
-    def prepare_microphysical_partial_derivatives(self, derivative_information):
+    def calculate_microphysical_partial_derivatives(self, derivative_information):
         """
         Calculate the derivatives of optical properties with respect to the unknowns
         (microphysical or optical).

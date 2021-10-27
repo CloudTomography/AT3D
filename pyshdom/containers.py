@@ -212,7 +212,7 @@ class SensorsDict(OrderedDict):
                 self.add_measurements_forward(sensor_mappings, organized_out, list(solvers))
 
         else:
-            solvers.parallel_solve(n_jobs=n_jobs, mpi_comm=mpi_comm, maxiter=maxiter,
+            solvers.solve(n_jobs=n_jobs, mpi_comm=mpi_comm, maxiter=maxiter,
                                    verbose=verbose, init_solution=init_solution,
                                    setup_grid=setup_grid, overwrite_solver=overwrite_solver)
             if n_jobs == 1 or n_jobs >= self.npixels:
@@ -697,7 +697,7 @@ class SolversDict(OrderedDict):
             raise TypeError("solver should be of type '{}'".format(pyshdom.solver.RTE))
         self[key] = solver
 
-    def parallel_solve(self, n_jobs=1, mpi_comm=None, overwrite_solver=False, maxiter=100,
+    def solve(self, n_jobs=1, mpi_comm=None, overwrite_solver=False, maxiter=100,
                        verbose=True, init_solution=True, setup_grid=True):
         """
         Solves in parallel all solver.RTE objects using MPI or multi-threading.
@@ -766,7 +766,8 @@ class SolversDict(OrderedDict):
             key_list = [key for key, solver in self.items() if not solver.check_solved(verbose=False)]
         return key_list, solver_list
 
-    def add_direct_beam_derivatives(self):
+    #def calculate_beam_derivatives(self):
+    def calculate_direct_beam_derivative(self):
         """
         Calculate the contributions of each voxel to the direct beam
         derivative for each solver. Solvers are modified in-place.
@@ -775,7 +776,7 @@ class SolversDict(OrderedDict):
         for solver in self.values():
             solver.calculate_direct_beam_derivative()
 
-    def add_microphysical_partial_derivatives(self, unknown_scatterers):
+    def calculate_microphysical_partial_derivatives(self, unknown_scatterers):
         """
         Calculates the partial derivatives of optical properties with respect
         to microphysical variables.
@@ -812,7 +813,7 @@ class SolversDict(OrderedDict):
                 wavelength_ordered_derivatives[key][scatterer_name] = derivatives_by_wavelength[key]
 
         for key, solver in self.items():
-            solver.prepare_microphysical_partial_derivatives(
+            solver.calculate_microphysical_partial_derivatives(
                 wavelength_ordered_derivatives[key]
             )
 
@@ -831,8 +832,8 @@ class UnknownScatterers(OrderedDict):
         for unknown_scatterer in args:
             self.add_unknowns(unknown_scatterer)
 
-        if global_transform is not None:
-            self.add_global_transform(global_transform)
+
+        self.add_global_transform(global_transform)
 
     def add_unknowns(self, unknown_scatterer):
 

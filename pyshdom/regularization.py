@@ -7,7 +7,9 @@ import xarray as xr
 import pyshdom
 
 class Regularization:
-
+    """
+    Base class for regularization routines.
+    """
     def __init__(self, state_generator, scatterer_name, variable_name,
                  regularization_strength, relaxation_parameter=1.0):
 
@@ -119,7 +121,7 @@ class Sparsity(WeightedRegularization):
 
     def __init__(
         self, state_generator, scatterer_name, variable_name,
-        regularization_strength,relaxation_parameter=1.0, spatial_weights='uniform'):
+        regularization_strength, relaxation_parameter=1.0, spatial_weights='uniform'):
         WeightedRegularization.__init__(self, state_generator, scatterer_name, variable_name,
         regularization_strength, spatial_weights=spatial_weights, relaxation_parameter=relaxation_parameter)
 

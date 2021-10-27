@@ -162,7 +162,7 @@ class DirectBeamDerivativeDeltaMOpen(TestCase):
         # cost, gradient, jacobian = gradient_call()
 
         #jacobian = jacobian['jacobian_0.860'][0,0].data
-        solvers.add_microphysical_partial_derivatives(unknown_scatterers)
+        solvers.calculate_microphysical_partial_derivatives(unknown_scatterers)
         #solver.calculate_direct_beam_derivative()
 
         solver.calculate_direct_beam_derivative()
@@ -271,10 +271,10 @@ class DirectBeamDerivativeDeltaMPeriodic(TestCase):
         # gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
         # 'indices_for_jacobian': indices_for_jacobian}, uncertainty_kwargs={'add_noise': False})
         #cost, gradient, jacobian = gradient_call()
-        #self.solvers.add_microphysical_partial_derivatives(self.unknown_scatterers)
+        #self.solvers.calculate_microphysical_partial_derivatives(self.unknown_scatterers)
         #jacobian = jacobian['jacobian_0.860'][0,0].data
 
-        solvers.add_microphysical_partial_derivatives(unknown_scatterers)
+        solvers.calculate_microphysical_partial_derivatives(unknown_scatterers)
         solver.calculate_direct_beam_derivative()
         raygrad = np.zeros((solver._nstokes, solver._maxpg, 1))
         jacobian = []
@@ -471,7 +471,7 @@ class DirectBeamDerivativeOpen(TestCase):
         # cost, gradient, jacobian = gradient_call()
         # jacobian = jacobian['jacobian_0.860'][0,0].data
 
-        solvers.add_microphysical_partial_derivatives(unknown_scatterers)
+        solvers.calculate_microphysical_partial_derivatives(unknown_scatterers)
         solver.calculate_direct_beam_derivative()
         raygrad = np.zeros((solver._nstokes, solver._maxpg, 1))
         jacobian = []

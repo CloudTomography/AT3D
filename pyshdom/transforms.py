@@ -17,7 +17,18 @@ import numpy as np
 from collections import OrderedDict
 
 class CoordinateTransformNull:
+    """
+    The base for all coordinate transforms for the state vector.
+    This performs no transformation.
 
+    Coordinate Transforms should have the same methods with the same
+    signatures as described here.
+    `gradient_transform` has both `state` and `gradient` arguments to allow for
+    nonlinearity in the transforms.
+
+    Coordinate Transforms should be square, ie the length in and out
+    are the same.
+    """
     def __call__(self, state):
         return state
 
@@ -56,7 +67,16 @@ class CoordinateTransformScaling(CoordinateTransformNull):
 
 
 class StateToGridMask:
+    """
+    Transforms from gridded unknowns to a (possibly reduced) set of
+    unknowns in a 1D state vector based on a grid-point mask.
 
+    Parameters
+    ----------
+    grid_shape : tuple, optional
+        The shape of the gridded data.
+
+    """
     def __init__(self, grid_shape=None, mask=None):
 
         # add checks
@@ -114,12 +134,19 @@ class StateToGridProfile(StateToGridMask):
         # strictly this isn't true if the bounds are non-uniform
         # in space. But in the simplest case that that is true
         # then this will work.
-        return self.inverse_transform(bounds)
+        if np.size(np.unique(bounds)) == 1:
+            out = self.inverse_transform(bounds)
+        else:
+            raise NotImplementedError(
+                "Inverse Transform for non-uniform bounds for single variable"
+                " have not yet been implemented."
+            )
+        return out
 
 
 class StateToGrid2D(StateToGridMask):
     """
-    A single unknown per vertical column.
+    A single unknown per column.
     Allows for a fully 3D mask.
     """
     def __call__(self, state):
@@ -141,7 +168,14 @@ class StateToGrid2D(StateToGridMask):
         # strictly this isn't true if the bounds are non-uniform
         # in space. But in the simplest case that that is true
         # then this will work.
-        return self.inverse_transform(bounds)
+        if np.size(np.unique(bounds)) == 1:
+            out = self.inverse_transform(bounds)
+        else:
+            raise NotImplementedError(
+                "Inverse Transform for non-uniform bounds for single variable"
+                " have not yet been implemented."
+            )
+        return out
 
 
 
