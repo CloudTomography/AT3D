@@ -145,10 +145,12 @@ class DirectBeamDerivativeDeltaMOpen(TestCase):
 
 
         solver.calculate_direct_beam_derivative()
-        deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
-
-        unknown_scatterers = pyshdom.containers.UnknownScatterers()
-        unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
+        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = pyshdom.containers.UnknownScatterers(
+            pyshdom.medium.UnknownScatterer(
+                deriv_gen, 'extinction'
+            )
+        )
         forward_sensors = Sensordict.make_forward_sensors()
 
 
@@ -253,10 +255,13 @@ class DirectBeamDerivativeDeltaMPeriodic(TestCase):
 
 
         solver.calculate_direct_beam_derivative()
-        deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
 
-        unknown_scatterers = pyshdom.containers.UnknownScatterers()
-        unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
+        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = pyshdom.containers.UnknownScatterers(
+            pyshdom.medium.UnknownScatterer(
+                deriv_gen, 'extinction'
+            )
+        )
         forward_sensors = Sensordict.make_forward_sensors()
 
 
@@ -352,10 +357,12 @@ class DirectBeamDerivativePeriodic(TestCase):
 
 
         solver.calculate_direct_beam_derivative()
-        deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
-
-        unknown_scatterers = pyshdom.containers.UnknownScatterers()
-        unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
+        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = pyshdom.containers.UnknownScatterers(
+            pyshdom.medium.UnknownScatterer(
+                deriv_gen, 'extinction'
+            )
+        )
         forward_sensors = Sensordict.make_forward_sensors()
 
 
@@ -447,10 +454,12 @@ class DirectBeamDerivativeOpen(TestCase):
 
 
         solver.calculate_direct_beam_derivative()
-        deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
-
-        unknown_scatterers = pyshdom.containers.UnknownScatterers()
-        unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
+        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = pyshdom.containers.UnknownScatterers(
+            pyshdom.medium.UnknownScatterer(
+                deriv_gen, 'extinction'
+            )
+        )
         forward_sensors = Sensordict.make_forward_sensors()
 
 

@@ -451,11 +451,18 @@ class ThermalJacobianNoSurface(TestCase):
         rte_sensor_ref = rte_sensor_ref[11.0]
         solver = solvers[11.0]
 
-        deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 11.0)
-        deriv_info = OrderedDict()
+        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 11.0)
+        unknown_scatterers = pyshdom.containers.UnknownScatterers(
+            pyshdom.medium.UnknownScatterer(
+                deriv_gen, 'extinction'
+            )
+        )
 
-        unknown_scatterers = pyshdom.containers.UnknownScatterers()
-        unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
+        # deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 11.0)
+        # deriv_info = OrderedDict()
+        #
+        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
         # unknown_scatterers = pyshdom.containers.UnknownScatterers()
         # unknown_scatterers.add_unknown('cloud', ['extinction'], cloud_poly_tables)
         # unknown_scatterers.create_derivative_tables()
@@ -531,11 +538,18 @@ class ThermalJacobianWithSurface(TestCase):
         rte_sensor_ref = rte_sensor_ref[11.0]
         solver = solvers[11.0]
 
-        deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 11.0)
-        deriv_info = OrderedDict()
+        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 11.0)
+        unknown_scatterers = pyshdom.containers.UnknownScatterers(
+            pyshdom.medium.UnknownScatterer(
+                deriv_gen, 'extinction'
+            )
+        )
 
-        unknown_scatterers = pyshdom.containers.UnknownScatterers()
-        unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
+        # deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 11.0)
+        # deriv_info = OrderedDict()
+        #
+        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
 
         # unknown_scatterers = pyshdom.containers.UnknownScatterers()
         # unknown_scatterers.add_unknown('cloud', ['extinction'], cloud_poly_tables)
@@ -758,10 +772,18 @@ class SolarJacobianThinNoSurfaceExtinction(TestCase):
         # np.save('./data/thin_reference_ext_{}_{}_sfcalbedo_jacobian.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_ext_{}_{}_sfcalbedo_jacobian.npy'.format(surfacealb, step))
 
-        deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
+        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = pyshdom.containers.UnknownScatterers(
+            pyshdom.medium.UnknownScatterer(
+                deriv_gen, 'extinction'
+            )
+        )
 
-        unknown_scatterers = pyshdom.containers.UnknownScatterers()
-        unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
+
+        # deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
+        #
+        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
 
         # unknown_scatterers = pyshdom.containers.UnknownScatterers()
         # unknown_scatterers.add_unknown('cloud', ['extinction'], cloud_poly_tables)
@@ -837,10 +859,13 @@ class SolarJacobianThinNoSurfaceAlbedo(TestCase):
         # np.save('./data/thin_reference_ssalb_0.0_-0.001_sfcalbedo_jacobian.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_ssalb_0.0_-0.001_sfcalbedo_jacobian.npy'.format(surfacealb, step))
 
-        deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
+        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = pyshdom.containers.UnknownScatterers(
+            pyshdom.medium.UnknownScatterer(
+                deriv_gen, 'ssalb'
+            )
+        )
 
-        unknown_scatterers = pyshdom.containers.UnknownScatterers()
-        unknown_scatterers.add_unknowns(['ssalb'], deriv_gen)
         forward_sensors = Sensordict.make_forward_sensors()
 
         gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
@@ -910,10 +935,13 @@ class SolarJacobianThinNoSurfaceAsymmetry(TestCase):
         # np.save('./data/thin_reference_g_0.0_-0.1_sfcalbedo_jacobian.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_g_{}_{}_sfcalbedo_jacobian.npy'.format(surfacealb, step))
 
-        deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
+        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = pyshdom.containers.UnknownScatterers(
+            pyshdom.medium.UnknownScatterer(
+                deriv_gen, 'legendre_0_1'
+            )
+        )
 
-        unknown_scatterers = pyshdom.containers.UnknownScatterers()
-        unknown_scatterers.add_unknowns(['legendre_0_1'], deriv_gen)
         forward_sensors = Sensordict.make_forward_sensors()
 
         gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
@@ -986,10 +1014,18 @@ class SolarJacobianThinNoSurfaceExtinctionNoDeltaM(TestCase):
         # np.save('./data/thin_reference_ext_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_ext_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step))
 
-        deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
 
-        unknown_scatterers = pyshdom.containers.UnknownScatterers()
-        unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
+        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = pyshdom.containers.UnknownScatterers(
+            pyshdom.medium.UnknownScatterer(
+                deriv_gen, 'extinction'
+            )
+        )
+
+        # deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
+        #
+        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
 
         forward_sensors = Sensordict.make_forward_sensors()
 
@@ -1065,10 +1101,17 @@ class SolarJacobianThinNoSurfaceAlbedoNoDeltaM(TestCase):
         # np.save('./data/thin_reference_ssalb_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_ssalb_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step))
 
-        deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
+        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = pyshdom.containers.UnknownScatterers(
+            pyshdom.medium.UnknownScatterer(
+                deriv_gen, 'ssalb'
+            )
+        )
 
-        unknown_scatterers = pyshdom.containers.UnknownScatterers()
-        unknown_scatterers.add_unknowns(['ssalb'], deriv_gen)
+        # deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
+        #
+        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers.add_unknowns(['ssalb'], deriv_gen)
         forward_sensors = Sensordict.make_forward_sensors()
 
         gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
@@ -1143,10 +1186,17 @@ class SolarJacobianThinNoSurfaceAsymmetryNoDeltaM(TestCase):
         # np.save('./data/thin_reference_g_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_g_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step))
 
-        deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
+        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = pyshdom.containers.UnknownScatterers(
+            pyshdom.medium.UnknownScatterer(
+                deriv_gen, 'legendre_0_1'
+            )
+        )
 
-        unknown_scatterers = pyshdom.containers.UnknownScatterers()
-        unknown_scatterers.add_unknowns(['legendre_0_1'], deriv_gen)
+        # deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
+        #
+        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers.add_unknowns(['legendre_0_1'], deriv_gen)
         forward_sensors = Sensordict.make_forward_sensors()
 
         gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
