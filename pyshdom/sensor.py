@@ -553,7 +553,70 @@ def perspective_projection(wavelength, fov, x_resolution, y_resolution,
         sensor = _add_null_subpixel_rays(sensor)
     return sensor
 
+def domaintop_projection(wavelength, bounding_box, x_resolution, y_resolution, azimuth, zenith,
+               x_offset=0.0, y_offset=0.0, stokes='I',sub_pixel_ray_args={'method': None}):
+    """
+    This projection generator is like the default SHDOM radiance calculation method. A single uniform spacing
+    of radiances is specified across the domain top as well as a global offset of the grid.
+    This is useful for 1D simulations, where the registration of oblique angles to the domain top is important.
+    In 3D the orthographic_projection calculates the correct offset for you so it is preferred.
 
+    Parameters
+    ----------
+    wavelength : float
+        The monochromatic wavelength that the sensor will observe at [micron].
+    bounding_box : xr.Dataset/xr.DataArray
+        A grid object which contains 'x', 'y', 'z' coordinates whose maximum and minimum
+        will set the span of the domain that is observed by the sensor.
+    x_resolution : float
+        Pixel resolution [km] in x axis (North)
+    y_resolution: float
+        Pixel resolution [km] in y axis (East)
+    azimuth: float
+        Azimuth angle [deg] of the measurements (direction of photons)
+    zenith: float
+        Zenith angle [deg] of the measurements (direction of photons)
+    stokes: list or string
+       list or string of stokes components to observe ['I', 'Q', 'U', 'V']
+    sub_pixel_ray_args : dict
+        dictionary defining the method for generating sub-pixel rays. The callable
+        which generates the position_perturbations and weights (e.g. pyshdom.sensor.gaussian)
+        should be set as the 'method', while arguments to that callable, should be set as
+        other entries in the dict. Each argument have two values, one for each of the
+        x and y axes of the image plane, respectively.
+        E.g. sub_pixel_ray_args={'method':pyshdom.sensor.gaussian, 'degree': (2, 3)}
+
+    Returns
+    -------
+    sensor : xr.Dataset
+        A dataset containing all of the information required to define a sensor
+        for which synthetic measurements can be simulated;
+        positions and angles of all pixels, sub-pixel rays and their associated weights,
+        and the sensor's observables.
+
+    See Also
+    --------
+    pyshdom.sensor.make_sensor_dataset
+    pyshdom.sensor.orthographic_projection
+    """
+    sensor = pyshdom.sensor.orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution, 0.0,
+                                           0.0, altitude='TOA', stokes=stokes,
+                                                   sub_pixel_ray_args=sub_pixel_ray_args)
+    sensor.cam_x[:] += x_offset
+    sensor.ray_x[:] += x_offset
+    sensor.cam_y[:] += y_offset
+    sensor.ray_y[:] += y_offset
+
+    sensor.cam_mu[:] = np.cos(np.deg2rad(zenith))
+    sensor.cam_phi[:] = np.deg2rad(azimuth)
+    sensor.ray_mu[:] = np.cos(np.deg2rad(zenith))
+    sensor.ray_phi[:] = np.deg2rad(azimuth)
+
+    sensor.attrs['projection'] = 'DomainTop'
+    sensor.attrs['projection_azimuth'] = azimuth
+    sensor.attrs['projection_zenith'] = zenith
+
+    return sensor
 
 
 def _parse_sub_pixel_ray_args(sub_pixel_ray_args):

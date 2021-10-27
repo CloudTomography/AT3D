@@ -296,3 +296,17 @@ def from_scatterer(scatterer):
                           scatterer.z.data)
     resampled_scatterer = resample_onto_grid(grid, scatterer)
     return resampled_scatterer
+
+@xr.register_dataset_accessor("grid")
+@xr.register_dataarray_accessor("grid")
+class _GridAccessor(object):
+    """
+    Register a custom accessor for Grid properties particular to xarray Datasets
+    and DataArrays used in pyshdom.
+    """
+    def __init__(self, xarray_obj):
+        self._obj = xarray_obj
+
+    @property
+    def shape(self):
+        return (self._obj.x.size, self._obj.y.size, self._obj.z.size)

@@ -472,8 +472,8 @@ def make_gradient_dataset(gradient, unknown_scatterers, solvers):
     """
     derivative_names = []
     unknown_scatterer_names2 = []
-    for name, values in unknown_scatterers.items():
-        for variable_name in values['variable_name_list']:
+    for name, unknown_scatterer in unknown_scatterers.items():
+        for variable_name in unknown_scatterer.variables:
             derivative_names.append(variable_name)
             unknown_scatterer_names2.append(name)
     unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices - 1
@@ -546,8 +546,8 @@ def make_jacobian_dataset(jacobian_list, unknown_scatterers, indices_for_jacobia
 
     derivative_names = []
     unknown_scatterer_names2 = []
-    for name, values in unknown_scatterers.items():
-        for variable_name in values['variable_name_list']:
+    for name, unknown_scatterer in unknown_scatterers.items():
+        for variable_name in unknown_scatterer.variables:
             derivative_names.append(variable_name)
             unknown_scatterer_names2.append(name)
     unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices - 1

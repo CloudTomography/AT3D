@@ -803,17 +803,11 @@ class SolversDict(OrderedDict):
         for key in self:
             wavelength_ordered_derivatives[key] = OrderedDict()
 
-        for scatterer_name, variable_data in unknown_scatterers.items():
-            data_generator = variable_data['dataset_generator'].optical_property_generator
-            if (isinstance(data_generator, pyshdom.medium.OpticalDerivativeGenerator) &
-                    (len(self) > 1)):
-                raise ValueError(
-                    "Optical property derivatives are only supported for a single solver."
-                )
+        for scatterer_name, unknown_scatterer in unknown_scatterers.items():
             medium_data = list(self.values())[0].medium[scatterer_name]
-            derivatives_by_wavelength = data_generator.calculate_derivatives(
-                variable_data['variable_name_list'], medium_data
-                )
+            derivatives_by_wavelength = unknown_scatterer.grid_to_optical_properties.calculate_derivatives(
+                list(unknown_scatterer.variables.keys()), medium_data
+            )
             for key in self:
                 wavelength_ordered_derivatives[key][scatterer_name] = derivatives_by_wavelength[key]
 
@@ -833,68 +827,38 @@ class UnknownScatterers(OrderedDict):
     pyshdom.solver.RTE.calculate_microphysical_partial_derivatives
     pyshdom.medium.table_to_grid
     """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args, global_transform=None):
+        for unknown_scatterer in args:
+            self.add_unknowns(unknown_scatterer)
 
-    def add_unknowns(self, variable_name_list, dataset_generator):
-        """
-        Adds the variable names to calculate derivatives for each scatterer in an
-        solver.RTE object and the correct table of optical properties as a function
-        of microphysics to use for calculating derivatives.
+        if global_transform is not None:
+            self.add_global_transform(global_transform)
 
-        Parameters
-        ----------
-        scatterer_name : str
-            The name of the entry in a solver.RTE.medium to calculate derivatives
-            for (e.g. 'cloud' or 'aerosol')
-        variable_name_list : List
-            List of strings of microphysical names or optical property names to
-            calculate derivatives for.
-            Valid optical variables may be 'extinction', 'ssalb', 'legendre_x_y'
-            where x is the stokes index from 0-5 and y is the legendre_index.
-            Valid microphysical names must be accepted by the supplied
-            `optical_property_generator`.
-        optical_property_generator : pyshdom.medium.OpticalPropertyGenerator
-            Generates optical properties from microphysical properties as well
-            as their corresponding derivatives.
+    def add_unknowns(self, unknown_scatterer):
 
-        See Also
-        --------
-        pyshdom.solver.RTE.calculate_microphysical_partial_derivatives
-        """
-        optical_derivative_generator = pyshdom.medium.OpticalDerivativeGenerator('test')
-        for variable_name in variable_name_list:
-
-            if isinstance(dataset_generator, pyshdom.medium.OpticalGenerator):
-                if not optical_derivative_generator.test_valid_names(variable_name):
-                    raise ValueError(
-                        "Unknown variable name '{}' is not supported by {}".format(
-                            variable_name, pyshdom.medium.OpticalGenerator
-                        ))
-#     "Variables to retrieve for must all be optical or microphysical, "
-#     "not a mixture. To jointly retrieve extinction with microphysical"
-#     " information look at the normalization options for the density "
-#     "variable in the OpticalPropertyGenerator."
-# )
-            elif isinstance(dataset_generator, pyshdom.medium.MicrophysicsGenerator):
-                if not dataset_generator.optical_property_generator.test_valid_names(variable_name):
-                    raise ValueError(
-                    "The variable name supplied to differentiate '{}' is not "
-                    "supported by the supplied `optical_property_generator` "
-                    "which supports only '{}' or 'density'".format(
-                        variable_name,
-                        dataset_generator.optical_property_generator.size_distribution_parameters.keys())
-                    )
-
-            else:
-                raise TypeError(
-                    "`dataset_generator` should be of types '{}'".format(
-                        (pyshdom.medium.OpticalGenerator,
-                        pyshdom.medium.MicrophysicsGenerator)
-                    )
+        if not isinstance(unknown_scatterer, pyshdom.medium.UnknownScatterer):
+            raise TypeError(
+                "`unknown_scatterer` argument should be of type '{}'".format(
+                    pyshdom.medium.UnknownScatterer
                 )
-        scatterer_name = dataset_generator.scatterer_name
-        self[scatterer_name] = {
-            'variable_name_list': variable_name_list,
-            'dataset_generator': dataset_generator
-            }
+            )
+        # check for consistency of unknown_scatterer with other existing unknown_scatterers
+        # ie is the grid consistent.
+        if self: # Test for at least one member
+            reference_grid = list(self.values())[0].grid_to_optical_properties._rte_grid
+            pyshdom.checks.check_grid_consistency(
+            reference_grid,
+            unknown_scatterer.grid_to_optical_properties._rte_grid
+            )
+
+        self[unknown_scatterer.scatterer_name] = unknown_scatterer
+
+    def add_global_transform(self, transform):
+
+        if transform is None:
+            transform = pyshdom.transforms.CoordinateTransformNull()
+        if not isinstance(transform, pyshdom.transforms.CoordinateTransformNull):
+            raise TypeError(
+                "`transform` is of an invalid type."
+            )
+        self.global_transform = transform

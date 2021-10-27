@@ -184,7 +184,7 @@ class Optimizer:
             p_loss = []
             p_gradient = []
             for prior in self._prior_fn:
-                ploss, pgrad = prior(state)
+                ploss, pgrad = prior(state, self._iteration)
                 p_loss.append(ploss)
                 p_gradient.append(pgrad)
             loss += np.stack(p_loss, axis=0).sum(axis=0)

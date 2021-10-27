@@ -9,11 +9,15 @@ import pyshdom
 class Regularization:
 
     def __init__(self, state_generator, scatterer_name, variable_name,
-                 regularization_strength):
+                 regularization_strength, relaxation_parameter=1.0):
 
         if (not isinstance(regularization_strength, np.float)) or (regularization_strength < 0.0):
             raise ValueError("`regularization_strength` should be a positive float.")
         self._regularization_strength = regularization_strength
+
+        if (not isinstance(relaxation_parameter, np.float)) or (relaxation_parameter < 0.0):
+            raise ValueError("`relaxation_parameter` should be a positive float.")
+        self._relaxation_parameter = relaxation_parameter
 
         if not isinstance(state_generator, pyshdom.medium.StateGenerator):
             raise TypeError(
@@ -30,11 +34,11 @@ class Regularization:
                 )
             )
         if variable_name not in \
-        self.state_generator._unknown_scatterers[scatterer_name]['variable_name_list']:
+        self.state_generator._unknown_scatterers[scatterer_name].variables.keys():
             raise KeyError(
                 "Invalid unknown variable name `{}`. Valid names are: {}".format(
                     scatterer_name,
-                    self.state_generator._unknown_scatterers[scatterer_name]['variable_name_list']
+                    self.state_generator._unknown_scatterers[scatterer_name].variables.keys()
                 )
             )
 
@@ -84,14 +88,17 @@ class Regularization:
     def state_generator(self):
         return self._state_generator
 
+    def regularization_strength(self, iteration_number):
+        return self._regularization_strength*self._relaxation_parameter**iteration_number
+
 class WeightedRegularization(Regularization):
 
     def __init__(
         self, state_generator, scatterer_name, variable_name,
-        regularization_strength, spatial_weights='uniform'):
+        regularization_strength, relaxation_parameter=1.0, spatial_weights='uniform'):
 
         Regularization.__init__(self, state_generator, scatterer_name, variable_name,
-        regularization_strength)
+        regularization_strength, relaxation_parameter=relaxation_parameter)
 
         if spatial_weights == 'uniform':
             spatial_weights = np.ones(self.state_generator._grid_shape)
@@ -112,11 +119,11 @@ class Sparsity(WeightedRegularization):
 
     def __init__(
         self, state_generator, scatterer_name, variable_name,
-        regularization_strength, spatial_weights='uniform'):
+        regularization_strength,relaxation_parameter=1.0, spatial_weights='uniform'):
         WeightedRegularization.__init__(self, state_generator, scatterer_name, variable_name,
-        regularization_strength, spatial_weights)
+        regularization_strength, spatial_weights=spatial_weights, relaxation_parameter=relaxation_parameter)
 
-    def __call__(self, state):
+    def __call__(self, state, iteration_number):
 
         gridded_data, rte_grid = self._get_gridded_variable(state)
 
@@ -124,8 +131,8 @@ class Sparsity(WeightedRegularization):
         # to account for non-uniform grid sizes?
         # If the latter then it will be easiest to add this as a case to the
         # fortran grid_smoothing code in util.f90.
-        gradient = self._regularization_strength*np.sign(gridded_data)
-        cost = self._regularization_strength*np.sum(np.abs(gridded_data))
+        gradient = self.regularization_strength(iteration_number)*np.sign(gridded_data)
+        cost = self.regularization_strength(iteration_number)*np.sum(np.abs(gridded_data))
 
         out_gradient = self._make_gradient_dset(state, gradient)
 
@@ -135,11 +142,11 @@ class Tikhonov(WeightedRegularization):
 
     def __init__(
         self, state_generator, scatterer_name, variable_name,
-        regularization_strength, spatial_weights='uniform'):
+        regularization_strength, relaxation_parameter=1.0, spatial_weights='uniform'):
         WeightedRegularization.__init__(self, state_generator, scatterer_name, variable_name,
-        regularization_strength, spatial_weights)
+        regularization_strength, spatial_weights=spatial_weights, relaxation_parameter=relaxation_parameter)
 
-    def __call__(self, state):
+    def __call__(self, state, iteration_number):
 
         gridded_data, rte_grid = self._get_gridded_variable(state)
 
@@ -147,8 +154,8 @@ class Tikhonov(WeightedRegularization):
         # to account for non-uniform grid sizes?
         # If the latter then it will be easiest to add this as a case to the
         # fortran grid_smoothing code in util.f90.
-        gradient = self._regularization_strength*2*gridded_data
-        cost = self._regularization_strength*np.sum(gridded_data**2)
+        gradient = self.regularization_strength(iteration_number)*2*gridded_data
+        cost = self.regularization_strength(iteration_number)*np.sum(gridded_data**2)
 
         out_gradient = self._make_gradient_dset(state, gradient)
 
@@ -170,10 +177,10 @@ class SpatialSmoothing(WeightedRegularization):
     """
     def __init__(
             self, state_generator, scatterer_name, variable_name,
-            regularization_strength, mode='l2', direction_weights=[1.0, 1.0, 1.0],
+            regularization_strength, relaxation_parameter=1.0, mode='l2', direction_weights=[1.0, 1.0, 1.0],
             spatial_weights='uniform'):
         WeightedRegularization.__init__(self, state_generator, scatterer_name, variable_name,
-        regularization_strength, spatial_weights)
+        regularization_strength, spatial_weights=spatial_weights, relaxation_parameter=relaxation_parameter)
 
         valid_modes = ('l1', 'l2')
         if mode not in valid_modes:
@@ -185,7 +192,7 @@ class SpatialSmoothing(WeightedRegularization):
         direction_weights = np.atleast_1d(direction_weights)
         self._direction_weights = direction_weights
 
-    def __call__(self, state):
+    def __call__(self, state, iteration_number):
 
         gridded_data, rte_grid = self._get_gridded_variable(state)
 
@@ -204,8 +211,8 @@ class SpatialSmoothing(WeightedRegularization):
             mode=self._mode
         )
         pyshdom.checks.check_errcode(ierr, errmsg)
-        cost *= self._regularization_strength
-        gradient *= self._regularization_strength
+        cost *= self.regularization_strength(iteration_number)
+        gradient *= self.regularization_strength(iteration_number)
 
         # transform the gradient numpy array to an xarray dset that is then
         # projected to state.

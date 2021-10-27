@@ -69,6 +69,18 @@ class OpticalPropertyGenerator:
             functools.partial(size_distribution_function, normalization=self._density_normalization),
             size_distribution_function
         )
+        if density_normalization == 'density':
+            self._density_bounds = (1e-9, 1e2)
+        elif density_normalization == 'geometric_extinction':
+            self._density_bounds = (1e-9, 1e3)
+        elif density_normalization == 'number_concentration':
+            self._density_bounds = (1e-9, 1e4)
+        else:
+            warnings.warn(
+                "No support for default bounds for the specified `density_normalization`."
+                )
+            self._density_bounds = (1e-9, np.inf)
+
 
         for variable_name, parameters in size_distribution_parameters.items():
             if isinstance(parameters, np.ndarray):
@@ -925,33 +937,222 @@ def mix_optical_properties(*scatterers, asymmetry_tol=0.002, phase_tol=0.01, lin
     return mixed_optical_properties
 
 
-class DataGenerator:
-    """
-    Data Generators are supposed to
-    Not supposed to be used. Just consolidates code for the inheritors.
-    """
-    def _check_inputs(self, rte_grid, *fixed_data_arrays):
+# class DataGenerator:
+#     """
+#     Data Generators are supposed to
+#     Not supposed to be used. Just consolidates code for the inheritors.
+#     """
+#     def _check_inputs(self, rte_grid, *fixed_data_arrays):
+#
+#         pyshdom.checks.check_grid(rte_grid)
+#         self._rte_grid = rte_grid
+#         self._rte_grid_shape = (
+#             self._rte_grid.x.size,
+#             self._rte_grid.y.size,
+#             self._rte_grid.z.size
+#         )
+#
+#         for data_array in fixed_data_arrays:
+#             if not isinstance(data_array, (xr.Dataset, xr.DataArray)):
+#                 raise TypeError(
+#                     "`fixed_data_arrays` should be of type 'xr.Dataset' "
+#                     "or xr.DataArray"
+#                 )
+#         dataset = xr.merge(fixed_data_arrays)
+#         # merge_list = []
+#         # for data_array in fixed_data_arrays:
+#         #     merge_list.append(data_array)
+#         #     dataset[data_array.name] = data_array
+#         return dataset
+#
+#     def _check_bound(self, bounds):
+#         if not isinstance(bounds, typing.Tuple):
+#             raise TypeError(
+#             "Each `bound` argument should be of type '{}'"
+#             "".format(typing.Tuple)
+#             )
+#         if not ((len(bounds) == 2) & isinstance(bounds[0], np.ndarray) & isinstance(bounds[1], np.ndarray)):
+#             raise TypeError(
+#             "Each `bounds` should be a Tuple of two np.ndarrays."
+#             )
+#         if (bounds[0].shape != self._rte_grid_shape) | (bounds[1].shape != self._rte_grid_shape):
+#             raise ValueError(
+#             "Each `bound` should be of the "
+#             "same shape as the `rte_grid`'s spatial coordinates."
+#             )
+#
+#     def get_bounds(self, variable_name):
+#         if variable_name not in self._variable_data_bounds:
+#             raise ValueError(
+#                 "No bounds for '{}'".format(variable_name)
+#             )
+#         return self._variable_data_bounds[variable_name]
+#
+#     def __call__(self, **variable_data):
+#         dataset = self._fixed_dataset.copy(deep=True)
+#
+#         for name, data in variable_data.items():
+#             if not isinstance(data, np.ndarray):
+#                 raise TypeError(
+#                     "values of argument `variable_data` should be of type '{}'"
+#                     "".format(np.ndarray)
+#                 )
+#             if data.shape != self._rte_grid_shape:
+#                 raise ValueError(
+#                     "values of argument `variable_data` should have shape matching "
+#                     "the specified rte_grid '{}' not '{}'".format(
+#                         self._rte_grid_shape, data.shape
+#                     )
+#                 )
+#             dataset[name] = (['x', 'y', 'z'], data)
+#         self._checks(dataset)
+#         return dataset
+#
+#     @property
+#     def optical_property_generator(self):
+#         return self._optical_property_generator
+#
+# class MicrophysicsGenerator(DataGenerator):
+#
+#     def __init__(self, rte_grid, optical_property_generator, *fixed_data_arrays, **variable_data_bounds):
+#
+#         if not isinstance(optical_property_generator, OpticalPropertyGenerator):
+#             raise TypeError(
+#                 "`optical_property_generator` argument should be of type "
+#                 "'{}'".format(OpticalPropertyGenerator)
+#             )
+#         self._optical_property_generator = optical_property_generator
+#         self.scatterer_name = optical_property_generator.scatterer_name
+#
+#         dataset = self._check_inputs(rte_grid, *fixed_data_arrays)
+#         self._process_bounds(**variable_data_bounds)
+#         self._fixed_dataset = pyshdom.grid.resample_onto_grid(rte_grid, dataset)
+#
+#     def _process_bounds(self, **variable_data_bounds):
+#         # use the optical_property_generator to decide the bounds on variables.
+#         bounds = OrderedDict()
+#         opt_gen = self._optical_property_generator
+#         coords = list(opt_gen._size_distribution_grids.values())[0]
+#         variable_names = list(opt_gen._size_distribution_parameters)
+#         variable_names.append('density')
+#         for name in variable_names:
+#             if name in variable_data_bounds:
+#                 bound = variable_data_bounds[name]
+#             elif name == 'density':
+#                 bound = (np.zeros(self._rte_grid_shape) + 1e-9,
+#                          np.zeros(self._rte_grid_shape) + 1e2)
+#             else:
+#                 bound = (np.zeros(self._rte_grid_shape) + coords[name].min().data,
+#                          np.zeros(self._rte_grid_shape) + coords[name].max().data)
+#             self._check_bound(bound)
+#             bounds[name] = bound
+#
+#         self._variable_data_bounds = bounds
+#
+#     def calculate_optical_properties(self, **variable_data):
+#         microphysics_data = self(**variable_data)
+#         optical_properties = self._optical_property_generator(microphysics_data)
+#         return optical_properties
+#
+#     def _checks(self, dataset):
+#
+#         pyshdom.checks.check_grid(dataset)
+#         # use the optical_property_generator to verify that all the
+#         # necssary variables are present for the generation of optical properties.
+#         # this is done anyway when the same optical property generator is used.
+#         if 'density' not in dataset.data_vars:
+#             raise ValueError(
+#                 "variable name 'density' is required to use this to generate "
+#                 "optical properties. Please specify it at initialization or "
+#                 "when calling this MicrophysicsGenerator."
+#             )
+#         for variable in self._optical_property_generator.size_distribution_parameters:
+#             if variable not in dataset:
+#                 raise ValueError(
+#                     "variable '{}' is needed in order to use this to generate "
+#                     "optical properties. Please specify it at initialization or "
+#                     "when calling this MicrophysicsGenerator.".format(variable)
+#                 )
+#
+# class OpticalGenerator(DataGenerator):
+#
+#     def __init__(self, rte_grid, scatterer_name, wavelength, *fixed_data_arrays, **variable_data_bounds):
+#         self._optical_property_generator = pyshdom.medium.OpticalDerivativeGenerator(scatterer_name, wavelength)
+#         self.scatterer_name = scatterer_name
+#         self.wavelength = wavelength
+#         dataset = self._check_inputs(rte_grid, *fixed_data_arrays)
+#         self._process_bounds(**variable_data_bounds)
+#         self._fixed_dataset = pyshdom.grid.add_grid_variables(rte_grid, dataset)
+#
+#     def _process_bounds(self, **variable_data_bounds):
+#         # use the optical_property_generator to decide the bounds on variables.
+#         bounds = OrderedDict()
+#         names = list(variable_data_bounds)
+#         names.extend(['extinction', 'ssalb'])
+#         for name in names:
+#             if name in variable_data_bounds:
+#                 bound = variable_data_bounds[name]
+#             elif name == 'extinction':
+#                 bound = (np.zeros(self._rte_grid_shape)+ 1e-9,
+#                          np.zeros(self._rte_grid_shape) + 1e3)
+#             elif name == 'ssalb':
+#                 bound = (np.zeros(self._rte_grid_shape)+ 1e-9,
+#                          np.ones(self._rte_grid_shape))
+#             # no supported bounds on legendre as we don't know
+#             # how big the table is.
+#             self._check_bound(bound)
+#             bounds[name] = bound
+#
+#         self._variable_data_bounds = bounds
+#
+#
+#     def _checks(self, dataset):
+#         # checks for optical properties are easy.
+#         pyshdom.checks.check_optical_properties(dataset)
 
+class GridToOpticalProperties:
+
+    def __init__(self, rte_grid, scatterer_name, wavelength, fixed_dataset=None, *fixed_data_arrays,
+                 **variable_data_bounds):
+
+        self.scatterer_name = scatterer_name
+        self.wavelength = wavelength
         pyshdom.checks.check_grid(rte_grid)
         self._rte_grid = rte_grid
-        self._rte_grid_shape = (
-            self._rte_grid.x.size,
-            self._rte_grid.y.size,
-            self._rte_grid.z.size
-        )
+        self.grid_shape = rte_grid.grid.shape
+        self._variable_data_bounds = self._process_bounds(**variable_data_bounds)
+        if fixed_dataset is None:
+            for data_array in fixed_data_arrays:
+                if not isinstance(data_array, (xr.Dataset, xr.DataArray)):
+                    raise TypeError(
+                        "`fixed_data_arrays` should be of type 'xr.Dataset' "
+                        "or xr.DataArray"
+                    )
+            dataset = xr.merge(fixed_data_arrays)
+            fixed_dataset = pyshdom.grid.resample_onto_grid(self._rte_grid, dataset)
 
-        for data_array in fixed_data_arrays:
-            if not isinstance(data_array, (xr.Dataset, xr.DataArray)):
-                raise TypeError(
-                    "`fixed_data_arrays` should be of type 'xr.Dataset' "
-                    "or xr.DataArray"
-                )
-        dataset = xr.merge(fixed_data_arrays)
-        # merge_list = []
-        # for data_array in fixed_data_arrays:
-        #     merge_list.append(data_array)
-        #     dataset[data_array.name] = data_array
-        return dataset
+        self._fixed_dataset = fixed_dataset
+
+    def _process_bounds(self, **variable_data_bounds):
+
+        bounds = OrderedDict()
+        names = list(variable_data_bounds)
+        names.extend(['extinction', 'ssalb'])
+        for name in names:
+            if name in variable_data_bounds:
+                bound = variable_data_bounds[name]
+            elif name == 'extinction':
+                bound = (np.zeros(self.grid_shape)+ 1e-9,
+                         np.zeros(self.grid_shape) + 1e3)
+            elif name == 'ssalb':
+                bound = (np.zeros(self.grid_shape)+ 1e-9,
+                         np.ones(self.grid_shape))
+            # no supported bounds on legendre as we don't know
+            # how big the table is.
+            self._check_bound(bound)
+            bounds[name] = bound
+
+        return bounds
 
     def _check_bound(self, bounds):
         if not isinstance(bounds, typing.Tuple):
@@ -963,7 +1164,7 @@ class DataGenerator:
             raise TypeError(
             "Each `bounds` should be a Tuple of two np.ndarrays."
             )
-        if (bounds[0].shape != self._rte_grid_shape) | (bounds[1].shape != self._rte_grid_shape):
+        if (bounds[0].shape != self.grid_shape) | (bounds[1].shape != self.grid_shape):
             raise ValueError(
             "Each `bound` should be of the "
             "same shape as the `rte_grid`'s spatial coordinates."
@@ -976,50 +1177,157 @@ class DataGenerator:
             )
         return self._variable_data_bounds[variable_name]
 
-    def __call__(self, **variable_data):
-        dataset = self._fixed_dataset.copy(deep=True)
+    def make_full_dataset(self, **variable_data):
 
+        dataset = self._fixed_dataset.copy(deep=True)
         for name, data in variable_data.items():
             if not isinstance(data, np.ndarray):
                 raise TypeError(
                     "values of argument `variable_data` should be of type '{}'"
                     "".format(np.ndarray)
                 )
-            if data.shape != self._rte_grid_shape:
+            if data.shape != self.grid_shape:
                 raise ValueError(
                     "values of argument `variable_data` should have shape matching "
                     "the specified rte_grid '{}' not '{}'".format(
-                        self._rte_grid_shape, data.shape
+                        self.grid_shape, data.shape
                     )
                 )
+            # Fill any invalid data at bounds.
+            # This is relevant if a mask is used.
+            data[np.where(np.isnan(data))] = self._variable_data_bounds[name][0][np.where(np.isnan(data))]
+            data = np.maximum(data, self._variable_data_bounds[name][0])
+            data = np.minimum(data, self._variable_data_bounds[name][1])
             dataset[name] = (['x', 'y', 'z'], data)
         self._checks(dataset)
         return dataset
 
-    @property
-    def optical_property_generator(self):
-        return self._optical_property_generator
+    def _checks(self, dataset):
+        # checks for optical properties are easy.
+        pyshdom.checks.check_optical_properties(dataset)
 
-class MicrophysicsGenerator(DataGenerator):
+    def calculate_optical_properties(self, **variable_data):
+        optical_properties = self.make_full_dataset(**variable_data)
+        out = OrderedDict()
+        out[self.wavelength] = optical_properties
+        return out
 
-    def __init__(self, rte_grid, optical_property_generator, *fixed_data_arrays, **variable_data_bounds):
+    def calculate_derivatives(self, variable_names, optical_properties):
 
-        if not isinstance(optical_property_generator, OpticalPropertyGenerator):
-            raise TypeError(
-                "`optical_property_generator` argument should be of type "
-                "'{}'".format(OpticalPropertyGenerator)
+        derivatives = OrderedDict()
+
+        for variable_name in variable_names:
+            if variable_name == 'extinction':
+                differentiated = xr.Dataset(
+                    data_vars={
+                        'extinction': (['x', 'y', 'z'],
+                            np.ones(optical_properties.extinction.shape)),
+                        'ssalb': (['x', 'y', 'z'],
+                            np.zeros(optical_properties.ssalb.shape)),
+                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+                            np.zeros(optical_properties.legcoef.shape)),
+                        'table_index': optical_properties.table_index,
+                        'phase_weights': optical_properties.phase_weights,
+                        'delx': optical_properties.delx,
+                        'dely': optical_properties.dely
+                    },
+                    coords={
+                        'x': optical_properties.x,
+                        'y': optical_properties.y,
+                        'z': optical_properties.z,
+                        'stokes_index': optical_properties.stokes_index
+                    }
+                )
+            elif variable_name == 'ssalb':
+                differentiated = xr.Dataset(
+                    data_vars={
+                        'extinction': (['x', 'y', 'z'],
+                            np.zeros(optical_properties.extinction.shape)),
+                        'ssalb': (['x', 'y', 'z'],
+                            np.ones(optical_properties.ssalb.shape)),
+                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+                            np.zeros(optical_properties.legcoef.shape)),
+                        'table_index': optical_properties.table_index,
+                        'phase_weights': optical_properties.phase_weights,
+                        'delx': optical_properties.delx,
+                        'dely': optical_properties.dely
+                    },
+                    coords={
+                        'x': optical_properties.x,
+                        'y': optical_properties.y,
+                        'z': optical_properties.z,
+                        'stokes_index': optical_properties.stokes_index
+                    }
+                )
+            elif 'legendre_' in variable_name:
+                leg_index = int(variable_name[len('legendre_X_'):])
+                stokes_index = int(variable_name[len('legendre_')])
+                legcoef = np.zeros(optical_properties.legcoef.shape)
+                if not ((stokes_index >= 0) & (stokes_index <= 5) &
+                    (leg_index <= legcoef.shape[1]) & (leg_index >= 0)):
+                    raise ValueError(
+                        "Invalid phase component and legendre index for variable name "
+                        "'{}'".format(variable_name))
+                legcoef[stokes_index, leg_index, ...] = 1.0
+                differentiated = xr.Dataset(
+                    data_vars={
+                        'extinction': (['x', 'y', 'z'],
+                            np.zeros(optical_properties.extinction.shape)),
+                        'ssalb': (['x', 'y', 'z'],
+                            np.zeros(optical_properties.ssalb.shape)),
+                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+                            legcoef),
+                        'table_index': optical_properties.table_index,
+                        'phase_weights': optical_properties.phase_weights,
+                        'delx': optical_properties.delx,
+                        'dely': optical_properties.dely
+                    },
+                    coords={
+                        'x': optical_properties.x,
+                        'y': optical_properties.y,
+                        'z': optical_properties.z,
+                        'stokes_index': optical_properties.stokes_index
+                    }
+                )
+            else:
+                raise ValueError(
+                    "variable name is not supported for derivative calculation "
+                    "by this generator.'{}'".format(variable_name)
+                    )
+            differentiated['derivative_method'] = 'exact'
+            derivatives[variable_name] = differentiated
+
+        wavelength_organized_derivatives = OrderedDict()
+        wavelength_organized_derivatives[self.wavelength] = derivatives
+        return wavelength_organized_derivatives
+
+
+class MicrophysicsGridToOpticalProperties(GridToOpticalProperties):
+
+    def __init__(self, rte_grid, optical_property_generator, fixed_dataset=None,
+                 *fixed_data_arrays, **variable_data_bounds):
+
+        GridToOpticalProperties.__init__(
+            self,
+            rte_grid,
+            optical_property_generator.scatterer_name,
+            fixed_dataset=fixed_dataset,
+            *fixed_data_arrays,
+            **variable_data_bounds
             )
         self._optical_property_generator = optical_property_generator
-        self.scatterer_name = optical_property_generator.scatterer_name
 
-        dataset = self._check_inputs(rte_grid, *fixed_data_arrays)
-        self._process_bounds(**variable_data_bounds)
-        self._fixed_dataset = pyshdom.grid.resample_onto_grid(rte_grid, dataset)
+    def calculate_optical_properties(self, **variable_data):
+
+        microphysics_dataset = self.make_full_dataset(**variable_data)
+        optical_properties = self.optical_property_generator(microphysics_dataset)
+        return optical_properties
 
     def _process_bounds(self, **variable_data_bounds):
+
         # use the optical_property_generator to decide the bounds on variables.
         bounds = OrderedDict()
-        opt_gen = self._optical_property_generator
+        opt_gen = self.optical_property_generator
         coords = list(opt_gen._size_distribution_grids.values())[0]
         variable_names = list(opt_gen._size_distribution_parameters)
         variable_names.append('density')
@@ -1027,20 +1335,14 @@ class MicrophysicsGenerator(DataGenerator):
             if name in variable_data_bounds:
                 bound = variable_data_bounds[name]
             elif name == 'density':
-                bound = (np.zeros(self._rte_grid_shape) + 1e-9,
-                         np.zeros(self._rte_grid_shape) + 1e2)
+                default_bounds = opt_gen._density_bounds
+                bound = (np.zeros(self.grid_shape) + default_bounds[0],
+                         np.zeros(self.grid_shape) + default_bounds[1])
             else:
-                bound = (np.zeros(self._rte_grid_shape) + coords[name].min().data,
-                         np.zeros(self._rte_grid_shape) + coords[name].max().data)
+                bound = (np.zeros(self.grid_shape) + coords[name].min().data,
+                         np.zeros(self.grid_shape) + coords[name].max().data)
             self._check_bound(bound)
             bounds[name] = bound
-
-        self._variable_data_bounds = bounds
-
-    def calculate_optical_properties(self, **variable_data):
-        microphysics_data = self(**variable_data)
-        optical_properties = self._optical_property_generator(microphysics_data)
-        return optical_properties
 
     def _checks(self, dataset):
 
@@ -1062,48 +1364,128 @@ class MicrophysicsGenerator(DataGenerator):
                     "when calling this MicrophysicsGenerator.".format(variable)
                 )
 
-class OpticalGenerator(DataGenerator):
+    def calculate_derivatives(self, variable_names, microphysics):
+        return self.optical_property_generator.calculate_derivatives(variable_names, microphysics)
 
-    def __init__(self, rte_grid, scatterer_name, wavelength, *fixed_data_arrays, **variable_data_bounds):
-        self._optical_property_generator = pyshdom.medium.OpticalDerivativeGenerator(scatterer_name, wavelength)
-        self.scatterer_name = scatterer_name
-        self.wavelength = wavelength
-        dataset = self._check_inputs(rte_grid, *fixed_data_arrays)
-        self._process_bounds(**variable_data_bounds)
-        self._fixed_dataset = pyshdom.grid.add_grid_variables(rte_grid, dataset)
+    @property
+    def optical_property_generator(self):
+        return self._optical_property_generator
 
-    def _process_bounds(self, **variable_data_bounds):
-        # use the optical_property_generator to decide the bounds on variables.
-        bounds = OrderedDict()
-        names = list(variable_data_bounds)
-        names.extend(['extinction', 'ssalb'])
-        for name in names:
-            if name in variable_data_bounds:
-                bound = variable_data_bounds[name]
-            elif name == 'extinction':
-                bound = (np.zeros(self._rte_grid_shape)+ 1e-9,
-                         np.zeros(self._rte_grid_shape) + 1e3)
-            elif name == 'ssalb':
-                bound = (np.zeros(self._rte_grid_shape)+ 1e-9,
-                         np.ones(self._rte_grid_shape))
-            # no supported bounds on legendre as we don't know
-            # how big the table is.
-            self._check_bound(bound)
-            bounds[name] = bound
+class TransformSet(tuple):
 
-        self._variable_data_bounds = bounds
+    @property
+    def coordinate_transform(self):
+        return self[0]
 
+    @property
+    def state_to_grid(self):
+        return self[1]
 
-    def _checks(self, dataset):
-        # checks for optical properties are easy.
-        pyshdom.checks.check_optical_properties(dataset)
+class UnknownScatterer:
+
+    def __init__(self, grid_to_optical_properties, *variable_names, **variable_transforms):
+
+        self.scatterer_name = grid_to_optical_properties.scatterer_name
+        self.grid_to_optical_properties = grid_to_optical_properties
+        self.variables = OrderedDict()
+
+        for variable_name, (coordinate_transform, state_to_grid) in variable_transforms.items():
+            self.add_variable(
+                variable_name,
+                coordinate_transform=coordinate_transform,
+                state_to_grid_transform=state_to_grid
+                )
+        for variable_name in variable_names:
+            self.add_variable(
+                variable_name,
+                coordinate_transform=None,
+                state_to_grid_transform=None
+                )
+
+    def add_variable(self, variable_name, coordinate_transform=None,
+                     state_to_grid_transform=None):
+
+        if coordinate_transform is None:
+            coordinate_transform = pyshdom.transforms.CoordinateTransformNull()
+        if state_to_grid_transform is None:
+            state_to_grid_transform = pyshdom.transforms.StateToGridMask(
+                self.grid_to_optical_properties.grid_shape
+                )
+        self.variables[variable_name] = TransformSet([coordinate_transform, state_to_grid_transform])
+
+    def get_grid_data(self, variable_name, state_subset):
+
+        coordinate_transform, state_to_grid_transform = self.variables[variable_name]
+        state_in_physical_coordinates = coordinate_transform(state_subset)
+        state_subset_on_grid = state_to_grid_transform(state_in_physical_coordinates)
+        return state_subset_on_grid
+
+    def calculate_optical_properties(self, state, state_representation):
+
+        gridded_data = {}
+        for variable_name in self.variables.keys():
+            state_subset = state_representation.select_variable(
+                state,
+                self.scatterer_name,
+                variable_name
+                )
+            gridded_data[variable_name] = self.get_grid_data(variable_name, state_subset)
+
+        optical_properties = self.grid_to_optical_properties.calculate_optical_properties(
+            **gridded_data
+            )
+        return optical_properties
+
+class StateRepresentation:
+    """
+    This object stores information about the structure of the 1D state vector
+    that is built from possibly several variables of unequal size.
+    This structure is built based on the state_to_grid transforms contained in
+    each `UnknownScatterer` object.
+    """
+    def __init__(self, unknown_scatterers):
+
+        grid_shape = list(unknown_scatterers.values())[0].grid_to_optical_properties.grid_shape
+        # based on rte_grid we can produce faux input of the correct shape
+        # and from state_to_grid.inverse we can define how large each contribution
+        # to the state vector is.
+        self._total_length = 0
+
+        self._start_end_points = OrderedDict()
+        for scatterer_name, unknown_scatterer in unknown_scatterers.items():
+            start_end_scatterer = OrderedDict()
+            for variable_name, (coordinate_transform, state_to_grid) in unknown_scatterer.variables.items():
+                test_gridded_data = np.zeros(grid_shape)
+                abstract_state = state_to_grid.inverse_transform(test_gridded_data)
+                start_end_scatterer[variable_name] = (self._total_length, self._total_length+len(abstract_state))
+                self._total_length += len(abstract_state)
+            self._start_end_points[scatterer_name] = start_end_scatterer
+
+    def update_state_vector(self, state, scatterer_name, variable_name, data_to_update):
+        start, end = self._start_end_points[scatterer_name][variable_name]
+        state[start:end] = data_to_update
+        return state
+
+    def select_variable(self, state, scatterer_name, variable_name):
+        start, end = self._start_end_points[scatterer_name][variable_name]
+        state_out = np.zeros(state[start:end].shape)
+        state_out[:] = state[start:end]
+        return state_out
+
+    @property
+    def start_end_points(self):
+        return self._start_end_points
+
+    @property
+    def number_of_unknowns(self):
+        return self._total_length
+
 
 class StateGenerator:
 
-    def __init__(self, solvers_dict, unknown_scatterers, rte_grid, surfaces,
+    def __init__(self, solvers_dict, unknown_scatterers, surfaces,
                  numerical_parameters, sources, background_optical_scatterers,
-                 num_stokes, names=None, state_to_grid=None, state_representation=None,
-                 state_transform='log'):
+                 num_stokes, names=None):
 
         # check compatibility between UnknownScatterers and all other containers.
         # if other containers don't exist then generate them from UnknownScatterers.
@@ -1120,121 +1502,10 @@ class StateGenerator:
                 " ".format(type(pyshdom.containers.SolversDict)))
         self._solvers_dict = solvers_dict
 
-        pyshdom.checks.check_grid(rte_grid)
-        self._rte_grid = rte_grid
-        self._grid_shape = (rte_grid.x.size, rte_grid.y.size, rte_grid.z.size)
+        self._grid_shape = list(unknown_scatterers.values())[0].grid_to_optical_properties.grid_shape
 
-        # process state_to_grid.
-        if state_to_grid is None:
-            # set it to Null, this assumes the whole rte_grid is used.
-            self._state_to_grid = pyshdom.transforms.StateToGridNull()
-            # add all unknown names here.
-            for scatterer_name, variable_data in self._unknown_scatterers.items():
-                for variable_name in variable_data['variable_name_list']:
-                    self._state_to_grid.add_transform(
-                        scatterer_name, variable_name, self._rte_grid
-                        )
-
-        elif isinstance(state_to_grid, pyshdom.transforms.IndependentTransform):
-            # a supplied StateToGrid object. Check for compatibility with
-            # unknown_scatterers in terms of names.
-            for scatterer_name, variable_data in self._unknown_scatterers.items():
-                if scatterer_name not in state_to_grid.transforms:
-                    raise ValueError(
-                        "Unknown scatterer name '{}' is not found in "
-                        "supplied `state_to_grid` object".format(scatterer_name)
-                    )
-                for variable_name in variable_data['variable_name_list']:
-                    if variable_name not in state_to_grid.transforms[scatterer_name]:
-                        raise ValueError(
-                            "Unknown variable '{}' for scatterer '{}' is not found "
-                            "in supplied `state_to_grid` object".format(
-                                variable_name, scatterer_name)
-                        )
-            self._state_to_grid = state_to_grid
-
-        elif isinstance(state_to_grid, np.ndarray):
-            # assume that this is a mask to use for all variables.
-            if state_to_grid.shape == self._grid_shape:
-                mask = state_to_grid
-                self._state_to_grid = pyshdom.transforms.StateToGridMask()
-                # add all unknown names here.
-                for scatterer_name, variable_data in self._unknown_scatterers.items():
-                    for variable_name in variable_data['variable_name_list']:
-                        self._state_to_grid.add_transform(
-                            scatterer_name, variable_name, mask, 0.0
-                            )
-            else:
-                raise ValueError(
-                    "If `state_to_grid` argument is of type {} it should be of same shape "
-                    "as the `rte_grid` argument.".format(np.ndarray)
-                )
-        else:
-            raise TypeError(
-                "`state_to_grid` argument is not of valid type."
-            )
-
-        # process state_representation
-        if state_representation is None:
-            # make it from state_to_grid transfrom.
-            self._state_representation = pyshdom.transforms.StateRepresentation(
-                self._state_to_grid, self._rte_grid
-                )
-        elif isinstance(state_representation, pyshdom.transforms.StateRepresentation):
-            for scatterer_name, variable_data in self._unknown_scatterers.items():
-                if scatterer_name not in state_representation.start_end_points:
-                    raise ValueError(
-                        "Unknown scatterer name '{}' is not found in "
-                        "supplied `state_representation` object".format(scatterer_name)
-                    )
-                for variable_name in variable_data['variable_name_list']:
-                    if variable_name not in state_representation.start_end_points[scatterer_name]:
-                        raise ValueError(
-                            "Unknown variable '{}' for scatterer '{}' is not found "
-                            "in supplied `state_representation` object".format(
-                                variable_name, scatterer_name)
-                        )
-            self._state_representation = state_representation
-        else:
-            raise TypeError(
-                "`state_representation` argument is not of valid type."
-            )
-
-        # process state_transform
-        if state_transform is None:
-            state_transform = pyshdom.transforms.NullStateTransform(self._state_representation)
-            for scatterer_name, variable_data in self._unknown_scatterers.items():
-                for variable_name in variable_data['variable_name_list']:
-                    state_transform.add_transform(scatterer_name, variable_name)
-        elif state_transform == 'log':
-            state_transform = pyshdom.transforms.LogStateTransform(self._state_representation)
-            for scatterer_name, variable_data in self._unknown_scatterers.items():
-                for variable_name in variable_data['variable_name_list']:
-                    state_transform.add_transform(scatterer_name, variable_name)
-        elif isinstance(state_transform, pyshdom.transforms.StateTransform):
-            warnings.warn(
-                "No checks are made on the internal consistency of this custom "
-                "transform."
-            )
-        elif isinstance(state_transform, pyshdom.transforms.IndependentStateTransform):
-            for scatterer_name, variable_data in self._unknown_scatterers.items():
-                if scatterer_name not in state_transform.transforms:
-                    raise ValueError(
-                        "Unknown scatterer name '{}' is not found in "
-                        "supplied `state_representation` object".format(scatterer_name)
-                    )
-                for variable_name in variable_data['variable_name_list']:
-                    if variable_name not in state_transform.transforms[scatterer_name]:
-                        raise ValueError(
-                            "Unknown variable '{}' for scatterer '{}' is not found "
-                            "in supplied `state_representation` object".format(
-                                variable_name, scatterer_name)
-                        )
-        else:
-            raise TypeError(
-                "`state_transform` argument is not of valid type."
-            )
-        self._state_transform = state_transform
+        # This object defines how the state is concenated as a 1D vector.
+        self._state_representation = StateRepresentation(unknown_scatterers)
 
         # check for compatibility in terms of keys for all solver.RTE inputs.
         # don't check the typing of the inputs, that is done when the solver is formed
@@ -1302,8 +1573,8 @@ class StateGenerator:
         self._background_optical_scatterers = background_optical_scatterers
         self._names = names
 
-        for scatterer_name, scatterer_data in self._unknown_scatterers.items():
-            if isinstance(scatterer_data['dataset_generator'], pyshdom.medium.OpticalPropertyGenerator):
+        for scatterer_name, unknown_scatterer in self._unknown_scatterers.items():
+            if isinstance(unknown_scatterer.grid_to_optical_properties, pyshdom.medium.GridToOpticalProperties):
                 if len(self._sources) != 1:
                     raise ValueError(
                     "Optical property unknowns are not supported for multi-spectral data. "
@@ -1313,50 +1584,17 @@ class StateGenerator:
         for key in self._sources:
             self._old_solutions[key] = None
 
-    def get_state(self):
-        """
-        Extract the state vector from the solvers_dict.
-        """
-        if not self._solvers_dict:
-            raise ValueError(
-                "State must first be set using the call method."
-            )
-        state = np.zeros(self._state_representation.number_of_unknowns)
-        solver = list(self._solvers_dict.values())[0]
-        for scatterer_name, variable_data in self._unknown_scatterers.items():
-            for variable_name in variable_data['variable_name_list']:
-                unknown_data = solver.medium[scatterer_name][variable_name].data
-                state_vector = self._state_to_grid.inverse(
-                    unknown_data, scatterer_name, variable_name
-                    )
-                state = self._state_representation.update_state_vector(
-                    state, scatterer_name, variable_name, state_vector
-                )
-        state = self._state_transform.inverse(state)
-        return state
-
     def __call__(self, state):
         """
         Update the solvers to reflect the new state vector. This does not include
         SOLVING the solver objects. That is performed elsewhere.
         """
-        state_in_physical_coordinates = self._state_transform(state)
-
+        state = self._unknown_scatterers.global_transform(state)
         new_optical_properties = OrderedDict()
-        for scatterer_name, variable_data in self._unknown_scatterers.items():
-            data_generator = variable_data['dataset_generator']
-            gridded_state_data = {}
-            for variable_name in variable_data['variable_name_list']:
-                selected_state = self._state_representation.select_variable(
-                    state_in_physical_coordinates, scatterer_name, variable_name
-                    )
-                gridded_state_data[variable_name] = self._state_to_grid(
-                    selected_state, scatterer_name, variable_name
-                    )
-
-            generated_data = data_generator(**gridded_state_data)
-            new_optical_properties[scatterer_name] = data_generator.optical_property_generator(
-                generated_data
+        for scatterer_name, unknown_scatterer in self._unknown_scatterers.items():
+            new_optical_properties[scatterer_name] = unknown_scatterer.calculate_optical_properties(
+                state,
+                self._state_representation
                 )
 
         for wavelength in self._num_stokes:
@@ -1398,44 +1636,378 @@ class StateGenerator:
             abstract state instead of the gridded physical ones.
         """
         gradient = np.zeros(self._state_representation.number_of_unknowns)
-        for scatterer_name, variable_data in self._unknown_scatterers.items():
-            for variable_name in variable_data['variable_name_list']:
+        for scatterer_name, unknown_scatterer in self._unknown_scatterers.items():
+            for variable_name, (coordinate_transform, state_to_grid) in unknown_scatterer.variables.items():
                 gradient_variable = gradient_dset.gradient.sel(
                     scatterer_name=scatterer_name, variable_name=variable_name
                     ).data
-                gradient_vector = self._state_to_grid.calc_derivative(
-                    gradient_variable, scatterer_name, variable_name
-                    )
+                gradient_state = state_to_grid.gradient_transform(gradient_variable)
+                transformed_gradient = coordinate_transform.gradient_transform(state, gradient_state)
                 gradient = self._state_representation.update_state_vector(
-                    gradient, scatterer_name, variable_name, gradient_vector
+                    gradient, scatterer_name, variable_name, transformed_gradient
                 )
-        gradient = self._state_transform.calc_derivative(state, gradient)
+        state = self._unknown_scatterers.global_transform.gradient_transform(state)
         return gradient
 
     def transform_bounds(self):
+
         total_number_unknowns = self._state_representation.number_of_unknowns
         lower_bounds = np.zeros(total_number_unknowns)
         upper_bounds = np.zeros(total_number_unknowns)
-        for scatterer_name, variable_data in self._unknown_scatterers.items():
-            data_generator = variable_data['dataset_generator']
-            for variable_name in variable_data['variable_name_list']:
+        for scatterer_name, unknown_scatterer in self._unknown_scatterers.items():
+            data_generator = unknown_scatterer.grid_to_optical_properties
+            for variable_name, (coordinate_transform, state_to_grid) in unknown_scatterer.variables.items():
                 lower, upper = data_generator.get_bounds(variable_name)
                 for data, big_data in zip((lower, upper), (lower_bounds, upper_bounds)):
-                    vector = self._state_to_grid.inverse_bounds(
-                        data, scatterer_name, variable_name
-                        )
-                        # need to verify line below.
-                    big_data = self._state_representation.update_state_vector(
-                        big_data, scatterer_name, variable_name, vector
-                    )
-        lower_bounds = self._state_transform.inverse(lower_bounds)
-        upper_bounds = self._state_transform.inverse(upper_bounds)
+                    vector = state_to_grid.inverse_bounds_transform(data)
+                    coordinate_vector = coordinate_transform.inverse_transform(vector)
 
+                    big_data = self._state_representation.update_state_vector(
+                        big_data, scatterer_name, variable_name, coordinate_vector
+                    )
+        lower_bounds = self._unknown_scatterers.global_transform.inverse_transform(lower_bounds)
+        upper_bounds = self._unknown_scatterers.global_transform.inverse_transform(upper_bounds)
         return lower_bounds, upper_bounds
 
-    @property
-    def state_transform(self):
-        return self._state_transform
+
+# class StateGenerator:
+#
+#     def __init__(self, solvers_dict, unknown_scatterers, rte_grid, surfaces,
+#                  numerical_parameters, sources, background_optical_scatterers,
+#                  num_stokes, names=None, state_to_grid=None, state_representation=None,
+#                  state_transform='log'):
+#
+#         # check compatibility between UnknownScatterers and all other containers.
+#         # if other containers don't exist then generate them from UnknownScatterers.
+#
+#         if not isinstance(unknown_scatterers, pyshdom.containers.UnknownScatterers):
+#             raise TypeError(
+#                 "`unknown_scatterers` arguments should be of type '{}'"
+#                 " ".format(type(pyshdom.containers.UnknownScatterers)))
+#         self._unknown_scatterers = unknown_scatterers
+#
+#         if not isinstance(solvers_dict, pyshdom.containers.SolversDict):
+#             raise TypeError(
+#                 "`solvers_dict` arguments should be of type '{}'"
+#                 " ".format(type(pyshdom.containers.SolversDict)))
+#         self._solvers_dict = solvers_dict
+#
+#         pyshdom.checks.check_grid(rte_grid)
+#         self._rte_grid = rte_grid
+#         self._grid_shape = (rte_grid.x.size, rte_grid.y.size, rte_grid.z.size)
+#
+#         # process state_to_grid.
+#         if state_to_grid is None:
+#             # set it to Null, this assumes the whole rte_grid is used.
+#             self._state_to_grid = pyshdom.transforms.StateToGridNull()
+#             # add all unknown names here.
+#             for scatterer_name, variable_data in self._unknown_scatterers.items():
+#                 for variable_name in variable_data['variable_name_list']:
+#                     self._state_to_grid.add_transform(
+#                         scatterer_name, variable_name, self._rte_grid
+#                         )
+#
+#         elif isinstance(state_to_grid, pyshdom.transforms.IndependentTransform):
+#             # a supplied StateToGrid object. Check for compatibility with
+#             # unknown_scatterers in terms of names.
+#             for scatterer_name, variable_data in self._unknown_scatterers.items():
+#                 if scatterer_name not in state_to_grid.transforms:
+#                     raise ValueError(
+#                         "Unknown scatterer name '{}' is not found in "
+#                         "supplied `state_to_grid` object".format(scatterer_name)
+#                     )
+#                 for variable_name in variable_data['variable_name_list']:
+#                     if variable_name not in state_to_grid.transforms[scatterer_name]:
+#                         raise ValueError(
+#                             "Unknown variable '{}' for scatterer '{}' is not found "
+#                             "in supplied `state_to_grid` object".format(
+#                                 variable_name, scatterer_name)
+#                         )
+#             self._state_to_grid = state_to_grid
+#
+#         elif isinstance(state_to_grid, np.ndarray):
+#             # assume that this is a mask to use for all variables.
+#             if state_to_grid.shape == self._grid_shape:
+#                 mask = state_to_grid
+#                 self._state_to_grid = pyshdom.transforms.StateToGridMask()
+#                 # add all unknown names here.
+#                 for scatterer_name, variable_data in self._unknown_scatterers.items():
+#                     for variable_name in variable_data['variable_name_list']:
+#                         self._state_to_grid.add_transform(
+#                             scatterer_name, variable_name, mask, 0.0
+#                             )
+#             else:
+#                 raise ValueError(
+#                     "If `state_to_grid` argument is of type {} it should be of same shape "
+#                     "as the `rte_grid` argument.".format(np.ndarray)
+#                 )
+#         else:
+#             raise TypeError(
+#                 "`state_to_grid` argument is not of valid type."
+#             )
+#
+#         # process state_representation
+#         if state_representation is None:
+#             # make it from state_to_grid transfrom.
+#             self._state_representation = pyshdom.transforms.StateRepresentation(
+#                 self._state_to_grid, self._rte_grid
+#                 )
+#         elif isinstance(state_representation, pyshdom.transforms.StateRepresentation):
+#             for scatterer_name, variable_data in self._unknown_scatterers.items():
+#                 if scatterer_name not in state_representation.start_end_points:
+#                     raise ValueError(
+#                         "Unknown scatterer name '{}' is not found in "
+#                         "supplied `state_representation` object".format(scatterer_name)
+#                     )
+#                 for variable_name in variable_data['variable_name_list']:
+#                     if variable_name not in state_representation.start_end_points[scatterer_name]:
+#                         raise ValueError(
+#                             "Unknown variable '{}' for scatterer '{}' is not found "
+#                             "in supplied `state_representation` object".format(
+#                                 variable_name, scatterer_name)
+#                         )
+#             self._state_representation = state_representation
+#         else:
+#             raise TypeError(
+#                 "`state_representation` argument is not of valid type."
+#             )
+#
+#         # process state_transform
+#         if state_transform is None:
+#             state_transform = pyshdom.transforms.NullStateTransform(self._state_representation)
+#             for scatterer_name, variable_data in self._unknown_scatterers.items():
+#                 for variable_name in variable_data['variable_name_list']:
+#                     state_transform.add_transform(scatterer_name, variable_name)
+#         elif state_transform == 'log':
+#             state_transform = pyshdom.transforms.LogStateTransform(self._state_representation)
+#             for scatterer_name, variable_data in self._unknown_scatterers.items():
+#                 for variable_name in variable_data['variable_name_list']:
+#                     state_transform.add_transform(scatterer_name, variable_name)
+#         elif isinstance(state_transform, pyshdom.transforms.StateTransform):
+#             warnings.warn(
+#                 "No checks are made on the internal consistency of this custom "
+#                 "transform."
+#             )
+#         elif isinstance(state_transform, pyshdom.transforms.IndependentStateTransform):
+#             for scatterer_name, variable_data in self._unknown_scatterers.items():
+#                 if scatterer_name not in state_transform.transforms:
+#                     raise ValueError(
+#                         "Unknown scatterer name '{}' is not found in "
+#                         "supplied `state_representation` object".format(scatterer_name)
+#                     )
+#                 for variable_name in variable_data['variable_name_list']:
+#                     if variable_name not in state_transform.transforms[scatterer_name]:
+#                         raise ValueError(
+#                             "Unknown variable '{}' for scatterer '{}' is not found "
+#                             "in supplied `state_representation` object".format(
+#                                 variable_name, scatterer_name)
+#                         )
+#         else:
+#             raise TypeError(
+#                 "`state_transform` argument is not of valid type."
+#             )
+#         self._state_transform = state_transform
+#
+#         # check for compatibility in terms of keys for all solver.RTE inputs.
+#         # don't check the typing of the inputs, that is done when the solver is formed
+#         # ie when self.__call__() is executed.
+#         variables_to_test = [
+#             sources, num_stokes, surfaces, background_optical_scatterers,
+#             numerical_parameters
+#         ]
+#         names_to_test = [
+#             'sources', 'num_stokes', 'surfaces', 'background_optical_scatterers',
+#             'numerical_parameters'
+#         ]
+#         if names is None:
+#             names = OrderedDict()
+#             for key in sources:
+#                 names[key] = None
+#         else:
+#             variables_to_test.append(names)
+#             names_to_test.append('names')
+#
+#         ref_keys = None
+#         for variable, name in zip(variables_to_test, names_to_test):
+#             if not isinstance(variable, typing.Dict):
+#                 raise TypeError(
+#                     "`{}` argument should be of type Dict".format(name)
+#                 )
+#             if ref_keys is None:
+#                 ref_keys = variable.keys()
+#
+#             if ref_keys != variable.keys():
+#                 raise ValueError(
+#                     "All of the solver.RTE arguments should have a consistent "
+#                     "set of keys. '{}'".format(names_to_test)
+#                 )
+#             if name == 'background_optical_scatterers':
+#                 for opt_scat_dict in background_optical_scatterers.values():
+#                     if not isinstance(opt_scat_dict, typing.Dict):
+#                         raise TypeError(
+#                             "Each entry in `background_optical_scatterers` argument "
+#                             "should be a dictionary."
+#                         )
+#                     for opt_scat in opt_scat_dict.values():
+#                         pyshdom.checks.check_optical_properties(opt_scat)
+#             elif name == 'num_stokes':
+#                 for value in variable.values():
+#                     if not value in (1, 3, 4):
+#                         raise ValueError(
+#                             "`num_stokes` should be an integer from (1, 3, 4) "
+#                             "not {}".format(variable)
+#                         )
+#             else:
+#                 for value in variable.values():
+#                     if value is not None:
+#                         if not isinstance(value, xr.Dataset):
+#                             raise TypeError(
+#                                 "Each entry in `{}` should be of type '{}'".format(
+#                                     name, xr.Dataset
+#                                 )
+#                             )
+#
+#         self._sources = sources
+#         self._num_stokes = num_stokes
+#         self._surfaces = surfaces
+#         self._numerical_parameters = numerical_parameters
+#         self._background_optical_scatterers = background_optical_scatterers
+#         self._names = names
+#
+#         for scatterer_name, scatterer_data in self._unknown_scatterers.items():
+#             if isinstance(scatterer_data['dataset_generator'], pyshdom.medium.OpticalPropertyGenerator):
+#                 if len(self._sources) != 1:
+#                     raise ValueError(
+#                     "Optical property unknowns are not supported for multi-spectral data. "
+#                     "for similar effect - try forming a 'microphysics' representation. "
+#                     )
+#         self._old_solutions = OrderedDict()
+#         for key in self._sources:
+#             self._old_solutions[key] = None
+#
+#     def get_state(self):
+#         """
+#         Extract the state vector from the solvers_dict.
+#         """
+#         if not self._solvers_dict:
+#             raise ValueError(
+#                 "State must first be set using the call method."
+#             )
+#         state = np.zeros(self._state_representation.number_of_unknowns)
+#         solver = list(self._solvers_dict.values())[0]
+#         for scatterer_name, variable_data in self._unknown_scatterers.items():
+#             for variable_name in variable_data['variable_name_list']:
+#                 unknown_data = solver.medium[scatterer_name][variable_name].data
+#                 state_vector = self._state_to_grid.inverse(
+#                     unknown_data, scatterer_name, variable_name
+#                     )
+#                 state = self._state_representation.update_state_vector(
+#                     state, scatterer_name, variable_name, state_vector
+#                 )
+#         state = self._state_transform.inverse(state)
+#         return state
+#
+#     def __call__(self, state):
+#         """
+#         Update the solvers to reflect the new state vector. This does not include
+#         SOLVING the solver objects. That is performed elsewhere.
+#         """
+#         state_in_physical_coordinates = self._state_transform(state)
+#
+#         new_optical_properties = OrderedDict()
+#         for scatterer_name, variable_data in self._unknown_scatterers.items():
+#             data_generator = variable_data['dataset_generator']
+#             gridded_state_data = {}
+#             for variable_name in variable_data['variable_name_list']:
+#                 selected_state = self._state_representation.select_variable(
+#                     state_in_physical_coordinates, scatterer_name, variable_name
+#                     )
+#                 gridded_state_data[variable_name] = self._state_to_grid(
+#                     selected_state, scatterer_name, variable_name
+#                     )
+#
+#             generated_data = data_generator(**gridded_state_data)
+#             new_optical_properties[scatterer_name] = data_generator.optical_property_generator(
+#                 generated_data
+#                 )
+#
+#         for wavelength in self._num_stokes:
+#
+#             # group the optical properties for this wavelength.
+#             # and add the background_optical_scatterer
+#             background_optical_scatterer = self._background_optical_scatterers[wavelength]
+#             for scatterer_name, optical_properties in new_optical_properties.items():
+#                 background_optical_scatterer[scatterer_name] = optical_properties[wavelength]
+#
+#             solver = pyshdom.solver.RTE(
+#                 numerical_params=self._numerical_parameters[wavelength],
+#                 medium=background_optical_scatterer,
+#                 source=self._sources[wavelength],
+#                 surface=self._surfaces[wavelength],
+#                 num_stokes=self._num_stokes[wavelength],
+#                 name=self._names[wavelength]
+#             )
+#             if self._old_solutions[wavelength] is not None:
+#                 solver.load_solution(self._old_solutions[wavelength])
+#             self._solvers_dict.add_solver(wavelength, solver)
+#
+#     def project_gradient_to_state(self, state, gradient_dset):
+#         """
+#         Project the gradient to the abstract state.
+#
+#         Parameters
+#         ----------
+#         state : np.array, ndim=1
+#             The abstract state.
+#         gradient_dset : xr.Dataset
+#             gridded derivatives with respect to physical unknowns.
+#             See pyshdom.gradient.make_gradient_dataset.
+#
+#         Returns
+#         -------
+#         gradient : np.array
+#             Same shape as `state`. This is the gradient for the
+#             abstract state instead of the gridded physical ones.
+#         """
+#         gradient = np.zeros(self._state_representation.number_of_unknowns)
+#         for scatterer_name, variable_data in self._unknown_scatterers.items():
+#             for variable_name in variable_data['variable_name_list']:
+#                 gradient_variable = gradient_dset.gradient.sel(
+#                     scatterer_name=scatterer_name, variable_name=variable_name
+#                     ).data
+#                 gradient_vector = self._state_to_grid.calc_derivative(
+#                     gradient_variable, scatterer_name, variable_name
+#                     )
+#                 gradient = self._state_representation.update_state_vector(
+#                     gradient, scatterer_name, variable_name, gradient_vector
+#                 )
+#         gradient = self._state_transform.calc_derivative(state, gradient)
+#         return gradient
+#
+#     def transform_bounds(self):
+#         total_number_unknowns = self._state_representation.number_of_unknowns
+#         lower_bounds = np.zeros(total_number_unknowns)
+#         upper_bounds = np.zeros(total_number_unknowns)
+#         for scatterer_name, variable_data in self._unknown_scatterers.items():
+#             data_generator = variable_data['dataset_generator']
+#             for variable_name in variable_data['variable_name_list']:
+#                 lower, upper = data_generator.get_bounds(variable_name)
+#                 for data, big_data in zip((lower, upper), (lower_bounds, upper_bounds)):
+#                     vector = self._state_to_grid.inverse_bounds(
+#                         data, scatterer_name, variable_name
+#                         )
+#                         # need to verify line below.
+#                     big_data = self._state_representation.update_state_vector(
+#                         big_data, scatterer_name, variable_name, vector
+#                     )
+#         lower_bounds = self._state_transform.inverse(lower_bounds)
+#         upper_bounds = self._state_transform.inverse(upper_bounds)
+#
+#         return lower_bounds, upper_bounds
+#
+#     @property
+#     def state_transform(self):
+#         return self._state_transform
 
 
 def table_to_grid(microphysics, poly_table, inverse_mode=False):
@@ -1562,121 +2134,121 @@ def table_to_grid(microphysics, poly_table, inverse_mode=False):
 
 
 
-class OpticalDerivativeGenerator:
-    """
-
-    """
-    def __init__(self, scatterer_name, wavelength=None):
-        self.scatterer_name = scatterer_name
-        self.wavelength = wavelength
-
-    def test_valid_names(self, name):
-
-        valid = False
-        if name in ('extinction', 'ssalb'):
-            valid = True
-        elif 'legendre_' in name:
-            leg_index = int(name[len('legendre_X_'):])
-            stokes_index = int(name[len('legendre_')])
-            if ((stokes_index >= 0) & (stokes_index <= 5) &
-                (leg_index >= 0)):
-                valid = True
-        return valid
-
-    def __call__(self, data):
-        pyshdom.checks.check_optical_properties(data)
-        output = OrderedDict()
-        output[self.wavelength] = data
-        return output
-
-    def calculate_derivatives(self, variable_names, optical_properties):
-
-        derivatives = OrderedDict()
-
-        for variable_name in variable_names:
-            if variable_name == 'extinction':
-                differentiated = xr.Dataset(
-                    data_vars={
-                        'extinction': (['x', 'y', 'z'],
-                            np.ones(optical_properties.extinction.shape)),
-                        'ssalb': (['x', 'y', 'z'],
-                            np.zeros(optical_properties.ssalb.shape)),
-                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
-                            np.zeros(optical_properties.legcoef.shape)),
-                        'table_index': optical_properties.table_index,
-                        'phase_weights': optical_properties.phase_weights,
-                        'delx': optical_properties.delx,
-                        'dely': optical_properties.dely
-                    },
-                    coords={
-                        'x': optical_properties.x,
-                        'y': optical_properties.y,
-                        'z': optical_properties.z,
-                        'stokes_index': optical_properties.stokes_index
-                    }
-                )
-            elif variable_name == 'ssalb':
-                differentiated = xr.Dataset(
-                    data_vars={
-                        'extinction': (['x', 'y', 'z'],
-                            np.zeros(optical_properties.extinction.shape)),
-                        'ssalb': (['x', 'y', 'z'],
-                            np.ones(optical_properties.ssalb.shape)),
-                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
-                            np.zeros(optical_properties.legcoef.shape)),
-                        'table_index': optical_properties.table_index,
-                        'phase_weights': optical_properties.phase_weights,
-                        'delx': optical_properties.delx,
-                        'dely': optical_properties.dely
-                    },
-                    coords={
-                        'x': optical_properties.x,
-                        'y': optical_properties.y,
-                        'z': optical_properties.z,
-                        'stokes_index': optical_properties.stokes_index
-                    }
-                )
-            elif 'legendre_' in variable_name:
-                leg_index = int(variable_name[len('legendre_X_'):])
-                stokes_index = int(variable_name[len('legendre_')])
-                legcoef = np.zeros(optical_properties.legcoef.shape)
-                if not ((stokes_index >= 0) & (stokes_index <= 5) &
-                    (leg_index <= legcoef.shape[1]) & (leg_index >= 0)):
-                    raise ValueError(
-                        "Invalid phase component and legendre index for variable name "
-                        "'{}'".format(variable_name))
-                legcoef[stokes_index, leg_index, ...] = 1.0
-                differentiated = xr.Dataset(
-                    data_vars={
-                        'extinction': (['x', 'y', 'z'],
-                            np.zeros(optical_properties.extinction.shape)),
-                        'ssalb': (['x', 'y', 'z'],
-                            np.zeros(optical_properties.ssalb.shape)),
-                        'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
-                            legcoef),
-                        'table_index': optical_properties.table_index,
-                        'phase_weights': optical_properties.phase_weights,
-                        'delx': optical_properties.delx,
-                        'dely': optical_properties.dely
-                    },
-                    coords={
-                        'x': optical_properties.x,
-                        'y': optical_properties.y,
-                        'z': optical_properties.z,
-                        'stokes_index': optical_properties.stokes_index
-                    }
-                )
-            else:
-                raise ValueError(
-                    "variable name is not supported for derivative calculation "
-                    "by this generator.'{}'".format(variable_name)
-                    )
-            differentiated['derivative_method'] = 'exact'
-            derivatives[variable_name] = differentiated
-
-        wavelength_organized_derivatives = OrderedDict()
-        wavelength_organized_derivatives[self.wavelength] = derivatives
-        return wavelength_organized_derivatives
+# class OpticalDerivativeGenerator:
+#     """
+#
+#     """
+#     def __init__(self, scatterer_name, wavelength=None):
+#         self.scatterer_name = scatterer_name
+#         self.wavelength = wavelength
+#
+#     def test_valid_names(self, name):
+#
+#         valid = False
+#         if name in ('extinction', 'ssalb'):
+#             valid = True
+#         elif 'legendre_' in name:
+#             leg_index = int(name[len('legendre_X_'):])
+#             stokes_index = int(name[len('legendre_')])
+#             if ((stokes_index >= 0) & (stokes_index <= 5) &
+#                 (leg_index >= 0)):
+#                 valid = True
+#         return valid
+#
+#     def __call__(self, data):
+#         pyshdom.checks.check_optical_properties(data)
+#         output = OrderedDict()
+#         output[self.wavelength] = data
+#         return output
+#
+#     def calculate_derivatives(self, variable_names, optical_properties):
+#
+#         derivatives = OrderedDict()
+#
+#         for variable_name in variable_names:
+#             if variable_name == 'extinction':
+#                 differentiated = xr.Dataset(
+#                     data_vars={
+#                         'extinction': (['x', 'y', 'z'],
+#                             np.ones(optical_properties.extinction.shape)),
+#                         'ssalb': (['x', 'y', 'z'],
+#                             np.zeros(optical_properties.ssalb.shape)),
+#                         'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+#                             np.zeros(optical_properties.legcoef.shape)),
+#                         'table_index': optical_properties.table_index,
+#                         'phase_weights': optical_properties.phase_weights,
+#                         'delx': optical_properties.delx,
+#                         'dely': optical_properties.dely
+#                     },
+#                     coords={
+#                         'x': optical_properties.x,
+#                         'y': optical_properties.y,
+#                         'z': optical_properties.z,
+#                         'stokes_index': optical_properties.stokes_index
+#                     }
+#                 )
+#             elif variable_name == 'ssalb':
+#                 differentiated = xr.Dataset(
+#                     data_vars={
+#                         'extinction': (['x', 'y', 'z'],
+#                             np.zeros(optical_properties.extinction.shape)),
+#                         'ssalb': (['x', 'y', 'z'],
+#                             np.ones(optical_properties.ssalb.shape)),
+#                         'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+#                             np.zeros(optical_properties.legcoef.shape)),
+#                         'table_index': optical_properties.table_index,
+#                         'phase_weights': optical_properties.phase_weights,
+#                         'delx': optical_properties.delx,
+#                         'dely': optical_properties.dely
+#                     },
+#                     coords={
+#                         'x': optical_properties.x,
+#                         'y': optical_properties.y,
+#                         'z': optical_properties.z,
+#                         'stokes_index': optical_properties.stokes_index
+#                     }
+#                 )
+#             elif 'legendre_' in variable_name:
+#                 leg_index = int(variable_name[len('legendre_X_'):])
+#                 stokes_index = int(variable_name[len('legendre_')])
+#                 legcoef = np.zeros(optical_properties.legcoef.shape)
+#                 if not ((stokes_index >= 0) & (stokes_index <= 5) &
+#                     (leg_index <= legcoef.shape[1]) & (leg_index >= 0)):
+#                     raise ValueError(
+#                         "Invalid phase component and legendre index for variable name "
+#                         "'{}'".format(variable_name))
+#                 legcoef[stokes_index, leg_index, ...] = 1.0
+#                 differentiated = xr.Dataset(
+#                     data_vars={
+#                         'extinction': (['x', 'y', 'z'],
+#                             np.zeros(optical_properties.extinction.shape)),
+#                         'ssalb': (['x', 'y', 'z'],
+#                             np.zeros(optical_properties.ssalb.shape)),
+#                         'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+#                             legcoef),
+#                         'table_index': optical_properties.table_index,
+#                         'phase_weights': optical_properties.phase_weights,
+#                         'delx': optical_properties.delx,
+#                         'dely': optical_properties.dely
+#                     },
+#                     coords={
+#                         'x': optical_properties.x,
+#                         'y': optical_properties.y,
+#                         'z': optical_properties.z,
+#                         'stokes_index': optical_properties.stokes_index
+#                     }
+#                 )
+#             else:
+#                 raise ValueError(
+#                     "variable name is not supported for derivative calculation "
+#                     "by this generator.'{}'".format(variable_name)
+#                     )
+#             differentiated['derivative_method'] = 'exact'
+#             derivatives[variable_name] = differentiated
+#
+#         wavelength_organized_derivatives = OrderedDict()
+#         wavelength_organized_derivatives[self.wavelength] = derivatives
+#         return wavelength_organized_derivatives
 
 # NB This is redundant with optical property generator.
 # def get_optical_properties(microphysics, mie_mono_tables, size_distribution_function,
