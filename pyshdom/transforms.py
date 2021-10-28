@@ -159,7 +159,7 @@ class StateToGrid2D(StateToGridMask):
     def inverse_transform(self, gridded_data):
         gridded_state = np.zeros(self._grid_shape)*np.nan
         gridded_state[np.where(self._mask)] = gridded_data[np.where(self._mask)]
-        return np.nanmean(gridded_state, axis=(0, 1))
+        return np.nanmean(gridded_state, axis=-1).ravel()
 
     def gradient_transform(self, gradient):
         return self.inverse_transform(gradient)
