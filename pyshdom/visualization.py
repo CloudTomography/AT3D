@@ -54,7 +54,7 @@ class _VisualizationAccessor(object):
 
         def imshow_frame(frame):
             img = data.isel({dim: frame})
-            ax.imshow(img, origin='lower', extent=extent, cmap=cmap)
+            ax.imshow(img.T, origin='lower', extent=extent, cmap=cmap)
             cbar.mappable.set_clim([img.min(), img.max()])
             ax.set_title('{} = {:2.2f}'.format(dim, float(img[dim])))
 
@@ -102,7 +102,7 @@ class _VisualizationAccessor(object):
 
         # Image animation function (called sequentially)
         def animate_frame(i):
-            im.set_array(movie.isel({dim: i}))
+            im.set_array(movie.isel({dim: i}).T)
             ax.set_title('{} = {:2.2f}'.format(dim, float(movie[dim].isel({dim: i}))))
             return [im]
 
@@ -121,8 +121,18 @@ class _VisualizationAccessor(object):
         if add_ticks == False:
             ax.set_xticks([])
             ax.set_yticks([])
-        vmin = movie.min() if vmin is None else vmin
-        vmax = movie.max() if vmax is None else vmax
+
+        if (vmin is None) & (vmax is None):
+            vmin = movie.min()
+            vmax = movie.max()
+            if vmin < 0:
+                vmin = -1*max(np.abs(vmax), np.abs(vmin))
+                vmax = max(np.abs(vmax), np.abs(vmin))
+        elif vmin is None:
+            vmin = movie.min()
+        elif vmax is None:
+            vmax = movie.max()
+
         im.set_clim(vmin, vmax)
         anim = animation.FuncAnimation(fig, animate_frame, frames=num_frames, interval=1e3 / fps)
 
