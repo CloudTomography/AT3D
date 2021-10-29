@@ -17,6 +17,8 @@ import numpy as np
 import xarray as xr
 import pyshdom.checks
 
+import scipy.spatial as ss
+
 
 def make_grid(delx: float, npx: int, dely: float, npy: int, z: np.ndarray,
               nx=None, ny=None, nz=None) -> xr.Dataset:
@@ -305,8 +307,35 @@ class _GridAccessor(object):
     and DataArrays used in pyshdom.
     """
     def __init__(self, xarray_obj):
+        pyshdom.checks.check_grid(xarray_obj)
         self._obj = xarray_obj
 
     @property
     def shape(self):
         return (self._obj.x.size, self._obj.y.size, self._obj.z.size)
+
+    def distance_to_clear(self, mask):
+
+        grid = self._obj
+
+        if grid.grid.shape != mask.shape:
+            raise ValueError(
+                "`grid` and `mask` must be of consistent shape."
+            )
+
+        from scipy.spatial import cKDTree
+        xs = grid.x.data
+        ys = grid.y.data
+        zs = grid.z.data
+        xs, ys, zs = np.meshgrid(xs, ys, zs, indexing='ij')
+        positions = np.stack((xs.ravel(), ys.ravel(), zs.ravel()), axis=1)
+
+        clear_positions = positions[np.where(~mask.ravel()), :][0]
+        cloud_positions = positions[np.where(mask.ravel()), :][0]
+        tree = ss.cKDTree(clear_positions)
+        minimum_distance_to_clear, indices = tree.query(cloud_positions)
+
+        out = np.zeros(mask.shape)
+        out[np.where(mask)] = minimum_distance_to_clear
+
+        return out

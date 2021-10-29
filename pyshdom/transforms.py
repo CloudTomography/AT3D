@@ -65,6 +65,35 @@ class CoordinateTransformScaling(CoordinateTransformNull):
     def gradient_transform(self, state, gradient):
         return self.inverse_transform(gradient)
 
+class CoordinateTransformExp(CoordinateTransformNull):
+
+    def __init__(self, scaling):
+
+        self._scaling = scaling
+
+    def __call__(self, state):
+        return -np.log(1.0-state)*self._scaling
+
+    def inverse_transform(self, state):
+        return 1.0 - np.exp(-state/self._scaling)
+
+    def gradient_transform(self, state, gradient):
+        return -self._scaling*gradient/(state-1.0)
+
+class CoordinateTransformHyperBol(CoordinateTransformNull):
+
+    def __init__(self, scaling):
+
+        self._scaling = scaling
+
+    def __call__(self, state):
+        return (state/(1.0-state))/self._scaling
+
+    def inverse_transform(self, state):
+        return self._scaling*state/(1.0 + self._scaling*state)
+
+    def gradient_transform(self, state, gradient):
+        return gradient/(self._scaling* ((1.0 - state)**2))
 
 class StateToGridMask:
     """
@@ -176,7 +205,6 @@ class StateToGrid2D(StateToGridMask):
                 " have not yet been implemented."
             )
         return out
-
 
 
 # from collections import OrderedDict

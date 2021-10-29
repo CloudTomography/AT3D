@@ -4,6 +4,7 @@ A module for storing regularization routines.
 import numpy as np
 import pandas as pd
 import xarray as xr
+import scipy.special as ss
 import pyshdom
 
 class Regularization:
@@ -221,6 +222,23 @@ class SpatialSmoothing(WeightedRegularization):
         out_gradient = self._make_gradient_dset(state, gradient)
         return cost, out_gradient
 
+class PriorCovariance:
+    """
+    the matrix and vector should be supplied in the coordinates
+    of the abstract state.
+    """
+    def __init__(self, inverse_covariance, central_vector):
+
+        self._inverse_covariance = inverse_covariance
+        self._central_vector = central_vector
+
+    def __call__(self, state):
+        gradient = np.dot(state - self._central_vector, self._inverse_covariance)
+        return gradient
+
+
+def sigmoidal_spatial_weights(distance_to_clear, scaling_distance=0.1):
+    return 2*ss.expit(-1*distance_to_clear/scaling_distance)
 
 # The function below is outdated.
 # class LocalCorrelation:

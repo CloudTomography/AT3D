@@ -1142,7 +1142,7 @@ class GridToOpticalProperties:
             if name in variable_data_bounds:
                 bound = variable_data_bounds[name]
             elif name == 'extinction':
-                bound = (np.zeros(self.grid_shape)+ 1e-9,
+                bound = (np.zeros(self.grid_shape)+ 0.0,
                          np.zeros(self.grid_shape) + 1e3)
             elif name == 'ssalb':
                 bound = (np.zeros(self.grid_shape)+ 1e-9,
@@ -1617,6 +1617,27 @@ class StateGenerator:
             if self._old_solutions[wavelength] is not None:
                 solver.load_solution(self._old_solutions[wavelength])
             self._solvers_dict.add_solver(wavelength, solver)
+
+    def get_state(self):
+        """
+        Extract the current state vector from the solvers_dict.
+        """
+        if not self._solvers_dict:
+            raise ValueError(
+                "State must first be set using the call method."
+            )
+        state = np.zeros(self._state_representation.number_of_unknowns)
+        solver = list(self._solvers_dict.values())[0]
+        for scatterer_name, unknown_scatterer in self._unknown_scatterers.items():
+            for variable_name, (coordinate_transform, state_to_grid) in unknown_scatterer.variables.items():
+                unknown_data = solver.medium[scatterer_name][variable_name].data
+                state_vector = state_to_grid.inverse_transform(unknown_data)
+                state_vector = coordinate_transform.inverse_transform(state_vector)
+                state = self._state_representation.update_state_vector(
+                    state, scatterer_name, variable_name, state_vector
+                )
+        state = self._unknown_scatterers.global_transform.inverse_transform(state)
+        return state
 
     def project_gradient_to_state(self, state, gradient_dset):
         """
