@@ -274,19 +274,19 @@ C    Compute the solar transmission in DIRFLUX.
      .                         NX, XGRID, NY, YGRID, DIRFLUX)
         ELSE
           IF (ADJFLAG) THEN
-            TRANSMIT = 1.0D0
-            DIRFLUX = 0.0
-            CALL PENCIL_BEAM_PROP(0.2D0, 0.2D0, DBLE(ZGRID(NZ)),
-     .        BCFLAG, IPFLAG,
-     .        1.0, 1.0D0, 0.0D0,
-     .        DIRFLUX(:NPTS),TOTAL_EXT(:NPTS),
-     .        NX,NY,NZ,
-     .        NCELLS, NPTS, CELLFLAGS(:NCELLS), XGRID, YGRID, ZGRID,
-     .        GRIDPOS(:,:NPTS),
-     .        GRIDPTR(:,:NCELLS), NEIGHPTR(:,:NCELLS),
-     .        TREEPTR(:,:NCELLS),
-     .        SIDE, XE,YE,ZE, TRANSMIT, 0.2D0, IERR, ERRMSG)
-            IF (IERR .NE. 0) RETURN
+C            TRANSMIT = 1.0D0
+C            DIRFLUX = 0.0
+C            CALL PENCIL_BEAM_PROP(0.5D0, 0.5D0, DBLE(ZGRID(NZ)),
+C     .        BCFLAG, IPFLAG,
+C     .        1.0, 1.0D0, 0.0D0,
+C     .        DIRFLUX(:NPTS),TOTAL_EXT(:NPTS),
+C     .        NX,NY,NZ,
+C     .        NCELLS, NPTS, CELLFLAGS(:NCELLS), XGRID, YGRID, ZGRID,
+C     .        GRIDPOS(:,:NPTS),
+C     .        GRIDPTR(:,:NCELLS), NEIGHPTR(:,:NCELLS),
+C     .        TREEPTR(:,:NCELLS),
+C     .        SIDE, XE,YE,ZE, TRANSMIT, 0.1D0, IERR, ERRMSG)
+C            IF (IERR .NE. 0) RETURN
            ELSE
 
 C          PRINT *, 'DOING HARD CODED ADJOINT SOURCE.'
@@ -583,6 +583,8 @@ Cf2py intent(out) :: COMPTIME
       REAL    STARTSPLITACC, CURSPLITACC, AVGSOLCRIT, BETA, ACCELPAR
 
       REAL TIME1, TIME2
+C      REAL TIME3, TIME4, COMPTIME2
+C      COMPTIME2 = 0.0
       CALL CPU_TIME(TIME1)
       IERR = 0
 
@@ -706,6 +708,7 @@ C              the solution criterion, and dot products for acceleration.
         IF (SOLCRIT .LT. ENDADAPTSOL .OR. ITER .GT. ITERFIXSH) THEN
           FIXSH = .TRUE.
         ENDIF
+C        CALL CPU_TIME(TIME3)
         CALL COMPUTE_SOURCE (NSTOKES, ML, MM, NLM,
      .         NSTLEG, NLEG, NUMPHASE, NPTS,
      .         FIXSH, SRCTYPE, SOLARMU, YLMSUN, ALBEDO(:NPTS,:), LEGEN,
@@ -715,6 +718,8 @@ C              the solution criterion, and dot products for acceleration.
      .         NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR, ERRMSG,
      .         PHASEINTERPWT(:,:NPTS,:), DELTAM,INTERPMETHOD, PHASEMAX,
      .         MAXNMICRO)
+C        CALL CPU_TIME(TIME4)
+C        COMPTIME2 = COMPTIME2 + TIME4 - TIME3
         IF (IERR .NE. 0) RETURN
 
 C           Calculate the acceleration parameter and solution criterion
@@ -755,7 +760,9 @@ c      CALL OUTPUT_CELL_SPLIT ('cellsplit.dat',GRIDPTR,
 c     .                        GRIDPOS, EXTINCT, SHPTR, SOURCE, NCELLS)
       CALL CPU_TIME(TIME2)
       COMPTIME = TIME2 - TIME1
-
+C      PRINT *, "CPU TIME:"
+C      PRINT *, "TOTAL", COMPTIME
+C      PRINT *, "COMPUTE_SOURCE", COMPTIME2, 100*COMPTIME2/COMPTIME, '%'
       RETURN
       END
 
@@ -918,8 +925,10 @@ Cf2py intent(in) :: NSTOKES, NPTS, ML, MM, NLM, NLEG, NSTLEG, MAXIV
       LOGICAL DELTAM
 Cf2py intent(in) :: DELTAM
       INTEGER NUMPHASE, NPART, MAXNMICRO
+Cf2py intent(in) :: NUMPHASE, NPART, MAXNMICRO
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)
-Cf2py intent(in) :: RSHPTR, SHPTR, OSHPTR
+Cf2py intent(in) :: RSHPTR
+Cf2py intent(in, out) :: SHPTR, OSHPTR
       INTEGER IPHASE(8*MAXNMICRO,NPTS,NPART)
       REAL    PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART)
       CHARACTER INTERPMETHOD*2
@@ -933,7 +942,7 @@ Cf2py intent(in) :: SHACC, YLMSUN, SOLARMU
 Cf2py intent(out) :: DELJDOT, DELJOLD, DELJNEW, JNORM
       REAL    ALBEDO(NPTS,NPART), LEGEN(NSTLEG,0:NLEG,*)
       REAL    EXTINCT(NPTS,NPART), TOTAL_EXT(*)
-Cf2py intent(in) :: ALBEDO, LEGEN
+Cf2py intent(in) :: ALBEDO, LEGEN, EXTINCT, TOTAL_EXT
       REAL    PLANCK(NPTS,NPART), DIRFLUX(*)
 Cf2py intent(in) :: PLANCK, DIRFLUX
       REAL    RADIANCE(NSTOKES,*)
@@ -944,6 +953,7 @@ Cf2py intent(in, out) :: SOURCE, DELSOURCE
 Cf2py intent(in) :: SRCTYPE
       INTEGER IERR
       CHARACTER ERRMSG*600
+Cf2py intent(out) :: IERR, ERRMSG
       INTEGER IS, ISO, IR, I, IPH, J, JS, K, L, LS, M, MS, ME, NS, NR
       INTEGER IPA, Q
       INTEGER, ALLOCATABLE :: LOFJ(:)

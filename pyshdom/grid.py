@@ -17,10 +17,14 @@ import numpy as np
 import xarray as xr
 import pyshdom.checks
 
+import scipy.spatial as ss
+
+
 def make_grid(delx: float, npx: int, dely: float, npy: int, z: np.ndarray,
               nx=None, ny=None, nz=None) -> xr.Dataset:
     """
-    Defines a 3D grid of 'x', 'y', 'z' coordinates according to SHDOM.
+    Defines a 3D grid of 'x', 'y', 'z' coordinates according to SHDOM's
+    conventions.
 
     Defines an equispaced grid in the 'x' and 'y' dimensions with spacing `delx`/'dely'
     and number of points `npx`/`npy`, respectively. The starting value of 'x' and 'y'
@@ -282,3 +286,57 @@ def merge_two_z_coordinates(z1, z2):
     assert np.all(np.sort(combined) == combined), 'unexpectedly not strictly increasing.'
 
     return combined
+
+def from_scatterer(scatterer):
+    """
+    Defines an RTE grid from a scatterer object.
+    Only covers the simplest case.
+    """
+    grid = make_grid(scatterer.x.diff('x')[0].data,
+                          scatterer.x.size,
+                          scatterer.y.diff('y')[0].data,
+                          scatterer.y.size,
+                          scatterer.z.data)
+    resampled_scatterer = resample_onto_grid(grid, scatterer)
+    return resampled_scatterer
+
+@xr.register_dataset_accessor("grid")
+@xr.register_dataarray_accessor("grid")
+class _GridAccessor(object):
+    """
+    Register a custom accessor for Grid properties particular to xarray Datasets
+    and DataArrays used in pyshdom.
+    """
+    def __init__(self, xarray_obj):
+        pyshdom.checks.check_grid(xarray_obj)
+        self._obj = xarray_obj
+
+    @property
+    def shape(self):
+        return (self._obj.x.size, self._obj.y.size, self._obj.z.size)
+
+    def distance_to_clear(self, mask):
+
+        grid = self._obj
+
+        if grid.grid.shape != mask.shape:
+            raise ValueError(
+                "`grid` and `mask` must be of consistent shape."
+            )
+
+        from scipy.spatial import cKDTree
+        xs = grid.x.data
+        ys = grid.y.data
+        zs = grid.z.data
+        xs, ys, zs = np.meshgrid(xs, ys, zs, indexing='ij')
+        positions = np.stack((xs.ravel(), ys.ravel(), zs.ravel()), axis=1)
+
+        clear_positions = positions[np.where(~mask.ravel()), :][0]
+        cloud_positions = positions[np.where(mask.ravel()), :][0]
+        tree = ss.cKDTree(clear_positions)
+        minimum_distance_to_clear, indices = tree.query(cloud_positions)
+
+        out = np.zeros(mask.shape)
+        out[np.where(mask)] = minimum_distance_to_clear
+
+        return out

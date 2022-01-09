@@ -64,10 +64,11 @@ class Test_resample_onto_grid(TestCase):
         rte_grid = pyshdom.grid.make_grid(x[1]-x[0], x.size,y[1]-y[0], y.size, z)
         self.droplets = pyshdom.grid.resample_onto_grid(scatterer, scatterer)
     def test_resampled_lwc(self):
-        # TODO when updating xarray from version 0.15.1 to 0.16.0 the precision inside interp_like is changed which leads to
-        # small positive values (1e-18) where they were equal 0 before --> the density test below fails since more values are >0 now
-        # --> decide whether to filter out those values or increase precision of input density values etc.
-        self.assertAlmostEqual(self.droplets.density.data[self.droplets.density.data>0].mean(), 0.257846, places=6)
+        # Do not use 0 as the threshold for comparison as the interpolation routine can create some
+        # very small non-negative values that would otherwise bias the comparison. Those changes
+        # are unstable, and change depending on the version of xarray (which controls interpolation) that
+        # is used.
+        self.assertAlmostEqual(self.droplets.density.data[self.droplets.density.data > 1e-12].mean(), 0.265432, places=6)
     def test_resampled_reff(self):
         self.assertAlmostEqual(self.droplets.reff.data[self.droplets.reff.data>0].mean(), 15.972615, places=6)
     def test_resampled_veff(self):

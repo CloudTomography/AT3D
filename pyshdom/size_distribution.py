@@ -23,7 +23,8 @@ import xarray as xr
 import numpy as np
 import pyshdom.core
 
-def gamma(radii, reff, veff=None, alpha=None, particle_density=1.0):
+def gamma(radii, reff, veff=None, alpha=None, particle_density=1.0,
+          normalization='density'):
     """
     Generate a Gamma size distribution.
     Provide either effective variance `veff` or shape parameter `alpha`.
@@ -41,6 +42,11 @@ def gamma(radii, reff, veff=None, alpha=None, particle_density=1.0):
         Shape parameter.
     particle_density: float
         Particle density in [g/m^3]. Default 1 g/m^3 for Water.
+    normalization: str
+        Choice of size distribution normalization from
+        `density` [g/m^3], `geometric_extinction` [1/km]
+        (extinction calculated using a fixed extinction efficiency of 2),
+        `number_concentration` [#/cm^3]
 
     Returns
     -------
@@ -79,12 +85,26 @@ def gamma(radii, reff, veff=None, alpha=None, particle_density=1.0):
                 gamma=gamma_values,
                 ndist=reff.size)
     pyshdom.checks.check_errcode(ierr, errmsg)
+
+    if normalization == 'geometric_extinction':
+        number_density /= 1e-3*(2*number_density*np.pi*np.atleast_1d(radii)[:, None]**2).sum(axis=0)
+    elif normalization == 'number_concentration':
+        number_density /= (number_density).sum(axis=0)
+    elif normalization == 'density':
+        # explicit default case.
+        pass
+    else:
+        raise ValueError(
+            "Invalid `normalization` argument '{}'".format(normalization)
+        )
+
     return number_density
 
 
-def lognormal(radii, reff, veff=None, alpha=None, particle_density=1.0):
+def lognormal(radii, reff, veff=None, alpha=None, particle_density=1.0,
+              normalization='density'):
     """
-    Generate a Log-noraml size distribution.
+    Generate a Log-normal size distribution.
     Provide either effective variance `veff` or shape parameter `alpha`.
 
     Parameters
@@ -100,6 +120,11 @@ def lognormal(radii, reff, veff=None, alpha=None, particle_density=1.0):
         Log-normal standard deviation.
     particle_density: float
         Particle density in [g/m^3]. Default 1 g/m^3 for Water.
+    normalization: str
+        Choice of size distribution normalization from
+        `density` [g/m^3], `geometric_extinction` [1/km]
+        (extinction calculated using a fixed extinction efficiency of 2),
+        `number_concentration` [#/cm^3]
 
     Returns
     -------
@@ -138,6 +163,19 @@ def lognormal(radii, reff, veff=None, alpha=None, particle_density=1.0):
                 gamma=gamma_values,
                 ndist=reff.size)
     pyshdom.checks.check_errcode(ierr, errmsg)
+
+    if normalization == 'geometric_extinction':
+        number_density /= 1e-3*(2*number_density*np.pi*np.atleast_1d(radii)[:, None]**2).sum(axis=0)
+    elif normalization == 'number_concentration':
+        number_density /= (number_density).sum(axis=0)
+    elif normalization == 'density':
+        # explicit default case.
+        pass
+    else:
+        raise ValueError(
+            "Invalid `normalization` argument '{}'".format(normalization)
+        )
+
     return number_density
 
 

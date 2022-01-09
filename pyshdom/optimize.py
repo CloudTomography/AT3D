@@ -139,39 +139,6 @@ class ObjectiveFunction:
     def bounds(self):
         return self._bounds
 
-class PriorFunction:
-    """
-    """
-    def __init__(self, prior_fn, scale=1.0):
-        self._prior_fn = prior_fn
-        self._loss = None
-        self._scale = scale
-
-    def __call__(self, state):
-        loss, gradient = self._prior_fn(state)
-        self._loss = self._scale * loss
-        return np.array(self._loss), self._scale * np.array(gradient)
-
-    @classmethod
-    def mahalanobis(cls, mean=0, cov=None, cov_inverse=None, scale=1.0e-4):
-        """
-        TODO
-        """
-        cov_inverse = np.linalg.inv(cov) if cov is not None else cov_inverse
-        def mahalanobis_loss_fn(state):
-            gradient = np.matmul(state-mean, cov_inverse)
-            loss = np.matmul(gradient, state-mean)
-            return np.array(loss), 2*np.array(gradient).ravel()
-        return cls(prior_fn=mahalanobis_loss_fn, scale=scale)
-
-    @property
-    def loss(self):
-        return self._loss
-
-    @property
-    def scale(self):
-        return self._scale
-
 class Optimizer:
     """
     Optmizer wrapps the scipy optimization methods.
@@ -217,7 +184,7 @@ class Optimizer:
             p_loss = []
             p_gradient = []
             for prior in self._prior_fn:
-                ploss, pgrad = prior(state)
+                ploss, pgrad = prior(state, self._iteration)
                 p_loss.append(ploss)
                 p_gradient.append(pgrad)
             loss += np.stack(p_loss, axis=0).sum(axis=0)

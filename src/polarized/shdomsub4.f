@@ -155,7 +155,8 @@ Cf2py intent(in) :: MU, PHI, WTDO
       REAL    XGRID(*), YGRID(*), ZGRID(*), GRIDPOS(3,*)
 Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
       REAL    SFCGRIDPARMS(*), BCRAD(NSTOKES, *)
-Cf2py intent(in) :: SFCGRIDPARMS, BCRAD
+Cf2py intent(in) :: SFCGRIDPARMS
+Cf2py intent(in, out) :: BCRAD
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL    TOTAL_EXT(NPTS), LEGEN(NSTLEG,0:NLEG,*)
 Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN, TOTAL_EXT
@@ -449,14 +450,13 @@ Cf2py intent(out) :: TEMPGRAD
 Cf2py intent(in) :: DELXSFC, DELYSFC
 
       DOUBLE PRECISION WEIGHT
-      DOUBLE PRECISION PIXEL_ERROR
       DOUBLE PRECISION RAYGRAD(NSTOKES,MAXPG,NUMDER), VISRAD(NSTOKES)
       DOUBLE PRECISION RAYGRAD_PIXEL(NSTOKES,MAXPG,NUMDER)
       DOUBLE PRECISION SFCGRAD_RAY(NSTOKES,NSFCDER,NSFCPTS)
       DOUBLE PRECISION SFCGRAD_PIXEL(NSTOKES,NSFCDER,NSFCPTS)
       REAL TEMPGRAD_PIXEL(MAXPG), TEMPGRAD_RAY(MAXPG)
       INTEGER IPIX, J, L, SIDE, IRAY
-      LOGICAL VALIDRAD
+      LOGICAL VALIDRAD, VERBOSE
       DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION U, R, PI
       DOUBLE PRECISION X0, Y0, Z0
@@ -526,7 +526,7 @@ C         Loop over pixels in image
           PHI2 = CAMPHI(IRAY)
           MURAY = -MU2
           PHIRAY = PHI2 - PI
-
+          VERBOSE = .FALSE.
 C             Extrapolate ray to domain top if above
           IF (Z0 .GT. ZGRID(NZ)) THEN
             IF (MURAY .GE. 0.0) THEN
@@ -576,7 +576,8 @@ C         while traversing the SHDOM grid.
      .             TEMPGRAD_RAY,DELXSFC, DELYSFC,
      .              TIME_SOURCE,
      .             TIME_DIRECT_POINT, TIME_DIRECT_SURFACE,
-     .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE)
+     .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE,
+     .             VERBOSE)
           IF (IERR .NE. 0) RETURN
 
   900     CONTINUE
@@ -648,7 +649,8 @@ C      PRINT *, 'TIME_ALLOCATE', TIME_ALLOCATE
      .             SFCGRAD_RAY, TEMPGRAD_RAY, DELXSFC, DELYSFC,
      .             TIME_SOURCE,
      .             TIME_DIRECT_POINT, TIME_DIRECT_SURFACE,
-     .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE)
+     .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE,
+     .          VERBOSE)
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
 C     radiance (RADOUT) at the point X0,Y0,Z0.
@@ -660,7 +662,7 @@ C     Updates RAYGRAD with the approximate Frechet derivatives calculated using
 C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
 
       IMPLICIT NONE
-      LOGICAL EXACT_SINGLE_SCATTER
+      LOGICAL EXACT_SINGLE_SCATTER, VERBOSE
       INTEGER NPX, NPY, NPZ, MAXPG, BCELL
       REAL    DELX, DELY, XSTART, YSTART, SOLARFLUX
       REAL    ZLEVELS(*)
@@ -1106,7 +1108,7 @@ C             just a weighting by transmission to sensor.
 C             The neglect of other terms in the integral here is the Levis
 C             approximation to the Frechet derivative of SHDOM.
 C             The portion of the inner product from integration of radiance
-C             multiplied by extinction is calculated at the end of the
+C             multiplied by extinction derivative is calculated at the end of the
 C             subroutine.
               SRCGRAD = ( 0.5*(GRAD0+GRAD1)
      .          + 0.08333333333*(EXT0*GRAD1-EXT1*GRAD0)*DELS
@@ -1253,8 +1255,12 @@ C          CALL CPU_TIME(TIME1)
      .                      SFCDER, SFCGRAD_RAY, DPLANCK, DELXSFC,
      .                      DELYSFC, TRANSMIT)
           RADOUT(:) = RADOUT(:) + TRANSMIT*RADBND(:)
+C         These values aren't actually used. set to -1.0 for
+C         debugging purposes.
           PASSEDTRANSMIT(NPASSED) = TRANSMIT
-          PASSEDABSCELL(NPASSED) = 0.0
+          PASSEDABSCELL(NPASSED) = -1.0
+C         zero radiance before adding to it.
+          PASSEDRAD(1,NPASSED) = 0.0
           DO KK=1,NPASSED
             PASSEDRAD(:,KK) = PASSEDRAD(:,KK) +
      .        TRANSMIT*RADBND(:)/PASSEDTRANSMIT(KK)
@@ -1301,7 +1307,7 @@ C     fully calculated using the saved properties from each
 C     subgrid integration interval.
 C      CALL CPU_TIME(TIME1)
 C     Zero the final radiance value.
-      PASSEDRAD(:,NPASSED) = 0.0
+C      PASSEDRAD(:,NPASSED) = 0.0
       CALL COMPUTE_RADIANCE_DERIVATIVE(NUMDER,
      .  PASSEDDELS, PASSEDPOINTS, PASSEDINTERP0,
      .  PASSEDINTERP1, TOTAL_EXT, PASSEDRAD, RAYGRAD,
@@ -1387,7 +1393,7 @@ C     This is unapproximated (apart from practicalities of discretization).
       INTEGER IDP
       REAL GRAD8(NSTOKES,8,8,NUMDER), SOURCET(NSTOKES)
       REAL OGRAD8(NSTOKES,8,8,NUMDER)
-      INTEGER DOEXACT(IDR)
+      INTEGER DOEXACT(NUMDER)
       REAL WAVELEN, WAVENO(2)
       REAL DPLANCK(NPTS)
       REAL TEMPGRAD_RAY(MAXPG)
@@ -1652,6 +1658,7 @@ C             gonna be zero anyway.
                 ENDIF
               ENDIF
             ENDIF
+
             SOURCET(1) = MAX(0.0, SOURCET(1))
 C           Undo delta-M scaling so we have the unscaled legendre/wigner coefficients
 C           on the RTE grid for phase function gradients.
@@ -2271,7 +2278,6 @@ C     EXTINCTION/ALBEDO product.
      .            DLEGP*EXTINCTP*ALBEDOP +
      .            (LEGENT-1)*DFJ
 
-
 C     Weight each phase legendre/Wigner coefficient derivative
 C     by the corresponding radiance harmonics.
 C     Note that this may be slightly inconsistent as we use
@@ -2286,6 +2292,7 @@ C     uses the exact same number of terms as SOURCE.
      .   NLM, LOFJ, RIS, RNS, NSTOKES, RADIANCE, YLMDIR,
      .   NSTLEG, DELTAM, SRCTYPE, ML, MM, NS, YLMSUN,
      .   DIRFLUX, SECMU0, NLEG)
+
 C
 C      Add the extinction/albedo/phase gradients.
       GRADTEMP(:) = GRADTEMP(:) +
@@ -2627,30 +2634,17 @@ Cf2py intent(in) :: RADIANCE, SOURCET
        ENDIF
 
        IF ((.NOT. DELTAM) .AND.
-     .    (SRCTYPE .EQ. 'S') .OR. SRCTYPE .EQ. 'B') THEN
-        J = 1
-        DA = DIRFLUX*SECMU0
-        DO L = 0, ML
-          ME = MIN(L,MM)
-          MS = -ME
-          A1 = DA*LEGEN(1,L)
-          B1 = DA*LEGEN(5,L)
-          IF (J .LE. NS) THEN
-            JT = J
-            DO M = MS, ME
-              SOURCET(1) = SOURCET(1) + A1*YLMDIR(1,J)*YLMSUN(1,J)
-              J = J + 1
-            ENDDO
-            IF (NSTOKES .GT. 1) THEN
-              J = JT
-              DO M = MS, ME
-                SOURCET(2)=SOURCET(2) + B1*YLMDIR(2,J)*YLMSUN(1,J)
-                SOURCET(3)=SOURCET(3) + B1*YLMDIR(6,J)*YLMSUN(1,J)
-                J = J + 1
-              ENDDO
-            ENDIF
-          ENDIF
+     .    (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B')) THEN
+        DO J = 1, NLM
+          SOURCET(1) = SOURCET(1)
+     .      + DIRFLUX*SECMU0*LEGEN(1,LOFJ(J))*YLMSUN(1,J)*YLMDIR(1,J)
         ENDDO
+        IF (NSTOKES .GT. 1) THEN
+          DO J = 5, NLM
+            SOURCET(2) = SOURCET(2)
+     .      + DIRFLUX*SECMU0*LEGEN(5,LOFJ(J))*YLMSUN(1,J)*YLMDIR(2,J)
+          ENDDO
+        ENDIF
 
        ENDIF
 
@@ -2777,7 +2771,8 @@ C         compute F and ALBEDOJ
      .       DLEG, PHASEWTP(:,:,IPA), IPHASEP(:,:,IPA),
      .       DIPHASEP(:,:,IDR), DPHASEWTP(:,:,IDR),
      .       EXTINCTP(:,IPA), ALBEDOP(:,IPA), DOEXACT(IDR),
-     .       ML, F, DIVIDE, ALBEDOJ, DELTAM)
+     .       ML, F, DIVIDE, ALBEDOJ, DELTAM, NUMPHASE,
+     .       DNUMPHASE)
             IF (IERR .NE. 0) RETURN
         ENDDO
       ENDDO
@@ -2801,7 +2796,7 @@ C         compute F and ALBEDOJ
      .  INTERPPTR, MAXPG, DALBM, DEXTM, DFJ, DEXT, DALB, MAXNMICRO,
      .  NSTLEG,NLEG, LEGEN, DLEG, PHASEWTP, IPHASEP, DIPHASEP,
      .  DPHASEWTP, EXTINCTP, ALBEDOP, DOEXACT, ML, F, DIVIDE,
-     .  ALBEDOJ, DELTAM)
+     .  ALBEDOJ, DELTAM, NUMPHASE, DNUMPHASE)
 C     Modified from TRILIN_INTERP_PROP to only return the interpolation
 C     weights (OPTINTERPWT) and pointers (INTERPPTR)from the property grid
 C     onto the RTE grid for use in gradient calculations.

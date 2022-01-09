@@ -110,7 +110,7 @@ F2PY_CORE_API = [
     'min_optical_depth',
     'gradient_l2_old',
     'average_subpixel_rays',
-    'pencil_beam_prop',
+    #'pencil_beam_prop',
     'project',
     'util_integrate_rays',
     'util_locate_point',
@@ -131,7 +131,7 @@ F2PY_CORE_API = [
     'construct_ptr',
     'ssort',
     'compute_dir_source',
-    'pencil_beam_prop2',
+    #'pencil_beam_prop2',
     'eddrtf',
     'phase_function_mixing',
     'prepare_deriv_interps',
@@ -141,7 +141,10 @@ F2PY_CORE_API = [
     'compute_direct_beam_deriv',
     'extinction_derivative_point',
     'interpolate_point',
-    'divide_cell'
+    'divide_cell',
+    'grid_smoothing',
+    'ylmall',
+    'transmission_integral'
 ]
 
 def _run_command(cmd):
@@ -194,7 +197,21 @@ def configuration(parent_package='',top_path=None):
     config.add_extension(
         name=F2PY_MODULE_NAME,
         sources=[F2PY_SIGN_FILE] + F2PY_SHDOM_FILES,
-        f2py_options=[]
+        # The '-fallow-argument-mismatch' is an option to the fortran compiler
+        # that is required for GCC version 11 (and likely all versions over 10)
+        # This is because GCC's fortran compiler raises an error rather than a
+        # warning for type mismatches (e.g. casting REAL(4) to INTEGER(4)
+        # in a subroutine call) for GCC version 10+.
+        # SHDOM is primarily written in F77 before allocatable arrays.
+        # Working arrays are defined that are cast to different types
+        # rather than allocating more memory.
+        # Additionally, scalars cannot be interpreted as rank-1 arrays
+        # in GCC v11, (possibly v10+) this flag also fixes that.
+        # IF YOU ARE USING AN EARLIER VERSION OF GCC OR OTHER COMPILER
+        # AND INSTALLATION FAILS THEN TRY COMMENTING THESE FLAGS OUT.
+        # -JRLoveridge 2021/07/26
+        #extra_f90_compile_args=["-fallow-argument-mismatch"],
+        extra_f77_compile_args=["-fallow-argument-mismatch"],
     )
 
     return config

@@ -42,7 +42,7 @@ class LevisApproxGradient:
         and the partial derivatives of optical properties with respect to them
         for use in the gradient calculation.
     parallel_solve_kwargs : Dict
-        key word arguments to pass to solvers.parallel_solve and are also used
+        key word arguments to pass to solvers.solve and are also used
         in the parallelization of the gradient calculation.
         'n_jobs' is the number of parallel workers for multi-threading (default).
         'mpi_comm' is the MPI communicator if using mpi4py.
@@ -132,14 +132,15 @@ class LevisApproxGradient:
         This does the heavy lifting of preparing the gradient calculation.
         This code should not really need to be modified.
         """
-        self.solvers.parallel_solve(**self.parallel_solve_kwargs)
+        self.solvers.solve(**self.parallel_solve_kwargs)
+
+        #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
+        self.solvers.calculate_microphysical_partial_derivatives(self.unknown_scatterers)
 
         #does some preprocessing for calculating the sensitivity of a gridpoint's
         #solar source to the optical properties along the path to the sun.
-        self.solvers.add_direct_beam_derivatives()
+        self.solvers.calculate_direct_beam_derivative()
 
-        #adds the _dext/_dleg/_dalb/_diphase etc to the solvers.
-        self.solvers.add_microphysical_partial_derivatives(self.unknown_scatterers)
         #prepare the sensors for the fortran subroutine for calculating gradient.
         rte_sensors, sensor_mapping = self.forward_sensors.sort_sensors(
             self.solvers, self.measurements
@@ -471,8 +472,8 @@ def make_gradient_dataset(gradient, unknown_scatterers, solvers):
     """
     derivative_names = []
     unknown_scatterer_names2 = []
-    for name, values in unknown_scatterers.items():
-        for variable_name in values['variable_name_list']:
+    for name, unknown_scatterer in unknown_scatterers.items():
+        for variable_name in unknown_scatterer.variables:
             derivative_names.append(variable_name)
             unknown_scatterer_names2.append(name)
     unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices - 1
@@ -545,8 +546,8 @@ def make_jacobian_dataset(jacobian_list, unknown_scatterers, indices_for_jacobia
 
     derivative_names = []
     unknown_scatterer_names2 = []
-    for name, values in unknown_scatterers.items():
-        for variable_name in values['variable_name_list']:
+    for name, unknown_scatterer in unknown_scatterers.items():
+        for variable_name in unknown_scatterer.variables:
             derivative_names.append(variable_name)
             unknown_scatterer_names2.append(name)
     unknown_scatterer_indices = list(solvers.values())[0]._unknown_scatterer_indices - 1

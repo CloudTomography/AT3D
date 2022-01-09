@@ -1374,7 +1374,7 @@ class VerifyMultiSpeciesSolverExactPhase(TestCase):
         solvers_dict.add_solver(1, solver1)
         solvers_dict.add_solver(2, solver2)
 
-        solvers_dict.parallel_solve(maxiter=100, verbose=False)
+        solvers_dict.solve(maxiter=100, verbose=False)
 
         cls.extinct_exact = solver1.medium['cloud'].extinction.data +solver1.medium['aerosol'].extinction.data
         cls.scatter_exact = solver1.medium['cloud'].ssalb.data*solver1.medium['cloud'].extinction.data +solver1.medium['aerosol'].ssalb.data*solver1.medium['aerosol'].extinction.data
@@ -1518,7 +1518,7 @@ class VerifyMultiSpeciesSolverTablePhase(TestCase):
         solvers_dict.add_solver(1, solver1)
         solvers_dict.add_solver(2, solver2)
 
-        solvers_dict.parallel_solve(maxiter=100, verbose=False)
+        solvers_dict.solve(maxiter=100, verbose=False)
 
         cls.extinct_exact = solver1.medium['cloud'].extinction.data +solver1.medium['aerosol'].extinction.data
         cls.scatter_exact = solver1.medium['cloud'].ssalb.data*solver1.medium['cloud'].extinction.data +solver1.medium['aerosol'].ssalb.data*solver1.medium['aerosol'].extinction.data
@@ -1664,7 +1664,7 @@ class VerifyMultiSpeciesSolverTablePhaseSPATIAL(TestCase):
         solvers_dict.add_solver(1, solver1)
         solvers_dict.add_solver(2, solver2)
 
-        solvers_dict.parallel_solve(maxiter=100, verbose=False)
+        solvers_dict.solve(maxiter=100, verbose=False)
 
         cls.extinct_exact = solver1.medium['cloud'].extinction.data +solver1.medium['aerosol'].extinction.data
         cls.scatter_exact = solver1.medium['cloud'].ssalb.data*solver1.medium['cloud'].extinction.data +solver1.medium['aerosol'].ssalb.data*solver1.medium['aerosol'].extinction.data

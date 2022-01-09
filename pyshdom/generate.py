@@ -50,7 +50,8 @@ class SurrogateGenerator:
         self._ranked_data = np.sort(self._normalized_data.ravel())
         self._reference_fourier_amplitudes = np.abs(self._reference_spectrum)
 
-    def __call__(self, err_tol=1e-4, maxiter=1000, normalized=False):
+    def __call__(self, err_iter=40, err_tol=1e-2, maxiter=1000, normalized=False, verbose=True,
+                 initial_field=None):
         """
         Produces a surrogate through iterative adjustment.
 
@@ -64,6 +65,8 @@ class SurrogateGenerator:
         -------
         surrogate_field : np.ndarray
             The statistical surrogate of the reference data.
+        cost : float
+            The mean square error of the absolute values of the power spectrum.
 
         Parameters
         ----------
@@ -78,32 +81,52 @@ class SurrogateGenerator:
             If True then the surrogate is returned with unit standard deviation
             and zero mean. If False then these two moments are exactly as in
             the reference data.
+        verbose : bool
+            Prints the iteration number if True.
+        initial_field : np.ndarray
+            This can be used to specify the initialization of iterative adjustment. This can
+            be used to continue the iterative adjustment to improve fit against
+            the reference data if `maxiter` is exceeded.
         """
+        if initial_field is None:
+            data_to_shuffle = copy.deepcopy(self._normalized_data)
+            shuffled_indices = np.meshgrid(*[np.arange(shape) for shape in self._normalized_data.shape], indexing='ij')
+            for inds in shuffled_indices:
+                np.random.shuffle(inds.ravel())
 
-        data_to_shuffle = copy.deepcopy(self._normalized_data)
-        shuffled_indices = np.meshgrid(*[np.arange(shape) for shape in self._normalized_data.shape], indexing='ij')
-        for inds in shuffled_indices:
-            np.random.shuffle(inds.ravel())
-
-        surrogate_field = data_to_shuffle[tuple(shuffled_indices)]
+            surrogate_field = data_to_shuffle[tuple(shuffled_indices)]
+        else:
+            surrogate_field = initial_field
 
         old_cost = None
-        for i in range(maxiter): # This could be a while loop but whatever.
-            temp_spectra = fft.fftn(surrogate_field)
-            cost = np.sqrt(np.mean((self._reference_fourier_amplitudes - np.abs(temp_spectra))**2))
-            if old_cost is not None:
-                if np.abs(cost - old_cost)/old_cost < err_tol:
-                    break
+        number_of_small_adjustments = 0
+        try:
+            for i in range(maxiter): # This could be a while loop but whatever.
+                temp_spectra = fft.fftn(surrogate_field)
+                cost = np.sqrt(np.mean((self._reference_fourier_amplitudes - np.abs(temp_spectra))**2))
+                if verbose:
+                    print('Iteration #: {}  Cost: {:.4f}  ErrIter: {}'.format(i, cost,
+                    number_of_small_adjustments))
 
-            adjusted_temp_spectra = self._reference_fourier_amplitudes*temp_spectra/np.abs(temp_spectra)
-            spectra_adjusted = fft.ifftn(adjusted_temp_spectra).real
-            temp_ranks = st.rankdata(spectra_adjusted).astype(np.int) -1
-            amplitude_adjusted_data = self._ranked_data[temp_ranks].reshape(self._normalized_data.shape)
-            surrogate_field = amplitude_adjusted_data
-            old_cost = cost
+                if old_cost is not None:
+                    if np.abs(cost - old_cost)/old_cost < err_tol:
+                        number_of_small_adjustments += 1
+                    else:
+                        number_of_small_adjustments = 0
+                    if number_of_small_adjustments > err_iter:
+                        break
 
-        if not normalized:
-            surrogate_field = surrogate_field*self._reference_data.std() + self._reference_data.mean()
+                adjusted_temp_spectra = self._reference_fourier_amplitudes*temp_spectra/np.abs(temp_spectra)
+                spectra_adjusted = fft.ifftn(adjusted_temp_spectra).real
+                temp_ranks = st.rankdata(spectra_adjusted).astype(np.int) -1
+                amplitude_adjusted_data = self._ranked_data[temp_ranks].reshape(self._normalized_data.shape)
+                surrogate_field = amplitude_adjusted_data
+                old_cost = cost
+        except KeyboardInterrupt:
+            pass
+        finally:
+            if not normalized:
+                surrogate_field = surrogate_field*self._reference_data.std() + self._reference_data.mean()
 
         return surrogate_field
 

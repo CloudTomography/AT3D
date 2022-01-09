@@ -549,6 +549,9 @@ def load_forward_model(file_name):
         else:
             atmosphere=None
 
+        numerical_params['transcut'] = 1e-5
+        numerical_params['angle_set'] = 2
+
         solver_dict.add_solver(float(key), pyshdom.solver.RTE(numerical_params=numerical_params,
                                             medium=mediums,
                                            source=source,

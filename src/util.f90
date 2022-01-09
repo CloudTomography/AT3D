@@ -6,6 +6,181 @@
 ! There is also a ray integration routine to allow linear tomography methods
 ! utilizing an SHDOM-type grid.
 
+subroutine grid_smoothing(xgrid, ygrid, zgrid, nx, ny, nz, &
+  field, cost, gradient, weights, mode, ierr, errmsg, &
+  direction_weights, huber_parameter)
+! This subroutine evaluates volume integrals of different norms of 3D
+! derivatives of `field` assuming field is defined on grid points
+! with coordinates given by `xgrid`, `ygrid`, `zgrid` and a linear
+! interpolation kernel is assumed for the norm of the gradient.
+! Norms on the gradient field may be L2 or Pseudo-Huber, which is a differentiable
+! form of the L1 norm. An 'L1' norm may be specified but this is not differentiable
+! around zero which can lead to artifacts.
+! This subroutine is useful for supplying regularizing constraints on fields
+! in an inverse problem.
+  implicit none
+  integer nx, ny, nz
+  double precision xgrid(nx), ygrid(ny), zgrid(nz), field(nz,ny,nx)
+  double precision weights(nz,ny,nx)
+  double precision gradient(nz,ny,nx), cost
+  double precision direction_weights(3)
+  double precision huber_parameter
+  character(len=2) mode
+  integer ierr
+  character(len=600) errmsg
+!f2py intent(in) :: nx, ny, nz, xgrid, ygrid, zgrid, field, weights
+!f2py intent(in) :: direction_weights, huber_parameter
+!f2py intent(out) :: gradient, cost, ierr, errmsg
+  integer i,j,k
+  double precision dx,dy,dz,invdx,invdy,invdz,a,b,c
+  double precision a1,a2,a3,a4,b1,b2,b3,b4,c1,c2,c3,c4
+  double precision x_derivs, y_derivs, z_derivs, volume
+  double precision norm_of_increment, cost_increment
+
+  cost = 0.0D0
+  gradient = 0.0D0
+  ierr = 0
+  a = direction_weights(1)
+  b = direction_weights(2)
+  c = direction_weights(3)
+
+  ! for each cell calculate the volume integral of
+  ! the square of each derivative.
+  do i = 1, nx-1
+    dx = xgrid(i+1) - xgrid(i)
+    invdx = 1.0D0/dx
+
+    do j = 1, ny-1
+      dy = ygrid(j+1) - ygrid(j)
+      invdy = 1.0D0/dy
+
+      do k = 1, nz-1
+        dz = zgrid(k+1) - zgrid(k)
+        invdz = 1.0D0/dz
+
+        ! each directional derivative can vary linearly across
+        ! the remaining plane.
+        volume = dx*dy*dz*0.125D0*(weights(k,j,i) + weights(k,j,i+1) &
+                 + weights(k,j+1,i) + weights(k,j+1,i+1) &
+                 + weights(k+1,j,i+1)+weights(k+1,j+1,i) &
+                 + weights(k+1,j+1,i+1) + weights(k+1,j,i))
+        x_derivs = 0.25D0*invdx*((field(k,j,i+1) - field(k,j,i))&
+                 + (field(k,j+1,i+1) - field(k,j+1,i)) &
+                 + (field(k+1,j,i+1) - field(k+1,j,i)) &
+                 + (field(k+1,j+1,i+1) - field(k+1,j+1,i)))
+        y_derivs = 0.25D0*invdy*((field(k,j+1,i) - field(k,j,i))&
+                 + (field(k,j+1,i+1) - field(k,j,i+1)) &
+                 + (field(k+1,j+1,i) - field(k+1,j,i)) &
+                 + (field(k+1,j+1,i+1) - field(k+1,j,i+1)))
+        z_derivs = 0.25D0*invdz*((field(k+1,j,i) - field(k,j,i))&
+                 + (field(k+1,j,i+1) - field(k,j,i+1)) &
+                 + (field(k+1,j+1,i) - field(k,j+1,i)) &
+                 + (field(k+1,j+1,i+1) - field(k,j+1,i+1)))
+
+        if (mode .eq. 'l1') then
+          cost = cost + volume*(a*abs(x_derivs) + b*abs(y_derivs) + &
+                                c*abs(z_derivs))
+!         This gives the sign function for minimization of the l1 norm.
+!         Note that this is non-smooth near zero.
+!         If this is bad then I will add a smoothed region with a hyperparameter
+!         which will reduce to quadratic behavior for small gradients.
+!         Note this also assumes that direction_weights are positive.
+
+          a1 = sign(a,field(k,j,i+1) - field(k,j,i))
+          a2 = sign(a,field(k,j+1,i+1) - field(k,j+1,i))
+          a3 = sign(a,field(k+1,j,i+1) - field(k+1,j,i))
+          a4 = sign(a,field(k+1,j+1,i+1) - field(k+1,j+1,i))
+
+          b1 = sign(b,field(k,j+1,i) - field(k,j,i))
+          b2 = sign(b,field(k,j+1,i+1) - field(k,j,i+1))
+          b3 = sign(b,field(k+1,j+1,i) - field(k+1,j,i))
+          b4 = sign(b,field(k+1,j+1,i+1) - field(k+1,j,i+1))
+
+          c1 = sign(c,field(k+1,j,i) - field(k,j,i))
+          c2 = sign(c,field(k+1,j,i+1) - field(k,j,i+1))
+          c3 = sign(c,field(k+1,j+1,i) - field(k,j+1,i))
+          c4 = sign(c,field(k+1,j+1,i+1) - field(k,j+1,i+1))
+
+          gradient(k,j,i) = gradient(k,j,i) + volume*(    &
+            -a1*invdx - b1*invdy - c1*invdz)
+          gradient(k,j,i+1) = gradient(k,j,i+1) + volume*(    &
+            a1*invdx - b2*invdy - c2*invdz)
+          gradient(k,j+1,i) = gradient(k,j+1,i) + volume*(    &
+            -a2*invdx +b1*invdy - c3*invdz)
+          gradient(k,j+1,i+1) = gradient(k,j+1,i+1) + volume*(    &
+            a2*invdx +b2*invdy - c4*invdz)
+          gradient(k+1,j,i) = gradient(k+1,j,i) + volume*(    &
+            -a3*invdx - b3*invdy + c1*invdz)
+          gradient(k+1,j,i+1) = gradient(k+1,j,i+1) + volume*(    &
+            a3*invdx - b4*invdy + c2*invdz)
+          gradient(k+1,j+1,i) = gradient(k+1,j+1,i) + volume*(    &
+            -a4*invdx +b3*invdy + c3*invdz)
+          gradient(k+1,j+1,i+1) = gradient(k+1,j+1,i+1) + volume*(    &
+            a4*invdx +b4*invdy + c4*invdz)
+
+!          print *, k,j,i, gradient(:,1,1)
+
+        else if (mode .eq. 'l2') then
+          cost = cost + volume*(a*x_derivs*x_derivs + b*y_derivs*y_derivs + &
+                                c*z_derivs*z_derivs)
+
+          gradient(k,j,i) = gradient(k,j,i) + volume*(    &
+            -a*x_derivs*invdx - b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k,j,i+1) = gradient(k,j,i+1) + volume*(    &
+            a*x_derivs*invdx - b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k,j+1,i) = gradient(k,j+1,i) + volume*(    &
+            -a*x_derivs*invdx +b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k,j+1,i+1) = gradient(k,j+1,i+1) + volume*(    &
+            a*x_derivs*invdx +b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k+1,j,i) = gradient(k+1,j,i) + volume*(    &
+            -a*x_derivs*invdx - b*y_derivs*invdy + c*z_derivs*invdz)
+          gradient(k+1,j,i+1) = gradient(k+1,j,i+1) + volume*(    &
+            a*x_derivs*invdx - b*y_derivs*invdy + c*z_derivs*invdz)
+          gradient(k+1,j+1,i) = gradient(k+1,j+1,i) + volume*(    &
+            -a*x_derivs*invdx +b*y_derivs*invdy + c*z_derivs*invdz)
+          gradient(k+1,j+1,i+1) = gradient(k+1,j+1,i+1) + volume*(    &
+            a*x_derivs*invdx +b*y_derivs*invdy + c*z_derivs*invdz)
+        else if (mode .eq. 'ph') then
+          norm_of_increment = a*x_derivs*x_derivs + b*y_derivs*y_derivs + c*z_derivs*z_derivs
+          cost_increment = huber_parameter**2 * (sqrt(1 + norm_of_increment/(huber_parameter**2)) - 1)
+
+          ! Update the volume variable with the huber weight to the derivative.
+          cost = cost + cost_increment*volume
+          volume = volume/sqrt(1 + norm_of_increment/(huber_parameter**2))
+          ! The derivative is then just the l2 derivative with the Huber
+          ! weight added.
+          gradient(k,j,i) = gradient(k,j,i) + volume*(    &
+            -a*x_derivs*invdx - b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k,j,i+1) = gradient(k,j,i+1) + volume*(    &
+            a*x_derivs*invdx - b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k,j+1,i) = gradient(k,j+1,i) + volume*(    &
+            -a*x_derivs*invdx +b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k,j+1,i+1) = gradient(k,j+1,i+1) + volume*(    &
+            a*x_derivs*invdx +b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k+1,j,i) = gradient(k+1,j,i) + volume*(    &
+            -a*x_derivs*invdx - b*y_derivs*invdy + c*z_derivs*invdz)
+          gradient(k+1,j,i+1) = gradient(k+1,j,i+1) + volume*(    &
+            a*x_derivs*invdx - b*y_derivs*invdy + c*z_derivs*invdz)
+          gradient(k+1,j+1,i) = gradient(k+1,j+1,i) + volume*(    &
+            -a*x_derivs*invdx +b*y_derivs*invdy + c*z_derivs*invdz)
+          gradient(k+1,j+1,i+1) = gradient(k+1,j+1,i+1) + volume*(    &
+            a*x_derivs*invdx +b*y_derivs*invdy + c*z_derivs*invdz)
+        else
+          ierr = 1
+          write(errmsg, *) "GRID_SMOOTHING: Unrecognized argument &
+                            for 'mode'", mode
+        endif
+      enddo
+    enddo
+  enddo
+
+  gradient = 0.25D0*gradient
+  if (mode .eq. 'l2') then
+    gradient = gradient*2
+  endif
+
+end subroutine grid_smoothing
+
 
 subroutine phase_function_mixing(scatter_coefficients, phase_tables, &
   phase_indices, interpolation_weights, &

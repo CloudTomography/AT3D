@@ -48,7 +48,6 @@ import pyshdom.parallel
 import pyshdom.exceptions
 import pyshdom.regularization
 import pyshdom.generate
-import pyshdom.bispectral_retrieval
 import pyshdom.transforms
 import pyshdom.initialization
 import pyshdom.preprocessing

@@ -544,7 +544,7 @@ class RTE:
         self.check_solved()
         self._precompute_phase()
 
-        output, ierr, errmsg = pyshdom.core.render(
+        self._bcrad_output, output, ierr, errmsg = pyshdom.core.render(
             correctinterpolate=self._correctinterpolate,
             singlescatter=single_scatter,
             transcut=self._transcut,
@@ -687,6 +687,7 @@ class RTE:
         total_pix = sensor.sizes['nrays']
 
         optical_path = pyshdom.core.optical_depth(
+            maxnmicro=self._pa.max_num_micro,
             interpmethod=self._interpmethod,
             phasemax=self._phasemax,
             phaseinterpwt=self._phaseinterpwt[:, :self._npts],
@@ -728,6 +729,58 @@ class RTE:
             sensor['optical_path'] = (['nrays'], optical_path)
         return sensor
 
+    def transmission_integral(self, sensor, field):
+
+        if not isinstance(sensor, xr.Dataset):
+            raise TypeError("`sensor` should be an xr.Dataset "
+                            " not of type '{}''".format(type(sensor)))
+        pyshdom.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
+                                    ray_x='nrays', ray_y='nrays', ray_z='nrays')
+
+        camx = sensor['ray_x'].data
+        camy = sensor['ray_y'].data
+        camz = sensor['ray_z'].data
+        cammu = sensor['ray_mu'].data
+        camphi = sensor['ray_phi'].data
+        total_pix = sensor.sizes['nrays']
+
+        if self.check_solved(verbose=False):
+            raise pyshdom.exceptions.SHDOMError(
+                "This function can only be run before RTE.solve()"
+                )
+
+        transmission_integral = pyshdom.core.transmission_integral(
+            nx=self._nx,
+            ny=self._ny,
+            nz=self._nz,
+            npts=self._npts,
+            ncells=self._ncells,
+            gridptr=self._gridptr,
+            neighptr=self._neighptr,
+            treeptr=self._treeptr,
+            cellflags=self._cellflags,
+            bcflag=self._bcflag,
+            ipflag=self._ipflag,
+            xgrid=self._xgrid,
+            ygrid=self._ygrid,
+            zgrid=self._zgrid,
+            gridpos=self._gridpos,
+            camx=camx,
+            camy=camy,
+            camz=camz,
+            cammu=cammu,
+            camphi=camphi,
+            npix=total_pix,
+            total_ext=self._total_ext[:self._npts],
+            field=field,
+            transcut=self._transcut,
+            tautol=self._tautol
+            )
+        sensor['transmission_integral'] = (['nrays'], transmission_integral)
+        return sensor
+
+
+
     def min_optical_path(self, sensor, deltam_scaled_path=False, do_all=False):
 
         if not isinstance(sensor, xr.Dataset):
@@ -743,7 +796,7 @@ class RTE:
         camphi = sensor['ray_phi'].data
         total_pix = sensor.sizes['nrays']
 
-        if not self.check_solved(verbose=False):
+        if self.check_solved(verbose=False):
             raise pyshdom.exceptions.SHDOMError(
                 "This function can only be run before RTE.solve()"
                 )
@@ -753,6 +806,10 @@ class RTE:
         else:
             paths_size = 1
         optical_path = pyshdom.core.min_optical_depth(
+            maxnmicro=self._pa.max_num_micro,
+            interpmethod=self._interpmethod,
+            phasemax=self._phasemax,
+            phaseinterpwt=self._phaseinterpwt[:, :self._npts],
             nx=self._nx,
             ny=self._ny,
             nz=self._nz,
@@ -776,7 +833,7 @@ class RTE:
             npix=total_pix,
             extinct=self._extinct[:self._npts],
             albedo=self._albedo[:self._npts],
-            iphase=self._iphase[:self._npts],
+            iphase=self._iphase[:, :self._npts],
             legen=self._legen,
             npart=self._npart,
             nstleg=self._nstleg,
@@ -885,6 +942,25 @@ class RTE:
                                               radiance=self._radiance,
                                              )
             self._shterms = shterms
+
+        if len(self._xgrid) == self._nx1:
+            xcoord = self._xgrid
+        elif len(self._xgrid)-1 == self._nx1:
+            xcoord = self._xgrid[:-1]
+        else:
+            raise pyshdom.exceptions.SHDOMError(
+                "Inconsistent sizes of RTE grid and property grid. "
+                "There has been a mistake in interpretation."
+                )
+        if len(self._ygrid) == self._ny1:
+            ycoord = self._ygrid
+        elif len(self._ygrid)-1 == self._ny1:
+            ycoord = self._ygrid[:-1]
+        else:
+            raise pyshdom.exceptions.SHDOMError(
+                "Inconsistent sizes of RTE grid and property grid. "
+                "There has been a mistake in interpretation."
+                )
         sh_out_dataset = xr.Dataset(
             data_vars={
                 'mean_intensity': (['x', 'y', 'z'], self._shterms[0, :self._nbpts].reshape(
@@ -896,8 +972,9 @@ class RTE:
                 'Fz': (['x', 'y', 'z'], self._shterms[3, :self._nbpts].reshape(
                     self._nx1, self._ny1, self._nz)),
                 },
-            coords={'x': self._xgrid[:-1],
-                    'y': self._ygrid[:-1],
+
+            coords={'x': xcoord,
+                    'y': ycoord,
                     'z': self._zgrid,
                    },
             attrs={
@@ -938,6 +1015,26 @@ class RTE:
         self.fluxes property.
         """
         self.check_solved()
+
+        if len(self._xgrid) == self._nx1:
+            xcoord = self._xgrid
+        elif len(self._xgrid)-1 == self._nx1:
+            xcoord = self._xgrid[:-1]
+        else:
+            raise pyshdom.exceptions.SHDOMError(
+                "Inconsistent sizes of RTE grid and property grid. "
+                "There has been a mistake in interpretation."
+                )
+        if len(self._ygrid) == self._ny1:
+            ycoord = self._ygrid
+        elif len(self._ygrid)-1 == self._ny1:
+            ycoord = self._ygrid[:-1]
+        else:
+            raise pyshdom.exceptions.SHDOMError(
+                "Inconsistent sizes of RTE grid and property grid. "
+                "There has been a mistake in interpretation."
+                )
+
         fluxes = xr.Dataset(
             data_vars={
                 'flux_down': (['x', 'y', 'z'], self._fluxes[0, :self._nbpts].reshape(
@@ -947,8 +1044,8 @@ class RTE:
                 'flux_direct': (['x', 'y', 'z'], self._dirflux[:self._nbpts].reshape(
                     self._nx1, self._ny1, self._nz)),
                 },
-            coords={'x': self._xgrid[:-1],
-                    'y': self._ygrid[:-1],
+            coords={'x': xcoord,
+                    'y': ycoord,
                     'z': self._zgrid,
                    },
             attrs={
@@ -994,13 +1091,32 @@ class RTE:
                 )
             self._netfluxdiv = netfluxdiv
 
+        if len(self._xgrid) == self._nx1:
+            xcoord = self._xgrid
+        elif len(self._xgrid)-1 == self._nx1:
+            xcoord = self._xgrid[:-1]
+        else:
+            raise pyshdom.exceptions.SHDOMError(
+                "Inconsistent sizes of RTE grid and property grid. "
+                "There has been a mistake in interpretation."
+                )
+        if len(self._ygrid) == self._ny1:
+            ycoord = self._ygrid
+        elif len(self._ygrid)-1 == self._ny1:
+            ycoord = self._ygrid[:-1]
+        else:
+            raise pyshdom.exceptions.SHDOMError(
+                "Inconsistent sizes of RTE grid and property grid. "
+                "There has been a mistake in interpretation."
+                )
+
         netfluxdiv_dataset = xr.Dataset(
             data_vars={
                 'net_flux_div':(['x', 'y', 'z'], self._netfluxdiv[:self._nbpts].reshape(
                     self._nx1, self._ny1, self._nz))
                 },
-            coords={'x': self._xgrid[:-1],
-                    'y': self._ygrid[:-1],
+            coords={'x': xcoord,
+                    'y': ycoord,
                     'z': self._zgrid,
                    },
             attrs={
@@ -1070,7 +1186,7 @@ class RTE:
         self._direct_derivative_ptr = direct_derivative_ptr
         self._direct_derivative_path = direct_derivative_path
 
-    def prepare_microphysical_partial_derivatives(self, derivative_information):
+    def calculate_microphysical_partial_derivatives(self, derivative_information):
         """
         Calculate the derivatives of optical properties with respect to the unknowns
         (microphysical or optical).
@@ -1728,7 +1844,7 @@ class RTE:
         # bcflag is set in _setup_grid and ipflag may be modified there to handle the
         # nx/ny = 1 special case.
 
-        if self._angle_set not in (1,2,3):
+        if self._angle_set not in (1, 2, 3):
             raise ValueError(
                 "Numerical Parameter 'angle_set' must be in the set (1, 2, 3). See "
                 "default_config.json or shdom.txt for more details."
@@ -2092,7 +2208,7 @@ class RTE:
         # Check if legendre table needs padding. It will only need
         # padding if angular resolution is larger than the number of
         # non-zero phase function legendre coefficients.
-        if self._pa.nlegp > legendre_table.sizes['legendre_index']:
+        if self._pa.nlegp + 1 > legendre_table.sizes['legendre_index']:
             legendre_table = legendre_table.pad(
                 {'legendre_index':
                  (0, 1 + self._pa.nlegp - legendre_table.sizes['legendre_index'])
