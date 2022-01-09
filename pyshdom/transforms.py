@@ -11,7 +11,7 @@ to the spatial grid, any transformations of the state vector.
 """
 import numpy as np
 
-class CoordinateTransformNull:
+class CoordinateTransform:
     """
     The base for all coordinate transforms for the state vector.
     This performs no transformation.
@@ -78,7 +78,7 @@ class CoordinateTransformNull:
         abstract_gradient = physical_gradient
         return abstract_gradient
 
-class CoordinateTransformLog(CoordinateTransformNull):
+class CoordinateTransformLog(CoordinateTransform):
     """
     State vector is log(physical_coordinates)
     """
@@ -136,7 +136,7 @@ class CoordinateTransformLog(CoordinateTransformNull):
         abstract_gradient = physical_gradient*np.exp(abstract_state)
         return abstract_gradient
 
-class CoordinateTransformScaling(CoordinateTransformNull):
+class CoordinateTransformScaling(CoordinateTransform):
     """
     A linear scaling for all unknowns of a single variable.
 
@@ -211,7 +211,7 @@ class CoordinateTransformScaling(CoordinateTransformNull):
         abstract_gradient = self.inverse_transform(physical_gradient)
         return abstract_gradient
 
-class CoordinateTransformExp(CoordinateTransformNull):
+class CoordinateTransformExp(CoordinateTransform):
     """
     An exponential scaling for all variables.
 
@@ -281,7 +281,7 @@ class CoordinateTransformExp(CoordinateTransformNull):
         abstract_gradient = -self._scaling*physical_gradient/(abstract_state-1.0)
         return abstract_gradient
 
-class CoordinateTransformHyperBol(CoordinateTransformNull):
+class CoordinateTransformHyperBol(CoordinateTransform):
     """
     A hyperbolic transform.
 
@@ -357,6 +357,8 @@ class StateToGridMask:
     """
     Transforms gridded unknowns to and from a (possibly reduced) set of
     unknowns in a 1D state vector based on a grid-point mask.
+
+    This covers the default Null case of simply reshaping into a 1D vector.
 
     Parameters
     ----------

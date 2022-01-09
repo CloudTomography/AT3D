@@ -145,7 +145,8 @@ Cf2py intent(in) :: MU, PHI, WTDO
       REAL    XGRID(*), YGRID(*), ZGRID(*), GRIDPOS(3,*)
 Cf2py intent(in) :: XGRID, YGRID, ZGRID, GRIDPOS
       REAL    SFCGRIDPARMS(*), BCRAD(NSTOKES, *)
-Cf2py intent(in) :: SFCGRIDPARMS, BCRAD
+Cf2py intent(in) :: SFCGRIDPARMS
+Cf2py intent(in, out) :: BCRAD
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL    TOTAL_EXT(NPTS), LEGEN(NSTLEG,0:NLEG,*)
 Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN, TOTAL_EXT
@@ -431,7 +432,7 @@ Cf2py intent(in) :: MAXSUBGRIDINTS
       DOUBLE PRECISION RAYGRAD(NSTOKES,MAXPG,NUMDER), VISRAD(NSTOKES)
       DOUBLE PRECISION RAYGRAD_PIXEL(NSTOKES,MAXPG,NUMDER)
       INTEGER IPIX, J, L, SIDE, IRAY
-      LOGICAL VALIDRAD
+      LOGICAL VALIDRAD, VERBOSE
       DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION U, R, PI
       DOUBLE PRECISION X0, Y0, Z0
@@ -495,7 +496,7 @@ C         Loop over pixels in image
           PHI2 = CAMPHI(IRAY)
           MURAY = -MU2
           PHIRAY = PHI2 - PI
-
+          VERBOSE = .FALSE.
 C             Extrapolate ray to domain top if above
           IF (Z0 .GT. ZGRID(NZ)) THEN
             IF (MURAY .GE. 0.0) THEN
@@ -540,7 +541,8 @@ C         while traversing the SHDOM grid.
      .             DOEXACT, INTERPMETHOD, DTEMP, DEXTM, DALBM,
      .             DFJ, MAXSUBGRIDINTS, TRANSCUT,TIME_SOURCE,
      .             TIME_DIRECT_POINT, TIME_DIRECT_SURFACE,
-     .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE)
+     .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE,
+     .             VERBOSE)
           IF (IERR .NE. 0) RETURN
 
   900     CONTINUE
@@ -603,7 +605,8 @@ C      PRINT *, 'TIME_ALLOCATE', TIME_ALLOCATE
      .             DOEXACT, INTERPMETHOD, DTEMP, DEXTM,DALBM,
      .             DFJ, MAXSUBGRIDINTS, TRANSCUT, TIME_SOURCE,
      .             TIME_DIRECT_POINT, TIME_DIRECT_SURFACE,
-     .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE)
+     .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE,
+     .          VERBOSE)
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
 C     radiance (RADOUT) at the point X0,Y0,Z0.
@@ -615,7 +618,7 @@ C     Updates RAYGRAD with the approximate Frechet derivatives calculated using
 C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
 
       IMPLICIT NONE
-      LOGICAL EXACT_SINGLE_SCATTER
+      LOGICAL EXACT_SINGLE_SCATTER, VERBOSE
       INTEGER NPX, NPY, NPZ, MAXPG, BCELL
       REAL    DELX, DELY, XSTART, YSTART, SOLARFLUX
       REAL    ZLEVELS(*)
@@ -1054,7 +1057,7 @@ C             just a weighting by transmission to sensor.
 C             The neglect of other terms in the integral here is the Levis
 C             approximation to the Frechet derivative of SHDOM.
 C             The portion of the inner product from integration of radiance
-C             multiplied by extinction is calculated at the end of the
+C             multiplied by extinction derivative is calculated at the end of the
 C             subroutine.
               SRCGRAD = ( 0.5*(GRAD0+GRAD1)
      .          + 0.08333333333*(EXT0*GRAD1-EXT1*GRAD0)*DELS
@@ -1199,8 +1202,12 @@ C          CALL CPU_TIME(TIME1)
      .                      RADBND, BOUNDPTS, BOUNDINTERP, DIRRAD,
      .                      GNDALBEDO)
           RADOUT(:) = RADOUT(:) + TRANSMIT*RADBND(:)
+C         These values aren't actually used. set to -1.0 for
+C         debugging purposes.
           PASSEDTRANSMIT(NPASSED) = TRANSMIT
-          PASSEDABSCELL(NPASSED) = 0.0
+          PASSEDABSCELL(NPASSED) = -1.0
+C         zero radiance before adding to it.
+          PASSEDRAD(1,NPASSED) = 0.0
           DO KK=1,NPASSED
             PASSEDRAD(:,KK) = PASSEDRAD(:,KK) +
      .        TRANSMIT*RADBND(:)/PASSEDTRANSMIT(KK)
@@ -1247,7 +1254,7 @@ C     fully calculated using the saved properties from each
 C     subgrid integration interval.
 C      CALL CPU_TIME(TIME1)
 C     Zero the final radiance value.
-      PASSEDRAD(:,NPASSED) = 0.0
+C      PASSEDRAD(:,NPASSED) = 0.0
       CALL COMPUTE_RADIANCE_DERIVATIVE(NUMDER,
      .  PASSEDDELS, PASSEDPOINTS, PASSEDINTERP0,
      .  PASSEDINTERP1, TOTAL_EXT, PASSEDRAD, RAYGRAD,

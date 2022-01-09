@@ -165,19 +165,19 @@ class RadiometricNoiseUncertainty(Uncertainty):
     def _process_uncertainties(self, sensor):
 
         uncertainties = 1.0/(self._covariance[0, 0]*sensor.I.data + self._sigma_floor**2)
-        big_uncertainties = np.repeat(np.repeat(uncertainties[None,None],4,axis=0),4,axis=1)
+        big_uncertainties = np.repeat(np.repeat(uncertainties[None, None], 4, axis=0), 4, axis=1)
         return big_uncertainties
 
-    def _process_noise(self, sensor):
-        big_perturbations = np.random.multivariate_normal(
-            mean=np.zeros(self.num_uncertainty), cov=self._covariance, size=(sensor.sizes['npixels'])
-            )
-        big_perturbations *= (np.sqrt(sensor.I.data[:, None]))
-        big_perturbations += np.random.multivariate_normal(
-            mean=np.zeros(self.num_uncertainty), cov=np.diag([self._sigma_floor**2, 0.0, 0.0, 0.0]), size=(sensor.sizes['npixels'])
-            )
+    # def _process_noise(self, sensor):
+    #     big_perturbations = np.random.multivariate_normal(
+    #         mean=np.zeros(self.num_uncertainty), cov=self._covariance, size=(sensor.sizes['npixels'])
+    #         )
+    #     big_perturbations *= (np.sqrt(sensor.I.data[:, None]))
+    #     big_perturbations += np.random.multivariate_normal(
+    #         mean=np.zeros(self.num_uncertainty), cov=np.diag([self._sigma_floor**2, 0.0, 0.0, 0.0]), size=(sensor.sizes['npixels'])
+    #         )
 
-        return big_perturbations
+    #    return big_perturbations
 
 class NullUncertainty(Uncertainty):
     """

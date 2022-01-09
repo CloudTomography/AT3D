@@ -857,8 +857,8 @@ class UnknownScatterers(OrderedDict):
     def add_global_transform(self, transform):
 
         if transform is None:
-            transform = pyshdom.transforms.CoordinateTransformNull()
-        if not isinstance(transform, pyshdom.transforms.CoordinateTransformNull):
+            transform = pyshdom.transforms.CoordinateTransform()
+        if not isinstance(transform, pyshdom.transforms.CoordinateTransform):
             raise TypeError(
                 "`transform` is of an invalid type."
             )

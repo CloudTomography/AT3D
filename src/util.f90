@@ -8,24 +8,34 @@
 
 subroutine grid_smoothing(xgrid, ygrid, zgrid, nx, ny, nz, &
   field, cost, gradient, weights, mode, ierr, errmsg, &
-  direction_weights)
-
+  direction_weights, huber_parameter)
+! This subroutine evaluates volume integrals of different norms of 3D
+! derivatives of `field` assuming field is defined on grid points
+! with coordinates given by `xgrid`, `ygrid`, `zgrid` and a linear
+! interpolation kernel is assumed for the norm of the gradient.
+! Norms on the gradient field may be L2 or Pseudo-Huber, which is a differentiable
+! form of the L1 norm. An 'L1' norm may be specified but this is not differentiable
+! around zero which can lead to artifacts.
+! This subroutine is useful for supplying regularizing constraints on fields
+! in an inverse problem.
   implicit none
   integer nx, ny, nz
   double precision xgrid(nx), ygrid(ny), zgrid(nz), field(nz,ny,nx)
   double precision weights(nz,ny,nx)
   double precision gradient(nz,ny,nx), cost
   double precision direction_weights(3)
+  double precision huber_parameter
   character(len=2) mode
   integer ierr
   character(len=600) errmsg
 !f2py intent(in) :: nx, ny, nz, xgrid, ygrid, zgrid, field, weights
-!f2py intent(in) :: direction_weights
+!f2py intent(in) :: direction_weights, huber_parameter
 !f2py intent(out) :: gradient, cost, ierr, errmsg
   integer i,j,k
   double precision dx,dy,dz,invdx,invdy,invdz,a,b,c
   double precision a1,a2,a3,a4,b1,b2,b3,b4,c1,c2,c3,c4
   double precision x_derivs, y_derivs, z_derivs, volume
+  double precision norm_of_increment, cost_increment
 
   cost = 0.0D0
   gradient = 0.0D0
@@ -130,6 +140,31 @@ subroutine grid_smoothing(xgrid, ygrid, zgrid, nx, ny, nz, &
             -a*x_derivs*invdx +b*y_derivs*invdy + c*z_derivs*invdz)
           gradient(k+1,j+1,i+1) = gradient(k+1,j+1,i+1) + volume*(    &
             a*x_derivs*invdx +b*y_derivs*invdy + c*z_derivs*invdz)
+        else if (mode .eq. 'ph') then
+          norm_of_increment = a*x_derivs*x_derivs + b*y_derivs*y_derivs + c*z_derivs*z_derivs
+          cost_increment = huber_parameter**2 * (sqrt(1 + norm_of_increment/(huber_parameter**2)) - 1)
+
+          ! Update the volume variable with the huber weight to the derivative.
+          cost = cost + cost_increment*volume
+          volume = volume/sqrt(1 + norm_of_increment/(huber_parameter**2))
+          ! The derivative is then just the l2 derivative with the Huber
+          ! weight added.
+          gradient(k,j,i) = gradient(k,j,i) + volume*(    &
+            -a*x_derivs*invdx - b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k,j,i+1) = gradient(k,j,i+1) + volume*(    &
+            a*x_derivs*invdx - b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k,j+1,i) = gradient(k,j+1,i) + volume*(    &
+            -a*x_derivs*invdx +b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k,j+1,i+1) = gradient(k,j+1,i+1) + volume*(    &
+            a*x_derivs*invdx +b*y_derivs*invdy - c*z_derivs*invdz)
+          gradient(k+1,j,i) = gradient(k+1,j,i) + volume*(    &
+            -a*x_derivs*invdx - b*y_derivs*invdy + c*z_derivs*invdz)
+          gradient(k+1,j,i+1) = gradient(k+1,j,i+1) + volume*(    &
+            a*x_derivs*invdx - b*y_derivs*invdy + c*z_derivs*invdz)
+          gradient(k+1,j+1,i) = gradient(k+1,j+1,i) + volume*(    &
+            -a*x_derivs*invdx +b*y_derivs*invdy + c*z_derivs*invdz)
+          gradient(k+1,j+1,i+1) = gradient(k+1,j+1,i+1) + volume*(    &
+            a*x_derivs*invdx +b*y_derivs*invdy + c*z_derivs*invdz)
         else
           ierr = 1
           write(errmsg, *) "GRID_SMOOTHING: Unrecognized argument &
@@ -138,6 +173,7 @@ subroutine grid_smoothing(xgrid, ygrid, zgrid, nx, ny, nz, &
       enddo
     enddo
   enddo
+
   gradient = 0.25D0*gradient
   if (mode .eq. 'l2') then
     gradient = gradient*2

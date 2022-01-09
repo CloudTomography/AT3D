@@ -344,16 +344,17 @@ class SpatialSmoothing(WeightedRegularization):
     def __init__(
             self, state_generator, scatterer_name, variable_name,
             regularization_strength, relaxation_parameter=1.0, mode='l2', direction_weights=[1.0, 1.0, 1.0],
-            spatial_weights=None):
+            spatial_weights=None, huber_parameter=1.0):
         WeightedRegularization.__init__(self, state_generator, scatterer_name, variable_name,
         regularization_strength, spatial_weights=spatial_weights, relaxation_parameter=relaxation_parameter)
 
-        valid_modes = ('l1', 'l2')
+        valid_modes = ('l1', 'l2', 'ph')
         if mode not in valid_modes:
             raise ValueError(
                 "Spatial Smoothing `mode` should be in {}".format(valid_modes)
             )
         self._mode = mode
+        self._huber_parameter = huber_parameter
 
         direction_weights = np.atleast_1d(direction_weights)
         self._direction_weights = direction_weights
@@ -374,7 +375,8 @@ class SpatialSmoothing(WeightedRegularization):
             zgrid=rte_grid.x.data,
             ygrid=rte_grid.y.data,
             xgrid=rte_grid.z.data,
-            mode=self._mode
+            mode=self._mode,
+            huber_parameter=self._huber_parameter
         )
         pyshdom.checks.check_errcode(ierr, errmsg)
         cost *= self.regularization_strength(iteration_number)

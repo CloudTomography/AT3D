@@ -23,7 +23,8 @@ import scipy.spatial as ss
 def make_grid(delx: float, npx: int, dely: float, npy: int, z: np.ndarray,
               nx=None, ny=None, nz=None) -> xr.Dataset:
     """
-    Defines a 3D grid of 'x', 'y', 'z' coordinates according to SHDOM.
+    Defines a 3D grid of 'x', 'y', 'z' coordinates according to SHDOM's
+    conventions.
 
     Defines an equispaced grid in the 'x' and 'y' dimensions with spacing `delx`/'dely'
     and number of points `npx`/`npy`, respectively. The starting value of 'x' and 'y'

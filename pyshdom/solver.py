@@ -544,7 +544,7 @@ class RTE:
         self.check_solved()
         self._precompute_phase()
 
-        output, ierr, errmsg = pyshdom.core.render(
+        self._bcrad_output, output, ierr, errmsg = pyshdom.core.render(
             correctinterpolate=self._correctinterpolate,
             singlescatter=single_scatter,
             transcut=self._transcut,
@@ -2204,7 +2204,7 @@ class RTE:
         # Check if legendre table needs padding. It will only need
         # padding if angular resolution is larger than the number of
         # non-zero phase function legendre coefficients.
-        if self._pa.nlegp > legendre_table.sizes['legendre_index']:
+        if self._pa.nlegp + 1 > legendre_table.sizes['legendre_index']:
             legendre_table = legendre_table.pad(
                 {'legendre_index':
                  (0, 1 + self._pa.nlegp - legendre_table.sizes['legendre_index'])
