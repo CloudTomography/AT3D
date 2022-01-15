@@ -1146,6 +1146,7 @@ class RTE:
 
             direct_derivative_path, direct_derivative_ptr, ierr, errmsg = \
                 pyshdom.core.make_direct_derivative(
+                    longest_path_pts=self._longest_path_pts,
                     npts=self._npts,
                     bcflag=self._bcflag,
                     gridpos=self._gridpos,
@@ -2567,7 +2568,7 @@ class RTE:
         self._dirflux, self._pa.extdirp, self._cx, self._cy, self._cz, \
         self._cxinv, self._cyinv, self._czinv, self._di, self._dj, self._dk, \
         self._ipdirect, self._delxd, self._delyd, self._xdomain, self._ydomain, \
-        self._epss, self._epsz, self._uniformzlev = \
+        self._epss, self._epsz, self._uniformzlev, self._longest_path_pts = \
             pyshdom.core.make_direct(
                 nstleg=self._nstleg,
                 dirflux=self._dirflux,

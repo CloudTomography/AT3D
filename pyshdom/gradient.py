@@ -283,6 +283,7 @@ class LevisApproxGradient:
             makejacobian=jacobian_flag,
             singlescatter=self._single_scatter,
             maxsubgridints=maxsubgridints,
+            longest_path_pts=rte_solver._longest_path_pts,
             tautol=rte_solver._tautol,
             transcut=rte_solver._transcut,
             dextm=rte_solver._dextm,

@@ -341,7 +341,7 @@
                      ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV, &
                      CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD, &
                      XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,&
-                     MAXPG, PHASEWTP, MAXNMICRO)
+                     MAXPG, PHASEWTP, MAXNMICRO, LONGEST_PATH_PTS)
 !       Computes the direct beam flux at point (XI,YI,ZI) by integrating
 !     the extinction through the property grid.  If called with
 !     INIT=1 then the property grid extinction array, solar direction
@@ -370,7 +370,7 @@
       LOGICAL DELTAM, VALIDBEAM
       REAL    XI, YI, ZI, SOLARFLUX, SOLARMU, SOLARAZ
       REAL    DIRFLUX, UNIFZLEV, XO, YO, ZO, DIRPATH
-      INTEGER MAXNMICRO
+      INTEGER MAXNMICRO, LONGEST_PATH_PTS
 
       INTEGER IX, IY, IZ, JZ, IL, IM, IU, Q
       INTEGER I, J, K, L, IPH, IP, JP, I1, I2, I3, I4, IPA
@@ -403,6 +403,7 @@
       INTEGER NZCKD
       REAL ZCKD(*), GASABS(*)
 
+      INTEGER PATH_PTS
 
       IF (INIT .EQ. 9) THEN
         RETURN
@@ -611,6 +612,7 @@
 
 !           Grid cell loop begin
       PATH = DIRPATH
+      PATH_PTS = 0
       DO WHILE (.NOT. HITBOUNDARY .AND. ABS(ZE-ZLEVELS(NPZ)) .GT. EPSZ)
         IP = I + 1
         IF (I .EQ. NPX) THEN
@@ -835,8 +837,10 @@
         XE = XP + XOFFS
         YE = YP + YOFFS
         ZE = ZP
+        PATH_PTS = PATH_PTS + 8
       ENDDO
       DIRFLUX = SOLARFLUX*EXP(-PATH)
+      IF (PATH_PTS .GT. LONGEST_PATH_PTS) LONGEST_PATH_PTS = PATH_PTS
 
       DIRPATH = PATH
       XO=XE+XSTART ; YO=YE+YSTART ; ZO=ZE

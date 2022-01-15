@@ -179,9 +179,7 @@ class DirectBeamDerivativeDeltaMOpen(TestCase):
                 abscell=1.0,
                 inputweight=solver._dirflux[i],
                 nstokes=1,
-                npx=solver._pa.npx,
-                npy=solver._pa.npy,
-                npz=solver._pa.npz,
+                longest_path_pts=solver._longest_path_pts,
                 maxpg=solver._maxpg,
                 raygrad=raygrad,
             )
@@ -289,9 +287,7 @@ class DirectBeamDerivativeDeltaMPeriodic(TestCase):
                 abscell=1.0,
                 inputweight=solver._dirflux[i],
                 nstokes=1,
-                npx=solver._pa.npx,
-                npy=solver._pa.npy,
-                npz=solver._pa.npz,
+                longest_path_pts=solver._longest_path_pts,
                 maxpg=solver._maxpg,
                 raygrad=raygrad,
             )
@@ -366,15 +362,14 @@ class DirectBeamDerivativePeriodic(TestCase):
         forward_sensors = Sensordict.make_forward_sensors()
 
 
-        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
-        solvers, forward_sensors, unknown_scatterers,
-        parallel_solve_kwargs={'maxiter':800,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
-        gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
-        'indices_for_jacobian': indices_for_jacobian}, uncertainty_kwargs={'add_noise': False})
-        cost, gradient, jacobian = gradient_call()
-        jacobian = jacobian['jacobian_0.860'][0,0].data
-
-
+        # gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        # solvers, forward_sensors, unknown_scatterers,
+        # parallel_solve_kwargs={'maxiter':800,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
+        # gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
+        # 'indices_for_jacobian': indices_for_jacobian}, uncertainty_kwargs={'add_noise': False})
+        # cost, gradient, jacobian = gradient_call()
+        # jacobian = jacobian['jacobian_0.860'][0,0].data
+        solvers.calculate_microphysical_partial_derivatives(unknown_scatterers)
         solver.calculate_direct_beam_derivative()
         raygrad = np.zeros((solver._nstokes, solver._maxpg, 1))
         jacobian = []
@@ -389,9 +384,7 @@ class DirectBeamDerivativePeriodic(TestCase):
                 abscell=1.0,
                 inputweight=solver._dirflux[i],
                 nstokes=1,
-                npx=solver._pa.npx,
-                npy=solver._pa.npy,
-                npz=solver._pa.npz,
+                longest_path_pts=solver._longest_path_pts,
                 maxpg=solver._maxpg,
                 raygrad=raygrad,
             )
@@ -486,9 +479,7 @@ class DirectBeamDerivativeOpen(TestCase):
                 abscell=1.0,
                 inputweight=solver._dirflux[i],
                 nstokes=1,
-                npx=solver._pa.npx,
-                npy=solver._pa.npy,
-                npz=solver._pa.npz,
+                longest_path_pts=solver._longest_path_pts,
                 maxpg=solver._maxpg,
                 raygrad=raygrad,
             )

@@ -287,7 +287,7 @@ C      PRINT *, 'TIME_SOURCE', TIME_SOURCE
      .           PHASEINTERPWT, ALBEDOP, EXTINCTP, OPTINTERPWT,
      .           INTERPPTR, EXTMIN, SCATMIN, DOEXACT, TEMP, PHASEMAX,
      .           DTEMP, DEXTM, DALBM, DFJ, MAXSUBGRIDINTS,
-     .           TRANSCUT)
+     .           TRANSCUT, LONGEST_PATH_PTS)
 C    Calculates the cost function and its gradient using the Levis approximation
 C    to the Frechet derivatives of the radiative transfer equation.
 C    Calculates the Stokes Vector at the given directions (CAMMU, CAMPHI)
@@ -399,11 +399,11 @@ Cf2py intent(in) :: NUMDER, PARTDER
       REAL DPHASETAB(NSTPHASE,DNUMPHASE,NSCATANGLE)
 Cf2py intent(in) :: YLMSUN, PHASETAB
 Cf2py intent(in) :: NSCATANGLE, YLMSUN, PHASETAB, DPHASETAB, NSTPHASE
-      REAL DPATH(8*(NPX+NPY+NPZ),*)
+      REAL DPATH(LONGEST_PATH_PTS,*)
       INTEGER :: NUNCERTAINTY
 Cf2py intent(in) :: NUNCERTAINTY
       DOUBLE PRECISION UNCERTAINTIES(NUNCERTAINTY,NUNCERTAINTY,*)
-      INTEGER DPTR(8*(NPX+NPY+NPZ),*)
+      INTEGER DPTR(LONGEST_PATH_PTS,*)
 Cf2py intent(in) :: DPATH, DPTR, UNCERTAINTIES
       REAL JACOBIAN(NSTOKES,NUMDER,NUM_JACOBIAN_PTS,*)
 Cf2py intent(in,out) :: JACOBIAN
@@ -424,8 +424,8 @@ Cf2py intent(in) :: SINGLESCATTER
       INTEGER IERR
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
-      INTEGER MAXSUBGRIDINTS
-Cf2py intent(in) :: MAXSUBGRIDINTS
+      INTEGER MAXSUBGRIDINTS, LONGEST_PATH_PTS
+Cf2py intent(in) :: MAXSUBGRIDINTS, LONGEST_PATH_PTS
 
 
       DOUBLE PRECISION WEIGHT
@@ -539,7 +539,8 @@ C         while traversing the SHDOM grid.
      .             MAXNMICRO, EXTINCTP, ALBEDOP, PHASEWTP, DPHASEWTP,
      .             IPHASEP, DIPHASEP, WAVENO, UNITS, EXTMIN, SCATMIN,
      .             DOEXACT, INTERPMETHOD, DTEMP, DEXTM, DALBM,
-     .             DFJ, MAXSUBGRIDINTS, TRANSCUT,TIME_SOURCE,
+     .             DFJ, MAXSUBGRIDINTS, TRANSCUT,LONGEST_PATH_PTS,
+     .             TIME_SOURCE,
      .             TIME_DIRECT_POINT, TIME_DIRECT_SURFACE,
      .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE,
      .             VERBOSE)
@@ -603,7 +604,8 @@ C      PRINT *, 'TIME_ALLOCATE', TIME_ALLOCATE
      .             MAXNMICRO, EXTINCTP, ALBEDOP, PHASEWTP, DPHASEWTP,
      .             IPHASEP, DIPHASEP, WAVENO, UNITS, EXTMIN, SCATMIN,
      .             DOEXACT, INTERPMETHOD, DTEMP, DEXTM,DALBM,
-     .             DFJ, MAXSUBGRIDINTS, TRANSCUT, TIME_SOURCE,
+     .             DFJ, MAXSUBGRIDINTS, TRANSCUT, LONGEST_PATH_PTS,
+     .             TIME_SOURCE,
      .             TIME_DIRECT_POINT, TIME_DIRECT_SURFACE,
      .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE,
      .          VERBOSE)
@@ -684,8 +686,9 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
       REAL    GRAD8(NSTOKES,8,8,NUMDER), OGRAD8(NSTOKES,8,8,NUMDER)
       REAL GRAD0(NSTOKES,8,8,NUMDER), GRAD1(NSTOKES,8,8,NUMDER)
       REAL    SRCGRAD(NSTOKES,8,8,NUMDER), SRCSINGSCAT(NSTOKES,8)
-      REAL    DPATH(8*(NPX+NPY+NPZ),*), SECMU0
-      INTEGER DPTR(8*(NPX+NPY+NPZ),*), N
+      INTEGER LONGEST_PATH_PTS
+      REAL    DPATH(LONGEST_PATH_PTS,*), SECMU0
+      INTEGER DPTR(LONGEST_PATH_PTS,*), N
       REAL DEXTM(MAXPG,NUMDER), DALBM(8,NPTS,NUMDER)
       REAL DFJ(8,NPTS,NUMDER)
       DOUBLE PRECISION PI, CX, CY, CZ, CXINV, CYINV, CZINV
@@ -1111,8 +1114,8 @@ C             extinction along the path between the gridpoint and the sun.
                 CALL COMPUTE_DIRECT_BEAM_DERIV(DPATH(:,IP),
      .            DPTR(:,IP),
      .            NUMDER, DEXTM, TRANSMIT,
-     .            ABSCELL, SRCSINGSCAT, NSTOKES, NPX,NPY,
-     .            NPZ,MAXPG,RAYGRAD)
+     .            ABSCELL, SRCSINGSCAT, NSTOKES,
+     .            MAXPG,RAYGRAD, LONGEST_PATH_PTS)
 
               ENDIF
             ENDDO
@@ -1228,7 +1231,8 @@ C             extinction along the path between the gridpoint and the sun.
      .            DPTR(:,IP),
      .            NUMDER, DEXTM, TRANSMIT,
      .            1.0D0, SNGL(BOUNDINTERP(KK)*DIRRAD(:,KK)),
-     .            NSTOKES, NPX,NPY, NPZ,MAXPG,RAYGRAD)
+     .            NSTOKES, MAXPG,RAYGRAD,
+     .            LONGEST_PATH_PTS)
             ENDDO
           ENDIF
 C          CALL CPU_TIME(TIME2)
@@ -2417,8 +2421,8 @@ C     respect to the unknowns.
 
       SUBROUTINE COMPUTE_DIRECT_BEAM_DERIV(DPATH, DPTR,
      .     NUMDER,DEXTM, TRANSMIT, ABSCELL,
-     .     INPUTWEIGHT, NSTOKES, NPX,NPY,NPZ,MAXPG,
-     .     RAYGRAD)
+     .     INPUTWEIGHT, NSTOKES, MAXPG,
+     .     RAYGRAD, LONGEST_PATH_PTS)
 C     .  ALBEDOP, PHASEWTP, LEGEN, NSTLEG, NUMPHASE,
 C     .  MAXNMICRO, IPHASEP, RAYGRAD, ML, NLEG, DELTAM,
 C     .  DNUMPHASE, DIPHASEP, DALB, EXTINCTP, DPHASEWTP,
@@ -2437,13 +2441,13 @@ C     due to the direct solar beam or the single-scatter source
 C     at the grid point.
       INTEGER NSTOKES, NUMDER
 Cf2py intent(in) :: NSTOKES, NUMDER
-      INTEGER NPX, NPY, NPZ, MAXPG
-Cf2py intent(in) :: NPX, NPY, NPZ, MAXPG
+      INTEGER MAXPG
+Cf2py intent(in) :: MAXPG
       LOGICAL DELTAM
 Cf2py intent(in) :: DELTAM
-      REAL DPATH(8*(NPX+NPY+NPZ))
+      REAL DPATH(LONGEST_PATH_PTS)
 Cf2py intent(in) :: DPATH
-      INTEGER DPTR(8*(NPX+NPY+NPZ))
+      INTEGER DPTR(LONGEST_PATH_PTS)
 Cf2py intent(in) :: DPTR
       REAL DEXTM(MAXPG,NUMDER)
 Cf2py intent(in) :: DEXTM
@@ -2453,6 +2457,8 @@ Cf2py intent(in) :: TRANSMIT, ABSCELL
 Cf2py intent(in) :: INPUTWEIGHT
       DOUBLE PRECISION RAYGRAD(NSTOKES,MAXPG,NUMDER)
 Cf2py intent(in,out) :: RAYGRAD
+      INTEGER LONGEST_PATH_PTS
+Cf2py intent(in) :: LONGEST_PATH_PTS
 
       INTEGER IB, II, IDR, Q, IPA
       REAL FP, EXTGRAD

@@ -396,7 +396,8 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .                ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .                CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .                XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		          NPART, MAXPG, PHASEWTP, MAXNMICRO)
+     .		          NPART, MAXPG, PHASEWTP, MAXNMICRO,
+     .              LONGEST_PATH_PTS)
 C       Makes the direct beam solar flux for the internal base grid.
 C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
@@ -417,7 +418,6 @@ Cf2py intent(in) :: ZLEVELS, TEMPP, EXTINCTP, ALBEDOP
       REAL LEGENP(*), ZCKD(*), GASABS(*)
       INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART), NZCKD
 Cf2py intent(in) :: LEGENP, ZCKD, GASABS, IPHASEP, NZCKD
-
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
 Cf2py intent(out) :: CX, CY, CZ, CXINV, CYINV, CZINV
       INTEGER IPDIRECT, DI, DJ, DK
@@ -428,10 +428,14 @@ Cf2py intent(out) :: EPSS, EPSZ, XDOMAIN, YDOMAIN
 Cf2py intent(out) :: UNIFORMZLEV, DELXD, DELYD
       REAL    DIRFLUX(*), EXTDIRP(*)
 Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
+      INTEGER LONGEST_PATH_PTS
+Cf2py intent(out) :: LONGEST_PATH_PTS
 
       INTEGER SIDE, IP
       LOGICAL VALIDBEAM
       REAL    UNIFZLEV, XO, YO, ZO, DIR, DIRPATH
+
+      LONGEST_PATH_PTS = 0
 
       CALL DIRECT_BEAM_PROP (1, 0.0, 0.0, 0.0, BCFLAG, IPFLAG,
      .            DELTAM, ML, NSTLEG, NLEGP,
@@ -443,7 +447,8 @@ Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .	          NPART, MAXPG, PHASEWTP, MAXNMICRO)
+     .	          NPART, MAXPG, PHASEWTP, MAXNMICRO,
+     .            LONGEST_PATH_PTS)
       DO IP = 1, NPTS
 C27237,27283
         DIRPATH = 0.0
@@ -458,7 +463,8 @@ C27237,27283
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		  NPART, MAXPG, PHASEWTP, MAXNMICRO)
+     .		  NPART, MAXPG, PHASEWTP, MAXNMICRO,
+     .      LONGEST_PATH_PTS)
       ENDDO
       RETURN
       END
