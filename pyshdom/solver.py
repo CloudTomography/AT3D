@@ -151,6 +151,9 @@ class RTE:
         self._phasemax = 0.999
         self._adjflag = False # Used for testing the adjoint source.
 
+        self._newmethod = True # Used for testing the fast multi-species source computation
+        # vs the slow multi-species source computation.
+
         self._correctinterpolate = True
         # Flag for switching between the 'Radiance' and 'Visualization'
         # methods for calculating radiances in original SHDOM.
@@ -329,6 +332,7 @@ class RTE:
         self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
         self._work2, ierr, errmsg, self._phaseinterpwt, self._cpu_time \
          = pyshdom.core.solution_iterations(
+            newmethod=self._newmethod,
             verbose=verbose,
             solve=solve,
             maxnmicro=self._pa.max_num_micro,
@@ -2421,6 +2425,7 @@ class RTE:
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
         self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg \
          = pyshdom.core.init_solution(
+            newmethod=self._newmethod,
             ordinateset=self._angle_set,
             phasewtp=self._pa.phasewtp,
             maxnmicro=self._pa.max_num_micro,

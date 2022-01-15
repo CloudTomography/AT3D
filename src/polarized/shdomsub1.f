@@ -135,7 +135,7 @@ C       Get the maximum single scattering albedo over all processors
      .             INRADFLAG,NDELSOURCE, IERR, ERRMSG, MAXPG,
      .             WORK2_SIZE, PHASEINTERPWT, PHASEMAX,
      .             INTERPMETHOD, NLEGP, ADJFLAG, MAXNMICRO,
-     .             PHASEWTP, ORDINATESET)
+     .             PHASEWTP, ORDINATESET, NEWMETHOD)
 Cf2py threadsafe
 C       Initialize the SHDOM solution procedure.
       IMPLICIT NONE
@@ -260,6 +260,8 @@ Cf2py intent(in) :: ORDINATESET
       INTEGER IERR
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
+      LOGICAL NEWMETHOD
+Cf2py intent(in) :: NEWMETHOD
 
       INTEGER I, J, SIDE
       DOUBLE PRECISION XE, YE,ZE, TRANSMIT, PI
@@ -357,7 +359,7 @@ C           Initialize the source function from the radiance field
      .         .TRUE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .          NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR,
      .         ERRMSG, PHASEINTERPWT(:,:NPTS,:), DELTAM,
-     .         INTERPMETHOD, PHASEMAX, MAXNMICRO)
+     .         INTERPMETHOD, PHASEMAX, MAXNMICRO, NEWMETHOD)
           IF (IERR .NE. 0) RETURN
       ENDIF
       IF (ACCELFLAG) THEN
@@ -440,7 +442,7 @@ C           inequality holds.
      .               WORK, WORK1, WORK2, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
      .               ITERFIXSH, INTERPMETHOD, IERR, ERRMSG, MAXPG,
      .               PHASEINTERPWT, PHASEMAX, NLEGP,
-     .               MAXNMICRO, PHASEWTP, SOLVE, COMPTIME)
+     .               MAXNMICRO, PHASEWTP, SOLVE, COMPTIME, NEWMETHOD)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -566,8 +568,8 @@ Cf2py intent(in) :: UNIFORM_SFC_BRDF, SFC_BRDF_DO
       INTEGER IERR
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
-      LOGICAL SOLVE
-Cf2py intent(in) :: SOLVE
+      LOGICAL SOLVE, NEWMETHOD
+Cf2py intent(in) :: SOLVE, NEWMETHOD
       REAL COMPTIME
 Cf2py intent(out) :: COMPTIME
 
@@ -717,7 +719,7 @@ C        CALL CPU_TIME(TIME3)
      .         .FALSE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .         NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR, ERRMSG,
      .         PHASEINTERPWT(:,:NPTS,:), DELTAM,INTERPMETHOD, PHASEMAX,
-     .         MAXNMICRO)
+     .         MAXNMICRO, NEWMETHOD)
 C        CALL CPU_TIME(TIME4)
 C        COMPTIME2 = COMPTIME2 + TIME4 - TIME3
         IF (IERR .NE. 0) RETURN
@@ -896,7 +898,7 @@ C       from the radiance vector in genSH.
      .             FIRST,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .             NPART, EXTINCT, TOTAL_EXT, IERR, ERRMSG,
      .             PHASEINTERPWT, DELTAM, INTERPMETHOD, PHASEMAX,
-     .             MAXNMICRO)
+     .             MAXNMICRO, NEWMETHOD)
 C       Computes the source function (SOURCE) in spherical harmonic space
 C     for all the grid points.  The thermal source and/or solar
 C     pseudo-source (in PLANCK or DIRFLUX) is added to the scattering source
@@ -922,8 +924,8 @@ C     source function fields normalized by the RMS of the field).
       IMPLICIT NONE
       INTEGER NSTOKES, NPTS, ML, MM, NLM, NLEG, NSTLEG, MAXIV
 Cf2py intent(in) :: NSTOKES, NPTS, ML, MM, NLM, NLEG, NSTLEG, MAXIV
-      LOGICAL DELTAM
-Cf2py intent(in) :: DELTAM
+      LOGICAL DELTAM, NEWMETHOD
+Cf2py intent(in) :: DELTAM, NEWMETHOD
       INTEGER NUMPHASE, NPART, MAXNMICRO
 Cf2py intent(in) :: NUMPHASE, NPART, MAXNMICRO
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)
@@ -958,9 +960,10 @@ Cf2py intent(out) :: IERR, ERRMSG
       INTEGER IPA, Q
       INTEGER, ALLOCATABLE :: LOFJ(:)
       REAL, ALLOCATABLE :: SOURCET(:,:),  SOURCET1(:,:)
-      REAL    SRCMIN, C, SECMU0, D, EXT, W, F
-      REAL, ALLOCATABLE :: LEGENT(:,:,:)
-      ALLOCATE (LEGENT(NSTLEG,0:NLEG,1))
+      REAL    SRCMIN, C, SECMU0, D, EXT, W, F, TOTAL_PLANCK
+      DOUBLE PRECISION ALB, SCAT
+      REAL, ALLOCATABLE :: LEGENT(:,:,:), LEGENT1(:,:,:)
+      ALLOCATE (LEGENT(NSTLEG,0:NLEG,1),LEGENT1(NSTLEG,0:NLEG,1))
       ALLOCATE (SOURCET(NSTOKES, NLM), LOFJ(NLM), SOURCET1(NSTOKES,NLM))
 
       SRCMIN = SHACC
@@ -991,57 +994,127 @@ C             Compute the temporary source function for this point
 	       EXT = TOTAL_EXT(I)
          IR = RSHPTR(I)
          NR = RSHPTR(I+1)-IR
-         SOURCET = 0.0
-	       DO IPA = 1, NPART
-          IF (EXT.EQ.0.0) THEN
-            W = 1.0
-          ELSE
-            W = EXTINCT(I,IPA)/EXT
-          ENDIF
+         IF (NEWMETHOD) THEN
+         ALB = 0.0D0
+         LEGENT = 0.0
+         TOTAL_PLANCK = 0.0
+
+         DO IPA = 1, NPART
+          SCAT = DBLE(EXTINCT(I,IPA)*ALBEDO(I,IPA))
+          ALB = ALB + SCAT
+          TOTAL_PLANCK = TOTAL_PLANCK +
+     .      EXTINCT(I,IPA)*PLANCK(I,IPA)
           IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
-            IPH = IPHASE(1,I,IPA)
-            IF (NSTOKES .EQ. 1) THEN
-              CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
-     .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
-     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
-     .            NR, RADIANCE(1,IR+1),   SOURCET1)
-            ELSE
-              CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
-     .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
-     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
-     .            NR, RADIANCE(1,IR+1), SOURCET1)
-            ENDIF
+            LEGENT(:,:,1) = LEGENT(:,:,1) +
+     .        SCAT*LEGEN(:,:,IPHASE(1,I,IPA))
           ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
             IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
-              LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,I,IPA))
+              LEGENT1(:,:,1) =
+     .          LEGEN(:,:,IPHASE(1,I,IPA))
             ELSE
-              LEGENT = 0.0
+              LEGENT1(:,:,:) = 0.0
               DO Q=1,8*MAXNMICRO
                 IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
                 IPH = IPHASE(Q,I,IPA)
-                LEGENT(:,:,1) = LEGENT(:,:,1) +
+                LEGENT1(:,:,1) = LEGENT1(:,:,1) +
      .            LEGEN(:,:,IPH)*
      .            PHASEINTERPWT(Q,I,IPA)
               ENDDO
             ENDIF
+
             IF (DELTAM) THEN
-              F = LEGENT(1,ML+1,1)
-              LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1)/(1-F)
+              F = LEGENT1(1,ML+1,1)
+              LEGENT1(:,0:ML,1) = LEGENT1(:,0:ML,1)/(1-F)
             ENDIF
-            IF (NSTOKES .EQ. 1) THEN
-              CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+            LEGENT(:,:,:) = LEGENT(:,:,:) +
+     .            SCAT*LEGENT1(:,:,:)
+          ENDIF
+         ENDDO
+
+C
+         IF (ALB .GT. 1e-10) THEN
+          LEGENT(:,:,:) = LEGENT(:,:,:)/ALB
+         ELSE
+           LEGENT(:,:,:) = LEGENT(:,:,:)/NPART
+         ENDIF
+C
+
+         IF (EXT .GT. 1e-10) THEN
+           ALB = ALB/EXT
+           TOTAL_PLANCK = TOTAL_PLANCK/EXT
+         ELSE
+           ALB = 0.0
+           TOTAL_PLANCK = 0.0
+         ENDIF
+         LEGENT(1,0,1) = 1.0
+
+         IF (NSTOKES .EQ. 1) THEN
+           CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+     .        SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
+     .        NR, RADIANCE(1,IR+1),   SOURCET)
+         ELSE
+           CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+     .        LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
+     .        NR, RADIANCE(1,IR+1), SOURCET)
+         ENDIF
+       ELSE
+
+         SOURCET = 0.0
+          DO IPA = 1, NPART
+            IF (EXT.EQ.0.0) THEN
+              W = 1.0
+            ELSE
+              W = EXTINCT(I,IPA)/EXT
+            ENDIF
+            IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+              IPH = IPHASE(1,I,IPA)
+              IF (NSTOKES .EQ. 1) THEN
+                CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+     .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
+     .            NR, RADIANCE(1,IR+1),   SOURCET1)
+              ELSE
+                CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+     .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
+     .            NR, RADIANCE(1,IR+1), SOURCET1)
+              ENDIF
+            ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+              IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+                LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,I,IPA))
+              ELSE
+                LEGENT = 0.0
+                DO Q=1,8*MAXNMICRO
+                  IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
+                  IPH = IPHASE(Q,I,IPA)
+                  LEGENT(:,:,1) = LEGENT(:,:,1) +
+     .            LEGEN(:,:,IPH)*
+     .            PHASEINTERPWT(Q,I,IPA)
+                ENDDO
+              ENDIF
+              IF (DELTAM) THEN
+                F = LEGENT(1,ML+1,1)
+                LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1)/(1-F)
+              ENDIF
+              IF (NSTOKES .EQ. 1) THEN
+                CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
      .            NR, RADIANCE(1,IR+1),   SOURCET1)
-            ELSE
-              CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+              ELSE
+                CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
      .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
      .            NR, RADIANCE(1,IR+1), SOURCET1)
+              ENDIF
             ENDIF
-          ENDIF
-          SOURCET = SOURCET + W * SOURCET1
-         ENDDO
+            SOURCET = SOURCET + W * SOURCET1
+          ENDDO
+        ENDIF
+
+
 
 C             Compute the dot product of the new and old source difference,
 C               and the solution criterion (don't use new points for Jnorm).
@@ -1079,6 +1152,72 @@ C             Compute the temporary source function for this point
     	    EXT = TOTAL_EXT(I)
           IR = RSHPTR(I)
           NR = RSHPTR(I+1)-IR
+          IF (NEWMETHOD) THEN
+          ALB = 0.0D0
+          LEGENT = 0.0
+          TOTAL_PLANCK = 0.0
+
+          DO IPA = 1, NPART
+           SCAT = DBLE(EXTINCT(I,IPA)*ALBEDO(I,IPA))
+           ALB = ALB + SCAT
+           TOTAL_PLANCK = TOTAL_PLANCK +
+     .      EXTINCT(I,IPA)*PLANCK(I,IPA)
+           IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+             LEGENT(:,:,1) = LEGENT(:,:,1) +
+     .        SCAT*LEGEN(:,:,IPHASE(1,I,IPA))
+           ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+             IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+               LEGENT1(:,:,1) =
+     .          LEGEN(:,:,IPHASE(1,I,IPA))
+             ELSE
+               LEGENT1(:,:,:) = 0.0
+               DO Q=1,8*MAXNMICRO
+                 IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
+                 IPH = IPHASE(Q,I,IPA)
+                 LEGENT1(:,:,1) = LEGENT1(:,:,1) +
+     .            LEGEN(:,:,IPH)*
+     .            PHASEINTERPWT(Q,I,IPA)
+               ENDDO
+             ENDIF
+
+             IF (DELTAM) THEN
+               F = LEGENT1(1,ML+1,1)
+               LEGENT1(:,0:ML,1) = LEGENT1(:,0:ML,1)/(1-F)
+             ENDIF
+             LEGENT(:,:,:) = LEGENT(:,:,:) +
+     .            SCAT*LEGENT1(:,:,:)
+           ENDIF
+          ENDDO
+
+C
+          IF (ALB .GT. 1e-10) THEN
+           LEGENT(:,:,:) = LEGENT(:,:,:)/ALB
+          ELSE
+            LEGENT(:,:,:) = LEGENT(:,:,:)/NPART
+          ENDIF
+C
+
+          IF (EXT .GT. 1e-10) THEN
+            ALB = ALB/EXT
+            TOTAL_PLANCK = TOTAL_PLANCK/EXT
+          ELSE
+            ALB = 0.0
+            TOTAL_PLANCK = 0.0
+          ENDIF
+          LEGENT(1,0,1) = 1.0
+
+          IF (NSTOKES .EQ. 1) THEN
+            CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+     .        SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
+     .        NR, RADIANCE(1,IR+1),   SOURCET)
+          ELSE
+            CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+     .        LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
+     .        NR, RADIANCE(1,IR+1), SOURCET)
+          ENDIF
+        ELSE
 	        SOURCET = 0.0
           DO IPA = 1, NPART
             IF (EXT.EQ.0.0) THEN
@@ -1130,6 +1269,7 @@ C             Compute the temporary source function for this point
             ENDIF
             SOURCET = SOURCET + W * SOURCET1
           ENDDO
+        ENDIF
 
 
 C             Make the source difference vector
@@ -1154,6 +1294,72 @@ C         Compute the source function in the temporary array.
           WRITE (6,*) 'COMPUTE_SOURCE: NR>NLM 3',I,IR,RSHPTR(I+1)
           STOP
         ENDIF
+        IF (NEWMETHOD) THEN
+        ALB = 0.0D0
+        LEGENT = 0.0
+        TOTAL_PLANCK = 0.0
+
+        DO IPA = 1, NPART
+         SCAT = DBLE(EXTINCT(I,IPA)*ALBEDO(I,IPA))
+         ALB = ALB + SCAT
+         TOTAL_PLANCK = TOTAL_PLANCK +
+     .      EXTINCT(I,IPA)*PLANCK(I,IPA)
+         IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+           LEGENT(:,:,1) = LEGENT(:,:,1) +
+     .        SCAT*LEGEN(:,:,IPHASE(1,I,IPA))
+         ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+           IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+             LEGENT1(:,:,1) =
+     .          LEGEN(:,:,IPHASE(1,I,IPA))
+           ELSE
+             LEGENT1(:,:,:) = 0.0
+             DO Q=1,8*MAXNMICRO
+               IF (PHASEINTERPWT(Q,I,IPA) .LE. 1e-5) CYCLE
+               IPH = IPHASE(Q,I,IPA)
+               LEGENT1(:,:,1) = LEGENT1(:,:,1) +
+     .            LEGEN(:,:,IPH)*
+     .            PHASEINTERPWT(Q,I,IPA)
+             ENDDO
+           ENDIF
+
+           IF (DELTAM) THEN
+             F = LEGENT1(1,ML+1,1)
+             LEGENT1(:,0:ML,1) = LEGENT1(:,0:ML,1)/(1-F)
+           ENDIF
+           LEGENT(:,:,:) = LEGENT(:,:,:) +
+     .            SCAT*LEGENT1(:,:,:)
+         ENDIF
+        ENDDO
+
+C
+        IF (ALB .GT. 1e-10) THEN
+         LEGENT(:,:,:) = LEGENT(:,:,:)/ALB
+        ELSE
+          LEGENT(:,:,:) = LEGENT(:,:,:)/NPART
+        ENDIF
+C
+
+        IF (EXT .GT. 1e-10) THEN
+          ALB = ALB/EXT
+          TOTAL_PLANCK = TOTAL_PLANCK/EXT
+        ELSE
+          ALB = 0.0
+          TOTAL_PLANCK = 0.0
+        ENDIF
+        LEGENT(1,0,1) = 1.0
+
+        IF (NSTOKES .EQ. 1) THEN
+          CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+     .        SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
+     .        NR, RADIANCE(1,IR+1),   SOURCET)
+        ELSE
+          CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+     .        LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
+     .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
+     .        NR, RADIANCE(1,IR+1), SOURCET)
+        ENDIF
+      ELSE
         DO IPA = 1, NPART
           IF (EXT.EQ.0.0) THEN
             W = 1.0
@@ -1204,6 +1410,7 @@ C         Compute the source function in the temporary array.
           ENDIF
           SOURCET = SOURCET + W * SOURCET1
         ENDDO
+      ENDIF
 
           IF (FIXSH) THEN
             NS = SHPTR(I+1)-IS
@@ -1251,7 +1458,7 @@ C           Transfer the new source function
         IS = IS + NS
       ENDDO
       SHPTR(NPTS+1) = IS
-      DEALLOCATE (SOURCET, SOURCET1, LOFJ, LEGENT)
+      DEALLOCATE (SOURCET, SOURCET1, LOFJ, LEGENT, LEGENT1)
       RETURN
       END
 
@@ -4392,6 +4599,7 @@ C     function for the new points.
       REAL    UNIFZLEV, XO, YO, ZO, DIRPATH, EXT, W
       INTEGER, ALLOCATABLE :: LOFJ(:)
       REAL, ALLOCATABLE :: SOURCET(:,:), LEGENT(:,:,:)
+      REAL, ALLOCATABLE :: LEGENT1(:,:,:)
       INTEGER IERR, Q
       CHARACTER ERRMSG*600
       INTEGER NPX, NPY, NPZ
@@ -4409,8 +4617,11 @@ C     function for the new points.
       DOUBLE PRECISION EPSS, EPSZ, XDOMAIN, YDOMAIN
       DOUBLE PRECISION UNIFORMZLEV, DELXD,DELYD
 
+      DOUBLE PRECISION SCAT, ALB
+      REAL TOTAL_PLANCK
+
       ALLOCATE (LOFJ(NLM), SOURCET(NSTOKES,NLM))
-      ALLOCATE(LEGENT(NSTLEG,0:NLEG,1))
+      ALLOCATE(LEGENT(NSTLEG,0:NLEG,1), LEGENT1(NSTLEG,0:NLEG,1))
 C         Make the l index as a function of SH term (J)
       J = 0
       DO L = 0, ML
@@ -4531,71 +4742,137 @@ C             Compute the source function for the new points
           IS = SHPTR(IP)
           SHPTR(IP+1) = IS + NS
           IF (ACCELFLAG)  OSHPTR(IP+1) = OSHPTR(IP)
-	          EXT = TOTAL_EXT(IP)
-          SOURCET=0.0
+          EXT = TOTAL_EXT(IP)
+          ALB = 0.0D0
+          LEGENT = 0.0
+          TOTAL_PLANCK = 0.0
+
           DO IPA = 1, NPART
-            IF (EXT.EQ.0.0) THEN
-              W = 1.0
-            ELSE
-              W = EXTINCT(IP,IPA)/EXT
-            ENDIF
-            IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
-              IPH = IPHASE(1,IP,IPA)
-              IF (NSTOKES .EQ. 1) THEN
-                CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
-     .            SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
-     .            PLANCK(IP,IPA), ALBEDO(IP,IPA), IPH, LEGEN,
-     .            NR, RADIANCE(1,IR+1),   SOURCET)
-              ELSE
-                CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
-     .            LOFJ, SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
-     .            PLANCK(IP,IPA), ALBEDO(IP,IPA), IPH, LEGEN,
-     .            NR, RADIANCE(1,IR+1), SOURCET)
-              ENDIF
-            ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
-              IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
-                LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,IP,IPA))
-              ELSE
-                LEGENT = 0.0
-                DO Q=1,8*MAXNMICRO
-                  IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
-                  IPH = IPHASE(Q,IP,IPA)
-                  LEGENT(:,:,1) = LEGENT(:,:,1) +
+           SCAT = DBLE(EXTINCT(IP,IPA)*ALBEDO(IP,IPA))
+           ALB = ALB + SCAT
+           TOTAL_PLANCK = TOTAL_PLANCK +
+     .      EXTINCT(IP,IPA)*PLANCK(IP,IPA)
+           IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+             LEGENT(:,:,1) = LEGENT(:,:,1) +
+     .        SCAT*LEGEN(:,:,IPHASE(1,IP,IPA))
+           ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+             IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
+               LEGENT1(:,:,1) =
+     .          LEGEN(:,:,IPHASE(1,IP,IPA))
+             ELSE
+               LEGENT1(:,:,:) = 0.0
+               DO Q=1,8*MAXNMICRO
+                 IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
+                 IPH = IPHASE(Q,IP,IPA)
+                 LEGENT1(:,:,1) = LEGENT1(:,:,1) +
      .            LEGEN(:,:,IPH)*
      .            PHASEINTERPWT(Q,IP,IPA)
-                ENDDO
-              ENDIF
-              IF (DELTAM) THEN
-                F = LEGENT(1,ML+1,1)
-                LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1)/(1-F)
-              ENDIF
-              IF (NSTOKES .EQ. 1) THEN
-                CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
-     .            SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
-     .            PLANCK(IP,IPA), ALBEDO(IP,IPA), 1, LEGENT,
-     .            NR, RADIANCE(1,IR+1),   SOURCET)
-              ELSE
-                CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
-     .            LOFJ, SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
-     .            PLANCK(IP,IPA), ALBEDO(IP,IPA), 1, LEGENT,
-     .            NR, RADIANCE(1,IR+1), SOURCET)
-              ENDIF
-            ENDIF
+               ENDDO
+             ENDIF
 
-            IF (IPA .EQ. 1) THEN
-              DO J=1,NS
-                SOURCE(:,IS+J) = W*SOURCET(:,J)
-              ENDDO
-            ELSE
-              DO J=1,NS
-                SOURCE(:,IS+J) = SOURCE(:,IS+J) +
-     .            W*SOURCET(:,J)
-              ENDDO
-            ENDIF
+             IF (DELTAM) THEN
+               F = LEGENT1(1,ML+1,1)
+               LEGENT1(:,0:ML,1) = LEGENT1(:,0:ML,1)/(1-F)
+             ENDIF
+             LEGENT(:,:,:) = LEGENT(:,:,:) +
+     .            SCAT*LEGENT1(:,:,:)
+           ENDIF
           ENDDO
+C
+          IF (ALB .GT. 1e-10) THEN
+           LEGENT(:,:,:) = LEGENT(:,:,:)/ALB
+          ELSE
+            LEGENT(:,:,:) = LEGENT(:,:,:)/NPART
+          ENDIF
+C
+          IF (EXT .GT. 1e-10) THEN
+            ALB = ALB/EXT
+            TOTAL_PLANCK = TOTAL_PLANCK/EXT
+          ELSE
+            ALB = 0.0
+            TOTAL_PLANCK = 0.0
+          ENDIF
+          LEGENT(1,0,1) = 1.0
+
+          IF (NSTOKES .EQ. 1) THEN
+            CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+     .        SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
+     .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
+     .        NR, RADIANCE(1,IR+1),   SOURCET)
+          ELSE
+            CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+     .        LOFJ, SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
+     .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
+     .        NR, RADIANCE(1,IR+1), SOURCET)
+          ENDIF
+          DO J=1,NS
+            SOURCE(:,IS+J) = SOURCET(:,J)
+          ENDDO
+
+C          SOURCET=0.0
+C          DO IPA = 1, NPART
+C            IF (EXT.EQ.0.0) THEN
+C              W = 1.0
+C            ELSE
+C              W = EXTINCT(IP,IPA)/EXT
+C            ENDIF
+C            IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+C              IPH = IPHASE(1,IP,IPA)
+C              IF (NSTOKES .EQ. 1) THEN
+C                CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+C     .            SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
+C     .            PLANCK(IP,IPA), ALBEDO(IP,IPA), IPH, LEGEN,
+C     .            NR, RADIANCE(1,IR+1),   SOURCET)
+C              ELSE
+C                CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+C     .            LOFJ, SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
+C     .            PLANCK(IP,IPA), ALBEDO(IP,IPA), IPH, LEGEN,
+C     .            NR, RADIANCE(1,IR+1), SOURCET)
+C              ENDIF
+C            ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+C              IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
+C                LEGENT(:,:,1)  = LEGEN(:,:,IPHASE(1,IP,IPA))
+C              ELSE
+C                LEGENT = 0.0
+C                DO Q=1,8*MAXNMICRO
+C                  IF (PHASEINTERPWT(Q,IP,IPA) .LE. 1e-5) CYCLE
+C                  IPH = IPHASE(Q,IP,IPA)
+C                  LEGENT(:,:,1) = LEGENT(:,:,1) +
+C     .            LEGEN(:,:,IPH)*
+C     .            PHASEINTERPWT(Q,IP,IPA)
+C                ENDDO
+C              ENDIF
+C              IF (DELTAM) THEN
+C                F = LEGENT(1,ML+1,1)
+C                LEGENT(:,0:ML,1) = LEGENT(:,0:ML,1)/(1-F)
+C              ENDIF
+C              IF (NSTOKES .EQ. 1) THEN
+C                CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
+C     .            SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
+C     .            PLANCK(IP,IPA), ALBEDO(IP,IPA), 1, LEGENT,
+C     .            NR, RADIANCE(1,IR+1),   SOURCET)
+C              ELSE
+C                CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
+C     .            LOFJ, SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
+C     .            PLANCK(IP,IPA), ALBEDO(IP,IPA), 1, LEGENT,
+C     .            NR, RADIANCE(1,IR+1), SOURCET)
+C              ENDIF
+C            ENDIF
+C
+C            IF (IPA .EQ. 1) THEN
+C              DO J=1,NS
+C                SOURCE(:,IS+J) = W*SOURCET(:,J)
+C              ENDDO
+C            ELSE
+C              DO J=1,NS
+C                SOURCE(:,IS+J) = SOURCE(:,IS+J) +
+C     .            W*SOURCET(:,J)
+C              ENDDO
+C            ENDIF
+C          ENDDO
         ENDIF
       ENDDO
-      DEALLOCATE (LOFJ, SOURCET, LEGENT)
+      DEALLOCATE (LOFJ, SOURCET, LEGENT, LEGENT1)
 
       RETURN
       END
