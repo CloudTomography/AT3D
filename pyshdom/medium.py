@@ -23,6 +23,7 @@ state changes (see pyshdom.containers.SolversDict).
 import itertools
 import typing
 import warnings
+import time
 
 from collections import OrderedDict
 import pandas as pd
@@ -1663,6 +1664,9 @@ class StateGenerator:
         for key in self._sources:
             self._old_solutions[key] = None
 
+        self._total_solver_time = 0.0
+        self._total_overhead_time = 0.0
+
     def __call__(self, state):
         """
         Update the solvers to reflect the new state vector. This does not include
@@ -1673,6 +1677,14 @@ class StateGenerator:
         state : np.ndarray, ndim=1
             The 1D abstract state vector.
         """
+        # first extract the previous cpu_time from the solver.
+        # To get the total, we have to remember to also do this at the "end" of a retrieval.
+        # To get the time for the final call. otherwise it will be biased low.
+        for solver in self._solvers_dict.values():
+            if hasattr(solver, '_cpu_time'):
+                self._total_solver_time += solver._cpu_time
+
+        time1 = time.process_time()
         state = self._unknown_scatterers.global_transform(state)
         new_optical_properties = OrderedDict()
         for scatterer_name, unknown_scatterer in self._unknown_scatterers.items():
@@ -1700,6 +1712,7 @@ class StateGenerator:
             if self._old_solutions[wavelength] is not None:
                 solver.load_solution(self._old_solutions[wavelength])
             self._solvers_dict.add_solver(wavelength, solver)
+        self._total_overhead_time += time.process_time() - time1
 
     def get_state(self):
         """

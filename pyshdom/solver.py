@@ -154,6 +154,10 @@ class RTE:
         self._newmethod = True # Used for testing the fast multi-species source computation
         # vs the slow multi-species source computation.
 
+        self._longest_path_pts = 1
+        # Set this to 1 by default as it is used for solar direct beam derivatives
+        # and isn't necessarily needed for thermal.
+
         self._correctinterpolate = True
         # Flag for switching between the 'Radiance' and 'Visualization'
         # methods for calculating radiances in original SHDOM.
@@ -1179,12 +1183,12 @@ class RTE:
             pyshdom.checks.check_errcode(ierr, errmsg)
         else:
             direct_derivative_ptr = np.zeros(
-                (8*(self._pa.npx + self._pa.npy + self._pa.npz), self._npts),
+                (self._longest_path_pts, self._npts),
                 dtype=np.int32,
                 order='F'
             )
             direct_derivative_path = np.zeros(
-                (8*(self._pa.npx + self._pa.npy + self._pa.npz), self._npts),
+                (self._longest_path_pts, self._npts),
                 dtype=np.float32,
                 order='F'
             )
@@ -2424,7 +2428,7 @@ class RTE:
         self._delyd, self._deljdot, self._deljold, self._deljnew, self._jnorm, \
         self._fftflag, self._cmu1, self._cmu2, self._wtmu, self._cphi1, \
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
-        self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg \
+        self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg, self._longest_path_pts \
          = pyshdom.core.init_solution(
             newmethod=self._newmethod,
             ordinateset=self._angle_set,

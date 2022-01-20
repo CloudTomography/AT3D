@@ -704,3 +704,74 @@ def adjoint_linear_interpolation(reference_coords, data_array):
         }
     )
     return interpolated
+
+def save_transforms_to_file(unknown_scatterers, file_name):
+    """
+    Save the names and inputs of the transforms to netcdf for later use.
+
+    This only works for objects which follow the convention that the
+    inputs with 'name' are attributes as '_name'.
+
+    """
+
+    groups = []
+    for scatterer_name, unknown_scatterer in unknown_scatterers.items():
+        for variable_name, (coordinate_transform, state_to_grid_transform) in unknown_scatterer.variables.items():
+            groups.append(scatterer_name + '/' + variable_name)
+
+    group_dset = xr.Dataset(
+        data_vars={
+            'groups': (['ngroups'],np.array(groups).astype(str))
+        }
+    )
+    group_dset.to_netcdf(file_name)
+
+    for scatterer_name, unknown_scatterer in unknown_scatterers.items():
+        for variable_name, (coordinate_transform, state_to_grid_transform) in unknown_scatterer.variables.items():
+            group_name = scatterer_name + '/' + variable_name
+            data_vars ={
+                'state_to_grid_transform': type(state_to_grid_transform).__name__,
+                'coordinate_transform': type(coordinate_transform).__name__,
+            }
+            for transform in (coordinate_transform, state_to_grid_transform):
+                input_names = transform.__init__.__code__.co_varnames[1:]
+                max_dim_name = 0
+                for name in input_names:
+                    data = getattr(transform, '_'+name)
+                    data = np.array(data)
+                    data_vars[name] = (['dim'+str(i+max_dim_name) for i in range(data.ndim)], data)
+                    max_dim_name += data.ndim
+
+            dset = xr.Dataset(data_vars=data_vars)
+            dset.to_netcdf(file_name, group=group_name, mode='a')
+
+def load_transforms_from_file(file_name):
+    """
+    Loads the transforms saved to netcdf.
+
+    Only works for transforms defined in pyshdom.transforms as that module
+    is searched for the correct transform object name to instantiate the new
+    transform.
+    """
+
+    state_to_grid_transforms = {}
+    coordinate_transforms = {}
+
+    with xr.load_dataset(file_name) as out:
+        for group in out.groups:
+            group_name = str(group.data.astype(str))
+            with xr.load_dataset(file_name, group=group_name) as nc:
+
+                state_to_grid_transform = getattr(pyshdom.transforms, str(nc.state_to_grid_transform.data))
+                input_names = state_to_grid_transform.__init__.__code__.co_varnames[1:]
+                args = {name: nc[name].data for name in input_names}
+                state_to_grid_transform = state_to_grid_transform(**args)
+                state_to_grid_transforms[group_name] = state_to_grid_transform
+
+                coordinate_transform = getattr(pyshdom.transforms, str(nc.coordinate_transform.data))
+                input_names = coordinate_transform.__init__.__code__.co_varnames[1:]
+                args = {name: nc[name].data for name in input_names}
+                coordinate_transform = coordinate_transform(**args)
+                coordinate_transforms[group_name] = coordinate_transform
+
+    return state_to_grid_transforms, coordinate_transforms

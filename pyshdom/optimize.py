@@ -30,11 +30,15 @@ class ObjectiveFunction:
         self.loss_fn = loss_fn
         self._bounds = list(zip(np.atleast_1d(min_bounds), np.atleast_1d(max_bounds)))
         self._loss = None
+        self._total_obj_fn_time = 0.0
+        self._ncalls = 0
 
     def __call__(self, state):
-
+        time1 = time.process_time()
         loss, gradient = self.loss_fn(state, self.measurements)
+        self._total_obj_fn_time += time.process_time() - time1
         self._loss = loss
+        self._ncalls += 1
         return loss, gradient
 
     # @classmethod
@@ -171,7 +175,7 @@ class Optimizer:
         """
         self._iteration += 1
         if self._callback_fn[0] is not None:
-            [function() for function in self._callback_fn]
+            [function(optimizer=self) for function in self._callback_fn]
 
     def objective(self, state):
         """

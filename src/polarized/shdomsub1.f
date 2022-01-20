@@ -135,7 +135,7 @@ C       Get the maximum single scattering albedo over all processors
      .             INRADFLAG,NDELSOURCE, IERR, ERRMSG, MAXPG,
      .             WORK2_SIZE, PHASEINTERPWT, PHASEMAX,
      .             INTERPMETHOD, NLEGP, ADJFLAG, MAXNMICRO,
-     .             PHASEWTP, ORDINATESET, NEWMETHOD)
+     .             PHASEWTP, ORDINATESET, NEWMETHOD, LONGEST_PATH_PTS)
 Cf2py threadsafe
 C       Initialize the SHDOM solution procedure.
       IMPLICIT NONE
@@ -262,11 +262,14 @@ Cf2py intent(in) :: ORDINATESET
 Cf2py intent(out) :: IERR, ERRMSG
       LOGICAL NEWMETHOD
 Cf2py intent(in) :: NEWMETHOD
+      INTEGER LONGEST_PATH_PTS
+Cf2py intent(out) :: LONGEST_PATH_PTS
 
       INTEGER I, J, SIDE
       DOUBLE PRECISION XE, YE,ZE, TRANSMIT, PI
       IERR = 0
       PI = ACOS(-1.0D0)
+      LONGEST_PATH_PTS = 0
 C       Set up some things before solution loop
 C    Compute the solar transmission in DIRFLUX.
       IF (SRCTYPE .NE. 'T') THEN
@@ -314,7 +317,7 @@ C          ENDDO
      .             ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .             CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		       NPART, MAXPG, PHASEWTP, MAXNMICRO)
+     .		       NPART, MAXPG, PHASEWTP, MAXNMICRO, LONGEST_PATH_PTS)
           ENDIF
         ENDIF
       ENDIF
@@ -4619,6 +4622,7 @@ C     function for the new points.
 
       DOUBLE PRECISION SCAT, ALB
       REAL TOTAL_PLANCK
+      INTEGER LONGEST_PATH_PTS
 
       ALLOCATE (LOFJ(NLM), SOURCET(NSTOKES,NLM))
       ALLOCATE(LEGENT(NSTLEG,0:NLEG,1), LEGENT1(NSTLEG,0:NLEG,1))
@@ -4700,6 +4704,7 @@ C                 to the direct flux (for source function calculation below)
             ELSE
 C               Otherwise, calculate the exact direct beam from property grid
               DIRPATH = 0.0
+              LONGEST_PATH_PTS = 1
               CALL DIRECT_BEAM_PROP (0, X,Y,Z, BCFLAG, IPFLAG, DELTAM,
      .                  ML, NSTLEG, NLEGP, SOLARFLUX,SOLARMU,SOLARAZ,
      .                  DIRFLUX(IP),
@@ -4710,7 +4715,8 @@ C               Otherwise, calculate the exact direct beam from property grid
      .                  ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .                  CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .                  XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .                  NPART, MAXPG, PHASEWTP, MAXNMICRO)
+     .                  NPART, MAXPG, PHASEWTP, MAXNMICRO,
+     .                  LONGEST_PATH_PTS)
             ENDIF
           ENDIF
 C             Interpolate the radiance

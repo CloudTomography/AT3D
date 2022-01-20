@@ -379,7 +379,7 @@ class StateToGridMask:
         elif grid_shape is None:
             grid_shape = mask.shape
         else:
-            if grid_shape != mask.shape:
+            if any(grid_shape != mask.shape):
                 raise ValueError(
                     "Both `grid_shape` and `mask` arguments were provided."
                     " The shape of `mask` is not consistent with `grid_shape`."
