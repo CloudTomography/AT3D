@@ -2236,7 +2236,7 @@ C      TAUTOL = 0.2
       RADIANCE(:) = 0.0D0
 
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
-      MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
+      MAXCELLSCROSS = 500*MAX(NX,NY,NZ)
       PI = ACOS(-1.0D0)
 
 C       Calculate the generalized spherical harmonics for this direction
@@ -2538,7 +2538,7 @@ C           Get the location coordinate
 C           If the transmission is greater than zero and not at a
 C             boundary then prepare for next cell
 C.OR. NGRID.GT.MAXCELLSCROSS
-        IF (TRANSMIT .LT. TRANSCUT) THEN
+        IF (TRANSMIT .LT. TRANSCUT .OR. NGRID.GT.MAXCELLSCROSS) THEN
           VALIDRAD = .TRUE.
         ELSE IF (INEXTCELL .EQ. 0 .AND. IFACE .GE. 5) THEN
           VALIDRAD = .TRUE.

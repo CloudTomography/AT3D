@@ -1035,7 +1035,8 @@ C           Get the location coordinate
 
 C           If the transmission is greater than zero and not at a
 C             boundary then prepare for next cell
-        IF ((INEXTCELL .EQ. 0).OR.(NGRID.GT.MAXCELLSCROSS)) THEN
+C       .OR.(NGRID.GT.MAXCELLSCROSS)
+        IF ((INEXTCELL .EQ. 0)) THEN
           DONE = .TRUE.
         ELSE
           XE = XN

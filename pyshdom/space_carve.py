@@ -34,7 +34,7 @@ class SpaceCarver:
         A valid SHDOM grid object containing the x, y, z coordinates. See grid.py
         for more details.
     """
-    def __init__(self, grid):
+    def __init__(self, grid, bcflag):
         pyshdom.checks.check_grid(grid)
         self._grid = grid
         if np.any([var in self._grid.data_vars for var in ('nx', 'ny', 'nz')]):
@@ -48,7 +48,7 @@ class SpaceCarver:
         #when periodic boundaries are used. So don't do that.
         #But 2D/1D mode SHOULD work (untested) though have to be careful about
         #where rays enter the domain.
-        self._setup_grid(self._grid, ipflag=0, bcflag=3)
+        self._setup_grid(self._grid, ipflag=0, bcflag=bcflag)
 
     def _setup_grid(self, grid, ipflag, bcflag):
         """
@@ -237,8 +237,8 @@ class SpaceCarver:
                 weights=weights,
                 linear=linear_mode
             )
-            counts[i] += count.reshape(2, self._nx, self._ny, self._nz)
-            adjoint_weights[i] += carved_volume.reshape(self._nx, self._ny, self._nz)
+            counts[i] += count.reshape(2, self._nx1, self._ny1, self._nz)[:,:-1,:-1,:]
+            adjoint_weights[i] += carved_volume.reshape(self._nx1, self._ny1, self._nz)[:-1,:-1,:]
         space_carved = xr.Dataset(
                         data_vars={
                             'cloudy_counts': (['nsensors', 'x', 'y', 'z'], counts[:, 0]),

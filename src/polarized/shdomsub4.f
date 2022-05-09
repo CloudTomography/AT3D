@@ -320,7 +320,7 @@ Cf2py intent(in) :: NPTS, NCELLS, MAXPG, NBCELLS
       REAL    ZLEVELS(*)
       REAL    EXTDIRP(*)
       DOUBLE PRECISION UNIFORMZLEV
-Cf2py intent(in) :: DELX, DELY, XSTART, YSTART NPX, NPY, NPZ, ZLEVELS, EXTDIRP, UNIFORMZLEV
+Cf2py intent(in) :: DELX, DELY, XSTART, YSTART, NPX, NPY, NPZ, ZLEVELS, EXTDIRP, UNIFORMZLEV
       INTEGER ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
 Cf2py intent(in) :: ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
       INTEGER  DNUMPHASE
@@ -489,6 +489,7 @@ C         Loop over pixels in image
         RAYGRAD_PIXEL = 0.0D0
         DO I2=1 ,RAYS_PER_PIXEL(IPIX)
           IRAY = IRAY + 1
+
           X0 = CAMX(IRAY)
           Y0 = CAMY(IRAY)
           Z0 = CAMZ(IRAY)
@@ -723,6 +724,7 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
       DOUBLE PRECISION  RADGRAD(NSTOKES), RAD0(NSTOKES)
       DOUBLE PRECISION  RAD1(NSTOKES)
       REAL TIME1, TIME2
+      LOGICAL DOSINGSCAT
 
       DATA OPPFACE/2,1,4,3,6,5/
       DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
@@ -990,6 +992,7 @@ C             many subgrid intervals to use
 C           Loop over the subgrid cells
         DO IT = 1, NTAU
 
+          DOSINGSCAT = .TRUE.
 C         save the interpolation kernel and pointers for each subgrid
 C         interval so that the radiance gradient can be calculated.
 C          CALL CPU_TIME(TIME1)
@@ -1073,68 +1076,76 @@ C             subroutine.
      .                    *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
                ENDIF
             ENDIF
+
+            RADOUT(:) = RADOUT(:) + TRANSMIT*SRC(:)*ABSCELL
+C         The stuff below is only done when there is extinction. Strictly
+C         speaking, it should only need to be performed when there is no
+C         extinction from any of the particle species for which derivatives
+C         are calculated for.
+
+C         Add the radiance increment to the gridpoints we have passed.
+C         so that component of the gradient can be calculated.
+C         (This is done finally at the end of this subroutine).
+            PASSEDABSCELL(NPASSED) = ABSCELL
+            PASSEDTRANSMIT(NPASSED) = TRANSMIT
+C         Zero the newest point for radiance calculation plus a few points
+C         just in case.
+            PASSEDRAD(:,NPASSED) = 0.0
+            DO KK=1,NPASSED
+              PASSEDRAD(:,KK) = PASSEDRAD(:,KK) +
+     .        TRANSMIT*SRC(:)*ABSCELL/PASSEDTRANSMIT(KK)
+            ENDDO
+C          CALL CPU_TIME(TIME2)
+C          TIME_SUBGRID = TIME_SUBGRID + TIME2-TIME1
+
+C          CALL CPU_TIME(TIME1)
+            IF (.NOT. OUTOFDOMAIN) THEN
+              DO KK=1,8
+                IP = GRIDPTR(KK,ICELL)
+                DO K=1,8
+                  IB = INTERPPTR(K,IP)
+                  RAYGRAD(:,IB,:) = RAYGRAD(:,IB,:) +
+     .            TRANSMIT*SRCGRAD(:,K,KK,:)*ABSCELL
+                ENDDO
+                IF (EXACT_SINGLE_SCATTER .AND. (SRCTYPE .EQ. 'S'
+     .            .OR. SRCTYPE .EQ. 'B')) THEN
+C             Add gradient component due to the direct solar beam.
+C             Sensitivity of single scattered radiation to
+C             extinction along the path between the gridpoint and the sun.
+                  CALL COMPUTE_DIRECT_BEAM_DERIV(DPATH(:,IP),
+     .            DPTR(:,IP),
+     .            NUMDER, DEXTM, TRANSMIT,
+     .            ABSCELL, SRCSINGSCAT, NSTOKES,
+     .            MAXPG,RAYGRAD, LONGEST_PATH_PTS)
+
+                ENDIF
+              ENDDO
+            ENDIF
+C          CALL CPU_TIME(TIME2)
+C          TIME_DIRECT_POINT= TIME_DIRECT_POINT +
+C     .      TIME2 - TIME1
+
+            NPASSED = NPASSED + 1
+            IF (NPASSED .GT. MAXSUBGRIDINTS) THEN
+              IERR = 1
+              WRITE(ERRMSG, *) "GRAD_INTEGRATE_1RAY: The maximum ",
+     .        "number of ",
+     .        " subgrid intervals for calculation of the",
+     .        " radiance along the",
+     .        " ray path has been exceeded.", "NPASSED=", NPASSED,
+     .        "MAXSUBGRIDINTS=", MAXSUBGRIDINTS
+              RETURN
+            ENDIF
+
           ELSE
             ABSCELL = 0.0
             TRANSCELL = 1.0
             SRC(:) = 0.0
             SRCGRAD = 0.0
             SRCSINGSCAT = 0.0
+
           ENDIF
 
-          RADOUT(:) = RADOUT(:) + TRANSMIT*SRC(:)*ABSCELL
-C         Add the radiance increment to the gridpoints we have passed.
-C         so that component of the gradient can be calculated.
-C         (This is done finally at the end of this subroutine).
-          PASSEDABSCELL(NPASSED) = ABSCELL
-          PASSEDTRANSMIT(NPASSED) = TRANSMIT
-C         Zero the newest point for radiance calculation plus a few points
-C         just in case.
-          PASSEDRAD(:,NPASSED) = 0.0
-          DO KK=1,NPASSED
-            PASSEDRAD(:,KK) = PASSEDRAD(:,KK) +
-     .        TRANSMIT*SRC(:)*ABSCELL/PASSEDTRANSMIT(KK)
-          ENDDO
-C          CALL CPU_TIME(TIME2)
-C          TIME_SUBGRID = TIME_SUBGRID + TIME2-TIME1
-
-C          CALL CPU_TIME(TIME1)
-          IF (.NOT. OUTOFDOMAIN) THEN
-            DO KK=1,8
-              IP = GRIDPTR(KK,ICELL)
-              DO K=1,8
-                IB = INTERPPTR(K,IP)
-                RAYGRAD(:,IB,:) = RAYGRAD(:,IB,:) +
-     .            TRANSMIT*SRCGRAD(:,K,KK,:)*ABSCELL
-              ENDDO
-              IF (EXACT_SINGLE_SCATTER .AND. (SRCTYPE .EQ. 'S'
-     .            .OR. SRCTYPE .EQ. 'B')) THEN
-C             Add gradient component due to the direct solar beam.
-C             Sensitivity of single scattered radiation to
-C             extinction along the path between the gridpoint and the sun.
-                CALL COMPUTE_DIRECT_BEAM_DERIV(DPATH(:,IP),
-     .            DPTR(:,IP),
-     .            NUMDER, DEXTM, TRANSMIT,
-     .            ABSCELL, SRCSINGSCAT, NSTOKES,
-     .            MAXPG,RAYGRAD, LONGEST_PATH_PTS)
-
-              ENDIF
-            ENDDO
-          ENDIF
-C          CALL CPU_TIME(TIME2)
-C          TIME_DIRECT_POINT= TIME_DIRECT_POINT +
-C     .      TIME2 - TIME1
-
-          NPASSED = NPASSED + 1
-          IF (NPASSED .GT. MAXSUBGRIDINTS) THEN
-            IERR = 1
-            WRITE(ERRMSG, *) "GRAD_INTEGRATE_1RAY: The maximum ",
-     .        "number of ",
-     .        " subgrid intervals for calculation of the",
-     .        " radiance along the",
-     .        " ray path has been exceeded.", "NPASSED=", NPASSED,
-     .        "MAXSUBGRIDINTS=", MAXSUBGRIDINTS
-            RETURN
-          ENDIF
           TRANSMIT = TRANSMIT*TRANSCELL
           EXT1 = EXT0
           SRCEXT1(:) = SRCEXT0(:)
@@ -1189,7 +1200,7 @@ C             boundary then prepare for next cell
 C        .OR. NGRID.GT.MAXCELLSCROSS Exceeding MAXCELLSCROSS is no
 C        longer a valid reason for stopping ray integration as this
 C        may compromise physical accuracy.
-        IF (TRANSMIT .LT. TRANSCUT) THEN
+        IF ((TRANSMIT .LT. TRANSCUT)) THEN
           VALIDRAD = .TRUE.
 
         ELSE IF (INEXTCELL .EQ. 0 .AND. IFACE .GE. 5) THEN

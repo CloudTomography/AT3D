@@ -201,13 +201,13 @@ class LevisApproxGradient:
                 "`rte_solver` must be of type pyshdom.solver.RTE for this gradient"
                 "calculation. "
             )
-        if rte_solver._bcflag != 3:
-            raise ValueError(
-                "Gradient calculations are not currently supported for solvers with "
-                "periodic boundary conditions. This requires a separate treatment of SHDOM's "
-                "base grid and property grid, which are not identical when periodic "
-                " boundary conditions are used."
-            )
+        # if rte_solver._bcflag != 3:
+        #     raise ValueError(
+        #         "Gradient calculations are not currently supported for solvers with "
+        #         "periodic boundary conditions. This requires a separate treatment of SHDOM's "
+        #         "base grid and property grid, which are not identical when periodic "
+        #         " boundary conditions are used."
+        #     )
         if not isinstance(sensor, xr.Dataset):
             raise TypeError("`sensor` should be an xr.Dataset not "
                             "of type '{}''".format(type(sensor)))

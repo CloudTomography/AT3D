@@ -2428,7 +2428,7 @@ class RTE:
         self._delyd, self._deljdot, self._deljold, self._deljnew, self._jnorm, \
         self._fftflag, self._cmu1, self._cmu2, self._wtmu, self._cphi1, \
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
-        self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg, self._longest_path_pts \
+        self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg, longest_path_pts\
          = pyshdom.core.init_solution(
             newmethod=self._newmethod,
             ordinateset=self._angle_set,
@@ -2537,6 +2537,7 @@ class RTE:
             nphi0max=self._nphi0max
         )
         pyshdom.checks.check_errcode(ierr, errmsg)
+        self._longest_path_pts = max(self._longest_path_pts, 1)
 
     def _precompute_phase(self):
         """
@@ -2572,7 +2573,7 @@ class RTE:
         self._dirflux, self._pa.extdirp, self._cx, self._cy, self._cz, \
         self._cxinv, self._cyinv, self._czinv, self._di, self._dj, self._dk, \
         self._ipdirect, self._delxd, self._delyd, self._xdomain, self._ydomain, \
-        self._epss, self._epsz, self._uniformzlev, self._longest_path_pts = \
+        self._epss, self._epsz, self._uniformzlev, longest_path_pts = \
             pyshdom.core.make_direct(
                 nstleg=self._nstleg,
                 dirflux=self._dirflux,
@@ -2609,6 +2610,7 @@ class RTE:
                 zckd=self._pa.zckd,
                 gasabs=self._pa.gasabs
             )
+        self._longest_path_pts = max(longest_path_pts, 1)
 
     @property
     def num_iterations(self):

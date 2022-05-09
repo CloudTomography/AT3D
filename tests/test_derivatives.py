@@ -505,6 +505,7 @@ class ThermalJacobianNoSurface(TestCase):
     def test_jacobian(self):
         print('thermal no surface', np.all(np.isfinite(self.jacobian)), np.all(np.isfinite(self.jacobian_reference)),
         np.max(np.abs(self.jacobian.ravel()-self.jacobian_reference.ravel())))
+        print(np.max(np.abs(self.jacobian.ravel()-self.jacobian_reference.ravel())/np.abs(self.jacobian_reference.ravel())))
         self.assertTrue(np.allclose(self.jacobian.ravel(), self.jacobian_reference.ravel(), atol=8e-3))
 
 

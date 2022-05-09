@@ -46,7 +46,7 @@ class VerifySpaceCarver(TestCase):
         sensors2['TEST']['sensor_list'][1]['weights'] = (['nrays'], yinput2)
         sensors2['TEST']['sensor_list'][1]['cloud_mask'] = (['nrays'], np.ones(yinput2.size))
 
-        space_carver2 = pyshdom.space_carve.SpaceCarver(grid)
+        space_carver2 = pyshdom.space_carve.SpaceCarver(grid, 3)
 
         output = space_carver2.carve(sensors2, linear_mode=True)
         xtilde = output.weights.data

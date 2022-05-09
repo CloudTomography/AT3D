@@ -11,5 +11,7 @@ pyshdom/__pycache__/
 tests/__pycache__/
 pyshdom/*.so
 venv/
+images/
+data/
 src/core.pyf
 src/coremodule.c

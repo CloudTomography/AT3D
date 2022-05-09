@@ -11,7 +11,7 @@ c         xmu=cosine of the zenith angle of the reflected radiation
 c         xphi=relative azimuth angle (between 0 and 2*pi)
 c         xpaw=azim. of sun - azim. of wind (in radian)
 c              For the direct solar radiation, the wind direction
-c              is fixed at the azimuth angle of 0 degree so that 
+c              is fixed at the azimuth angle of 0 degree so that
 c              the azimuth angle of the sun = xpaw.
 c
 C OUTPUT: brdfx=the total reflectance of the sea water
@@ -124,8 +124,8 @@ C TOTAL REFLECTANCE OF SEA WATER
 
 
       subroutine morcasiwat(wl,C,R2)
-C Spectral diffuse attenuation coefficient of Case I Waters as Predicted 
-C by MOREL within the spectral range 400-700nm (1988, Journal of Geophysical 
+C Spectral diffuse attenuation coefficient of Case I Waters as Predicted
+C by MOREL within the spectral range 400-700nm (1988, Journal of Geophysical
 C Research, Vol.93, No C9, pp 10749-10768)
 C
 C input parameters:	wl wavelength (IN MICROMETERS)
@@ -134,12 +134,12 @@ C output parameter:	R2  reflectance of water
 C
 C According Morel,1988, we use:
 C
-C Kd	spectral value of the attenuation coefficient for 
+C Kd	spectral value of the attenuation coefficient for
 C	 downwelling irradiance
 C	 with: Kd=Kw+Xc*C**e
-C Kw	spectral value of the diffuse attenuation coefficient 
+C Kw	spectral value of the diffuse attenuation coefficient
 C	 for pure oceanic water
-C Xc, e	spectral coefficients to compute the diffuse attenuation 
+C Xc, e	spectral coefficients to compute the diffuse attenuation
 C	 coefficient for pigment
 C bb	total backscattering coefficient
 C	 with: bb=0.5*bw+bbt*b
@@ -251,7 +251,7 @@ C
        real twl(62),tnr(62),tni(62)
        real nr,ni,wl,xwl,yr,yi,nrc,nic,xsal
        integer i
-C Indices of refraction for pure water from Hale and Querry, 
+C Indices of refraction for pure water from Hale and Querry,
 C Applied Optique, March 1973, Vol. 12,  No. 3, pp. 555-563
        data twl/
      S  0.250,0.275,0.300,0.325,0.345,0.375,0.400,0.425,0.445,0.475,
@@ -289,20 +289,20 @@ C Applied Optique, March 1973, Vol. 12,  No. 3, pp. 555-563
            i=i+1
            goto 10
            endif
- 20     xwl=twl(i)-twl(i-1)        
-        yr=tnr(i)-tnr(i-1)        
-        yi=tni(i)-tni(i-1)        
+ 20     xwl=twl(i)-twl(i-1)
+        yr=tnr(i)-tnr(i-1)
+        yi=tni(i)-tni(i-1)
         nr=tnr(i-1)+(wl-twl(i-1))*yr/xwl
         ni=tni(i-1)+(wl-twl(i-1))*yi/xwl
-c 
-c Correction to be applied to the index of refraction and to the extinction 
-c coefficients of the pure water to obtain the ocean water one (see for 
-c example Friedman). By default, a typical sea water is assumed 
-c (Salinity=34.3ppt, Chlorinity=19ppt) as reported by Sverdrup. 
-c In that case there is no correction for the extinction coefficient between 
-c 0.25 and 4 microns. For the index of refraction, a correction of +0.006 
-c has to be applied (McLellan). For a chlorinity of 19.0ppt the correction 
-c is a linear function of the salt concentration. Then, in 6S users are able 
+c
+c Correction to be applied to the index of refraction and to the extinction
+c coefficients of the pure water to obtain the ocean water one (see for
+c example Friedman). By default, a typical sea water is assumed
+c (Salinity=34.3ppt, Chlorinity=19ppt) as reported by Sverdrup.
+c In that case there is no correction for the extinction coefficient between
+c 0.25 and 4 microns. For the index of refraction, a correction of +0.006
+c has to be applied (McLellan). For a chlorinity of 19.0ppt the correction
+c is a linear function of the salt concentration. Then, in 6S users are able
 c to enter the salt concentration (in ppt).
 c REFERENCES:
 c Friedman D., Applied Optics, 1969, Vol.8, No.10, pp.2073-2078.
@@ -391,7 +391,7 @@ C example M. Born and E. Wolf, Principles of Optics, Pergamon Press, fifth
 C edition, 1975, pp 628
 C input parameters: nr=index of refraction of the sea water
 C                   ni=extinction coefficient of the sea water
-C                   coschi & sinchi=cosine and sine of the incident radiation 
+C                   coschi & sinchi=cosine and sine of the incident radiation
 C                                   with respect of the wave facet normal.
 C output parameter: R1=Fresnel's coefficient for reflection
 C
@@ -415,7 +415,7 @@ c absolute value for a1 to get v=0 when ni=0
 C
 C To compute the spherical albedo of the sea water. See for example
 C Masuda et al., Remote Sens. Environ., 24, 313-329, 1988.
-C 
+C
 C input parameters: wsp=wind of speed
 C                   nr=index of refraction of the sea water
 C                   ni=extinction coefficient of the sea water
