@@ -237,8 +237,15 @@ class SpaceCarver:
                 weights=weights,
                 linear=linear_mode
             )
-            counts[i] += count.reshape(2, self._nx1, self._ny1, self._nz)[:,:-1,:-1,:]
-            adjoint_weights[i] += carved_volume.reshape(self._nx1, self._ny1, self._nz)[:-1,:-1,:]
+            grid_counts = count.reshape(2, self._nx1, self._ny1, self._nz)
+            grid_carved_volume = carved_volume.reshape(self._nx1, self._ny1, self._nz)
+            if self._nx1 != self._nx:
+                counts[i] += grid_counts[:, :-1, :-1]
+                adjoint_weights[i] += grid_carved_volume[:, :-1, :-1]
+            else:
+                counts[i] += grid_counts
+                adjoint_weights[i] += grid_carved_volume
+
         space_carved = xr.Dataset(
                         data_vars={
                             'cloudy_counts': (['nsensors', 'x', 'y', 'z'], counts[:, 0]),
