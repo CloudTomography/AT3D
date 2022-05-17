@@ -112,12 +112,13 @@ C             Extrapolate ray to domain top if above
      .			             X0, Y0, Z0, PATH, IPHASE,
      .                      ALBEDO, LEGEN, DELTAMPATH, DELTAM,
      .                      NPART, NSTLEG, NLEG,ML,N, PATHS_SIZE,
-     .                      INTERPMETHOD, PHASEMAX, PHASEINTERPWT)
+     .                      INTERPMETHOD, PHASEMAX, PHASEINTERPWT,
+     .                      MAXNMICRO)
 
 C     Integrates the extinction field (EXTINCT) along a ray and stores the minimum
 C     optical path that intersects a cell adjacent to each gridpoint.
       IMPLICIT NONE
-      INTEGER NX, NY, NZ, NPTS, NCELLS, PATHS_SIZE
+      INTEGER NX, NY, NZ, NPTS, NCELLS, PATHS_SIZE, MAXNMICRO
       INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
       INTEGER*2 CELLFLAGS(*), N, MAXNMICRO
       REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
