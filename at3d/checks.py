@@ -1,12 +1,12 @@
 """
 This module contains functions to perform common checks on
-xarray.Dataset or xarray.DataArray inputs to methods in pyshdom.
+xarray.Dataset or xarray.DataArray inputs to methods in at3d.
 
-Many objects and functions in pyshdom expect variables to have certain
+Many objects and functions in at3d expect variables to have certain
 names or certain dimension names and for their values to conform to
 certain rules; positivity, within a certain range etc. As users may also
 want to create their own workflow rather than relying on some of the methods
-in pyshdom these checks are provided to help catch unexpected inputs.
+in at3d these checks are provided to help catch unexpected inputs.
 """
 import typing
 import sys
@@ -14,7 +14,7 @@ import sys
 import numpy as np
 import xarray as xr
 
-import pyshdom.exceptions
+import at3d.exceptions
 
 def check_exists(dataset, *names):
     """Checks if certain Variables are present in a dataset.
@@ -62,7 +62,7 @@ def check_positivity(dataset, *names, precision=7):
         If the variable is not found within the `dataset`.
     NegativeValueError
         If any of `names` in `dataset` contain negative values.
-        See pyshdom.exceptions.NegativeValueError
+        See at3d.exceptions.NegativeValueError
 
     Notes
     -----
@@ -78,7 +78,7 @@ def check_positivity(dataset, *names, precision=7):
         if not np.all(variable.data >= 0.0):
             dataset[name][:] = np.round(variable, decimals=precision)
             if not np.all(variable.data >= 0.0):
-                raise pyshdom.exceptions.NegativeValueError(
+                raise at3d.exceptions.NegativeValueError(
                     "Negative values found in '{}'".format(name)
                     )
 
@@ -99,14 +99,14 @@ def check_range(dataset, **checkkwargs):
     ------
     KeyError
         If the variable is not found within the `dataset`.
-    pyshdom.exceptions.OutOfRangeError
+    at3d.exceptions.OutOfRangeError
         If any value is out of range.
     """
     check_exists(dataset, *checkkwargs)
     for name, (low, high) in checkkwargs.items():
         data = dataset[name]
         if not np.all((low <= data) & (data <= high)):
-            raise pyshdom.exceptions.OutOfRangeError(
+            raise at3d.exceptions.OutOfRangeError(
                 "Values outside of range '[{}, {}]' found in variable '{}'".format(
                     low, high, name)
             )
@@ -127,7 +127,7 @@ def check_hasdim(dataset, **checkkwargs):
     ------
     KeyError
         If the variable is not found within the `dataset`.
-    pyshdom.exceptions.MissingDimensionError
+    at3d.exceptions.MissingDimensionError
         If any variable in `dataset` does not have any of the specified
         dimension names.
     """
@@ -137,7 +137,7 @@ def check_hasdim(dataset, **checkkwargs):
             dim_names = [dim_names]
         for dim_name in dim_names:
             if dim_name not in dataset[name].dims:
-                raise pyshdom.exceptions.MissingDimensionError(
+                raise at3d.exceptions.MissingDimensionError(
                     "Expected '{}' to have dimension '{}'".format(
                         name, dim_name)
                     )
@@ -161,38 +161,38 @@ def check_grid(dataset):
     ------
     KeyError
         If any of the required variables/coordinates don't exist.
-    pyshdom.exceptions.GridError
+    at3d.exceptions.GridError
         If the grid does not met any of the requirements.
     """
-    pyshdom.checks.check_exists(dataset, 'x', 'y', 'z', 'delx', 'dely')
+    at3d.checks.check_exists(dataset, 'x', 'y', 'z', 'delx', 'dely')
     for dimension, deldim in zip(('x', 'y'), ('delx', 'dely')):
 
         if dataset[dimension][0] != 0.0:
-            raise pyshdom.exceptions.GridError(
+            raise at3d.exceptions.GridError(
                 "Grid dimension '{}' should start from 0.0".format(dimension)
                 )
         if dataset[dimension].size > 1:
             diffx = dataset[dimension].diff(dimension).data
             if not np.allclose(diffx, diffx[0], atol=1e-6):
-                raise pyshdom.exceptions.GridError(
+                raise at3d.exceptions.GridError(
                     "Grid dimension '{}' is not equispaced.".format(dimension)
                     )
             if not np.allclose(diffx[0], dataset[deldim]):
-                raise pyshdom.exceptions.GridError(
+                raise at3d.exceptions.GridError(
                     "'{a}' is not consistent with '{b}'. "
                     "'{a}' should be set based on '{b}', see grid.make_grid for details.".format(
                         a=deldim, b=dimension)
                     )
             if not np.all(diffx > 0.0):
-                raise pyshdom.exceptions.GridError(
+                raise at3d.exceptions.GridError(
                     "Grid dimension '{}' is not strictly increasing.".format(dimension)
                     )
         if dataset[deldim] <= 0.0:
-            raise pyshdom.exceptions.GridError(
+            raise at3d.exceptions.GridError(
                 "Grid dimension '{}' is not strictly increasing.".format(dimension)
                 )
     if not np.all(dataset.z >= 0.0) & np.all(dataset.z.diff('z') > 0.0) & (dataset.z.size >= 2):
-        raise pyshdom.exceptions.GridError(
+        raise at3d.exceptions.GridError(
             "Grid dimension 'z' should be positive, strictly increasing and "
             "have 2 or more elements."
             )
@@ -200,7 +200,7 @@ def check_grid(dataset):
     for grid_data in optional_grid_data:
         if grid_data in dataset.data_vars:
             if (dataset[grid_data].dtype != np.int) or (dataset[grid_data] < 1):
-                raise pyshdom.exceptions.GridError(
+                raise at3d.exceptions.GridError(
                     "Optional SHDOM grid spacing {}={} should be an integer and greater "
                     "or equal to 1".format(grid_data, dataset[grid_data])
                 )
@@ -219,23 +219,23 @@ def check_legendre(dataset):
     ------
     KeyError
         if 'legcoef' does not exist in the dataset.
-    pyshdom.exceptions.MissingDimensionError
+    at3d.exceptions.MissingDimensionError
         If 'legcoef' does not have 'stokes_index' and 'legendre_index'
         dimensions.
-    pyshdom.exceptions.LegendreTableError
+    at3d.exceptions.LegendreTableError
         If any of the other requirements are not met.
     """
     check_hasdim(dataset, legcoef=['stokes_index', 'legendre_index'])
     if dataset['legcoef'].sizes['stokes_index'] != 6:
-        raise pyshdom.exceptions.LegendreTableError(
+        raise at3d.exceptions.LegendreTableError(
             "'stokes_index' dimension of 'legcoef' must have 6 components."
             )
     legendre_table = dataset['legcoef']
     if not np.allclose(legendre_table[0, 0], 1.0, atol=1e-7):
-        raise pyshdom.exceptions.LegendreTableError(
+        raise at3d.exceptions.LegendreTableError(
             "0th Legendre/Wigner Coefficients must be normalized to 1.0")
     if not np.all((legendre_table[0, 1]/3.0 >= -1.0) & (legendre_table[0, 1]/3.0 <= 1.0)):
-        raise pyshdom.exceptions.LegendreTableError(
+        raise at3d.exceptions.LegendreTableError(
             "Asymmetry Parameter (1st Legendre coefficient divided by 3)"
             "is not in the range [-1.0, 1.0]")
 
@@ -255,16 +255,16 @@ def check_sensor(dataset):
     Raises
         KeyError
             If any of the expected variables are not present.
-        pyshdom.exceptions.MissingDimensionError
+        at3d.exceptions.MissingDimensionError
             If any of the expected variables do not have correctly named dimensions.
-        pyshdom.exceptions.NegativeValueError
+        at3d.exceptions.NegativeValueError
             If the vertical coordinate or wavelength is not positive
         ValueError
             If there are viewing zenith values of 90 degrees (horizontal) which is
             not allowed by SHDOM.
             If invalid values for the 'stokes_index' coordinate are provided or
             more than one boolean is provided for 'use_subpixel_rays'.
-        pyshdom.exceptions.OutOfRangeError
+        at3d.exceptions.OutOfRangeError
             If the cosine of viewing zenith are not in the range [-1.0 , 1.0] or
             the viewing azimuth angles are not in the range [-pi, pi]
         TypeError
@@ -299,11 +299,11 @@ def check_sensor(dataset):
 
 def check_errcode(ierr, errmsg):
     if ierr == 1:
-        raise pyshdom.exceptions.SHDOMError(errmsg.decode('utf8'))
+        raise at3d.exceptions.SHDOMError(errmsg.decode('utf8'))
     elif ierr == 2:
         string = errmsg.decode('utf8')
         end_index = len(string) - next(i for i, j in enumerate(string[::-1]) if j.strip())
-        raise pyshdom.exceptions.SHDOMError(
+        raise at3d.exceptions.SHDOMError(
             string[:end_index] + " \n" \
             "The desired SHDOM solution simply takes more memory (spherical harmonics) "
             "than was allocated. Increase the adapt_grid_factor and/or spherical_harmonics_factor "
@@ -318,7 +318,7 @@ def check_grid_consistency(*datasets, names=None):
     first_scatterer = datasets[0]
     failed_list = []
     for name, gridded in enumerate(datasets):
-        pyshdom.checks.check_grid(gridded)
+        at3d.checks.check_grid(gridded)
         if np.any(gridded.coords['x'] != first_scatterer.coords['x']) | \
             np.any(gridded.coords['y'] != first_scatterer.coords['y']) | \
             np.any(gridded.coords['z'] != first_scatterer.coords['z']) |\
@@ -329,7 +329,7 @@ def check_grid_consistency(*datasets, names=None):
         for i, fail in enumerate(failed_list):
             failed_list[i] = names[fail]
     if failed_list:
-        raise pyshdom.exceptions.GridError("Scatterers do "
+        raise at3d.exceptions.GridError("Scatterers do "
                                            "not all have consistent grids.",
                                    *failed_list)
 
@@ -341,34 +341,34 @@ def check_optical_properties(dataset, name=1):
     if not isinstance(dataset, xr.Dataset):
         raise TypeError("scatterer '{}' in `medium` is not an xr.Dataset".format(name))
     try:
-        pyshdom.checks.check_range(dataset, ssalb=(0.0, 1.0))
-    except (KeyError, pyshdom.exceptions.OutOfRangeError) as err:
+        at3d.checks.check_range(dataset, ssalb=(0.0, 1.0))
+    except (KeyError, at3d.exceptions.OutOfRangeError) as err:
         raise type(err)(str(err).replace('"', "") + \
         " for scatterer '{}' in `medium`.".format(
             name)).with_traceback(sys.exc_info()[2])
     try:
-        pyshdom.checks.check_positivity(dataset, 'extinction')
-    except (KeyError, pyshdom.exceptions.NegativeValueError) as err:
+        at3d.checks.check_positivity(dataset, 'extinction')
+    except (KeyError, at3d.exceptions.NegativeValueError) as err:
         raise type(err)(str(err).replace('"', "") + \
         " for scatterer '{}' in `medium`.".format(
             name)).with_traceback(sys.exc_info()[2])
     for var_name in ('extinction', 'ssalb', 'table_index', 'phase_weights'):
         try:
-            pyshdom.checks.check_hasdim(dataset, **{var_name: ('x', 'y', 'z')})
-        except (KeyError, pyshdom.exceptions.MissingDimensionError) as err:
+            at3d.checks.check_hasdim(dataset, **{var_name: ('x', 'y', 'z')})
+        except (KeyError, at3d.exceptions.MissingDimensionError) as err:
             raise type(err)(str(err).replace('"', "") + \
             " for scatterer '{}' in `medium`.".format(
                 name)).with_traceback(sys.exc_info()[2])
     for var_name in ('table_index', 'phase_weights'):
         try:
-            pyshdom.checks.check_hasdim(dataset, **{var_name: ('num_micro')})
-        except (KeyError, pyshdom.exceptions.MissingDimensionError) as err:
+            at3d.checks.check_hasdim(dataset, **{var_name: ('num_micro')})
+        except (KeyError, at3d.exceptions.MissingDimensionError) as err:
             raise type(err)(str(err).replace('"', "") + \
             " for scatterer '{}' in `medium`.".format(
                 name)).with_traceback(sys.exc_info()[2])
     try:
-        pyshdom.checks.check_range(dataset, table_index=(1, dataset.sizes['table_index']))
-    except (KeyError, pyshdom.exceptions.OutOfRangeError) as err:
+        at3d.checks.check_range(dataset, table_index=(1, dataset.sizes['table_index']))
+    except (KeyError, at3d.exceptions.OutOfRangeError) as err:
         raise type(err)(str(err).replace('"', "") + \
         " for scatterer '{}' in `medium`.".format(
             name)).with_traceback(sys.exc_info()[2])
@@ -378,16 +378,16 @@ def check_optical_properties(dataset, name=1):
             "in `medium`".format(name)
         )
     try:
-        pyshdom.checks.check_legendre(dataset)
-    except (KeyError, pyshdom.exceptions.MissingDimensionError,
-            pyshdom.exceptions.LegendreTableError) as err:
+        at3d.checks.check_legendre(dataset)
+    except (KeyError, at3d.exceptions.MissingDimensionError,
+            at3d.exceptions.LegendreTableError) as err:
         raise type(err)(str(err).replace('"', "") + \
         " for scatterer '{}' in `medium`.".format(
             name)).with_traceback(sys.exc_info()[2])
     try:
-        pyshdom.checks.check_grid(dataset)
-    except (KeyError, pyshdom.exceptions.MissingDimensionError,
-            pyshdom.exceptions.GridError) as err:
+        at3d.checks.check_grid(dataset)
+    except (KeyError, at3d.exceptions.MissingDimensionError,
+            at3d.exceptions.GridError) as err:
         raise type(err)(str(err).replace('"', "") + \
         " for scatterer '{}' in `medium`.".format(
             name)).with_traceback(sys.exc_info()[2])

@@ -3,7 +3,7 @@ This module contains objects for handling coordinate transforms for
 the inverse problem.
 While this can be handled at the script level, these objects cover
 some useful cases and are integrated into the streamlined
-inverse framework using pyshdom.medium.StateGenerator rather
+inverse framework using at3d.medium.StateGenerator rather
 than user specified 'set state functions'.
 
 These objects apply the transformations from the abstract state level

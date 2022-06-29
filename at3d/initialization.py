@@ -7,7 +7,7 @@ import numpy as np
 
 import scipy.interpolate as si
 import scipy.optimize as so
-import pyshdom
+import at3d
 
 class LUTRetrieval:
     """
@@ -19,7 +19,7 @@ class LUTRetrieval:
     """
     def __init__(self, view_zenith, view_azimuth, sources, optical_property_generator,
                  solver_config=None,
-                 surfaces=pyshdom.surface.lambertian(0.0),
+                 surfaces=at3d.surface.lambertian(0.0),
                  background_optical_scatterers={},
                  num_stokes=1,
                  **coordinate_data):
@@ -30,7 +30,7 @@ class LUTRetrieval:
         self.coordinate_data = coordinate_data
 
         if solver_config is None:
-            solver_config = pyshdom.configuration.get_config()
+            solver_config = at3d.configuration.get_config()
             solver_config['adapt_grid_factor'] = 800
             #This should be large due to lack of base vertical resolution.
             solver_config['split_accuracy'] = 1e-3
@@ -72,7 +72,7 @@ class LUTRetrieval:
         # reshape into 1D grid for the RTE solution
         reshaped_data = [meshgrid.ravel() for meshgrid in big_meshgrid]
 
-        rte_grid = pyshdom.grid.make_grid(0.05, reshaped_data[0].size,
+        rte_grid = at3d.grid.make_grid(0.05, reshaped_data[0].size,
                                           0.05, 1, np.linspace(0.0, 1.0, 2))
 
         for name, data in zip(self.coordinate_data.keys(), big_meshgrid):
@@ -90,11 +90,11 @@ class LUTRetrieval:
         """
         Run the SHDOM solution to form the Look Up Table for the retrieval.
         """
-        sensors = pyshdom.containers.SensorsDict()
+        sensors = at3d.containers.SensorsDict()
         for wavelength in self.optical_properties:
             sensors.add_sensor(
                 wavelength,
-                pyshdom.sensor.domaintop_projection(
+                at3d.sensor.domaintop_projection(
                     wavelength,
                     self.rte_grid,
                     float(self.rte_grid.delx),
@@ -104,7 +104,7 @@ class LUTRetrieval:
                 )
             )
 
-        solvers_dict = pyshdom.containers.SolversDict()
+        solvers_dict = at3d.containers.SolversDict()
 
         for wavelength, optical_property_data in self.optical_properties.items():
 
@@ -112,7 +112,7 @@ class LUTRetrieval:
             if wavelength in self.background_optical_scatterers:
                 medium[wavelength] = self.background_optical_scatterers[wavelength]
 
-            solver = pyshdom.solver.RTE(
+            solver = at3d.solver.RTE(
                 numerical_params=self.solver_config,
                 medium=medium,
                 source=self.sources[wavelength],
@@ -261,12 +261,12 @@ def mean_ext_estimate(rte_grid, sensors, solar_mu, solar_azimuth,
     direction. This length scale is chosen because it collapses to the relevant case
     for several geometries.
     """
-    space_carver = pyshdom.space_carve.SpaceCarver(rte_grid)
+    space_carver = at3d.space_carve.SpaceCarver(rte_grid)
     if isinstance(sensors, xr.Dataset):
         sensor_list = [sensors]
     elif isinstance(sensors, type([])):
         sensor_list = sensors
-    elif isinstance(sensors, pyshdom.containers.SensorsDict):
+    elif isinstance(sensors, at3d.containers.SensorsDict):
         sensor_list = []
         for instrument in sensors:
             sensor_list.extend(sensors[instrument]['sensor_list'])

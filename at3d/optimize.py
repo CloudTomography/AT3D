@@ -7,7 +7,7 @@ import time
 import scipy.optimize
 import numpy as np
 
-import pyshdom.gradient
+import at3d.gradient
 
 class ObjectiveFunction:
     """
@@ -16,7 +16,7 @@ class ObjectiveFunction:
 
     Parameters
     ----------
-    measurements : pyshdom.containers.SensorsDict
+    measurements : at3d.containers.SensorsDict
         The observations that constrain the optimization problem.
     loss_fn : callable
         The function which evaluates the data misfit term when supplied with
@@ -66,23 +66,23 @@ class ObjectiveFunction:
         Use the Levis approximation to the linearization of an least squares cost function.
         Only error covariances between Stokes components for the same pixel are supported.
 
-        This is just a thin wrapper around pyshdom.gradient.levis_approx_uncorrelated_l2
+        This is just a thin wrapper around at3d.gradient.levis_approx_uncorrelated_l2
         that shows how to define an `ObjectiveFunction` object.
 
         Parameters
         ----------
-        cls : pyshdom.optimize.ObjectiveFunction
+        cls : at3d.optimize.ObjectiveFunction
             This method will generate a special case of this class.
-        measurements : pyshdom.containers.SensorsDict
+        measurements : at3d.containers.SensorsDict
             Contains the observations that constrain the optimization problem.
-        solvers : pyshdom.containers.SolversDict
+        solvers : at3d.containers.SolversDict
             Contains the solver.RTE objects that will be used to evaluate the
             data misfit term.
-        forward_sensors : pyshdom.containers.SensorsDict
+        forward_sensors : at3d.containers.SensorsDict
             The object that will store the evaluation of the Forward model
             (solver.RTE) at each iteration. This should be consistent with
             `measurements`
-        unknown_scatterers : pyshdom.containers.UnknownScatterers
+        unknown_scatterers : at3d.containers.UnknownScatterers
             The object which defines which unknowns to calculate derivatives
             for that are then used in the evaluation of the state gradient
             (see project_gradient_to_state). Also holds the method and data
@@ -96,7 +96,7 @@ class ObjectiveFunction:
         project_gradient_to_state : callable
             A function which evaluates the gradient for the abstract state vector
             using the gridded gradient output
-            (see pyshdom.gradient.levis_approx_uncorrelated_l2) and the state
+            (see at3d.gradient.levis_approx_uncorrelated_l2) and the state
             vector.
         min_bounds : TODO
 
@@ -112,7 +112,7 @@ class ObjectiveFunction:
         must be defined consistently, this is almost certainly the easiest
         source of error in the setup of an optimization.
         """
-        gradient_fun = pyshdom.gradient.LevisApproxGradientUncorrelated(
+        gradient_fun = at3d.gradient.LevisApproxGradientUncorrelated(
             measurements, solvers, forward_sensors, unknown_scatterers, parallel_solve_kwargs,
             gradient_kwargs, uncertainty_kwargs)
 
@@ -120,7 +120,7 @@ class ObjectiveFunction:
 
             set_state_fn(state)
             loss, gradient, _ = gradient_fun()
-            # loss, gradient = pyshdom.gradient.levis_approx_uncorrelated_l2(measurements,
+            # loss, gradient = at3d.gradient.levis_approx_uncorrelated_l2(measurements,
             #                                                              solvers,
             #                                                              forward_sensors,
             #                                                              unknown_scatterers,

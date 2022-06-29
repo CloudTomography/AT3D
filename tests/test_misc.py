@@ -1,6 +1,6 @@
 import copy
 import numpy as np
-import pyshdom
+import at3d
 from unittest import TestCase
 
 class SortTest(TestCase):
@@ -12,7 +12,7 @@ class SortTest(TestCase):
         y = np.random.uniform(low=0.0,high=100.0, size=2000).astype(np.float32)
         yi = np.random.uniform(low=0.0, high=100.0, size=2000).astype(np.int)
 
-        x_sorted,y_sorted, yi_sorted = pyshdom.core.quicksort_new(x=copy.deepcopy(x),y=copy.deepcopy(y),
+        x_sorted,y_sorted, yi_sorted = at3d.core.quicksort_new(x=copy.deepcopy(x),y=copy.deepcopy(y),
                                                        yi=copy.deepcopy(yi),
                                                        n=x.size,kflag=2)
         assert np.all(x[np.argsort(x)]== x_sorted)
@@ -52,7 +52,7 @@ class ConstructPointer(TestCase):
     def test_pointers(self):
         np.random.seed(3)
         ptsptrs = np.sort(np.random.uniform(low=1.0, high=8.0, size=10).astype(np.int))
-        adjsourceptr = pyshdom.core.construct_ptr(npts=7, ptsptrs=ptsptrs)
+        adjsourceptr = at3d.core.construct_ptr(npts=7, ptsptrs=ptsptrs)
         values = []
         for j in range(1, adjsourceptr.size):
             ns = adjsourceptr[j] - adjsourceptr[j-1]

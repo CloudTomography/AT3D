@@ -1,4 +1,4 @@
-import pyshdom
+import at3d
 import time
 import argparse
 import xarray as xr
@@ -21,18 +21,18 @@ args = parser.parse_args()
 
 for view_angle in args.view_angles:
     filepath = list(Path(directory).glob(pattern.format(view_angle=view_angle)))[0]
-    dataset = pyshdom.preprocessing.load_airmspi_data(filepath, bands='660nm')
+    dataset = at3d.preprocessing.load_airmspi_data(filepath, bands='660nm')
 
     # Interactively select a region of interest according to 660nm image
     image = dataset.I.to_dataframe().dropna(how='all').to_xarray().sortby('XDim').sortby('YDim').I.squeeze()
-    roi = pyshdom.preprocessing.get_roi(image)
+    roi = at3d.preprocessing.get_roi(image)
     mask = xr.DataArray(roi.get_mask(image.values), coords=image.coords)
 
 
     # Crop ROI in all bands and save to netcdf with two groups.
     outpath = filepath.with_name('{}_Cropped_'.format(current_time) + filepath.name).with_suffix('.nc')
     print('Saving data to file: {}'.format(outpath))
-    rad_ds, pol_ds = pyshdom.preprocessing.load_airmspi_data(filepath)
+    rad_ds, pol_ds = at3d.preprocessing.load_airmspi_data(filepath)
     image = image.reset_coords(drop=True)
     rad_ds = rad_ds.expand_dims(view_angle=[view_angle]).sel(image.coords).sortby('XDim').sortby('YDim').where(mask, drop=True)
     pol_ds = pol_ds.expand_dims(view_angle=[view_angle]).sel(image.coords).sortby('XDim').sortby('YDim').where(mask, drop=True)
@@ -45,4 +45,3 @@ for view_angle in args.view_angles:
 
     rad_ds.to_netcdf(outpath, group='radiance')
     pol_ds.to_netcdf(outpath, group='polarization', mode='a')
-

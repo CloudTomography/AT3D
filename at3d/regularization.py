@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 import scipy.special as ss
-import pyshdom
+import at3d
 
 class Regularization:
     """
@@ -13,7 +13,7 @@ class Regularization:
 
     Parameters
     ----------
-    state_generator : pyshdom.medium.StateGenerator
+    state_generator : at3d.medium.StateGenerator
         This object contains the methods to map from the abstract state to the
         physical coordinates.
     scatterer_name : str
@@ -41,10 +41,10 @@ class Regularization:
             raise ValueError("`relaxation_parameter` should be a positive float.")
         self._relaxation_parameter = relaxation_parameter
 
-        if not isinstance(state_generator, pyshdom.medium.StateGenerator):
+        if not isinstance(state_generator, at3d.medium.StateGenerator):
             raise TypeError(
                 "`state_generator` should be of type {} not {}".format(
-                    pyshdom.medium.StateGenerator,
+                    at3d.medium.StateGenerator,
                     type(state_generator)
                     )
                 )
@@ -156,7 +156,7 @@ class WeightedRegularization(Regularization):
 
     Parameters
     ----------
-    state_generator : pyshdom.medium.StateGenerator
+    state_generator : at3d.medium.StateGenerator
         This object contains the methods to map from the abstract state to the
         physical coordinates.
     scatterer_name : str
@@ -206,7 +206,7 @@ class Sparsity(WeightedRegularization):
 
     Parameters
     ----------
-    state_generator : pyshdom.medium.StateGenerator
+    state_generator : at3d.medium.StateGenerator
         This object contains the methods to map from the abstract state to the
         physical coordinates.
     scatterer_name : str
@@ -256,7 +256,7 @@ class Tikhonov(WeightedRegularization):
 
     Parameters
     ----------
-    state_generator : pyshdom.medium.StateGenerator
+    state_generator : at3d.medium.StateGenerator
         This object contains the methods to map from the abstract state to the
         physical coordinates.
     scatterer_name : str
@@ -315,7 +315,7 @@ class SpatialSmoothing(WeightedRegularization):
 
     Parameters
     ----------
-    state_generator : pyshdom.medium.StateGenerator
+    state_generator : at3d.medium.StateGenerator
         This object contains the methods to map from the abstract state to the
         physical coordinates.
     scatterer_name : str
@@ -364,8 +364,8 @@ class SpatialSmoothing(WeightedRegularization):
         gridded_data, rte_grid = self._get_gridded_variable(state)
 
 #       The x,y,z conventions are transposed in this function compared
-#       to what is used by pyshdom, that is why the names don't match up.
-        cost, gradient, ierr, errmsg = pyshdom.core.grid_smoothing(
+#       to what is used by at3d, that is why the names don't match up.
+        cost, gradient, ierr, errmsg = at3d.core.grid_smoothing(
             field=gridded_data,
             weights=self._spatial_weights,
             direction_weights=self._direction_weights,
@@ -378,7 +378,7 @@ class SpatialSmoothing(WeightedRegularization):
             mode=self._mode,
             huber_parameter=self._huber_parameter
         )
-        pyshdom.checks.check_errcode(ierr, errmsg)
+        at3d.checks.check_errcode(ierr, errmsg)
         cost *= self.regularization_strength(iteration_number)
         gradient *= self.regularization_strength(iteration_number)
 

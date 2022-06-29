@@ -4,18 +4,18 @@ import numpy as np
 import xarray as xr
 import pathlib
 
-import pyshdom.mie
+import at3d.mie
 
 class Mie_tables(TestCase):
     @classmethod
     def setUpClass(cls, path='data/test_load_mie_table.nc'):
-        cls.mie_water_table = pyshdom.mie.get_mono_table('Water', (0.6, 0.6),
+        cls.mie_water_table = at3d.mie.get_mono_table('Water', (0.6, 0.6),
                                                      minimum_effective_radius=4.0,
                                                      max_integration_radius=45.0,
                                                      wavelength_averaging=False,
                                                      verbose=False)
 
-        cls.mie_aerosol_table = pyshdom.mie.get_mono_table('Aerosol', (0.75, 0.8),
+        cls.mie_aerosol_table = at3d.mie.get_mono_table('Aerosol', (0.75, 0.8),
                                                            minimum_effective_radius=5.0,
                                                            max_integration_radius=20.0,
                                                            wavelength_averaging=True,
@@ -25,19 +25,19 @@ class Mie_tables(TestCase):
         cls.mie_water_table.to_netcdf(path)
         cls.path = path
         cls.relative_dir = str(pathlib.Path(path).parent)
-        size_distribution = pyshdom.size_distribution.get_size_distribution_grid(
+        size_distribution = at3d.size_distribution.get_size_distribution_grid(
             cls.mie_water_table.radius,
-            size_distribution_function=pyshdom.size_distribution.gamma,
+            size_distribution_function=at3d.size_distribution.gamma,
             particle_density=1.0,
             reff={'coord_min':4.0, 'coord_max': 25.0, 'npoints': 25,
             'spacing': 'logarithmic', 'units': 'micron'},
             veff={'coord_min':0.09, 'coord_max': 0.11, 'npoints': 2,
             'spacing': 'linear', 'units': 'unitless'}
         )
-        cls.poly_table = pyshdom.mie.get_poly_table(size_distribution, cls.mie_water_table)
+        cls.poly_table = at3d.mie.get_poly_table(size_distribution, cls.mie_water_table)
 
     def test_load_table(self):
-        loaded_mie_table = pyshdom.mie._load_table(relative_dir=self.relative_dir,
+        loaded_mie_table = at3d.mie._load_table(relative_dir=self.relative_dir,
                                                    particle_type='Water',
                                                    wavelength_band=(0.6, 0.6),
                                                    minimum_effective_radius=4.0,

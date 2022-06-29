@@ -15,7 +15,7 @@ different behaviour they should write their own functions and add them to this m
 import typing
 import numpy as np
 import xarray as xr
-import pyshdom.checks
+import at3d.checks
 
 import scipy.spatial as ss
 
@@ -131,7 +131,7 @@ def resample_onto_grid(grid, data):
     if not isinstance(grid, (xr.Dataset, xr.DataArray)):
         raise TypeError("'grid' should be an xr.Dataset, "
                          "xr.DataArray  object, not '{}'".format(type(grid)))
-    pyshdom.checks.check_grid(grid)
+    at3d.checks.check_grid(grid)
 
     data_copy = data.copy(deep=True)
     if 'density' in data:
@@ -305,10 +305,10 @@ def from_scatterer(scatterer):
 class _GridAccessor(object):
     """
     Register a custom accessor for Grid properties particular to xarray Datasets
-    and DataArrays used in pyshdom.
+    and DataArrays used in at3d.
     """
     def __init__(self, xarray_obj):
-        pyshdom.checks.check_grid(xarray_obj)
+        at3d.checks.check_grid(xarray_obj)
         self._obj = xarray_obj
 
     @property

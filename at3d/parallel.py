@@ -20,7 +20,7 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
 
     Parameters
     ----------
-    solvers : pyshdom.containers.SolversDict
+    solvers : at3d.containers.SolversDict
         Contains the solvers for which `gradient_fun` should be evaluated.
     rte_sensors : OrderedDict
         Contains the sensors, grouped by solver key for which `gradient_fun` should
@@ -29,7 +29,7 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
         Contains the mapping between of pixels between the `rte_sensors` which are
         grouped by solver, and the `forward_sensors`, which are grouped by instrument
         name and sensor index.
-    forward_sensors : pyshdom.containers.SensorsDict
+    forward_sensors : at3d.containers.SensorsDict
         Container for the synthetic measurements that will be stored by instrument
         key and sensor index.
     gradient_fun : callable
@@ -51,7 +51,7 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
     gradient : np.ndarray, float
         The gradient of a specified cost function (determined by `gradient_fun`).
     jacobian : np.ndarray, optional
-        Only returned if `gradient_fun`=`pyshdom.gradient.jacobian`
+        Only returned if `gradient_fun`=`at3d.gradient.jacobian`
     """
     #organize **kwargs safely.
     grad_kwargs = {}
@@ -65,10 +65,10 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
                 grad_kwargs[name] = value
             else:
                 warnings.warn(
-                    "kwarg '{}' passed to pyshdom.gradient.parallel_gradient is unused by"
+                    "kwarg '{}' passed to at3d.gradient.parallel_gradient is unused by"
                     "'{}'".format(name, gradient_fun.__name__))
         else:
-            warnings.warn("kwarg '{}' passed to pyshdom.gradient.parallel_gradient is unused by"
+            warnings.warn("kwarg '{}' passed to at3d.gradient.parallel_gradient is unused by"
                             "'{}'".format(name, gradient_fun.__name__))
 
     if mpi_comm is not None:
@@ -123,7 +123,7 @@ def subdivide_raytrace_jobs(rte_sensors, n_jobs, job_factor=1):
     ----------
     rte_sensors : OrderedDict
         A group of merged sensors corresponding to a particular solver.RTE's key.
-        See pyshdom.containers.sort_sensors()
+        See at3d.containers.sort_sensors()
     n_jobs : int
         The number of groups to subdivide each sensor into.
     job_factor : int

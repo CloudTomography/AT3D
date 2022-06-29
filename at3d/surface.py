@@ -2,14 +2,14 @@
 This module contains functions for generating the parameters that describe
 the surface BRDF, the bottom boundary condition used in solver.RTE (SHDOM).
 Rather than reading the surface parameters from a file as in SHDOM, they are
-directly generated and are formatted by a fortran subroutine pyshdom.core.prep_surface
+directly generated and are formatted by a fortran subroutine at3d.core.prep_surface
 which is a minor modification of shdomsub3.f READ_SURFACE.
 
 Each of these surfaces have corresponding fortran subroutines which evaluate
 the BRDF based on the prescribed parameters.
 Implementing a new surface would require writing a new subroutine that evaluates
 the BRDF to shdomsub2.f (model after RPV_REFLECTION). Then add a block to
-SURFACE_BRDF in shdomsub2.f that calls this model, and pyshdom.core.prep_surface
+SURFACE_BRDF in shdomsub2.f that calls this model, and at3d.core.prep_surface
 (PREP_SURFACE in surface.f) that prepares the input parameters. Additionally,
 a python wrapper should be added here, and the chosen `sfctype` should be added
 to the list of valid surface types in solver.RTE._setup_surface.
@@ -23,7 +23,7 @@ the surface grid to solver.RTE grid within SHDOM.
 import xarray as xr
 import numpy as np
 
-import pyshdom.core
+import at3d.core
 
 def lambertian(albedo, ground_temperature=298.15, delx=None, dely=None):
     """
@@ -487,7 +487,7 @@ def _make_surface_dataset(surface_type, ground_temperature, delx, dely, **kwargs
 
     This method reorganizes the inputs into the correct format
     and sets the array size parameters. The filling of the horizontal boundary
-    conditions and other preparations is done by pyshdom.core.prep_surface
+    conditions and other preparations is done by at3d.core.prep_surface
     (PREP_SURFACE in surface.f). Only `surface_type` implemented in SHDOM
     are allowed. This function should not be used directly, instead, use the
     individual functions which are defined in this module.
@@ -549,7 +549,7 @@ def _make_surface_dataset(surface_type, ground_temperature, delx, dely, **kwargs
                                                               for val in kwargs.values()]
 
     parms_in = np.stack(list_of_params, axis=0)
-    nsfcpar, sfcparms, gndtemp, gndalbedo, ierr, errmsg = pyshdom.core.prep_surface(maxsfcpts=maxsfcpts,
+    nsfcpar, sfcparms, gndtemp, gndalbedo, ierr, errmsg = at3d.core.prep_surface(maxsfcpts=maxsfcpts,
                                                                       maxsfcpars=maxsfcpars,
                                                                       sfctype=sfctype,
                                                                       nxsfc=nxsfc,
@@ -558,7 +558,7 @@ def _make_surface_dataset(surface_type, ground_temperature, delx, dely, **kwargs
                                                                       delysfc=delysfc,
                                                                       parms_in=parms_in,
                                                                       grid_coords=grid_coords)
-    pyshdom.checks.check_errcode(ierr, errmsg)
+    at3d.checks.check_errcode(ierr, errmsg)
     surface_dataset = xr.Dataset(
         data_vars={
             'name': surface_type,

@@ -13,7 +13,7 @@ implemented they should be added as valid cases to `Uncertainty`.
 """
 import warnings
 import numpy as np
-import pyshdom.checks
+import at3d.checks
 
 class Uncertainty:
     """
@@ -87,7 +87,7 @@ class Uncertainty:
             A valid sensor containing Stokes components at specific locations
             and directions. See sensor.py for details.
         """
-        pyshdom.checks.check_sensor(sensor)
+        at3d.checks.check_sensor(sensor)
         big_uncertainties = self._process_uncertainties(sensor)
         #NB Be aware that repeated dims cause errors so the second dim is set to
         #'num_uncertainty2' even though they are identical.
@@ -127,7 +127,7 @@ class Uncertainty:
 
 
         perturbations = self._process_noise(sensor)
-        pyshdom.checks.check_sensor(sensor)
+        at3d.checks.check_sensor(sensor)
         for i, has_stokes in enumerate(sensor.stokes.data):
             if has_stokes:
                 if (not sensor.stokes_index.data[i] in sensor.data_vars):

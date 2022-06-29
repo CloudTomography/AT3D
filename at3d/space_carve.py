@@ -6,11 +6,11 @@ import warnings
 import xarray as xr
 import numpy as np
 
-import pyshdom.core
-import pyshdom.checks
-import pyshdom.solver
-import pyshdom.util
-import pyshdom.grid
+import at3d.core
+import at3d.checks
+import at3d.solver
+import at3d.util
+import at3d.grid
 
 class SpaceCarver:
     """
@@ -35,7 +35,7 @@ class SpaceCarver:
         for more details.
     """
     def __init__(self, grid, bcflag):
-        pyshdom.checks.check_grid(grid)
+        at3d.checks.check_grid(grid)
         self._grid = grid
         if np.any([var in self._grid.data_vars for var in ('nx', 'ny', 'nz')]):
             warnings.warn(
@@ -77,7 +77,7 @@ class SpaceCarver:
         self._ipflag = ipflag
         self._bcflag = bcflag
 
-        self._pa = pyshdom.solver.ShdomPropertyArrays()
+        self._pa = at3d.solver.ShdomPropertyArrays()
 
         # Set shdom property array
         self._pa.npx = grid.dims['x']
@@ -116,7 +116,7 @@ class SpaceCarver:
         self._nbcells = (self._nz - 1) * (self._nx + ibits(self._bcflag, 0, 1) - ibits(self._bcflag, 2, 1)) * \
                 (self._ny + ibits(self._bcflag, 1, 1) - ibits(self._bcflag, 3, 1))
 
-        self._xgrid, self._ygrid, self._zgrid = pyshdom.core.new_grids(
+        self._xgrid, self._ygrid, self._zgrid = at3d.core.new_grids(
             bcflag=self._bcflag,
             gridtype=self._gridtype,
             npx=self._pa.npx,
@@ -132,7 +132,7 @@ class SpaceCarver:
         )
 
         self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
-        self._treeptr, self._cellflags = pyshdom.core.init_cell_structure(
+        self._treeptr, self._cellflags = at3d.core.init_cell_structure(
             maxig=self._nbpts,
             maxic=1.1*self._nbpts,
             bcflag=self._bcflag,
@@ -156,7 +156,7 @@ class SpaceCarver:
 
         Parameters
         ----------
-        sensor_masks : List/Tuple of xr.Dataset or pyshdom.containers.SensorsDict
+        sensor_masks : List/Tuple of xr.Dataset or at3d.containers.SensorsDict
             A group of datasets containing geometry of the rays and also their
             binary masks. See sensor.py for more details.
         agreement : Tuple/List
@@ -188,7 +188,7 @@ class SpaceCarver:
             sensor_list = [sensor_masks]
         elif isinstance(sensor_masks, type([])):
             sensor_list = sensor_masks
-        elif isinstance(sensor_masks, pyshdom.containers.SensorsDict):
+        elif isinstance(sensor_masks, at3d.containers.SensorsDict):
             sensor_list = []
             for instrument in sensor_masks:
                 sensor_list.extend(sensor_masks[instrument]['sensor_list'])
@@ -211,7 +211,7 @@ class SpaceCarver:
             assert camx.ndim == camy.ndim == camz.ndim == cammu.ndim == camphi.ndim == 1
             total_pix = camphi.size
 
-            carved_volume, count = pyshdom.core.space_carve(
+            carved_volume, count = at3d.core.space_carve(
                 nx=self._nx,
                 ny=self._ny,
                 nz=self._nz,
@@ -278,7 +278,7 @@ class SpaceCarver:
         weights : xr.Dataset
             A dataset containing a 'density' variable which will be integrated assuming
             linear interpolation between points.
-        sensors : List/Tuple or pyshdom.containers.SensorsDict or xr.Dataset
+        sensors : List/Tuple or at3d.containers.SensorsDict or xr.Dataset
             Contains the ray geometry for defining the line integrations. See
             sensor.py for more details.
         """
@@ -286,7 +286,7 @@ class SpaceCarver:
             sensor_list = [sensors]
         elif isinstance(sensors, type([])):
             sensor_list = sensors
-        elif isinstance(sensors, pyshdom.containers.SensorsDict):
+        elif isinstance(sensors, at3d.containers.SensorsDict):
             sensor_list = []
             for instrument in sensors:
                 sensor_list.extend(sensors[instrument]['sensor_list'])
@@ -295,7 +295,7 @@ class SpaceCarver:
             [name for name in weights.variables if name not in ('x', 'y', 'z', 'density')]
             )
 
-        resampled_weights = pyshdom.grid.resample_onto_grid(self._grid, weights).density.data.ravel()
+        resampled_weights = at3d.grid.resample_onto_grid(self._grid, weights).density.data.ravel()
         for sensor in sensor_list:
             camx = sensor['ray_x'].data.astype(np.float64)
             camy = sensor['ray_y'].data.astype(np.float64)
@@ -307,7 +307,7 @@ class SpaceCarver:
             total_pix = sensor.npixels.size
             nrays = sensor.nrays.size
 
-            path = pyshdom.core.project(
+            path = at3d.core.project(
                 nx=self._nx,
                 ny=self._ny,
                 nz=self._nz,
@@ -344,7 +344,7 @@ class SpaceCarver:
             sensor_list = [sensors]
         elif isinstance(sensors, type([])):
             sensor_list = sensors
-        elif isinstance(sensors, pyshdom.containers.SensorsDict):
+        elif isinstance(sensors, at3d.containers.SensorsDict):
             sensor_list = []
             for instrument in sensors:
                 sensor_list.extend(sensors[instrument]['sensor_list'])
@@ -361,7 +361,7 @@ class SpaceCarver:
             'z': self._grid.z
             }
         )
-        grid_sensor = pyshdom.sensor.make_sensor_dataset(wavelength=0.672,
+        grid_sensor = at3d.sensor.make_sensor_dataset(wavelength=0.672,
             x=self._gridpos[0,:], y=self._gridpos[1,:],
             z=self._gridpos[2,:],
             mu=np.array([solar_mu]*self._npts),phi=np.array([solar_azimuth]*self._npts),
@@ -382,7 +382,7 @@ class SpaceCarver:
             total_pix = sensor.npixels.size
             nrays = sensor.nrays.size
 
-            paths = pyshdom.core.get_shadow(
+            paths = at3d.core.get_shadow(
                 nx=self._nx,
                 ny=self._ny,
                 nz=self._nz,

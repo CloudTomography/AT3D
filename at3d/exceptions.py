@@ -1,5 +1,5 @@
 """
-Custom exceptions for pyshdom that are tailored to specific cases.
+Custom exceptions for at3d that are tailored to specific cases.
 """
 class NegativeValueError(Exception):
     """Raised if a Value is identified as negative when it

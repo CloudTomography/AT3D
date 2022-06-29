@@ -3,7 +3,7 @@ This module contains functions to define particle size distributions
 and to sample these distributions at radii for a grid/Look-up-Table of
 size distribution parameters.
 
-In pyshdom, the mapping of microphysical properties to optical properties is
+In at3d, the mapping of microphysical properties to optical properties is
 done using a look-up-table approach. Bulk optical properties used in the
 radiative transfer solver are determined by integrating over single scattering
 properties (calculated from mie.py or other methods) using assumed distributions
@@ -21,7 +21,7 @@ import typing
 from collections import OrderedDict
 import xarray as xr
 import numpy as np
-import pyshdom.core
+import at3d.core
 
 def gamma(radii, reff, veff=None, alpha=None, particle_density=1.0,
           normalization='density'):
@@ -75,7 +75,7 @@ def gamma(radii, reff, veff=None, alpha=None, particle_density=1.0,
     #fortran subroutine requires a 'gamma' variable to be passed.
     gamma_values = np.zeros(alpha.shape)
 
-    number_density, ierr, errmsg = pyshdom.core.make_multi_size_dist(
+    number_density, ierr, errmsg = at3d.core.make_multi_size_dist(
                 distflag='G',
                 pardens=particle_density,
                 nsize=len(radii),
@@ -84,7 +84,7 @@ def gamma(radii, reff, veff=None, alpha=None, particle_density=1.0,
                 alpha=alpha,
                 gamma=gamma_values,
                 ndist=reff.size)
-    pyshdom.checks.check_errcode(ierr, errmsg)
+    at3d.checks.check_errcode(ierr, errmsg)
 
     if normalization == 'geometric_extinction':
         number_density /= 1e-3*(2*number_density*np.pi*np.atleast_1d(radii)[:, None]**2).sum(axis=0)
@@ -153,7 +153,7 @@ def lognormal(radii, reff, veff=None, alpha=None, particle_density=1.0,
     #fortran subroutine requires a 'gamma' attribute to be passed.
     gamma_values = np.zeros(alpha.shape)
 
-    number_density, ierr, errmsg = pyshdom.core.make_multi_size_dist(
+    number_density, ierr, errmsg = at3d.core.make_multi_size_dist(
                 distflag='L',
                 pardens=particle_density,
                 nsize=len(radii),
@@ -162,7 +162,7 @@ def lognormal(radii, reff, veff=None, alpha=None, particle_density=1.0,
                 alpha=alpha,
                 gamma=gamma_values,
                 ndist=reff.size)
-    pyshdom.checks.check_errcode(ierr, errmsg)
+    at3d.checks.check_errcode(ierr, errmsg)
 
     if normalization == 'geometric_extinction':
         number_density /= 1e-3*(2*number_density*np.pi*np.atleast_1d(radii)[:, None]**2).sum(axis=0)
@@ -223,9 +223,9 @@ def get_size_distribution_grid(radii, size_distribution_function=gamma,
     --------
     >>> import numpy as np
     >>> radii = np.arange(100)
-    >>> size_dist_grid = pyshdom.size_distribution.get_size_distribution_grid(
+    >>> size_dist_grid = at3d.size_distribution.get_size_distribution_grid(
                                     radii,
-                                    size_distribution_function=pyshdom.size_distribution.gamma,
+                                    size_distribution_function=at3d.size_distribution.gamma,
                                     particle_density=1.0,
                                     radius_units='micron',
                                     reff={'coord_min':4.0,'coord_max':25.0,
