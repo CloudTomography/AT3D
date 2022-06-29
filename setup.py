@@ -2,9 +2,9 @@ import setuptools
 import os
 import subprocess
 
-NAME = "pyshdom"
+NAME = "at3d"
 DESCRIPTION = "3D Radiative Transfer Inversion using the SHDOM forward algorithm"
-LONG_DESCRIPTION ="""Pyshdom performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]]. The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[4]]. The python package was created by Aviad Levis [[5]], Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois).
+LONG_DESCRIPTION ="""at3d performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]]. The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[4]]. The python package was created by Aviad Levis [[5]], Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois).
 
 [1]: http://openaccess.thecvf.com/content_iccv_2015/html/Levis_Airborne_Three-Dimensional_Cloud_ICCV_2015_paper.html
 [2]: http://openaccess.thecvf.com/content_cvpr_2017/html/Levis_Multiple-Scattering_Microphysics_Tomography_CVPR_2017_paper.html
@@ -15,7 +15,7 @@ LONG_DESCRIPTION ="""Pyshdom performs 3D reconstruction of cloud/aerosol microph
 
 MAINTAINER = "Aviad Levis; Jesse Loveridge"
 MAINTAINER_EMAIL = "aviad.levis@gmail.com; jesserl2@illinois.edu"
-URL = "https://github.com/CloudTomography/pyshdom"
+URL = "https://github.com/CloudTomography/at3d"
 LICENSE = "MIT"
 VERSION = "4.1.0"
 
@@ -185,7 +185,7 @@ def configuration(parent_package='',top_path=None):
         NAME,
         parent_package,
         top_path,
-        package_path='pyshdom',
+        package_path='at3d',
         version = VERSION,
         maintainer  = MAINTAINER,
         maintainer_email = MAINTAINER_EMAIL,
