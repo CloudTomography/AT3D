@@ -162,7 +162,7 @@ def solve_prop(solver, filename='data/rico32x36x26w672.prp'):
     #finally initialize the radiance/source fields based on the optical properties.
     solver._init_solution()
     #solve without redoing init_solution which would undo all the work we did.
-    solver.solve(maxiter=100, init_solution=False, verbose=True)
+    solver.solve(maxiter=100, init_solution=False, verbose=False)
 
 
 class Verify_Solver(TestCase):
@@ -257,7 +257,7 @@ class Verify_Solver(TestCase):
         print(np.max(np.abs(self.testing-self.truth)))
         print(np.argmax(np.abs(self.testing-self.truth)))
         print(np.sqrt(np.mean((self.testing-self.truth)**2)))
-        self.assertTrue(np.allclose(self.testing, self.truth))
+        self.assertTrue(np.allclose(self.testing, self.truth, atol=5e-7))
 
     def test_radiance(self):
         self.assertTrue(np.allclose(self.integrated_rays.I.data, self.radiances[:,2].data, atol=3e-3))
@@ -362,7 +362,7 @@ class Parallelization_Subdivide_Rays(TestCase):
                                                  (1122, 1593),
                                                  (0, 323),
                                                  (0, 323)])
-# #
+#
 class Parallelization_No_SubpixelRays(TestCase):
     @classmethod
     def setUpClass(cls):
@@ -468,6 +468,7 @@ class Parallelization_No_SubpixelRays(TestCase):
         test = xr.open_dataset('data/RenderedSensorReference_nosubpixel.nc')
         diff = test.I.data - self.Sensordict['MISR']['sensor_list'][0].I.data
         print(np.abs(diff).max())
+        print(np.argmax(np.abs(diff)), diff.shape)
         print(np.sqrt(np.mean(diff**2)))
         self.assertTrue(test.equals(self.Sensordict['MISR']['sensor_list'][0]))
 
@@ -580,6 +581,7 @@ class Parallelization_SubpixelRays(TestCase):
         test = xr.open_dataset('data/RenderedSensorReference_subpixelargs.nc')
         diff = test.I.data - self.Sensordict['MISR']['sensor_list'][0].I.data
         print(np.abs(diff).max())
+        print(np.argmax(np.abs(diff)), diff.shape)
         print(np.sqrt(np.mean(diff**2)))
         self.assertTrue(test.equals(self.Sensordict['MISR']['sensor_list'][0]))
 
@@ -1384,7 +1386,7 @@ class VerifyMultiSpeciesSolverExactPhase(TestCase):
         solvers_dict.add_solver(1, solver1)
         solvers_dict.add_solver(2, solver2)
 
-        solvers_dict.solve(maxiter=100, verbose=True)
+        solvers_dict.solve(maxiter=100, verbose=False)
 
         print('WEIGHT SUM', solver1._phaseinterpwt.sum(axis=0).min())
         print('LEGCOEF1', solver1._legen[0].ravel())
@@ -1532,7 +1534,7 @@ class VerifyMultiSpeciesSolverTablePhase(TestCase):
         solvers_dict.add_solver(1, solver1)
         solvers_dict.add_solver(2, solver2)
 
-        solvers_dict.solve(maxiter=100, verbose=True)
+        solvers_dict.solve(maxiter=100, verbose=False)
 
         cls.extinct_exact = solver1.medium['cloud'].extinction.data +solver1.medium['aerosol'].extinction.data
         cls.scatter_exact = solver1.medium['cloud'].ssalb.data*solver1.medium['cloud'].extinction.data +solver1.medium['aerosol'].ssalb.data*solver1.medium['aerosol'].extinction.data
@@ -1678,7 +1680,7 @@ class VerifyMultiSpeciesSolverTablePhaseSPATIAL(TestCase):
         solvers_dict.add_solver(1, solver1)
         solvers_dict.add_solver(2, solver2)
 
-        solvers_dict.solve(maxiter=100, verbose=True)
+        solvers_dict.solve(maxiter=100, verbose=False)
 
         cls.extinct_exact = solver1.medium['cloud'].extinction.data +solver1.medium['aerosol'].extinction.data
         cls.scatter_exact = solver1.medium['cloud'].ssalb.data*solver1.medium['cloud'].extinction.data +solver1.medium['aerosol'].ssalb.data*solver1.medium['aerosol'].extinction.data

@@ -47,15 +47,15 @@ class SortTest(TestCase):
                         np.sort(self.yi_sorted[np.where(self.x_sorted==i)])))
         self.assertTrue(tests)
 
-class ConstructPointer(TestCase):
-
-    def test_pointers(self):
-        np.random.seed(3)
-        ptsptrs = np.sort(np.random.uniform(low=1.0, high=8.0, size=10).astype(np.int))
-        adjsourceptr = at3d.core.construct_ptr(npts=7, ptsptrs=ptsptrs)
-        values = []
-        for j in range(1, adjsourceptr.size):
-            ns = adjsourceptr[j] - adjsourceptr[j-1]
-            for i in range(1, ns+1):
-                values.append(ptsptrs[adjsourceptr[j-1] + i-1])
-        self.assertTrue(np.all(values == ptsptrs))
+# class ConstructPointer(TestCase):
+#
+#     def test_pointers(self):
+#         np.random.seed(3)
+#         ptsptrs = np.sort(np.random.uniform(low=1.0, high=8.0, size=10).astype(np.int))
+#         adjsourceptr = at3d.core.construct_ptr(npts=7, ptsptrs=ptsptrs)
+#         values = []
+#         for j in range(1, adjsourceptr.size):
+#             ns = adjsourceptr[j] - adjsourceptr[j-1]
+#             for i in range(1, ns+1):
+#                 values.append(ptsptrs[adjsourceptr[j-1] + i-1])
+#         self.assertTrue(np.all(values == ptsptrs))

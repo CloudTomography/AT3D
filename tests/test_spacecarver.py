@@ -11,7 +11,7 @@ class VerifySpaceCarver(TestCase):
 
         grid = at3d.grid.make_grid(1.0, 10, 1.2, 12, z=np.linspace(0,1.2,13))
 
-        space_carver = at3d.space_carve.SpaceCarver(grid)
+        space_carver = at3d.space_carve.SpaceCarver(grid, 3)
 
         density = np.zeros((grid.x.size, grid.y.size, grid.z.size))
         xinput = np.random.uniform(0.1, 100.0, size=density.shape)
