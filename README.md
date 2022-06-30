@@ -1,6 +1,6 @@
-# pyshdom
+# Atmospheric Tomography with 3D Radiative Transfer (AT3D)
 
-Pyshdom performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]].
+AT3D performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]].
 The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[4]].
 The python package was created by [Aviad Levis](https://www.aviadlevis.com/3d-remote-sensing), Amit Aides (Technion - Israel Institute of Technology) and Jesse Loveridge (University of Illinois). Code contribution were made by Linda Forster and Vadim Holodovsky.
 
@@ -14,7 +14,7 @@ The python package was created by [Aviad Levis](https://www.aviadlevis.com/3d-re
 ## Features
 
 #### Forward (RTE solver):
-Pyshdom is a python wrapper for [polarized SHDOM](https://coloradolinux.com/~evans/shdom.html) and can be used to compute radiative quantities for a variety of atmospheric configurations.
+AT3D is a python wrapper for [polarized SHDOM](https://coloradolinux.com/~evans/shdom.html) and can be used to compute radiative quantities for a variety of atmospheric configurations.
 The key features of polarized SHDOM are included
   1. Solar/Thermal/Combined sources
   2. A variety of (spatially variable) surface BRDFs
@@ -28,8 +28,8 @@ Other key features that are implemented are:
   * Microphysical/optical properties can be generated or be read from netCDF or the SHDOM/[I3RC](https://i3rc.gsfc.nasa.gov/) file format.
 
 #### Inverse (remote-sensing):
-Pyshdom recovers microphysical/optical properties of atmospheric constituents that fit measured radiances.
-In contrast to most availble codes, pyshdom can recover **3D variable** atmospheric properties. This is achieved by local optimization procedures which employ an approximation to the [Frechet derivatives](https://en.wikipedia.org/wiki/Fr%C3%A9chet_derivative) of the RTE developed by Levis et al. [[3]].
+AT3D recovers microphysical/optical properties of atmospheric constituents that fit measured radiances.
+In contrast to most availble codes, AT3D can recover **3D variable** atmospheric properties. This is achieved by local optimization procedures which employ an approximation to the [Frechet derivatives](https://en.wikipedia.org/wiki/Fr%C3%A9chet_derivative) of the RTE developed by Levis et al. [[3]].
 
 #### Future Improvements
 Future improvement include:
@@ -41,7 +41,7 @@ To contribute to the development effort, contact us! see `Usage and Contact` sec
 
 &nbsp;
 
-## Updates in pyshdom 4.0
+## Updates in AT3D 4.0
  - Data is represented using xarray objects.
  - Wide field of fiew radiances are now modeled.
 
@@ -52,16 +52,16 @@ Compilation of this package requires Fortran & C compilers (e.g. GCC 9.3.0_1) to
 
 Clone the repository into your local machine
 ```
-git clone https://github.com/CloudTomography/pyshdom.git
-cd pyshdom
+git clone https://github.com/CloudTomography/AT3D.git
+cd AT3D
 ```
 
 Start a clean virtual environment and setup enviroment variables
 ```
-conda create -n pyshdom python=3
-conda activate pyshdom
-conda env config vars set PYSHDOM_DIR=$(pwd)
-conda activate pyshdom
+conda create -n at3d python=3
+conda activate at3d
+conda env config vars set AT3D_DIR=$(pwd)
+conda activate AT3D
 ```
 
 Install [xarray](http://xarray.pydata.org/) and its dependencies
@@ -74,7 +74,7 @@ Install other required packages
 pip install -r requirements.txt
 ```
 
-Install pyshdom distribution. This should be run from within the folder containing setup.py. For development mode add the flag `-e`.
+Install AT3D distribution. This should be run from within the folder containing setup.py. For development mode add the flag `-e`.
 ```
 pip install .
 ```

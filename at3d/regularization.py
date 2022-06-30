@@ -1,15 +1,34 @@
 """
-A module for storing regularization routines.
+A module for regularization routines.
 """
 import numpy as np
 import pandas as pd
 import xarray as xr
 import scipy.special as ss
-import pyshdom
+import at3d
 
 class Regularization:
     """
     Base class for regularization routines.
+
+    Parameters
+    ----------
+    state_generator : at3d.medium.StateGenerator
+        This object contains the methods to map from the abstract state to the
+        physical coordinates.
+    scatterer_name : str
+        The name of the scatterer that the regularization term is being applied to. This
+        should match one of the keys in the solver.RTE.medium that is within the
+        `state_generator`.
+    variable_name : str
+        The physical variable name that the regularization term is being applied to.
+    regularization_strength : float
+        A hyperparameter that scales the cost function of the regularization term.
+    relaxation_parameter : float
+        A hyperparameter controls the geometric sequence of `regularization_strength`
+        as a function of optimization iteration number. If this is unity the
+        effective regularization strength remains constant throughout the optimization.
+        The closer this parameter is to zero the faster the regularization decreases.
     """
     def __init__(self, state_generator, scatterer_name, variable_name,
                  regularization_strength, relaxation_parameter=1.0):
@@ -22,10 +41,10 @@ class Regularization:
             raise ValueError("`relaxation_parameter` should be a positive float.")
         self._relaxation_parameter = relaxation_parameter
 
-        if not isinstance(state_generator, pyshdom.medium.StateGenerator):
+        if not isinstance(state_generator, at3d.medium.StateGenerator):
             raise TypeError(
                 "`state_generator` should be of type {} not {}".format(
-                    pyshdom.medium.StateGenerator,
+                    at3d.medium.StateGenerator,
                     type(state_generator)
                     )
                 )
@@ -49,17 +68,53 @@ class Regularization:
         self._variable_name = variable_name
 
     def _get_gridded_variable(self, state):
+        """
+        Return gridded_data from abstract_state for this variable.
+
+        Parameters
+        ----------
+        state : np.array, ndim=1
+            The abstract 1D state vector.
+
+        Returns
+        -------
+        gridded_data : np.ndarray, ndim=3
+            The gridded data correpsonding for the scatterer and variable
+            of this regularization term.
+        rte_grid : xr.Dataset
+            The dataset containing the coordinate information for the gridded data.
+        """
         # This is predicated on the idea that the measurement misfit term
         # has always been called first so that the up to date gridded state is
         # available from the state_generator, which holds the solvers.
-        # TO BE SAFE we could call the state_generator here again.
-        # e.g. self.state_generator(state)
+        #
+        # TO BE SAFE we could instead calculate directly from `state`
+        # using transform information contained in self.state_generator._unknown_scatterers.
         solver = list(self.state_generator._solvers_dict.values())[0]
         gridded_data = solver.medium[self._scatterer_name][self._variable_name].data
         rte_grid = self.state_generator._rte_grid
         return gridded_data, rte_grid
 
     def _make_gradient_dset(self, state, gradient):
+        """
+        Projects gridded gradient to 1D state vector gradient.
+
+        Form an xr.Dataset for the gridded_gradient so the state_generator.project_gradient_to_state
+        method can be used same as for the observational misfit.
+
+        Parameters
+        ----------
+        state : np.ndarray, ndim=1
+            The abstract 1D state vector
+        gradient : np.ndarray, ndim=3
+            The gradient in physical coordinates
+
+        Returns
+        -------
+        out_gradient : np.ndarray, ndim=1
+            The gradient for the abstract 1D state vector
+
+        """
         # Form a gradient dataset analagous to the observation misfit so the
         # same project_gradient_to_state can be used.
         rte_grid = self.state_generator._rte_grid
@@ -95,15 +150,41 @@ class Regularization:
         return self._regularization_strength*self._relaxation_parameter**iteration_number
 
 class WeightedRegularization(Regularization):
+    """
+    A generalization of `Regularization` methods that have spatially varying
+    `regularization_strength` hyperparameters
 
+    Parameters
+    ----------
+    state_generator : at3d.medium.StateGenerator
+        This object contains the methods to map from the abstract state to the
+        physical coordinates.
+    scatterer_name : str
+        The name of the scatterer that the regularization term is being applied to. This
+        should match one of the keys in the solver.RTE.medium that is within the
+        `state_generator`.
+    variable_name : str
+        The physical variable name that the regularization term is being applied to.
+    regularization_strength : float
+        A hyperparameter that scales the cost function of the regularization term.
+    relaxation_parameter : float
+        A hyperparameter controls the geometric sequence of `regularization_strength`
+        as a function of optimization iteration number. If this is unity the
+        effective regularization strength remains constant throughout the optimization.
+        The closer this parameter is to zero the faster the regularization decreases.
+    spatial_weights : float, np.ndarray, ndim=3
+        These weights scale the `regularization_strength` at each grid point. No
+        normalization is imposed so there is redundancy with the `regularization_strength`
+        parameter. Both are used. If None then uniform weights are used.
+    """
     def __init__(
         self, state_generator, scatterer_name, variable_name,
-        regularization_strength, relaxation_parameter=1.0, spatial_weights='uniform'):
+        regularization_strength, relaxation_parameter=1.0, spatial_weights=None):
 
         Regularization.__init__(self, state_generator, scatterer_name, variable_name,
         regularization_strength, relaxation_parameter=relaxation_parameter)
 
-        if spatial_weights == 'uniform':
+        if spatial_weights is None:
             spatial_weights = np.ones(self.state_generator._grid_shape)
 
         if not isinstance(spatial_weights, np.ndarray):
@@ -119,10 +200,36 @@ class WeightedRegularization(Regularization):
         self._spatial_weights = spatial_weights
 
 class Sparsity(WeightedRegularization):
+    """
+    Adds a cost term based on the L1 norm of a physical variable thereby
+    encouraging sparsity in that variable.
 
+    Parameters
+    ----------
+    state_generator : at3d.medium.StateGenerator
+        This object contains the methods to map from the abstract state to the
+        physical coordinates.
+    scatterer_name : str
+        The name of the scatterer that the regularization term is being applied to. This
+        should match one of the keys in the solver.RTE.medium that is within the
+        `state_generator`.
+    variable_name : str
+        The physical variable name that the regularization term is being applied to.
+    regularization_strength : float
+        A hyperparameter that scales the cost function of the regularization term.
+    relaxation_parameter : float
+        A hyperparameter controls the geometric sequence of `regularization_strength`
+        as a function of optimization iteration number. If this is unity the
+        effective regularization strength remains constant throughout the optimization.
+        The closer this parameter is to zero the faster the regularization decreases.
+    spatial_weights : float, np.ndarray, ndim=3
+        These weights scale the `regularization_strength` at each grid point. No
+        normalization is imposed so there is redundancy with the `regularization_strength`
+        parameter. Both are used. If None then uniform weights are used.
+    """
     def __init__(
         self, state_generator, scatterer_name, variable_name,
-        regularization_strength, relaxation_parameter=1.0, spatial_weights='uniform'):
+        regularization_strength, relaxation_parameter=1.0, spatial_weights=None):
         WeightedRegularization.__init__(self, state_generator, scatterer_name, variable_name,
         regularization_strength, spatial_weights=spatial_weights, relaxation_parameter=relaxation_parameter)
 
@@ -142,10 +249,37 @@ class Sparsity(WeightedRegularization):
         return cost, out_gradient
 
 class Tikhonov(WeightedRegularization):
+    """
+    Adds a cost term based on the L2 norm of a physical variable thereby encouraging
+    small vectors, and therefore regularity in the presence of linear observational
+    misfits.
 
+    Parameters
+    ----------
+    state_generator : at3d.medium.StateGenerator
+        This object contains the methods to map from the abstract state to the
+        physical coordinates.
+    scatterer_name : str
+        The name of the scatterer that the regularization term is being applied to. This
+        should match one of the keys in the solver.RTE.medium that is within the
+        `state_generator`.
+    variable_name : str
+        The physical variable name that the regularization term is being applied to.
+    regularization_strength : float
+        A hyperparameter that scales the cost function of the regularization term.
+    relaxation_parameter : float
+        A hyperparameter controls the geometric sequence of `regularization_strength`
+        as a function of optimization iteration number. If this is unity the
+        effective regularization strength remains constant throughout the optimization.
+        The closer this parameter is to zero the faster the regularization decreases.
+    spatial_weights : float, np.ndarray, ndim=3
+        These weights scale the `regularization_strength` at each grid point. No
+        normalization is imposed so there is redundancy with the `regularization_strength`
+        parameter. Both are used. If None then uniform weights are used.
+    """
     def __init__(
         self, state_generator, scatterer_name, variable_name,
-        regularization_strength, relaxation_parameter=1.0, spatial_weights='uniform'):
+        regularization_strength, relaxation_parameter=1.0, spatial_weights=None):
         WeightedRegularization.__init__(self, state_generator, scatterer_name, variable_name,
         regularization_strength, spatial_weights=spatial_weights, relaxation_parameter=relaxation_parameter)
 
@@ -176,21 +310,51 @@ class Tikhonov(WeightedRegularization):
 
 class SpatialSmoothing(WeightedRegularization):
     """
-    Calculates the L1 or L2 norm of the spatial gradient of a selected variable.
+    Adds a cost term based on the L1 or L2 norm of the spatial gradient of a
+    physical variable, thereby encouraging smooth state vectors.
+
+    Parameters
+    ----------
+    state_generator : at3d.medium.StateGenerator
+        This object contains the methods to map from the abstract state to the
+        physical coordinates.
+    scatterer_name : str
+        The name of the scatterer that the regularization term is being applied to. This
+        should match one of the keys in the solver.RTE.medium that is within the
+        `state_generator`.
+    variable_name : str
+        The physical variable name that the regularization term is being applied to.
+    regularization_strength : float
+        A hyperparameter that scales the cost function of the regularization term.
+    relaxation_parameter : float
+        A hyperparameter controls the geometric sequence of `regularization_strength`
+        as a function of optimization iteration number. If this is unity the
+        effective regularization strength remains constant throughout the optimization.
+        The closer this parameter is to zero the faster the regularization decreases.
+    spatial_weights : float, np.ndarray, ndim=3
+        These weights scale the `regularization_strength` at each grid point. No
+        normalization is imposed so there is redundancy with the `regularization_strength`
+        parameter. Both are used. If None then uniform weights are used.
+    mode : str
+        Either 'l2' or 'l1', which chooses which type of norm to apply to the gradient vectors
+    direction_weights : list
+        A list of three floats corresponding to weights on the gradients in the x,y,z
+        directions, respectively.
     """
     def __init__(
             self, state_generator, scatterer_name, variable_name,
             regularization_strength, relaxation_parameter=1.0, mode='l2', direction_weights=[1.0, 1.0, 1.0],
-            spatial_weights='uniform'):
+            spatial_weights=None, huber_parameter=1.0):
         WeightedRegularization.__init__(self, state_generator, scatterer_name, variable_name,
         regularization_strength, spatial_weights=spatial_weights, relaxation_parameter=relaxation_parameter)
 
-        valid_modes = ('l1', 'l2')
+        valid_modes = ('l1', 'l2', 'ph')
         if mode not in valid_modes:
             raise ValueError(
                 "Spatial Smoothing `mode` should be in {}".format(valid_modes)
             )
         self._mode = mode
+        self._huber_parameter = huber_parameter
 
         direction_weights = np.atleast_1d(direction_weights)
         self._direction_weights = direction_weights
@@ -200,8 +364,8 @@ class SpatialSmoothing(WeightedRegularization):
         gridded_data, rte_grid = self._get_gridded_variable(state)
 
 #       The x,y,z conventions are transposed in this function compared
-#       to what is used by pyshdom, that is why the names don't match up.
-        cost, gradient, ierr, errmsg = pyshdom.core.grid_smoothing(
+#       to what is used by at3d, that is why the names don't match up.
+        cost, gradient, ierr, errmsg = at3d.core.grid_smoothing(
             field=gridded_data,
             weights=self._spatial_weights,
             direction_weights=self._direction_weights,
@@ -211,9 +375,10 @@ class SpatialSmoothing(WeightedRegularization):
             zgrid=rte_grid.x.data,
             ygrid=rte_grid.y.data,
             xgrid=rte_grid.z.data,
-            mode=self._mode
+            mode=self._mode,
+            huber_parameter=self._huber_parameter
         )
-        pyshdom.checks.check_errcode(ierr, errmsg)
+        at3d.checks.check_errcode(ierr, errmsg)
         cost *= self.regularization_strength(iteration_number)
         gradient *= self.regularization_strength(iteration_number)
 
@@ -238,6 +403,10 @@ class PriorCovariance:
 
 
 def sigmoidal_spatial_weights(distance_to_clear, scaling_distance=0.1):
+    """
+    A useful function for computing spatial weights for regularization based
+    on distance to the edge of the cloud at each grid point.
+    """
     return 2*ss.expit(-1*distance_to_clear/scaling_distance)
 
 # The function below is outdated.

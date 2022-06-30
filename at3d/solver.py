@@ -17,9 +17,9 @@ import psutil
 import xarray as xr
 import numpy as np
 
-import pyshdom.core
-import pyshdom.util
-import pyshdom.checks
+import at3d.core
+import at3d.util
+import at3d.checks
 
 
 class ShdomPropertyArrays(object):
@@ -151,6 +151,13 @@ class RTE:
         self._phasemax = 0.999
         self._adjflag = False # Used for testing the adjoint source.
 
+        self._newmethod = True # Used for testing the fast multi-species source computation
+        # vs the slow multi-species source computation.
+
+        self._longest_path_pts = 1
+        # Set this to 1 by default as it is used for solar direct beam derivatives
+        # and isn't necessarily needed for thermal.
+
         self._correctinterpolate = True
         # Flag for switching between the 'Radiance' and 'Visualization'
         # methods for calculating radiances in original SHDOM.
@@ -167,7 +174,7 @@ class RTE:
         # Setup a name for the solver
         self._name = '{} {:1.3f} micron'.format(self._type, self.wavelength) if name is None else name
         #Start mpi (if available). This is a dummy routine. MPI is not currently supported.
-        self._masterproc = pyshdom.core.start_mpi()
+        self._masterproc = at3d.core.start_mpi()
 
         # Link to the properties array module.
         self._pa = ShdomPropertyArrays()
@@ -194,7 +201,7 @@ class RTE:
         if self._srctype in ('T', 'B'):
             #Surface flux is typically the warmest and therefore largest flux
             #so it is used as guidance for the splitting accuracy.
-            flux = np.pi*pyshdom.util.planck_function(self._gndtemp, self.wavelength)
+            flux = np.pi*at3d.util.planck_function(self._gndtemp, self.wavelength)
         if self._srctype != 'T':
             flux += self._solarflux
         if (self._splitacc > 0.0) & ((self._splitacc < 0.001*flux) | (self._splitacc > 0.1*flux)):
@@ -328,7 +335,8 @@ class RTE:
         self._pa.extdirp, self._oldnpts, self._total_ext, self._deljdot, \
         self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
         self._work2, ierr, errmsg, self._phaseinterpwt, self._cpu_time \
-         = pyshdom.core.solution_iterations(
+         = at3d.core.solution_iterations(
+            newmethod=self._newmethod,
             verbose=verbose,
             solve=solve,
             maxnmicro=self._pa.max_num_micro,
@@ -482,7 +490,7 @@ class RTE:
             ylmsun=self._ylmsun,
             runname=self._name
         )
-        pyshdom.checks.check_errcode(ierr, errmsg)
+        at3d.checks.check_errcode(ierr, errmsg)
         nsh = self._shptr[self._npts]
         self._maxmb_out = 4*(self._nmu*(2+2*self._nphi + 2*self._nlm+2*33*32) \
                         + 4.5*self._maxpg + self._maxpgl + self._nstleg*self._pa.numphase*(self._nleg + 1) \
@@ -508,7 +516,7 @@ class RTE:
         Parameters
         ----------
         sensor : xr.Dataset
-            A valid pyshdom sensor dataset (see sensor.py) that contains AT LEAST
+            A valid at3d sensor dataset (see sensor.py) that contains AT LEAST
             the ray geometries required to perform the Source function integration.
 
         Returns
@@ -520,7 +528,7 @@ class RTE:
         if not isinstance(sensor, xr.Dataset):
             raise TypeError("`sensor` should be an xr.Dataset not "
                             "of type '{}''".format(type(sensor)))
-        pyshdom.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
+        at3d.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
                                     ray_x='nrays', ray_y='nrays', ray_z='nrays',
                                     stokes='stokes_index')
 
@@ -544,7 +552,7 @@ class RTE:
         self.check_solved()
         self._precompute_phase()
 
-        output, ierr, errmsg = pyshdom.core.render(
+        self._bcrad_output, output, ierr, errmsg = at3d.core.render(
             correctinterpolate=self._correctinterpolate,
             singlescatter=single_scatter,
             transcut=self._transcut,
@@ -620,7 +628,7 @@ class RTE:
             units=self._units,
             total_ext=self._total_ext[:self._npts],
             npart=self._npart)
-        pyshdom.checks.check_errcode(ierr, errmsg)
+        at3d.checks.check_errcode(ierr, errmsg)
         sensor['I'] = xr.DataArray(
             data=output[0],
             dims='nrays',
@@ -660,7 +668,7 @@ class RTE:
         Parameters
         ----------
         sensor : xr.Dataset
-            A valid pyshdom sensor dataset (see sensor.py) that contains AT LEAST
+            A valid at3d sensor dataset (see sensor.py) that contains AT LEAST
             the ray geometries required to define the line integration of extinction.
         deltam_scaled_path : bool
             If True then the optical path is calculated for the delta-M scaled
@@ -676,7 +684,7 @@ class RTE:
         if not isinstance(sensor, xr.Dataset):
             raise TypeError("`sensor` should be an xr.Dataset "
                             "not of type '{}''".format(type(sensor)))
-        pyshdom.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
+        at3d.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
                                     ray_x='nrays', ray_y='nrays', ray_z='nrays')
 
         camx = sensor['ray_x'].data
@@ -686,7 +694,7 @@ class RTE:
         camphi = sensor['ray_phi'].data
         total_pix = sensor.sizes['nrays']
 
-        optical_path = pyshdom.core.optical_depth(
+        optical_path = at3d.core.optical_depth(
             maxnmicro=self._pa.max_num_micro,
             interpmethod=self._interpmethod,
             phasemax=self._phasemax,
@@ -734,7 +742,7 @@ class RTE:
         if not isinstance(sensor, xr.Dataset):
             raise TypeError("`sensor` should be an xr.Dataset "
                             " not of type '{}''".format(type(sensor)))
-        pyshdom.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
+        at3d.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
                                     ray_x='nrays', ray_y='nrays', ray_z='nrays')
 
         camx = sensor['ray_x'].data
@@ -745,11 +753,11 @@ class RTE:
         total_pix = sensor.sizes['nrays']
 
         if self.check_solved(verbose=False):
-            raise pyshdom.exceptions.SHDOMError(
+            raise at3d.exceptions.SHDOMError(
                 "This function can only be run before RTE.solve()"
                 )
 
-        transmission_integral = pyshdom.core.transmission_integral(
+        transmission_integral = at3d.core.transmission_integral(
             nx=self._nx,
             ny=self._ny,
             nz=self._nz,
@@ -786,7 +794,7 @@ class RTE:
         if not isinstance(sensor, xr.Dataset):
             raise TypeError("`sensor` should be an xr.Dataset "
                             " not of type '{}''".format(type(sensor)))
-        pyshdom.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
+        at3d.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
                                     ray_x='nrays', ray_y='nrays', ray_z='nrays')
 
         camx = sensor['ray_x'].data
@@ -797,7 +805,7 @@ class RTE:
         total_pix = sensor.sizes['nrays']
 
         if self.check_solved(verbose=False):
-            raise pyshdom.exceptions.SHDOMError(
+            raise at3d.exceptions.SHDOMError(
                 "This function can only be run before RTE.solve()"
                 )
         if do_all:
@@ -805,7 +813,7 @@ class RTE:
             paths_size = total_pix
         else:
             paths_size = 1
-        optical_path = pyshdom.core.min_optical_depth(
+        optical_path = at3d.core.min_optical_depth(
             maxnmicro=self._pa.max_num_micro,
             interpmethod=self._interpmethod,
             phasemax=self._phasemax,
@@ -929,7 +937,7 @@ class RTE:
         else:
             nshout = 4
         if self._shterms is None:
-            shterms = pyshdom.core.compute_sh(nshout=nshout,
+            shterms = at3d.core.compute_sh(nshout=nshout,
                                               nstokes=self._nstokes,
                                               npts=self._npts,
                                               srctype=self._srctype,
@@ -948,7 +956,7 @@ class RTE:
         elif len(self._xgrid)-1 == self._nx1:
             xcoord = self._xgrid[:-1]
         else:
-            raise pyshdom.exceptions.SHDOMError(
+            raise at3d.exceptions.SHDOMError(
                 "Inconsistent sizes of RTE grid and property grid. "
                 "There has been a mistake in interpretation."
                 )
@@ -957,7 +965,7 @@ class RTE:
         elif len(self._ygrid)-1 == self._ny1:
             ycoord = self._ygrid[:-1]
         else:
-            raise pyshdom.exceptions.SHDOMError(
+            raise at3d.exceptions.SHDOMError(
                 "Inconsistent sizes of RTE grid and property grid. "
                 "There has been a mistake in interpretation."
                 )
@@ -1021,7 +1029,7 @@ class RTE:
         elif len(self._xgrid)-1 == self._nx1:
             xcoord = self._xgrid[:-1]
         else:
-            raise pyshdom.exceptions.SHDOMError(
+            raise at3d.exceptions.SHDOMError(
                 "Inconsistent sizes of RTE grid and property grid. "
                 "There has been a mistake in interpretation."
                 )
@@ -1030,7 +1038,7 @@ class RTE:
         elif len(self._ygrid)-1 == self._ny1:
             ycoord = self._ygrid[:-1]
         else:
-            raise pyshdom.exceptions.SHDOMError(
+            raise at3d.exceptions.SHDOMError(
                 "Inconsistent sizes of RTE grid and property grid. "
                 "There has been a mistake in interpretation."
                 )
@@ -1076,7 +1084,7 @@ class RTE:
         """
         self.check_solved()
         if self._netfluxdiv is None:
-            netfluxdiv = pyshdom.core.compute_netfluxdiv(
+            netfluxdiv = at3d.core.compute_netfluxdiv(
                 nstokes=self._nstokes,
                 npts=self._npts,
                 rshptr=self._rshptr[:self._npts+1],
@@ -1096,7 +1104,7 @@ class RTE:
         elif len(self._xgrid)-1 == self._nx1:
             xcoord = self._xgrid[:-1]
         else:
-            raise pyshdom.exceptions.SHDOMError(
+            raise at3d.exceptions.SHDOMError(
                 "Inconsistent sizes of RTE grid and property grid. "
                 "There has been a mistake in interpretation."
                 )
@@ -1105,7 +1113,7 @@ class RTE:
         elif len(self._ygrid)-1 == self._ny1:
             ycoord = self._ygrid[:-1]
         else:
-            raise pyshdom.exceptions.SHDOMError(
+            raise at3d.exceptions.SHDOMError(
                 "Inconsistent sizes of RTE grid and property grid. "
                 "There has been a mistake in interpretation."
                 )
@@ -1141,7 +1149,8 @@ class RTE:
             self._make_direct()
 
             direct_derivative_path, direct_derivative_ptr, ierr, errmsg = \
-                pyshdom.core.make_direct_derivative(
+                at3d.core.make_direct_derivative(
+                    longest_path_pts=self._longest_path_pts,
                     npts=self._npts,
                     bcflag=self._bcflag,
                     gridpos=self._gridpos,
@@ -1171,15 +1180,15 @@ class RTE:
                     delxd=self._delxd,
                     delyd=self._delyd
                 )
-            pyshdom.checks.check_errcode(ierr, errmsg)
+            at3d.checks.check_errcode(ierr, errmsg)
         else:
             direct_derivative_ptr = np.zeros(
-                (8*(self._pa.npx + self._pa.npy + self._pa.npz), self._npts),
+                (self._longest_path_pts, self._npts),
                 dtype=np.int32,
                 order='F'
             )
             direct_derivative_path = np.zeros(
-                (8*(self._pa.npx + self._pa.npy + self._pa.npz), self._npts),
+                (self._longest_path_pts, self._npts),
                 dtype=np.float32,
                 order='F'
             )
@@ -1192,7 +1201,7 @@ class RTE:
         (microphysical or optical).
 
         Uses an interpolation method and table_data supplied from a
-        pyshdom.containers.UnknownScatterers object. Does the delta-M scaling of the
+        at3d.containers.UnknownScatterers object. Does the delta-M scaling of the
         partial derivatives if appropriate.
 
         Parameters
@@ -1309,7 +1318,7 @@ class RTE:
         self._dtemp = np.zeros((dext.shape))
 
         # compute lut of phase function derivatives evaluated at scattering angles.
-        self._dphasetab, ierr, errmsg = pyshdom.core.precompute_phase_check_grad(
+        self._dphasetab, ierr, errmsg = at3d.core.precompute_phase_check_grad(
             negcheck=False,
             nstphase=self._nstphase,
             nstleg=self._nstleg,
@@ -1322,14 +1331,14 @@ class RTE:
             dleg=dleg,
             deltam=self._deltam
         )
-        pyshdom.checks.check_errcode(ierr, errmsg)
+        at3d.checks.check_errcode(ierr, errmsg)
         # now that we have dphasetab we can truncate dleg
         # to the RTE accuracy.
         self._dleg = dleg[:, :self._nleg+1]
         # make property grid to RTE grid pointers and interpolation weights.
         self._optinterpwt, self._interpptr, ierr, errmsg, \
         self._dalbm, self._dextm, self._dfj = \
-        pyshdom.core.prepare_deriv_interps(
+        at3d.core.prepare_deriv_interps(
             gridpos=self._gridpos[:, :self._npts],
             npx=self._pa.npx,
             npy=self._pa.npy,
@@ -1368,7 +1377,7 @@ class RTE:
             phasemax=self._phasemax,
             interpmethod=self._interpmethod
         )
-        pyshdom.checks.check_errcode(ierr, errmsg)
+        at3d.checks.check_errcode(ierr, errmsg)
 
 
     def load_solution(self, input_dataset, load_radiance=True):
@@ -1422,14 +1431,14 @@ class RTE:
         #read grid into memory here and overwrite normal grid from
         #initialization, no need to worry about this as this is small.
         if self._gridpos.shape[1] < input_dataset.npts.data:
-            raise pyshdom.exceptions.SHDOMError(
+            raise at3d.exceptions.SHDOMError(
                 "Cannot load solution as loaded grid has more points ({}) "
                 "than supported by the current RTE's memory parameters ({})".format(
                     input_dataset.npts.data, self._gridpos.shape[1]
                 )
             )
         if self._gridptr.shape[1] < input_dataset.ncells.data:
-            raise pyshdom.exceptions.SHDOMError(
+            raise at3d.exceptions.SHDOMError(
                 "Cannot load solution as loaded grid has more cells ({}) "
                 "than supported by the current RTE's memory parameters ({})".format(
                     input_dataset.ncells.data, self._gridptr.shape[1]
@@ -1577,10 +1586,10 @@ class RTE:
                             "of xr.Dataset or an xr.Dataset")
 
         for name, dataset in medium_dict.items():
-            pyshdom.checks.check_optical_properties(dataset, name=name)
+            at3d.checks.check_optical_properties(dataset, name=name)
 
         #check that all scatterers are on the same grid
-        pyshdom.checks.check_grid_consistency(
+        at3d.checks.check_grid_consistency(
             *medium_dict.values(),
             names=list(medium_dict.keys())
         )
@@ -1636,15 +1645,15 @@ class RTE:
                                "`atmosphere` despite using thermal source.")
         elif isinstance(atmosphere, xr.Dataset):
             #atmosphere should be on the rte_grid.
-            pyshdom.checks.check_grid(atmosphere)
+            at3d.checks.check_grid(atmosphere)
             if not np.all(atmosphere.x == self._grid.x) & np.all(atmosphere.y == self._grid.y) & \
                 np.all(atmosphere.z == self._grid.z):
-                raise pyshdom.exceptions.GridError("`atmosphere` does not have a "
+                raise at3d.exceptions.GridError("`atmosphere` does not have a "
                                                    "consistent grid with medium.")
 
             if 'temperature' in atmosphere.data_vars:
-                pyshdom.checks.check_positivity(atmosphere, 'temperature')
-                pyshdom.checks.check_hasdim(atmosphere, temperature=['x', 'y', 'z'])
+                at3d.checks.check_positivity(atmosphere, 'temperature')
+                at3d.checks.check_hasdim(atmosphere, temperature=['x', 'y', 'z'])
                 if np.any(atmosphere.temperature >= 350.0) or \
                    np.any(atmosphere.temperature <= 150.0):
                     warnings.warn("Temperatures in `atmosphere` are out of "
@@ -1655,8 +1664,8 @@ class RTE:
                                "`atmosphere` despite using thermal source.")
 
             if 'gas_absorption' in atmosphere.data_vars:
-                pyshdom.checks.check_positivity(atmosphere, 'gas_absorption')
-                pyshdom.checks.check_hasdim(atmosphere, gas_absorption=['x', 'y', 'z'])
+                at3d.checks.check_positivity(atmosphere, 'gas_absorption')
+                at3d.checks.check_hasdim(atmosphere, gas_absorption=['x', 'y', 'z'])
                 if np.all(atmosphere.gas_absorption[0, 0] == atmosphere.gas_absorption):
                     self._pa.nzckd = atmosphere.sizes['z']
                     self._pa.zckd = atmosphere.z.data
@@ -1705,16 +1714,16 @@ class RTE:
         source : xr.Dataset
             Describes the source type. See source.py for details.
         """
-        pyshdom.checks.check_positivity(source, 'wavelength', 'solarflux',
+        at3d.checks.check_positivity(source, 'wavelength', 'solarflux',
                                         'skyrad')
         solarmu = source.solarmu.data
         if not (-1.0 <= solarmu) & (solarmu < 0.0):
-            raise pyshdom.exceptions.OutOfRangeError(
+            raise at3d.exceptions.OutOfRangeError(
                 "solarmu must be in the range -1.0 <= solarmu < 0.0 not '{}'. "
                 "The SHDOM convention for solar direction is that it points"
                 "in the direction of the propagation of radiance.".format(solarmu))
 
-        pyshdom.checks.check_range(source, solaraz=(-np.pi, np.pi))
+        at3d.checks.check_range(source, solaraz=(-np.pi, np.pi))
         self.wavelength = source.wavelength.data
         self._srctype = source.srctype.data
         self._solarflux = source.solarflux.data
@@ -1743,8 +1752,8 @@ class RTE:
             See surface.py for details.
         """
         # Surface parameters
-        pyshdom.checks.check_range(surface, gndalbedo=(0.0, 1.0))
-        pyshdom.checks.check_positivity(
+        at3d.checks.check_range(surface, gndalbedo=(0.0, 1.0))
+        at3d.checks.check_positivity(
             surface, 'gndtemp', 'delxsfc', 'delysfc', 'maxsfcpars',
             'nsfcpar', 'nxsfc', 'nxsfc'
         )
@@ -1949,7 +1958,7 @@ class RTE:
                                 (self._ny + ibits(self._bcflag, 1, 1) - \
                                 ibits(self._bcflag, 3, 1))
 
-        self._xgrid, self._ygrid, self._zgrid = pyshdom.core.new_grids(
+        self._xgrid, self._ygrid, self._zgrid = at3d.core.new_grids(
             bcflag=self._bcflag,
             gridtype=self._gridtype,
             npx=self._pa.npx,
@@ -1967,7 +1976,7 @@ class RTE:
         self._setup_memory()
 
         self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
-        self._treeptr, self._cellflags = pyshdom.core.init_cell_structure(
+        self._treeptr, self._cellflags = at3d.core.init_cell_structure(
             maxig=self._maxig,
             maxic=self._maxic,
             bcflag=self._bcflag,
@@ -1988,7 +1997,7 @@ class RTE:
 
         Raises
         ------
-        pyshdom.exceptions.SHDOMError
+        at3d.exceptions.SHDOMError
             If there are some errors in the memory
             allocation of the arrays that would cause the process to be exited in
             original SHDOM.
@@ -2027,7 +2036,7 @@ class RTE:
         #in the equivalent section of code. This may be inappropriate for
         #other computer architectures where the default INTEGER precision
         #is 64, I don't know anything about that sort of stuff.
-        #Previously in pyshdom this was sys.maxsize - but that is max value for a int64
+        #Previously in at3d this was sys.maxsize - but that is max value for a int64
         #which is way too big. For very large grids there was an error attempting
         #to execute the fortran subroutines as the integer describing
         #array sizes overflowed. Hopefully using this
@@ -2064,7 +2073,7 @@ class RTE:
 
         self._adapt_grid_factor *= reduce
         if self._adapt_grid_factor < 1.0:
-            raise pyshdom.exceptions.SHDOMError(
+            raise at3d.exceptions.SHDOMError(
                 "max_total_mb memory limit ({}) exceeded with just base grid "
                 "(final adapt_grid_factor={}). Either increase"
                 "memory or reduce accuracy parameters (num_mu_bins={}, num_phi_bins={},"
@@ -2081,7 +2090,7 @@ class RTE:
         wantmem *= reduce
         # below is only necessary for 32 bit systems, I guess. - JRLoveridge 2021/03/02
         # if wantmem > self._max_int32_size:
-        #     raise pyshdom.exceptions.SHDOMError(
+        #     raise at3d.exceptions.SHDOMError(
         #         "Number of words of memory ({}) exceeds max integer size: {}".format(
         #             wantmem, self._max_int32_size
         #         ))
@@ -2114,7 +2123,7 @@ class RTE:
         #the Fortran subroutines.
 
         if self._maxiv > self._max_int32_size:
-            raise pyshdom.exceptions.SHDOMError(
+            raise at3d.exceptions.SHDOMError(
                 "Size of largest array (RADIANCE) with shape (NSTOKES, MAXIV+MAXIG) "
                 "likely exceeds the max integer number of bytes. This will result in array probably"
                 " failing to allocate. Current Size: {} > Max Size: {}".format(
@@ -2122,7 +2131,7 @@ class RTE:
                 )
 
         if 4.0*8.0*self._maxic > self._max_int32_size:
-            raise pyshdom.exceptions.SHDOMError(
+            raise at3d.exceptions.SHDOMError(
                 "Size of gridptr array with shape (8*MAXIC) "
                 "likely exceeds the max integer number of bytes. This will result in array probably"
                 " failing to allocate. {} > {}".format(
@@ -2193,7 +2202,7 @@ class RTE:
         self._pa.numphase = legendre_table.sizes['table_index']
 
         if np.any(self._pa.iphasep < 1) or np.any(self._pa.iphasep > self._pa.numphase):
-            raise pyshdom.exceptions.OutOfRangeError("Phase function indices are out of bounds.")
+            raise at3d.exceptions.OutOfRangeError("Phase function indices are out of bounds.")
 
         # Determine the number of legendre coefficient for a given angular resolution
         self._nleg = self._ml + 1 if self._deltam else self._ml
@@ -2204,7 +2213,7 @@ class RTE:
         # Check if legendre table needs padding. It will only need
         # padding if angular resolution is larger than the number of
         # non-zero phase function legendre coefficients.
-        if self._pa.nlegp > legendre_table.sizes['legendre_index']:
+        if self._pa.nlegp + 1 > legendre_table.sizes['legendre_index']:
             legendre_table = legendre_table.pad(
                 {'legendre_index':
                  (0, 1 + self._pa.nlegp - legendre_table.sizes['legendre_index'])
@@ -2247,7 +2256,7 @@ class RTE:
         self._temp, self._planck, self._extinct, self._albedo, self._legen, \
         self._iphase, self._total_ext, self._extmin, self._scatmin,         \
         self._albmax, ierr, errmsg, self._phaseinterpwt                  \
-         = pyshdom.core.transfer_pa_to_grid(
+         = at3d.core.transfer_pa_to_grid(
             phasewtp=self._pa.phasewtp,
             maxnmicro=self._pa.max_num_micro,
             nlegp=self._pa.nlegp,
@@ -2285,7 +2294,7 @@ class RTE:
             npts=self._npts,
             interpmethod=self._interpmethod,
             )
-        pyshdom.checks.check_errcode(ierr, errmsg)
+        at3d.checks.check_errcode(ierr, errmsg)
 
         #calculate cell averaged extinctions so that warnings can be raised
         #about optical thickness of cells. High optical thickness across a cell
@@ -2419,8 +2428,9 @@ class RTE:
         self._delyd, self._deljdot, self._deljold, self._deljnew, self._jnorm, \
         self._fftflag, self._cmu1, self._cmu2, self._wtmu, self._cphi1, \
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
-        self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg \
-         = pyshdom.core.init_solution(
+        self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg, longest_path_pts\
+         = at3d.core.init_solution(
+            newmethod=self._newmethod,
             ordinateset=self._angle_set,
             phasewtp=self._pa.phasewtp,
             maxnmicro=self._pa.max_num_micro,
@@ -2526,7 +2536,8 @@ class RTE:
             maxsfcpars=self._maxsfcpars,
             nphi0max=self._nphi0max
         )
-        pyshdom.checks.check_errcode(ierr, errmsg)
+        at3d.checks.check_errcode(ierr, errmsg)
+        self._longest_path_pts = max(self._longest_path_pts, 1)
 
     def _precompute_phase(self):
         """
@@ -2540,7 +2551,7 @@ class RTE:
             (self._nstleg, self._pa.nlegp+1,self._pa.numphase),
             order='F'
         )
-        self._phasetab, errmsg, ierr = pyshdom.core.precompute_phase_check(
+        self._phasetab, errmsg, ierr = at3d.core.precompute_phase_check(
             negcheck=True,
             nscatangle=self._nscatangle,
             numphase=self._pa.numphase,
@@ -2553,7 +2564,7 @@ class RTE:
             legen=legen_reshape,
             deltam=self._deltam,
         )
-        pyshdom.checks.check_errcode(ierr, errmsg)
+        at3d.checks.check_errcode(ierr, errmsg)
 
     def _make_direct(self):
         """
@@ -2562,8 +2573,8 @@ class RTE:
         self._dirflux, self._pa.extdirp, self._cx, self._cy, self._cz, \
         self._cxinv, self._cyinv, self._czinv, self._di, self._dj, self._dk, \
         self._ipdirect, self._delxd, self._delyd, self._xdomain, self._ydomain, \
-        self._epss, self._epsz, self._uniformzlev = \
-            pyshdom.core.make_direct(
+        self._epss, self._epsz, self._uniformzlev, longest_path_pts = \
+            at3d.core.make_direct(
                 nstleg=self._nstleg,
                 dirflux=self._dirflux,
                 extdirp=self._pa.extdirp,
@@ -2599,6 +2610,7 @@ class RTE:
                 zckd=self._pa.zckd,
                 gasabs=self._pa.gasabs
             )
+        self._longest_path_pts = max(longest_path_pts, 1)
 
     @property
     def num_iterations(self):

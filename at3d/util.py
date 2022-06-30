@@ -1,5 +1,5 @@
 """
-Utility functions for pyshdom. These are not critical to its operation.
+Utility functions for at3d. These are not critical to its operation.
 """
 import typing
 
@@ -19,9 +19,9 @@ from IPython.display import display
 from ipywidgets import fixed, interactive
 from pathlib import Path
 
-import pyshdom.core
-import pyshdom.solver
-import pyshdom.grid
+import at3d.core
+import at3d.solver
+import at3d.grid
 
 def github_version():
     """
@@ -34,12 +34,12 @@ def github_version():
 
     Raises
     ------
-    warning if there are uncomitted changes in pyshdom.
+    warning if there are uncomitted changes in at3d.
     """
-    github_dir = Path(os.environ['PYSHDOM_DIR']).joinpath('pyshdom')
+    github_dir = Path(os.environ['at3d_DIR']).joinpath('at3d')
     uncomitted_changes = subprocess.check_output(["git", "diff", "--name-only", github_dir]).strip().decode('UTF-8')
     if uncomitted_changes:
-        warnings.warn('There are uncomitted changes in the {}/pyshdom directories: {}'.format(github_dir, uncomitted_changes))
+        warnings.warn('There are uncomitted changes in the {}/at3d directories: {}'.format(github_dir, uncomitted_changes))
     github_version = subprocess.check_output(["git", "rev-parse", "HEAD"]).strip().decode('UTF-8')
     github_version = github_version + ' + uncomitted changes' if uncomitted_changes else github_version
     return github_version
@@ -202,7 +202,7 @@ def get_phase_function(legcoef, angles, phase_elements='All'):
         for phase_element in phase_elements:
             pelem = pelem_dict[phase_element]
 
-            phase = pyshdom.core.transform_leg_to_phase(
+            phase = at3d.core.transform_leg_to_phase(
                 maxleg=legcoef.legendre_index.size - 1,
                 nphasepol=6,
                 legcoef=single_legcoef,
@@ -243,7 +243,7 @@ def plot_cell_grid(solver, y, visualize=None):
 
     Parameters
     ----------
-    solver : pyshdom.solver.RTE
+    solver : at3d.solver.RTE
         The solver object.
     y : float
         The Y-plane of the grid to visualize.
@@ -269,7 +269,7 @@ def plot_cell_grid(solver, y, visualize=None):
         y_high = yinds
     fig, ax = plt.subplots(figsize=(8, 8))
     if visualize is not None:
-        cellextinct, adaptcrit = pyshdom.core.output_cell_split(
+        cellextinct, adaptcrit = at3d.core.output_cell_split(
             gridptr=solver._gridptr,
             gridpos=solver._gridpos,
             nstokes=solver._nstokes,
@@ -285,8 +285,8 @@ def plot_cell_grid(solver, y, visualize=None):
             label = 'Cell averaged Extinction'
         elif visualize == 'adaptcrit':
             if not solver.check_solved(verbose=False):
-                raise pyshdom.exceptions.SHDOMError(
-                    "pyshdom.solver.RTE object has to be solved to visualize "
+                raise at3d.exceptions.SHDOMError(
+                    "at3d.solver.RTE object has to be solved to visualize "
                     "adaptive splitting."
                 )
             adapt = np.max(adaptcrit, axis=0)
@@ -351,7 +351,7 @@ def cell_average_comparison(reference, other, variable_name):
     calculates average values of 'variable name' in the cells
     of reference's grid for both reference and other (other is on a different grid.)
     """
-    ref_vol, ref_val, other_vol, other_val = pyshdom.core.cell_average(
+    ref_vol, ref_val, other_vol, other_val = at3d.core.cell_average(
         xgrid1=reference.x.data,
         ygrid1=reference.y.data,
         zgrid1=reference.z.data,
@@ -380,7 +380,7 @@ def load_2parameter_lwc_file(file_name, density='lwc'):
     dx, dy = np.fromstring(header['2 parameter LWC file'][1], sep=' ').astype(np.float)
     z = np.fromstring(header['2 parameter LWC file'][2], sep=' ').astype(np.float)
     temperature = np.fromstring(header['2 parameter LWC file'][3], sep=' ').astype(np.float)
-    dset = pyshdom.grid.make_grid(dx, nx, dy, ny, z)
+    dset = at3d.grid.make_grid(dx, nx, dy, ny, z)
 
     data = np.genfromtxt(file_name, skip_header=5)
 
@@ -466,7 +466,7 @@ def load_from_csv(path, density=None, origin=(0.0,0.0)):
     dx, dy = np.genfromtxt(path, max_rows=1, dtype=float, skip_header=2, delimiter=',')
     z = xr.DataArray(np.genfromtxt(path, max_rows=1, dtype=float, skip_header=3, delimiter=','), coords=[range(nz)], dims=['z'])
 
-    dset = pyshdom.grid.make_grid(dx, nx, dy, ny, z)
+    dset = at3d.grid.make_grid(dx, nx, dy, ny, z)
     i, j, k = zip(*df.index)
 
     for name in df.columns:
@@ -514,8 +514,8 @@ def load_forward_model(file_name):
     groups = dataset.groups
     sensors = groups['sensors'].groups
     solvers = groups['solvers'].groups
-    sensor_dict = pyshdom.containers.SensorsDict()
-    solver_dict = pyshdom.containers.SolversDict()
+    sensor_dict = at3d.containers.SensorsDict()
+    solver_dict = at3d.containers.SolversDict()
 
     for key,sensor in sensors.items():
         sensor_list = []
@@ -552,7 +552,7 @@ def load_forward_model(file_name):
         numerical_params['transcut'] = 1e-5
         numerical_params['angle_set'] = 2
 
-        solver_dict.add_solver(float(key), pyshdom.solver.RTE(numerical_params=numerical_params,
+        solver_dict.add_solver(float(key), at3d.solver.RTE(numerical_params=numerical_params,
                                             medium=mediums,
                                            source=source,
                                            surface=surface,
@@ -578,19 +578,19 @@ def save_forward_model(file_name, sensors, solvers):
         The path to the file that will be created and saved to.
         If it exists an integer is appended to the file name until
         it can be safely created.
-    sensors : pyshdom.containers.SensorsDict
+    sensors : at3d.containers.SensorsDict
         The container with all of the sensors information.
-    solvers : pyshdom.containers.SolversDict
+    solvers : at3d.containers.SolversDict
         The container with all of the solver.RTE objects.
     """
 
-    if not isinstance(sensors, pyshdom.containers.SensorsDict):
+    if not isinstance(sensors, at3d.containers.SensorsDict):
         raise TypeError(
-            "`sensors` should be an instance of '{}'".format(pyshdom.containers.SensorsDict)
+            "`sensors` should be an instance of '{}'".format(at3d.containers.SensorsDict)
         )
-    if not isinstance(solvers, pyshdom.containers.SolversDict):
+    if not isinstance(solvers, at3d.containers.SolversDict):
         raise TypeError(
-            "`sensors` should be an instance of '{}'".format(pyshdom.containers.SolversDict)
+            "`sensors` should be an instance of '{}'".format(at3d.containers.SolversDict)
         )
 
     # make a safe file name. We always want one that works
@@ -685,7 +685,7 @@ def adjoint_linear_interpolation(reference_coords, data_array):
                 )
             )
 
-    interpolated_array = pyshdom.core.adjoint_linear_interpolation(
+    interpolated_array = at3d.core.adjoint_linear_interpolation(
         xgrid=reference_coords.x.data,
         ygrid=reference_coords.y.data,
         zgrid=reference_coords.z.data,
@@ -704,3 +704,74 @@ def adjoint_linear_interpolation(reference_coords, data_array):
         }
     )
     return interpolated
+
+def save_transforms_to_file(unknown_scatterers, file_name):
+    """
+    Save the names and inputs of the transforms to netcdf for later use.
+
+    This only works for objects which follow the convention that the
+    inputs with 'name' are attributes as '_name'.
+
+    """
+
+    groups = []
+    for scatterer_name, unknown_scatterer in unknown_scatterers.items():
+        for variable_name, (coordinate_transform, state_to_grid_transform) in unknown_scatterer.variables.items():
+            groups.append(scatterer_name + '/' + variable_name)
+
+    group_dset = xr.Dataset(
+        data_vars={
+            'groups': (['ngroups'],np.array(groups).astype(str))
+        }
+    )
+    group_dset.to_netcdf(file_name)
+
+    for scatterer_name, unknown_scatterer in unknown_scatterers.items():
+        for variable_name, (coordinate_transform, state_to_grid_transform) in unknown_scatterer.variables.items():
+            group_name = scatterer_name + '/' + variable_name
+            data_vars ={
+                'state_to_grid_transform': type(state_to_grid_transform).__name__,
+                'coordinate_transform': type(coordinate_transform).__name__,
+            }
+            for transform in (coordinate_transform, state_to_grid_transform):
+                input_names = transform.__init__.__code__.co_varnames[1:]
+                max_dim_name = 0
+                for name in input_names:
+                    data = getattr(transform, '_'+name)
+                    data = np.array(data)
+                    data_vars[name] = (['dim'+str(i+max_dim_name) for i in range(data.ndim)], data)
+                    max_dim_name += data.ndim
+
+            dset = xr.Dataset(data_vars=data_vars)
+            dset.to_netcdf(file_name, group=group_name, mode='a')
+
+def load_transforms_from_file(file_name):
+    """
+    Loads the transforms saved to netcdf.
+
+    Only works for transforms defined in at3d.transforms as that module
+    is searched for the correct transform object name to instantiate the new
+    transform.
+    """
+
+    state_to_grid_transforms = {}
+    coordinate_transforms = {}
+
+    with xr.load_dataset(file_name) as out:
+        for group in out.groups:
+            group_name = str(group.data.astype(str))
+            with xr.load_dataset(file_name, group=group_name) as nc:
+
+                state_to_grid_transform = getattr(at3d.transforms, str(nc.state_to_grid_transform.data))
+                input_names = state_to_grid_transform.__init__.__code__.co_varnames[1:]
+                args = {name: nc[name].data for name in input_names}
+                state_to_grid_transform = state_to_grid_transform(**args)
+                state_to_grid_transforms[group_name] = state_to_grid_transform
+
+                coordinate_transform = getattr(at3d.transforms, str(nc.coordinate_transform.data))
+                input_names = coordinate_transform.__init__.__code__.co_varnames[1:]
+                args = {name: nc[name].data for name in input_names}
+                coordinate_transform = coordinate_transform(**args)
+                coordinate_transforms[group_name] = coordinate_transform
+
+    return state_to_grid_transforms, coordinate_transforms

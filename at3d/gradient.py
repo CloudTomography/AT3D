@@ -16,8 +16,8 @@ import numpy as np
 import xarray as xr
 import pandas as pd
 
-import pyshdom.core
-import pyshdom.parallel
+import at3d.core
+import at3d.parallel
 
 class LevisApproxGradient:
     """
@@ -27,17 +27,17 @@ class LevisApproxGradient:
 
     Parameters
     ----------
-    measurements : pyshdom.containers.SensorsDict
+    measurements : at3d.containers.SensorsDict
         Contains the measurements that are used to constrain the optimization.
-    solvers : pyshdom.containers.SolversDict
+    solvers : at3d.containers.SolversDict
         Contains the RTE solutions that will be solved to simulate the synthetic
         observations (`forward_sensors`) to compare to `measurements`.
-    forward_sensors : pyshdom.containers.SensorsDict
+    forward_sensors : at3d.containers.SensorsDict
         Contains the synthetic observations. This stores the output from evaluating
         the forward model. In the standard workflow, this is overwritten at each
         iteration of the observations, so it contains the most
         up-to-date synthetic measurements.
-    unknown_scatterers : pyshdom.containers.UnknownScatterers
+    unknown_scatterers : at3d.containers.UnknownScatterers
         Specifies the optical / microphysical properties to calculate derivatives for
         and the partial derivatives of optical properties with respect to them
         for use in the gradient calculation.
@@ -63,21 +63,21 @@ class LevisApproxGradient:
                  unknown_scatterers, parallel_solve_kwargs, gradient_kwargs,
                  uncertainty_kwargs):
 
-        if not isinstance(measurements, pyshdom.containers.SensorsDict):
+        if not isinstance(measurements, at3d.containers.SensorsDict):
             raise TypeError("`measurements` should be of type '{}' not '{}'".format(
-                pyshdom.containers.SensorsDict, type(measurements))
+                at3d.containers.SensorsDict, type(measurements))
                 )
-        if not isinstance(solvers, pyshdom.containers.SolversDict):
+        if not isinstance(solvers, at3d.containers.SolversDict):
             raise TypeError("`solvers` should be of type '{}' not '{}'".format(
-                pyshdom.containers.SolversDict, type(solvers))
+                at3d.containers.SolversDict, type(solvers))
                 )
-        if not isinstance(forward_sensors, pyshdom.containers.SensorsDict):
+        if not isinstance(forward_sensors, at3d.containers.SensorsDict):
             raise TypeError("`forward_sensors` should be of type '{}' not '{}'".format(
-                pyshdom.containers.SensorsDict, type(forward_sensors))
+                at3d.containers.SensorsDict, type(forward_sensors))
                 )
-        if not isinstance(unknown_scatterers, pyshdom.containers.UnknownScatterers):
+        if not isinstance(unknown_scatterers, at3d.containers.UnknownScatterers):
             raise TypeError("`unknown_scatterers` should be of type '{}' not '{}'".format(
-                pyshdom.containers.UnknownScatterers, type(unknown_scatterers))
+                at3d.containers.UnknownScatterers, type(unknown_scatterers))
                 )
         # check the kwargs.
         if 'add_noise' not in uncertainty_kwargs:
@@ -109,11 +109,11 @@ class LevisApproxGradient:
             if instrument['uncertainty_model'] is None:
                 warnings.warn(
                     "No uncertainty model supplied for instrument '{}'. "
-                    "Using pyshdom.uncertainties.NullUncertainty which is"
+                    "Using at3d.uncertainties.NullUncertainty which is"
                     "equivalent to unweighted least squares.".format(name))
                 self.measurements.add_uncertainty_model(
                     name,
-                    pyshdom.uncertainties.NullUncertainty(self.gradient_kwargs['cost_function'])
+                    at3d.uncertainties.NullUncertainty(self.gradient_kwargs['cost_function'])
                     )
             if instrument['uncertainty_model'].cost_function != self.gradient_kwargs['cost_function']:
                 raise ValueError(
@@ -154,7 +154,7 @@ class LevisApproxGradient:
         #The treatment of the gradient_kwargs is quite clumsy here as they are known in self
         #but are sent, instead of redefining gradient_fun to be self.levis_approximation_grad
         #WITH the kwargs set.
-        outputs = pyshdom.parallel.parallel_gradient(
+        outputs = at3d.parallel.parallel_gradient(
             self.solvers, rte_sensors, sensor_mapping, self.forward_sensors,
             gradient_fun=self.levis_approximation_grad,
             mpi_comm=mpi_comm,
@@ -172,7 +172,7 @@ class LevisApproxGradient:
 
         Parameters
         ----------
-        rte_solver : pyshdom.solver.RTE
+        rte_solver : at3d.solver.RTE
             Should be solved, so that this it holds a solution to an RTE.
         sensor : xr.Dataset
             A sensor which should contain pixel-level uncertainties and measurement data
@@ -192,26 +192,26 @@ class LevisApproxGradient:
         #calculate_microphysical_partial_derivatives and calculate_direct_beam_derivative.
         #both of which are preparatory for the inverse problem.
         #However, this function doesn't modify the solver in place.
-        #It is expected that if the API for pyshdom.core.levisapprox_gradient
+        #It is expected that if the API for at3d.core.levisapprox_gradient
         #changes it will be todo with cost function / etc changes rather than changes
         #in how solver.RTE is defined so we are happy accessing all of the 'private'
         #variables of solver.RTE here.
-        if not isinstance(rte_solver, pyshdom.solver.RTE):
+        if not isinstance(rte_solver, at3d.solver.RTE):
             raise TypeError(
-                "`rte_solver` must be of type pyshdom.solver.RTE for this gradient"
+                "`rte_solver` must be of type at3d.solver.RTE for this gradient"
                 "calculation. "
             )
-        if rte_solver._bcflag != 3:
-            raise ValueError(
-                "Gradient calculations are not currently supported for solvers with "
-                "periodic boundary conditions. This requires a separate treatment of SHDOM's "
-                "base grid and property grid, which are not identical when periodic "
-                " boundary conditions are used."
-            )
+        # if rte_solver._bcflag != 3:
+        #     raise ValueError(
+        #         "Gradient calculations are not currently supported for solvers with "
+        #         "periodic boundary conditions. This requires a separate treatment of SHDOM's "
+        #         "base grid and property grid, which are not identical when periodic "
+        #         " boundary conditions are used."
+        #     )
         if not isinstance(sensor, xr.Dataset):
             raise TypeError("`sensor` should be an xr.Dataset not "
                             "of type '{}''".format(type(sensor)))
-        pyshdom.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
+        at3d.checks.check_hasdim(sensor, ray_mu='nrays', ray_phi='nrays',
                                     ray_x='nrays', ray_y='nrays', ray_z='nrays',
                                     stokes='stokes_index')
 
@@ -260,7 +260,7 @@ class LevisApproxGradient:
             )
             jacobian_flag = True
         maxsubgridints = int(rte_solver._npts*rte_solver._maxsubgridints/rte_solver._nbpts)
-        gradient, loss, images, jacobian, ierr, errmsg = pyshdom.core.levisapprox_gradient(
+        gradient, loss, images, jacobian, ierr, errmsg = at3d.core.levisapprox_gradient(
             camx=camx,
             camy=camy,
             camz=camz,
@@ -283,6 +283,7 @@ class LevisApproxGradient:
             makejacobian=jacobian_flag,
             singlescatter=self._single_scatter,
             maxsubgridints=maxsubgridints,
+            longest_path_pts=rte_solver._longest_path_pts,
             tautol=rte_solver._tautol,
             transcut=rte_solver._transcut,
             dextm=rte_solver._dextm,
@@ -389,7 +390,7 @@ class LevisApproxGradient:
             radiance=rte_solver._radiance,
             total_ext=rte_solver._total_ext[:rte_solver._npts],
         )
-        pyshdom.checks.check_errcode(ierr, errmsg)
+        at3d.checks.check_errcode(ierr, errmsg)
         integrated_rays = sensor.copy(deep=True)
         data = {}
         if rte_solver._nstokes == 1:
@@ -451,10 +452,10 @@ def make_gradient_dataset(gradient, unknown_scatterers, solvers):
     ----------
     gradient : np.ndarray, shape=(nbpts, numder)
         The gradient of the cost function.
-    unknown_scatterers : pyshdom.containers.UnknownScatterers
+    unknown_scatterers : at3d.containers.UnknownScatterers
         Contains the information for defining the names and variables
         that derivatives have been calculated for.
-    solvers : pyshdom.containers.SolversDict
+    solvers : at3d.containers.SolversDict
         Contains the solver.RTE objects that were used to calculate the gradient.
         This is used to verify consistency between `unknown_scatterers`
         and `solvers` and to provide the RTE grid used.
@@ -506,12 +507,12 @@ def make_jacobian_dataset(jacobian_list, unknown_scatterers, indices_for_jacobia
     ----------
     jacobian_list : List
         List of Jacobian arrays (possibly from parallel workers).
-    unknown_scatterers : pyshdom.containers.UnknownScatterers
+    unknown_scatterers : at3d.containers.UnknownScatterers
         Contains the information for defining the names and variables
         that derivatives have been calculated for.
     indices_for_jacobian : Tuple
         The indices for which grid points to save the Jacobian for.
-    solvers : pyshdom.containers.SolversDict
+    solvers : at3d.containers.SolversDict
         Contains the solver.RTE objects that were used to calculate the gradient.
         This is only used to verify consistency between `unknown_scatterers`
         and `solvers`.

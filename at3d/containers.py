@@ -31,11 +31,11 @@ import xarray as xr
 import warnings
 import typing
 
-import pyshdom.core
-import pyshdom.gradient
-import pyshdom.medium
-import pyshdom.parallel
-import pyshdom.checks
+import at3d.core
+import at3d.gradient
+import at3d.medium
+import at3d.parallel
+import at3d.checks
 
 class SensorsDict(OrderedDict):
     """
@@ -60,7 +60,7 @@ class SensorsDict(OrderedDict):
         """
         if not instrument in self:
             self._add_instrument(instrument)
-        pyshdom.checks.check_sensor(sensor)
+        at3d.checks.check_sensor(sensor)
         self[instrument]['sensor_list'].append(sensor)
 
     def _add_instrument(self, key):
@@ -145,7 +145,7 @@ class SensorsDict(OrderedDict):
 
         Parameters
         ----------
-        solvers : pyshdom.containers.SolversDict
+        solvers : at3d.containers.SolversDict
             The solvers that will be used to calculate the measurements.
         n_jobs : 1
             The number of workers for shared memory parallelization of the RTE
@@ -223,7 +223,7 @@ class SensorsDict(OrderedDict):
                 #Note that the number of n_jobs here doesn't have to be the number of workers but can instead
                 #be the number of subdivided job. This could be modified to ensure that all jobs are the correct size.
                 #as is, this will make slightly more tasks than there are workers (n_jobs).
-                keys, ray_start_end, pixel_start_end = pyshdom.parallel.subdivide_raytrace_jobs(rte_sensors, n_jobs)
+                keys, ray_start_end, pixel_start_end = at3d.parallel.subdivide_raytrace_jobs(rte_sensors, n_jobs)
 
                 out = Parallel(n_jobs=n_jobs, backend='threading')(
                     delayed(solvers[key].integrate_to_sensor)(rte_sensors[key].sel(
@@ -246,10 +246,10 @@ class SensorsDict(OrderedDict):
 
         Parameters
         ----------
-        solvers : pyshdom.containers.SolversDict
+        solvers : at3d.containers.SolversDict
             The SolversDict containing the solver.RTE objects that will be
             used to evaluate the observables.
-        measurements : pyshdom.containers.SensorsDict
+        measurements : at3d.containers.SensorsDict
             This contains the actual measurement data that is used to constrain
             the retrieval.
 
@@ -266,8 +266,8 @@ class SensorsDict(OrderedDict):
         Raises
         ------
         TypeError
-            If `solvers` is not pyshdom.containers.SolversDict or `measurements` is
-            not None or pyshdom.containers.SensorsDict.
+            If `solvers` is not at3d.containers.SolversDict or `measurements` is
+            not None or at3d.containers.SensorsDict.
         """
         if not isinstance(solvers, SolversDict):
             raise TypeError("`solvers` should be of type '{}' not '{}'".format(SolversDict, type(solvers)))
@@ -461,7 +461,7 @@ class SensorsDict(OrderedDict):
 
     def add_measurements_inverse(self, sensor_mappings, measurements, measurement_keys):
         """Takes the output of a (possibly parallel) rendering of synthetic measurements
-        by pyshdom.gradient.gradient_l2 during the optimization and updates
+        by at3d.gradient.gradient_l2 during the optimization and updates
         the sensors in `self` with the observables (e.g. I, Q, etc).
 
         Parameters
@@ -472,7 +472,7 @@ class SensorsDict(OrderedDict):
             the instrument names and sensor indices.
         measurements : List
             A list of xr.Datasets containing the Stokes observables calculated
-            by pyshdom.gradient.gradient_l2.
+            by at3d.gradient.gradient_l2.
         measurement_keys : List
             The solver key for each element in `measurements`. These keys
             may be duplicated as `measurements` may have been calculated
@@ -481,9 +481,9 @@ class SensorsDict(OrderedDict):
         Notes
         -----
         This method is similar to SensorsDict.add_measurements_forward but as the output
-        of evaluating pyshdom.gradient.gradient_l2 is different to
-        pyshdom.solver.RTE.integrate_to_sensor there are differences. Particularly,
-        pixel averaged quantities are output by pyshdom.gradient.gradient_l2
+        of evaluating at3d.gradient.gradient_l2 is different to
+        at3d.solver.RTE.integrate_to_sensor there are differences. Particularly,
+        pixel averaged quantities are output by at3d.gradient.gradient_l2
         while ray quantities are output by input to self.add_measurements_forward.
         See sensor.py for the difference between ray and pixel variables.
         """
@@ -541,7 +541,7 @@ class SensorsDict(OrderedDict):
 
     def add_measurements_forward(self, sensor_mappings, measurements, measurement_keys):
         """Takes the output of a (possibly parallel) rendering of synthetic measurements
-        by pyshdom.solver.integrate_to_sensor and updates the sensors in `self`
+        by at3d.solver.integrate_to_sensor and updates the sensors in `self`
         with the observables (e.g. pixel-averaged I, Q, etc).
 
         Parameters
@@ -552,7 +552,7 @@ class SensorsDict(OrderedDict):
             the instrument names and sensor indices.
         measurements : List
             A list of xr.Datasets containing the Stokes observables calculated
-            by pyshdom.solver.integrate_to_sensor
+            by at3d.solver.integrate_to_sensor
         measurement_keys : List
             The solver key for each element in `measurements`. These keys
             may be duplicated as `measurements` may have been calculated
@@ -602,7 +602,7 @@ class SensorsDict(OrderedDict):
         """
         Calculates the observables (pixel averaged Stokes components)
         required by the sensor using the ray Stokes variables output
-        from pyshdom.solver.RTE.integrate_to_sensor.
+        from at3d.solver.RTE.integrate_to_sensor.
 
         Parameters
         ----------
@@ -612,11 +612,11 @@ class SensorsDict(OrderedDict):
             instrument's sensor_list.
         rendered_rays : xr.Dataset
             Contains the ray variables including Stokes components
-            calculated by pyshdom.solver.RTE.integrate_to_sensor.
+            calculated by at3d.solver.RTE.integrate_to_sensor.
 
         Notes
         -----
-        Calls pyshdom.core.average_subpixel_rays to do the averaging.
+        Calls at3d.core.average_subpixel_rays to do the averaging.
         See src/util.f90.
         """
         sensor = self[mapping[0]]['sensor_list'][mapping[1]]
@@ -640,7 +640,7 @@ class SensorsDict(OrderedDict):
                                         merged.data_vars.items()
                                         if name != 'pixel_index'], axis=0)
             stokes_names = [name for name, var in merged.data_vars.items() if name != 'pixel_index']
-            observables = pyshdom.core.average_subpixel_rays(
+            observables = at3d.core.average_subpixel_rays(
                 pixel_index=merged.pixel_index.data,
                 nstokes=observed_stokes.shape[0],
                 weighted_stokes=observed_stokes,
@@ -678,23 +678,23 @@ class SolversDict(OrderedDict):
     as well as pre-processing for the evaluation of the cost/gradient.
     """
     def add_solver(self, key, solver):
-        """Adds a pyshdom.solver.RTE object to self.
+        """Adds a at3d.solver.RTE object to self.
 
         Parameters
         ----------
         key : Any
             The key used to uniquely identify the solver which is typically
             the monochromatic wavelength as a float.
-        solver : pyshdom.solver.RTE
+        solver : at3d.solver.RTE
             The solver ojbect to add to `self`.
 
         Raises
         ------
         TypeError
-            If `solver` is not of the type pyshdom.solver.RTE
+            If `solver` is not of the type at3d.solver.RTE
         """
-        if not isinstance(solver, pyshdom.solver.RTE):
-            raise TypeError("solver should be of type '{}'".format(pyshdom.solver.RTE))
+        if not isinstance(solver, at3d.solver.RTE):
+            raise TypeError("solver should be of type '{}'".format(at3d.solver.RTE))
         self[key] = solver
 
     def solve(self, n_jobs=1, mpi_comm=None, overwrite_solver=False, maxiter=100,
@@ -785,7 +785,7 @@ class SolversDict(OrderedDict):
 
         Parameters
         ----------
-        unknown_scatterers : pyshdom.containers.UnknownScatterers
+        unknown_scatterers : at3d.containers.UnknownScatterers
             The unknown_scatterers which supply the look up tables of optical properties
             as a function of microphysical variables and the methods that should be used
             to calculate the derivatives.
@@ -797,7 +797,7 @@ class SolversDict(OrderedDict):
         """
         if not isinstance(unknown_scatterers, UnknownScatterers):
             raise TypeError(
-                "`unknown_scatterers` should be of type 'pyshdom.containers.UnknownScatterers'"
+                "`unknown_scatterers` should be of type 'at3d.containers.UnknownScatterers'"
                 " not '{}'".format(type(unknown_scatterers))
                 )
         wavelength_ordered_derivatives = OrderedDict()
@@ -825,8 +825,8 @@ class UnknownScatterers(OrderedDict):
 
     See Also
     --------
-    pyshdom.solver.RTE.calculate_microphysical_partial_derivatives
-    pyshdom.medium.table_to_grid
+    at3d.solver.RTE.calculate_microphysical_partial_derivatives
+    at3d.medium.table_to_grid
     """
     def __init__(self, *args, global_transform=None):
         for unknown_scatterer in args:
@@ -837,17 +837,17 @@ class UnknownScatterers(OrderedDict):
 
     def add_unknowns(self, unknown_scatterer):
 
-        if not isinstance(unknown_scatterer, pyshdom.medium.UnknownScatterer):
+        if not isinstance(unknown_scatterer, at3d.medium.UnknownScatterer):
             raise TypeError(
                 "`unknown_scatterer` argument should be of type '{}'".format(
-                    pyshdom.medium.UnknownScatterer
+                    at3d.medium.UnknownScatterer
                 )
             )
         # check for consistency of unknown_scatterer with other existing unknown_scatterers
         # ie is the grid consistent.
         if self: # Test for at least one member
             reference_grid = list(self.values())[0].grid_to_optical_properties._rte_grid
-            pyshdom.checks.check_grid_consistency(
+            at3d.checks.check_grid_consistency(
             reference_grid,
             unknown_scatterer.grid_to_optical_properties._rte_grid
             )
@@ -857,8 +857,8 @@ class UnknownScatterers(OrderedDict):
     def add_global_transform(self, transform):
 
         if transform is None:
-            transform = pyshdom.transforms.CoordinateTransformNull()
-        if not isinstance(transform, pyshdom.transforms.CoordinateTransformNull):
+            transform = at3d.transforms.CoordinateTransform()
+        if not isinstance(transform, at3d.transforms.CoordinateTransform):
             raise TypeError(
                 "`transform` is of an invalid type."
             )

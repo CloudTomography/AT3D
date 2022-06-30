@@ -34,9 +34,15 @@ class CallbackFn:
         self._ckpt_period = ckpt_period
         self._ckpt_time = time.time()
         self._callback_fn = callback_fn
+        self.output = {}
 
-    def __call__(self):
+    def __call__(self, optimizer=None):
         time_passed = time.time() - self._ckpt_time
         if time_passed > self._ckpt_period:
             self._ckpt_time = time.time()
-            self._callback_fn()
+            out = self._callback_fn(optimizer=optimizer)
+            if not self.output:
+                for name in out:
+                    self.output[name] = []
+            for name, value in out.items():
+                self.output[name].append(value)

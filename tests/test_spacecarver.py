@@ -1,6 +1,6 @@
 import xarray as xr
 import numpy as np
-import pyshdom
+import at3d
 
 from unittest import TestCase
 
@@ -9,9 +9,9 @@ class VerifySpaceCarver(TestCase):
     def setUpClass(cls):
         np.random.seed(1)
 
-        grid = pyshdom.grid.make_grid(1.0, 10, 1.2, 12, z=np.linspace(0,1.2,13))
+        grid = at3d.grid.make_grid(1.0, 10, 1.2, 12, z=np.linspace(0,1.2,13))
 
-        space_carver = pyshdom.space_carve.SpaceCarver(grid)
+        space_carver = at3d.space_carve.SpaceCarver(grid, 3)
 
         density = np.zeros((grid.x.size, grid.y.size, grid.z.size))
         xinput = np.random.uniform(0.1, 100.0, size=density.shape)
@@ -23,13 +23,13 @@ class VerifySpaceCarver(TestCase):
             coords=grid.coords
         )
 
-        sensors = pyshdom.containers.SensorsDict()
+        sensors = at3d.containers.SensorsDict()
 
         zeniths = [88.0, 0.0]
         azimuths = [45.0,45.0]
         for zenith, azimuth in zip(zeniths, azimuths):
             sensors.add_sensor('TEST',
-                              pyshdom.sensor.orthographic_projection(0.672,
+                              at3d.sensor.orthographic_projection(0.672,
                                                                     grid,
                                                                     0.5,0.5,azimuth,zenith,
                                                                     stokes=['I'])
@@ -46,7 +46,7 @@ class VerifySpaceCarver(TestCase):
         sensors2['TEST']['sensor_list'][1]['weights'] = (['nrays'], yinput2)
         sensors2['TEST']['sensor_list'][1]['cloud_mask'] = (['nrays'], np.ones(yinput2.size))
 
-        space_carver2 = pyshdom.space_carve.SpaceCarver(grid)
+        space_carver2 = at3d.space_carve.SpaceCarver(grid, 3)
 
         output = space_carver2.carve(sensors2, linear_mode=True)
         xtilde = output.weights.data

@@ -16,8 +16,8 @@ import os
 import xarray as xr
 import numpy as np
 
-import pyshdom.core
-import pyshdom.checks
+import at3d.core
+import at3d.checks
 
 def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
                    max_integration_radius=65.0, wavelength_averaging=False,
@@ -152,7 +152,7 @@ def _compute_table(particle_type, wavelength_band,
         avgflag = 'A'
         deltawave = wavelength_resolution
 
-    wavelencen = pyshdom.core.get_center_wavelen(
+    wavelencen = at3d.core.get_center_wavelen(
         wavelen1=wavelen1,
         wavelen2=wavelen2
     )
@@ -160,7 +160,7 @@ def _compute_table(particle_type, wavelength_band,
     # set particle type properties
     if particle_type == 'Water':
         partype = 'W'
-        refractive_index = pyshdom.core.get_refract_index(
+        refractive_index = at3d.core.get_refract_index(
             partype=particle_type,
             wavelen1=wavelen1,
             wavelen2=wavelen2
@@ -186,13 +186,13 @@ def _compute_table(particle_type, wavelength_band,
     maxleg = int(np.round(2.0 * (xmax + 4.0 * xmax ** 0.3334 + 2.0)))
 
     # set radius integration parameters
-    nsize = pyshdom.core.get_nsize(
+    nsize = at3d.core.get_nsize(
         sretab=minimum_effective_radius,
         maxradius=max_integration_radius,
         wavelen=wavelencen
     )
 
-    radii = pyshdom.core.get_sizes(
+    radii = at3d.core.get_sizes(
         sretab=minimum_effective_radius,
         maxradius=max_integration_radius,
         wavelen=wavelencen,
@@ -200,7 +200,7 @@ def _compute_table(particle_type, wavelength_band,
     )
     #compute mie properties
     extinct, scatter, nleg, legcoef, ierr, errmsg = \
-        pyshdom.core.compute_mie_all_sizes(
+        at3d.core.compute_mie_all_sizes(
             nsize=nsize,
             maxleg=maxleg,
             wavelen1=wavelen1,
@@ -213,7 +213,7 @@ def _compute_table(particle_type, wavelength_band,
             partype=partype,
             verbose=verbose
         )
-    pyshdom.checks.check_errcode(ierr, errmsg)
+    at3d.checks.check_errcode(ierr, errmsg)
     #return data as an xarray
     table = xr.Dataset(
         data_vars={
@@ -370,7 +370,7 @@ def get_poly_table(size_distribution, mie_mono_table):
     The radius in size_distribution is interpolated onto the mie_mono_table radii grid.
     This is to avoid interpolation of the Mie table coefficients.
     """
-    pyshdom.checks.check_range(
+    at3d.checks.check_range(
         mie_mono_table,
         radius=(size_distribution.radius.min(), size_distribution.radius.max())
         )
@@ -386,7 +386,7 @@ def get_poly_table(size_distribution, mie_mono_table):
         )
 
     extinct, ssalb, nleg, legcoef = \
-        pyshdom.core.get_poly_table(
+        at3d.core.get_poly_table(
             nd=number_density,
             ndist=number_density.shape[-1],
             nsize=mie_mono_table.coords['radius'].size,

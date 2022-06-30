@@ -2,7 +2,7 @@ from unittest import TestCase
 from collections import OrderedDict
 import numpy as np
 import xarray as xr
-import pyshdom
+import at3d
 from scipy import stats
 
 import warnings
@@ -32,10 +32,10 @@ class PlanckDerivative(TestCase):
             planck_upper = []
             ref_grad = []
             for temp, wavelen, waveno in zip(temp_test,wavelens, wavenos):
-                planck_ref.append(pyshdom.core.planck_function(temp=temp, units=units, waveno=waveno, wavelen=wavelen))
-                planck_upper.append(pyshdom.core.planck_function(temp=temp+finite_diff_step, units=units, waveno=waveno, wavelen=wavelen))
+                planck_ref.append(at3d.core.planck_function(temp=temp, units=units, waveno=waveno, wavelen=wavelen))
+                planck_upper.append(at3d.core.planck_function(temp=temp+finite_diff_step, units=units, waveno=waveno, wavelen=wavelen))
 
-                ref_grad.append(pyshdom.core.planck_derivative(temp=temp, units=units, waveno=waveno, wavelen=wavelen))
+                ref_grad.append(at3d.core.planck_derivative(temp=temp, units=units, waveno=waveno, wavelen=wavelen))
             ref_grad = np.array(ref_grad)
             planck_ref = np.array(planck_ref)
             planck_upper = np.array(planck_upper)
@@ -78,7 +78,7 @@ class CostFunctionL2(TestCase):
         stokesout = np.ones(4)*10.0
         stokesout[3] = 0.0
         measurement = np.ones(4)*13.0
-        gradout, cost, ierr, errmsg = pyshdom.core.update_costfunction(
+        gradout, cost, ierr, errmsg = at3d.core.update_costfunction(
             cost=cost,
             gradout=gradout,
             stokesout=stokesout,
@@ -87,7 +87,7 @@ class CostFunctionL2(TestCase):
             uncertainties=uncertainties,
             costfunc=costfunc,
         )
-        pyshdom.checks.check_errcode(ierr, errmsg)
+        at3d.checks.check_errcode(ierr, errmsg)
         cls.gradout = gradout
         cls.cost = cost
     def test_cost(self):
@@ -112,7 +112,7 @@ class CostFunctionLL(TestCase):
         measurement[1] = 0.25
         measurement[2] = 0.25
 
-        gradout, cost, ierr, errmsg = pyshdom.core.update_costfunction(
+        gradout, cost, ierr, errmsg = at3d.core.update_costfunction(
             cost=cost,
             gradout=gradout,
             stokesout=stokesout,
@@ -121,7 +121,7 @@ class CostFunctionLL(TestCase):
             uncertainties=uncertainties,
             costfunc=costfunc,
         )
-        pyshdom.checks.check_errcode(ierr, errmsg)
+        at3d.checks.check_errcode(ierr, errmsg)
         cls.gradout = gradout
         cls.cost = cost
     def test_cost(self):
@@ -165,11 +165,11 @@ def legacy_perspective_projection(wavelength, fov, x_resolution, y_resolution,
        list or string of stokes components to observe ['I', 'Q', 'U', 'V'].
     sub_pixel_ray_args : dict
         dictionary defining the method for generating sub-pixel rays. The callable
-        which generates the position_perturbations and weights (e.g. pyshdom.sensor.gaussian)
+        which generates the position_perturbations and weights (e.g. at3d.sensor.gaussian)
         should be set as the 'method', while arguments to that callable, should be set as
         other entries in the dict. Each argument have two values, one for each of the
         x and y axes of the image plane, respectively.
-        E.g. sub_pixel_ray_args={'method':pyshdom.sensor.gaussian, 'degree': (2, 3)}
+        E.g. sub_pixel_ray_args={'method':at3d.sensor.gaussian, 'degree': (2, 3)}
 
     Returns
     -------
@@ -241,7 +241,7 @@ def legacy_perspective_projection(wavelength, fov, x_resolution, y_resolution,
     z = np.full(npix, position[2], dtype=np.float32)
 
     image_shape = [nx,ny]
-    sensor = pyshdom.sensor.make_sensor_dataset(x.ravel(), y.ravel(), z.ravel(),
+    sensor = at3d.sensor.make_sensor_dataset(x.ravel(), y.ravel(), z.ravel(),
                                  mu.ravel(), phi.ravel(), stokes, wavelength)
     # compare to orthographic projection, prespective projection may not have bounding box.
     #     if(bounding_box is not None):
@@ -269,7 +269,7 @@ def legacy_perspective_projection(wavelength, fov, x_resolution, y_resolution,
 
         #generate the weights and perturbations to the pixel positions in the image plane.
         sub_pixel_ray_method, subpixel_ray_kwargs_x, subpixel_ray_kwargs_y =  \
-                            pyshdom.sensor._parse_sub_pixel_ray_args(sub_pixel_ray_args)
+                            at3d.sensor._parse_sub_pixel_ray_args(sub_pixel_ray_args)
         position_perturbations_x, weights_x = sub_pixel_ray_method(x_s.size,
                                                                    **subpixel_ray_kwargs_x)
         position_perturbations_y, weights_y = sub_pixel_ray_method(y_s.size,
@@ -321,7 +321,7 @@ def legacy_perspective_projection(wavelength, fov, x_resolution, y_resolution,
             sensor.attrs['sub_pixel_ray_args_{}'.format(attribute)] = sub_pixel_ray_args[attribute]
     else:
             #duplicate ray variables to sensor dataset.
-        sensor = pyshdom.sensor._add_null_subpixel_rays(sensor)
+        sensor = at3d.sensor._add_null_subpixel_rays(sensor)
     return sensor
 
 
@@ -329,7 +329,7 @@ def legacy_perspective_projection(wavelength, fov, x_resolution, y_resolution,
 def cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=0.0, index=(1,1,1),
           nmu=16, split=0.03, load_solution=None, resolution=1):
 
-    rte_grid = pyshdom.grid.make_grid(0.05/resolution, 7*resolution, 0.05/resolution, 7*resolution,
+    rte_grid = at3d.grid.make_grid(0.05/resolution, 7*resolution, 0.05/resolution, 7*resolution,
                                       np.arange(0.1, 0.5, 0.05/resolution))
 
     grid_shape = (rte_grid.x.size, rte_grid.y.size, rte_grid.z.size)
@@ -338,13 +338,13 @@ def cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperatu
     rte_grid['veff'] = (['x','y','z'] ,np.zeros(grid_shape) + veff)
 
     #resample the cloud onto the rte_grid
-    cloud_scatterer_on_rte_grid = pyshdom.grid.resample_onto_grid(rte_grid, rte_grid)
+    cloud_scatterer_on_rte_grid = at3d.grid.resample_onto_grid(rte_grid, rte_grid)
 
     #define any necessary variables for microphysics here.
-    size_distribution_function = pyshdom.size_distribution.gamma
+    size_distribution_function = at3d.size_distribution.gamma
 
     #define sensors.
-    Sensordict = pyshdom.containers.SensorsDict()
+    Sensordict = at3d.containers.SensorsDict()
     zeniths =  [75.0,60.0,45.6,26.1]*2 + [0.0] +  [75.0,60.0,45.6,26.1]*6
     azimuths =  [90.0]*4 + [-90]*4 + [0.0] + [0]*4 + [180]*4 + [-45]*4 + [135]*4+ [45]*4 + [-135]*4
 
@@ -362,16 +362,16 @@ def cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperatu
     wavelengths = Sensordict.get_unique_solvers()
 
     cloud_poly_tables = OrderedDict()
-    solvers = pyshdom.containers.SolversDict()
+    solvers = at3d.containers.SolversDict()
     temp = np.linspace(280,300, grid_shape[-1])[np.newaxis,np.newaxis,:]
     atmosphere = xr.Dataset(data_vars={
         'temperature': (['x','y','z'], np.repeat(np.repeat(temp,grid_shape[0], axis=0),grid_shape[1],axis=1))
     }, coords={'x':rte_grid.x, 'y': rte_grid.y, 'z': rte_grid.z})
-    atmosphere2 = pyshdom.grid.resample_onto_grid(rte_grid, atmosphere)
+    atmosphere2 = at3d.grid.resample_onto_grid(rte_grid, atmosphere)
 
     for wavelength in wavelengths:
 
-        cloud_size_distribution = pyshdom.size_distribution.get_size_distribution_grid(
+        cloud_size_distribution = at3d.size_distribution.get_size_distribution_grid(
                                                                 mie_mono_table.radius.data,
                             size_distribution_function=size_distribution_function,particle_density=1.0,
                             reff={'coord_min':0.1, 'coord_max': 11.0, 'npoints': 100,
@@ -379,8 +379,8 @@ def cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperatu
                             veff={'coord_min':0.09, 'coord_max': 0.11, 'npoints': 12,
                             'spacing': 'linear', 'units': 'unitless'}
                             )
-        poly_table = pyshdom.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
-        optical_properties = pyshdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
+        poly_table = at3d.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
+        optical_properties = at3d.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
         optical_properties['ssalb'][:,:,:] = ssalb
         extinction = np.zeros(optical_properties.extinction.shape)
         x,y,z = np.meshgrid(np.arange(extinction.shape[0]),
@@ -392,7 +392,7 @@ def cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperatu
         optical_properties['extinction'][:,:,:] = extinction
 
         cloud_poly_tables[wavelength] = poly_table
-        config = pyshdom.configuration.get_config('../default_config.json')
+        config = at3d.configuration.get_config('../default_config.json')
         config['num_mu_bins'] = nmu
         config['num_phi_bins'] = nmu*2
         config['split_accuracy'] = split
@@ -404,11 +404,11 @@ def cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperatu
         config['deltam'] = False
         config['tautol'] = 0.2
         config['transcut'] = 5e-5
-        solver = pyshdom.solver.RTE(
+        solver = at3d.solver.RTE(
                             numerical_params=config,
                             medium={'cloud': optical_properties},
-                            source=pyshdom.source.thermal(wavelength),
-                            surface=pyshdom.surface.lambertian(albedo=surfacealb,
+                            source=at3d.source.thermal(wavelength),
+                            surface=at3d.surface.lambertian(albedo=surfacealb,
                             ground_temperature=ground_temperature),
                             num_stokes=1,
                             atmosphere=atmosphere2,
@@ -436,7 +436,7 @@ class ThermalJacobianNoSurface(TestCase):
         veff=0.1
         step=1e-4
         ground_temperature = 0.0
-        mie_mono_table = pyshdom.mie.get_mono_table('Water',(11.0,11.0),
+        mie_mono_table = at3d.mie.get_mono_table('Water',(11.0,11.0),
                                               max_integration_radius=65.0,
                                               minimum_effective_radius=0.1,
                                               relative_dir='../mie_tables',
@@ -444,32 +444,32 @@ class ThermalJacobianNoSurface(TestCase):
         mie_mono_table.to_netcdf('./data/mie_table_11micron.nc')
         solvers, Sensordict,cloud_poly_tables,final_step,rte_grid = cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature,step=0.0,nmu=nmu,split=split,
                                                                 resolution=resolutionfactor)
-        Sensordict.add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        Sensordict.add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         for sensor in Sensordict['MISR']['sensor_list']:
             Sensordict['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         rte_sensor_ref, mapping_ref = Sensordict.sort_sensors(solvers, measurements=Sensordict)
         rte_sensor_ref = rte_sensor_ref[11.0]
         solver = solvers[11.0]
 
-        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 11.0)
-        unknown_scatterers = pyshdom.containers.UnknownScatterers(
-            pyshdom.medium.UnknownScatterer(
+        deriv_gen = at3d.medium.GridToOpticalProperties(rte_grid, 'cloud', 11.0)
+        unknown_scatterers = at3d.containers.UnknownScatterers(
+            at3d.medium.UnknownScatterer(
                 deriv_gen, 'extinction'
             )
         )
 
-        # deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 11.0)
+        # deriv_gen = at3d.medium.OpticalGenerator(rte_grid,'cloud', 11.0)
         # deriv_info = OrderedDict()
         #
-        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers = at3d.containers.UnknownScatterers()
         # unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
-        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers = at3d.containers.UnknownScatterers()
         # unknown_scatterers.add_unknown('cloud', ['extinction'], cloud_poly_tables)
         # unknown_scatterers.create_derivative_tables()
         # solvers.add_microphysical_partial_derivatives(unknown_scatterers)
         forward_sensors = Sensordict.make_forward_sensors()
 
-        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        gradient_call = at3d.gradient.LevisApproxGradientUncorrelated(Sensordict,
         solvers, forward_sensors, unknown_scatterers,
         parallel_solve_kwargs={'maxiter':200,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
         gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
@@ -486,14 +486,14 @@ class ThermalJacobianNoSurface(TestCase):
         #     print(i)
         #     data = cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_temperature,step=step,index=(a,b,c),nmu=nmu,load_solution=saved, split=0.0,
         #                  resolution=resolutionfactor)
-        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     data[1].add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         #     for sensor in data[1]['MISR']['sensor_list']:
         #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         #     rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
         #
         #     data = cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=-1*step,index=(a,b,c),nmu=nmu,load_solution=saved, split=0.0,
         #                  resolution=resolutionfactor)
-        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     data[1].add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         #     for sensor in data[1]['MISR']['sensor_list']:
         #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         #     rte_sensor_low, mapping = data[1].sort_sensors(solvers, measurements=data[1])
@@ -505,6 +505,7 @@ class ThermalJacobianNoSurface(TestCase):
     def test_jacobian(self):
         print('thermal no surface', np.all(np.isfinite(self.jacobian)), np.all(np.isfinite(self.jacobian_reference)),
         np.max(np.abs(self.jacobian.ravel()-self.jacobian_reference.ravel())))
+        print(np.max(np.abs(self.jacobian.ravel()-self.jacobian_reference.ravel())/np.abs(self.jacobian_reference.ravel())))
         self.assertTrue(np.allclose(self.jacobian.ravel(), self.jacobian_reference.ravel(), atol=8e-3))
 
 
@@ -523,7 +524,7 @@ class ThermalJacobianWithSurface(TestCase):
         veff=0.1
         step=1e-4
         ground_temperature = 200.0
-        mie_mono_table = pyshdom.mie.get_mono_table('Water',(11.0,11.0),
+        mie_mono_table = at3d.mie.get_mono_table('Water',(11.0,11.0),
                                               max_integration_radius=65.0,
                                               minimum_effective_radius=0.1,
                                               relative_dir='./data',
@@ -531,33 +532,33 @@ class ThermalJacobianWithSurface(TestCase):
 
         solvers, Sensordict,cloud_poly_tables,final_step,rte_grid = cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature,step=0.0,nmu=nmu,split=split,
                                                                 resolution=resolutionfactor)
-        Sensordict.add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        Sensordict.add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         for sensor in Sensordict['MISR']['sensor_list']:
             Sensordict['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         rte_sensor_ref, mapping_ref = Sensordict.sort_sensors(solvers, measurements=Sensordict)
         rte_sensor_ref = rte_sensor_ref[11.0]
         solver = solvers[11.0]
 
-        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 11.0)
-        unknown_scatterers = pyshdom.containers.UnknownScatterers(
-            pyshdom.medium.UnknownScatterer(
+        deriv_gen = at3d.medium.GridToOpticalProperties(rte_grid, 'cloud', 11.0)
+        unknown_scatterers = at3d.containers.UnknownScatterers(
+            at3d.medium.UnknownScatterer(
                 deriv_gen, 'extinction'
             )
         )
 
-        # deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 11.0)
+        # deriv_gen = at3d.medium.OpticalGenerator(rte_grid,'cloud', 11.0)
         # deriv_info = OrderedDict()
         #
-        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers = at3d.containers.UnknownScatterers()
         # unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
 
-        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers = at3d.containers.UnknownScatterers()
         # unknown_scatterers.add_unknown('cloud', ['extinction'], cloud_poly_tables)
         # unknown_scatterers.create_derivative_tables()
         # solvers.add_microphysical_partial_derivatives(unknown_scatterers)
         forward_sensors = Sensordict.make_forward_sensors()
 
-        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        gradient_call = at3d.gradient.LevisApproxGradientUncorrelated(Sensordict,
         solvers, forward_sensors, unknown_scatterers,
         parallel_solve_kwargs={'maxiter':200,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
         gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
@@ -574,14 +575,14 @@ class ThermalJacobianWithSurface(TestCase):
         #     print(i)
         #     data = cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_temperature,step=step,index=(a,b,c),nmu=nmu,load_solution=saved, split=0.0,
         #                  resolution=resolutionfactor)
-        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     data[1].add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         #     for sensor in data[1]['MISR']['sensor_list']:
         #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         #     rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
         #
         #     data = cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=-1*step,index=(a,b,c),nmu=nmu,load_solution=saved, split=0.0,
         #                  resolution=resolutionfactor)
-        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     data[1].add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         #     for sensor in data[1]['MISR']['sensor_list']:
         #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         #     rte_sensor_low, mapping = data[1].sort_sensors(solvers, measurements=data[1])
@@ -601,7 +602,7 @@ def cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_te
           random_reff=False,
           perturb='extinct', solve=True, deltam=True):
     np.random.seed(1)
-    rte_grid = pyshdom.grid.make_grid(0.05/resolution, 9*resolution, 0.05/resolution, 9*resolution,
+    rte_grid = at3d.grid.make_grid(0.05/resolution, 9*resolution, 0.05/resolution, 9*resolution,
                                       np.arange(0.1, 0.65, 0.05/resolution))
     if random_reff:
         reff = np.random.uniform(0.1, 11.0, size=grid_shape)
@@ -611,13 +612,13 @@ def cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_te
     rte_grid['veff'] = (['x','y','z'] ,np.zeros(grid_shape) + veff)
 
     #resample the cloud onto the rte_grid
-    cloud_scatterer_on_rte_grid = pyshdom.grid.resample_onto_grid(rte_grid, rte_grid)
+    cloud_scatterer_on_rte_grid = at3d.grid.resample_onto_grid(rte_grid, rte_grid)
 
     #define any necessary variables for microphysics here.
-    size_distribution_function = pyshdom.size_distribution.gamma
+    size_distribution_function = at3d.size_distribution.gamma
 
     #define sensors.
-    Sensordict = pyshdom.containers.SensorsDict()
+    Sensordict = at3d.containers.SensorsDict()
     zeniths =  [75.0,60.0,45.6,26.1]*2 + [0.0] +  [75.0,60.0,45.6,26.1]*6
     azimuths =  [90.0]*4 + [-90]*4 + [0.0] + [0]*4 + [180]*4 + [-45]*4 + [135]*4+ [45]*4 + [-135]*4
 
@@ -632,7 +633,7 @@ def cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_te
                                               [0,1,0],stokes=['I'])
                              )
 
-    sensor = pyshdom.sensor.make_sensor_dataset(np.array([0.15]),np.array([0.055]),
+    sensor = at3d.sensor.make_sensor_dataset(np.array([0.15]),np.array([0.055]),
                                               np.array([0.44999998807907104]),np.array([1.0]),
                                              np.array([0.0]),
                                              wavelength=0.86,stokes=['I'],fill_ray_variables=True)
@@ -641,16 +642,16 @@ def cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_te
     wavelengths = Sensordict.get_unique_solvers()
 
     cloud_poly_tables = OrderedDict()
-    solvers = pyshdom.containers.SolversDict()
+    solvers = at3d.containers.SolversDict()
     temp = np.linspace(280,300, grid_shape[-1])[np.newaxis,np.newaxis,:]
     atmosphere = xr.Dataset(data_vars={
         'temperature': (['x','y','z'], np.repeat(np.repeat(temp,grid_shape[0], axis=0),grid_shape[1],axis=1))
     }, coords={'x':rte_grid.x, 'y': rte_grid.y, 'z': rte_grid.z})
-    atmosphere2 = pyshdom.grid.resample_onto_grid(rte_grid, atmosphere)
+    atmosphere2 = at3d.grid.resample_onto_grid(rte_grid, atmosphere)
 
     for wavelength in wavelengths:
 
-        cloud_size_distribution = pyshdom.size_distribution.get_size_distribution_grid(
+        cloud_size_distribution = at3d.size_distribution.get_size_distribution_grid(
                                                                 mie_mono_table.radius.data,
                             size_distribution_function=size_distribution_function,particle_density=1.0,
                             reff={'coord_min':0.1, 'coord_max': 11.0, 'npoints': 100,
@@ -658,8 +659,8 @@ def cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_te
                             veff={'coord_min':0.09, 'coord_max': 0.11, 'npoints': 12,
                             'spacing': 'linear', 'units': 'unitless'}
                             )
-        poly_table = pyshdom.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
-        optical_properties = pyshdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
+        poly_table = at3d.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
+        optical_properties = at3d.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
         if not deltam:
             optical_properties.legcoef[:,1:] = 0.0
         ssalb = np.zeros(optical_properties.extinction.shape) + ssalb
@@ -691,7 +692,7 @@ def cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_te
             optical_properties['table_index'][:,index[0],index[1],index[2]] = 2
         #print('after',optical_properties.legcoef[0,1,:])
         cloud_poly_tables[wavelength] = poly_table
-        config = pyshdom.configuration.get_config('../default_config.json')
+        config = at3d.configuration.get_config('../default_config.json')
         config['num_mu_bins'] = nmu
         config['num_phi_bins'] = nmu*2
         config['split_accuracy'] = split
@@ -703,11 +704,11 @@ def cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_te
         config['deltam'] = deltam
         config['tautol'] = 0.2
         config['transcut'] = 5e-5
-        solver = pyshdom.solver.RTE(
+        solver = at3d.solver.RTE(
                             numerical_params=config,
                             medium={'cloud': optical_properties},
-                            source=pyshdom.source.solar(wavelength, solarmu, 0.0),
-                            surface=pyshdom.surface.lambertian(albedo=surfacealb, ground_temperature=ground_temperature),
+                            source=at3d.source.solar(wavelength, solarmu, 0.0),
+                            surface=at3d.surface.lambertian(albedo=surfacealb, ground_temperature=ground_temperature),
                             num_stokes=1,
                             atmosphere=atmosphere2,
                             name=None
@@ -736,7 +737,7 @@ class SolarJacobianThinNoSurfaceExtinction(TestCase):
         veff=0.1
         step=-1e-3
         ground_temperature=200.0
-        mie_mono_table = pyshdom.mie.get_mono_table('Water',(0.86,0.86),
+        mie_mono_table = at3d.mie.get_mono_table('Water',(0.86,0.86),
                                                   max_integration_radius=65.0,
                                                   minimum_effective_radius=0.1,
                                                   relative_dir='./data',
@@ -747,7 +748,7 @@ class SolarJacobianThinNoSurfaceExtinction(TestCase):
                                                                 resolution=resolutionfactor, random=True,
                                                                                random_ssalb=True, perturb='extinct')
 
-        Sensordict.add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        Sensordict.add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         for sensor in Sensordict['MISR']['sensor_list']:
             Sensordict['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         rte_sensor_ref, mapping_ref = Sensordict.sort_sensors(solvers, measurements=Sensordict)
@@ -761,7 +762,7 @@ class SolarJacobianThinNoSurfaceExtinction(TestCase):
         #     print(i)
         #     data = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
         #                  resolution=resolutionfactor, random=True, random_ssalb=True, perturb='extinct')
-        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     data[1].add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         #     for sensor in data[1]['MISR']['sensor_list']:
         #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         #     rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
@@ -772,27 +773,27 @@ class SolarJacobianThinNoSurfaceExtinction(TestCase):
         # np.save('./data/thin_reference_ext_{}_{}_sfcalbedo_jacobian.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_ext_{}_{}_sfcalbedo_jacobian.npy'.format(surfacealb, step))
 
-        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
-        unknown_scatterers = pyshdom.containers.UnknownScatterers(
-            pyshdom.medium.UnknownScatterer(
+        deriv_gen = at3d.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = at3d.containers.UnknownScatterers(
+            at3d.medium.UnknownScatterer(
                 deriv_gen, 'extinction'
             )
         )
 
 
-        # deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
+        # deriv_gen = at3d.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
         #
-        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers = at3d.containers.UnknownScatterers()
         # unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
 
-        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers = at3d.containers.UnknownScatterers()
         # unknown_scatterers.add_unknown('cloud', ['extinction'], cloud_poly_tables)
         # unknown_scatterers.create_derivative_tables()
         # solvers.add_microphysical_partial_derivatives(unknown_scatterers)
         # solvers[0.86]._dext[np.where(solvers[0.86].medium['cloud'].extinction==0.0),0] = 0.0
         forward_sensors = Sensordict.make_forward_sensors()
 
-        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        gradient_call = at3d.gradient.LevisApproxGradientUncorrelated(Sensordict,
         solvers, forward_sensors, unknown_scatterers,
         parallel_solve_kwargs={'maxiter':200,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
         gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
@@ -823,7 +824,7 @@ class SolarJacobianThinNoSurfaceAlbedo(TestCase):
         veff=0.1
         step=-1e-3
         ground_temperature=200.0
-        mie_mono_table = pyshdom.mie.get_mono_table('Water',(0.86,0.86),
+        mie_mono_table = at3d.mie.get_mono_table('Water',(0.86,0.86),
                                                   max_integration_radius=65.0,
                                                   minimum_effective_radius=0.1,
                                                   relative_dir='./data',
@@ -834,7 +835,7 @@ class SolarJacobianThinNoSurfaceAlbedo(TestCase):
                                                                 resolution=resolutionfactor, random=True,
                                                                 random_ssalb=True, perturb='ssalb')
 
-        Sensordict.add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        Sensordict.add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         for sensor in Sensordict['MISR']['sensor_list']:
             Sensordict['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         rte_sensor_ref, mapping_ref = Sensordict.sort_sensors(solvers, measurements=Sensordict)
@@ -848,7 +849,7 @@ class SolarJacobianThinNoSurfaceAlbedo(TestCase):
         #     print(i)
         #     data = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
         #                  resolution=resolutionfactor, random=True, random_ssalb=True, perturb='ssalb')
-        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     data[1].add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         #     for sensor in data[1]['MISR']['sensor_list']:
         #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         #     rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
@@ -859,16 +860,16 @@ class SolarJacobianThinNoSurfaceAlbedo(TestCase):
         # np.save('./data/thin_reference_ssalb_0.0_-0.001_sfcalbedo_jacobian.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_ssalb_0.0_-0.001_sfcalbedo_jacobian.npy'.format(surfacealb, step))
 
-        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
-        unknown_scatterers = pyshdom.containers.UnknownScatterers(
-            pyshdom.medium.UnknownScatterer(
+        deriv_gen = at3d.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = at3d.containers.UnknownScatterers(
+            at3d.medium.UnknownScatterer(
                 deriv_gen, 'ssalb'
             )
         )
 
         forward_sensors = Sensordict.make_forward_sensors()
 
-        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        gradient_call = at3d.gradient.LevisApproxGradientUncorrelated(Sensordict,
         solvers, forward_sensors, unknown_scatterers,
         parallel_solve_kwargs={'maxiter':200,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
         gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
@@ -899,7 +900,7 @@ class SolarJacobianThinNoSurfaceAsymmetry(TestCase):
         veff=0.1
         step=-1e-1
         ground_temperature=200.0
-        mie_mono_table = pyshdom.mie.get_mono_table('Water',(0.86,0.86),
+        mie_mono_table = at3d.mie.get_mono_table('Water',(0.86,0.86),
                                                   max_integration_radius=65.0,
                                                   minimum_effective_radius=0.1,
                                                   relative_dir='./data',
@@ -910,7 +911,7 @@ class SolarJacobianThinNoSurfaceAsymmetry(TestCase):
                                                                 resolution=resolutionfactor, random=True,
                                                                 random_ssalb=True, perturb='g')
 
-        Sensordict.add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        Sensordict.add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         for sensor in Sensordict['MISR']['sensor_list']:
             Sensordict['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         rte_sensor_ref, mapping_ref = Sensordict.sort_sensors(solvers, measurements=Sensordict)
@@ -924,7 +925,7 @@ class SolarJacobianThinNoSurfaceAsymmetry(TestCase):
         #     print(i)
         #     data = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
         #                  resolution=resolutionfactor, random=True, random_ssalb=True, perturb='g')
-        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     data[1].add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         #     for sensor in data[1]['MISR']['sensor_list']:
         #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         #     rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
@@ -935,16 +936,16 @@ class SolarJacobianThinNoSurfaceAsymmetry(TestCase):
         # np.save('./data/thin_reference_g_0.0_-0.1_sfcalbedo_jacobian.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_g_{}_{}_sfcalbedo_jacobian.npy'.format(surfacealb, step))
 
-        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
-        unknown_scatterers = pyshdom.containers.UnknownScatterers(
-            pyshdom.medium.UnknownScatterer(
+        deriv_gen = at3d.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = at3d.containers.UnknownScatterers(
+            at3d.medium.UnknownScatterer(
                 deriv_gen, 'legendre_0_1'
             )
         )
 
         forward_sensors = Sensordict.make_forward_sensors()
 
-        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        gradient_call = at3d.gradient.LevisApproxGradientUncorrelated(Sensordict,
         solvers, forward_sensors, unknown_scatterers,
         parallel_solve_kwargs={'maxiter':200,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
         gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
@@ -978,7 +979,7 @@ class SolarJacobianThinNoSurfaceExtinctionNoDeltaM(TestCase):
         step=-1e-3
         ground_temperature=200.0
         deltam = False
-        mie_mono_table = pyshdom.mie.get_mono_table('Water',(0.86,0.86),
+        mie_mono_table = at3d.mie.get_mono_table('Water',(0.86,0.86),
                                                   max_integration_radius=65.0,
                                                   minimum_effective_radius=0.1,
                                                   relative_dir='./data',
@@ -990,7 +991,7 @@ class SolarJacobianThinNoSurfaceExtinctionNoDeltaM(TestCase):
                                                                                random_ssalb=True, perturb='extinct',
                                                                                deltam=deltam)
 
-        Sensordict.add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        Sensordict.add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         for sensor in Sensordict['MISR']['sensor_list']:
             Sensordict['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         rte_sensor_ref, mapping_ref = Sensordict.sort_sensors(solvers, measurements=Sensordict)
@@ -1004,7 +1005,7 @@ class SolarJacobianThinNoSurfaceExtinctionNoDeltaM(TestCase):
         #     print(i)
         #     data = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
         #                  resolution=resolutionfactor, random=True, random_ssalb=True, perturb='extinct',deltam=deltam)
-        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     data[1].add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         #     for sensor in data[1]['MISR']['sensor_list']:
         #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         #     rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
@@ -1015,21 +1016,21 @@ class SolarJacobianThinNoSurfaceExtinctionNoDeltaM(TestCase):
         cls.jacobian_reference = np.load('./data/thin_reference_ext_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step))
 
 
-        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
-        unknown_scatterers = pyshdom.containers.UnknownScatterers(
-            pyshdom.medium.UnknownScatterer(
+        deriv_gen = at3d.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = at3d.containers.UnknownScatterers(
+            at3d.medium.UnknownScatterer(
                 deriv_gen, 'extinction'
             )
         )
 
-        # deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
+        # deriv_gen = at3d.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
         #
-        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers = at3d.containers.UnknownScatterers()
         # unknown_scatterers.add_unknowns(['extinction'], deriv_gen)
 
         forward_sensors = Sensordict.make_forward_sensors()
 
-        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        gradient_call = at3d.gradient.LevisApproxGradientUncorrelated(Sensordict,
         solvers, forward_sensors, unknown_scatterers,
         parallel_solve_kwargs={'maxiter':200,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
         gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
@@ -1065,7 +1066,7 @@ class SolarJacobianThinNoSurfaceAlbedoNoDeltaM(TestCase):
         step=-1e-3
         ground_temperature=200.0
         deltam = False
-        mie_mono_table = pyshdom.mie.get_mono_table('Water',(0.86,0.86),
+        mie_mono_table = at3d.mie.get_mono_table('Water',(0.86,0.86),
                                                   max_integration_radius=65.0,
                                                   minimum_effective_radius=0.1,
                                                   relative_dir='./data',
@@ -1076,7 +1077,7 @@ class SolarJacobianThinNoSurfaceAlbedoNoDeltaM(TestCase):
                                                                 resolution=resolutionfactor, random=True,
                                                                 random_ssalb=True, perturb='ssalb',deltam=deltam)
 
-        Sensordict.add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        Sensordict.add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         for sensor in Sensordict['MISR']['sensor_list']:
             Sensordict['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         rte_sensor_ref, mapping_ref = Sensordict.sort_sensors(solvers, measurements=Sensordict)
@@ -1090,7 +1091,7 @@ class SolarJacobianThinNoSurfaceAlbedoNoDeltaM(TestCase):
         #     print(i)
         #     data = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
         #                  resolution=resolutionfactor, random=True, random_ssalb=True, perturb='ssalb',deltam=deltam)
-        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     data[1].add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         #     for sensor in data[1]['MISR']['sensor_list']:
         #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         #     rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
@@ -1101,20 +1102,20 @@ class SolarJacobianThinNoSurfaceAlbedoNoDeltaM(TestCase):
         # np.save('./data/thin_reference_ssalb_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_ssalb_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step))
 
-        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
-        unknown_scatterers = pyshdom.containers.UnknownScatterers(
-            pyshdom.medium.UnknownScatterer(
+        deriv_gen = at3d.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = at3d.containers.UnknownScatterers(
+            at3d.medium.UnknownScatterer(
                 deriv_gen, 'ssalb'
             )
         )
 
-        # deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
+        # deriv_gen = at3d.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
         #
-        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers = at3d.containers.UnknownScatterers()
         # unknown_scatterers.add_unknowns(['ssalb'], deriv_gen)
         forward_sensors = Sensordict.make_forward_sensors()
 
-        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        gradient_call = at3d.gradient.LevisApproxGradientUncorrelated(Sensordict,
         solvers, forward_sensors, unknown_scatterers,
         parallel_solve_kwargs={'maxiter':200,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
         gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
@@ -1150,7 +1151,7 @@ class SolarJacobianThinNoSurfaceAsymmetryNoDeltaM(TestCase):
         step=-1e-1
         ground_temperature=200.0
         deltam=False
-        mie_mono_table = pyshdom.mie.get_mono_table('Water',(0.86,0.86),
+        mie_mono_table = at3d.mie.get_mono_table('Water',(0.86,0.86),
                                                   max_integration_radius=65.0,
                                                   minimum_effective_radius=0.1,
                                                   relative_dir='./data',
@@ -1161,7 +1162,7 @@ class SolarJacobianThinNoSurfaceAsymmetryNoDeltaM(TestCase):
                                                                 resolution=resolutionfactor, random=True,
                                                                 random_ssalb=True, perturb='g',deltam=deltam)
 
-        Sensordict.add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        Sensordict.add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         for sensor in Sensordict['MISR']['sensor_list']:
             Sensordict['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         rte_sensor_ref, mapping_ref = Sensordict.sort_sensors(solvers, measurements=Sensordict)
@@ -1175,7 +1176,7 @@ class SolarJacobianThinNoSurfaceAsymmetryNoDeltaM(TestCase):
         #     print(i)
         #     data = cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperature, step=step,index=(a,b,c),nmu=nmu,load_solution=None, split=split,
         #                  resolution=resolutionfactor, random=True, random_ssalb=True, perturb='g',deltam=deltam)
-        #     data[1].add_uncertainty_model('MISR', pyshdom.uncertainties.NullUncertainty('L2'))
+        #     data[1].add_uncertainty_model('MISR', at3d.uncertainties.NullUncertainty('L2'))
         #     for sensor in data[1]['MISR']['sensor_list']:
         #         data[1]['MISR']['uncertainty_model'].calculate_uncertainties(sensor)
         #     rte_sensor_high, mapping = data[1].sort_sensors(solvers, measurements=data[1])
@@ -1186,20 +1187,20 @@ class SolarJacobianThinNoSurfaceAsymmetryNoDeltaM(TestCase):
         # np.save('./data/thin_reference_g_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step), finite_jacobian)
         cls.jacobian_reference = np.load('./data/thin_reference_g_{}_{}_sfcalbedo_jacobian_nodeltam.npy'.format(surfacealb, step))
 
-        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
-        unknown_scatterers = pyshdom.containers.UnknownScatterers(
-            pyshdom.medium.UnknownScatterer(
+        deriv_gen = at3d.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = at3d.containers.UnknownScatterers(
+            at3d.medium.UnknownScatterer(
                 deriv_gen, 'legendre_0_1'
             )
         )
 
-        # deriv_gen = pyshdom.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
+        # deriv_gen = at3d.medium.OpticalGenerator(rte_grid,'cloud', 0.86)
         #
-        # unknown_scatterers = pyshdom.containers.UnknownScatterers()
+        # unknown_scatterers = at3d.containers.UnknownScatterers()
         # unknown_scatterers.add_unknowns(['legendre_0_1'], deriv_gen)
         forward_sensors = Sensordict.make_forward_sensors()
 
-        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        gradient_call = at3d.gradient.LevisApproxGradientUncorrelated(Sensordict,
         solvers, forward_sensors, unknown_scatterers,
         parallel_solve_kwargs={'maxiter':200,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
         gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
@@ -1250,7 +1251,7 @@ class SolarJacobianThinNoSurfaceAsymmetryNoDeltaM(TestCase):
 #             ny1 -= 1
 #         nbpts = nx1 * ny1 * nz
 #
-#         xgrid, ygrid, zgrid = pyshdom.core.new_grids(
+#         xgrid, ygrid, zgrid = at3d.core.new_grids(
 #             bcflag=bcflag,
 #             gridtype=gridtype,
 #             npx=npx,
@@ -1266,7 +1267,7 @@ class SolarJacobianThinNoSurfaceAsymmetryNoDeltaM(TestCase):
 #         )
 #
 #         npts, ncells, gridpos, gridptr, neighptr, \
-#         treeptr, cellflags = pyshdom.core.init_cell_structure(
+#         treeptr, cellflags = at3d.core.init_cell_structure(
 #             maxig=2.0*nbpts,
 #             maxic=2.0*2*nbpts,
 #             bcflag=bcflag,
@@ -1296,7 +1297,7 @@ class SolarJacobianThinNoSurfaceAsymmetryNoDeltaM(TestCase):
 #             transmit=1.0
 #             xe=ye=ze=0.0
 #
-#             adjoint_source, side, xe,ye,ze, transmit, ierr, errmsg = pyshdom.core.pencil_beam_prop(x0=x0,y0=y0,z0=z0,
+#             adjoint_source, side, xe,ye,ze, transmit, ierr, errmsg = at3d.core.pencil_beam_prop(x0=x0,y0=y0,z0=z0,
 #              transmit=transmit,
 #              xe=xe,
 #              ye=ye,
@@ -1324,7 +1325,7 @@ class SolarJacobianThinNoSurfaceAsymmetryNoDeltaM(TestCase):
 #              treeptr=treeptr[:,:ncells]
 #              )
 #
-#             magnitude = pyshdom.core.transmission_integral(x0=x0,y0=y0,z0=z0,
+#             magnitude = at3d.core.transmission_integral(x0=x0,y0=y0,z0=z0,
 #                                          bcflag=bcflag,
 #                                          ipflag=ipflag,
 #                                          mu2=mu,

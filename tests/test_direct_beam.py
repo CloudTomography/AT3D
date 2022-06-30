@@ -4,7 +4,7 @@ from unittest import TestCase
 from collections import OrderedDict
 import numpy as np
 import xarray as xr
-import pyshdom
+import at3d
 from scipy import stats
 
 import warnings
@@ -12,7 +12,7 @@ warnings.filterwarnings('ignore')
 
 def cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_temperature, step=0.0, index=(1,1,1),
           nmu=16, split=0.03, load_solution=None, resolution=1, boundary='open',deltam=True):
-    rte_grid = pyshdom.grid.make_grid(0.05/resolution, 8*resolution, 0.05/resolution, 3*resolution,
+    rte_grid = at3d.grid.make_grid(0.05/resolution, 8*resolution, 0.05/resolution, 3*resolution,
                                       np.arange(0.1, 0.4, 0.05/resolution))
 
     grid_shape = (rte_grid.x.size, rte_grid.y.size, rte_grid.z.size)
@@ -21,25 +21,25 @@ def cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, gro
     rte_grid['veff'] = (['x','y','z'] ,np.zeros(grid_shape) + veff)
 
     #resample the cloud onto the rte_grid
-    cloud_scatterer_on_rte_grid = pyshdom.grid.resample_onto_grid(rte_grid, rte_grid)
+    cloud_scatterer_on_rte_grid = at3d.grid.resample_onto_grid(rte_grid, rte_grid)
 
     #define any necessary variables for microphysics here.
-    size_distribution_function = pyshdom.size_distribution.gamma
+    size_distribution_function = at3d.size_distribution.gamma
 
 
     wavelengths = np.array([0.86])
 
     cloud_poly_tables = OrderedDict()
-    solvers = pyshdom.containers.SolversDict()
+    solvers = at3d.containers.SolversDict()
     temp = np.linspace(280,300, grid_shape[-1])[np.newaxis,np.newaxis,:]
     atmosphere = xr.Dataset(data_vars={
         'temperature': (['x','y','z'], np.repeat(np.repeat(temp,grid_shape[0], axis=0),grid_shape[1],axis=1))
     }, coords={'x':rte_grid.x, 'y': rte_grid.y, 'z': rte_grid.z})
-    atmosphere2 = pyshdom.grid.resample_onto_grid(rte_grid, atmosphere)
+    atmosphere2 = at3d.grid.resample_onto_grid(rte_grid, atmosphere)
 
     for wavelength in wavelengths:
 
-        cloud_size_distribution = pyshdom.size_distribution.get_size_distribution_grid(
+        cloud_size_distribution = at3d.size_distribution.get_size_distribution_grid(
                                                                 mie_mono_table.radius.data,
                             size_distribution_function=size_distribution_function,particle_density=1.0,
                             reff={'coord_min':0.1, 'coord_max': 11.0, 'npoints': 100,
@@ -47,8 +47,8 @@ def cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, gro
                             veff={'coord_min':0.09, 'coord_max': 0.11, 'npoints': 12,
                             'spacing': 'linear', 'units': 'unitless'}
                             )
-        poly_table = pyshdom.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
-        optical_properties = pyshdom.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
+        poly_table = at3d.mie.get_poly_table(cloud_size_distribution,mie_mono_table)
+        optical_properties = at3d.medium.table_to_grid(cloud_scatterer_on_rte_grid, poly_table)
         optical_properties['ssalb'][:,:,:] = ssalb
         extinction = np.zeros(optical_properties.extinction.shape)
         x,y,z = np.meshgrid(np.arange(extinction.shape[0]),
@@ -62,7 +62,7 @@ def cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, gro
         extinction[index[0],index[1],index[2]] += step
         optical_properties['extinction'][:,:,:] = extinction
         cloud_poly_tables[wavelength] = poly_table
-        config = pyshdom.configuration.get_config('../default_config.json')
+        config = at3d.configuration.get_config('../default_config.json')
         config['num_mu_bins'] = nmu
         config['num_phi_bins'] = nmu*2
         config['split_accuracy'] = split
@@ -74,11 +74,11 @@ def cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, gro
         config['deltam'] = deltam
         config['x_boundary_condition'] = boundary
         config['y_boundary_condition'] = boundary
-        solver = pyshdom.solver.RTE(
+        solver = at3d.solver.RTE(
                             numerical_params=config,
                             medium={'cloud': optical_properties},
-                            source=pyshdom.source.solar(wavelength, solarmu, 10.0),
-                            surface=pyshdom.surface.lambertian(albedo=surfacealb, ground_temperature=ground_temperature),
+                            source=at3d.source.solar(wavelength, solarmu, 10.0),
+                            surface=at3d.surface.lambertian(albedo=surfacealb, ground_temperature=ground_temperature),
                             num_stokes=1,
                             atmosphere=atmosphere2,
                             name=None
@@ -87,7 +87,7 @@ def cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, gro
         if load_solution is not None:
             solver.load_solution(load_solution)
         solvers.add_solver(wavelength, solver)
-        Sensordict = pyshdom.containers.SensorsDict()
+        Sensordict = at3d.containers.SensorsDict()
         return solvers, Sensordict, cloud_poly_tables, step, rte_grid
 
 
@@ -109,7 +109,7 @@ class DirectBeamDerivativeDeltaMOpen(TestCase):
         ground_temperature=200.0
         deltam = True
         boundary='open'
-        mie_mono_table = pyshdom.mie.get_mono_table('Water',(0.86,0.86),
+        mie_mono_table = at3d.mie.get_mono_table('Water',(0.86,0.86),
                                                   max_integration_radius=65.0,
                                                   minimum_effective_radius=0.1,
                                                   relative_dir='./data/',
@@ -145,16 +145,16 @@ class DirectBeamDerivativeDeltaMOpen(TestCase):
 
 
         solver.calculate_direct_beam_derivative()
-        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
-        unknown_scatterers = pyshdom.containers.UnknownScatterers(
-            pyshdom.medium.UnknownScatterer(
+        deriv_gen = at3d.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = at3d.containers.UnknownScatterers(
+            at3d.medium.UnknownScatterer(
                 deriv_gen, 'extinction'
             )
         )
         forward_sensors = Sensordict.make_forward_sensors()
 
 
-        # gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        # gradient_call = at3d.gradient.LevisApproxGradientUncorrelated(Sensordict,
         # solvers, forward_sensors, unknown_scatterers,
         # parallel_solve_kwargs={'maxiter':800,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
         # gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
@@ -170,7 +170,7 @@ class DirectBeamDerivativeDeltaMOpen(TestCase):
         jacobian = []
         for i in range(solver._npts):
             raygrad = np.zeros((solver._nstokes, solver._maxpg, 1))
-            raygrad = pyshdom.core.compute_direct_beam_deriv(
+            raygrad = at3d.core.compute_direct_beam_deriv(
                 dpath=solver._direct_derivative_path[:,i],
                 dptr=solver._direct_derivative_ptr[:,i],
                 numder=1,
@@ -179,9 +179,7 @@ class DirectBeamDerivativeDeltaMOpen(TestCase):
                 abscell=1.0,
                 inputweight=solver._dirflux[i],
                 nstokes=1,
-                npx=solver._pa.npx,
-                npy=solver._pa.npy,
-                npz=solver._pa.npz,
+                longest_path_pts=solver._longest_path_pts,
                 maxpg=solver._maxpg,
                 raygrad=raygrad,
             )
@@ -217,7 +215,7 @@ class DirectBeamDerivativeDeltaMPeriodic(TestCase):
         ground_temperature=200.0
         deltam = True
         boundary='periodic'
-        mie_mono_table = pyshdom.mie.get_mono_table('Water',(0.86,0.86),
+        mie_mono_table = at3d.mie.get_mono_table('Water',(0.86,0.86),
                                                   max_integration_radius=65.0,
                                                   minimum_effective_radius=0.1,
                                                   relative_dir='./data/',
@@ -256,16 +254,16 @@ class DirectBeamDerivativeDeltaMPeriodic(TestCase):
 
         solver.calculate_direct_beam_derivative()
 
-        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
-        unknown_scatterers = pyshdom.containers.UnknownScatterers(
-            pyshdom.medium.UnknownScatterer(
+        deriv_gen = at3d.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = at3d.containers.UnknownScatterers(
+            at3d.medium.UnknownScatterer(
                 deriv_gen, 'extinction'
             )
         )
         forward_sensors = Sensordict.make_forward_sensors()
 
 
-        # gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        # gradient_call = at3d.gradient.LevisApproxGradientUncorrelated(Sensordict,
         # solvers, forward_sensors, unknown_scatterers,
         # parallel_solve_kwargs={'maxiter':800,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
         # gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
@@ -280,7 +278,7 @@ class DirectBeamDerivativeDeltaMPeriodic(TestCase):
         jacobian = []
         for i in range(solver._npts):
             raygrad = np.zeros((solver._nstokes, solver._maxpg, 1))
-            raygrad = pyshdom.core.compute_direct_beam_deriv(
+            raygrad = at3d.core.compute_direct_beam_deriv(
                 dpath=solver._direct_derivative_path[:,i],
                 dptr=solver._direct_derivative_ptr[:,i],
                 numder=1,
@@ -289,9 +287,7 @@ class DirectBeamDerivativeDeltaMPeriodic(TestCase):
                 abscell=1.0,
                 inputweight=solver._dirflux[i],
                 nstokes=1,
-                npx=solver._pa.npx,
-                npy=solver._pa.npy,
-                npz=solver._pa.npz,
+                longest_path_pts=solver._longest_path_pts,
                 maxpg=solver._maxpg,
                 raygrad=raygrad,
             )
@@ -318,7 +314,7 @@ class DirectBeamDerivativePeriodic(TestCase):
         ground_temperature=200.0
         deltam = False
         boundary='periodic'
-        mie_mono_table = pyshdom.mie.get_mono_table('Water',(0.86,0.86),
+        mie_mono_table = at3d.mie.get_mono_table('Water',(0.86,0.86),
                                                   max_integration_radius=65.0,
                                                   minimum_effective_radius=0.1,
                                                   relative_dir='./data/',
@@ -357,30 +353,29 @@ class DirectBeamDerivativePeriodic(TestCase):
 
 
         solver.calculate_direct_beam_derivative()
-        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
-        unknown_scatterers = pyshdom.containers.UnknownScatterers(
-            pyshdom.medium.UnknownScatterer(
+        deriv_gen = at3d.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = at3d.containers.UnknownScatterers(
+            at3d.medium.UnknownScatterer(
                 deriv_gen, 'extinction'
             )
         )
         forward_sensors = Sensordict.make_forward_sensors()
 
 
-        gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
-        solvers, forward_sensors, unknown_scatterers,
-        parallel_solve_kwargs={'maxiter':800,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
-        gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
-        'indices_for_jacobian': indices_for_jacobian}, uncertainty_kwargs={'add_noise': False})
-        cost, gradient, jacobian = gradient_call()
-        jacobian = jacobian['jacobian_0.860'][0,0].data
-
-
+        # gradient_call = at3d.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        # solvers, forward_sensors, unknown_scatterers,
+        # parallel_solve_kwargs={'maxiter':800,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
+        # gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
+        # 'indices_for_jacobian': indices_for_jacobian}, uncertainty_kwargs={'add_noise': False})
+        # cost, gradient, jacobian = gradient_call()
+        # jacobian = jacobian['jacobian_0.860'][0,0].data
+        solvers.calculate_microphysical_partial_derivatives(unknown_scatterers)
         solver.calculate_direct_beam_derivative()
         raygrad = np.zeros((solver._nstokes, solver._maxpg, 1))
         jacobian = []
         for i in range(solver._npts):
             raygrad = np.zeros((solver._nstokes, solver._maxpg, 1))
-            raygrad = pyshdom.core.compute_direct_beam_deriv(
+            raygrad = at3d.core.compute_direct_beam_deriv(
                 dpath=solver._direct_derivative_path[:,i],
                 dptr=solver._direct_derivative_ptr[:,i],
                 numder=1,
@@ -389,9 +384,7 @@ class DirectBeamDerivativePeriodic(TestCase):
                 abscell=1.0,
                 inputweight=solver._dirflux[i],
                 nstokes=1,
-                npx=solver._pa.npx,
-                npy=solver._pa.npy,
-                npz=solver._pa.npz,
+                longest_path_pts=solver._longest_path_pts,
                 maxpg=solver._maxpg,
                 raygrad=raygrad,
             )
@@ -418,7 +411,7 @@ class DirectBeamDerivativeOpen(TestCase):
         ground_temperature=200.0
         deltam = False
         boundary='open'
-        mie_mono_table = pyshdom.mie.get_mono_table('Water',(0.86,0.86),
+        mie_mono_table = at3d.mie.get_mono_table('Water',(0.86,0.86),
                                                   max_integration_radius=65.0,
                                                   minimum_effective_radius=0.1,
                                                   relative_dir='./data/',
@@ -454,16 +447,16 @@ class DirectBeamDerivativeOpen(TestCase):
 
 
         solver.calculate_direct_beam_derivative()
-        deriv_gen = pyshdom.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
-        unknown_scatterers = pyshdom.containers.UnknownScatterers(
-            pyshdom.medium.UnknownScatterer(
+        deriv_gen = at3d.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
+        unknown_scatterers = at3d.containers.UnknownScatterers(
+            at3d.medium.UnknownScatterer(
                 deriv_gen, 'extinction'
             )
         )
         forward_sensors = Sensordict.make_forward_sensors()
 
 
-        # gradient_call = pyshdom.gradient.LevisApproxGradientUncorrelated(Sensordict,
+        # gradient_call = at3d.gradient.LevisApproxGradientUncorrelated(Sensordict,
         # solvers, forward_sensors, unknown_scatterers,
         # parallel_solve_kwargs={'maxiter':800,'n_jobs':4, 'setup_grid':False, 'verbose': False, 'init_solution':False},
         # gradient_kwargs={'exact_single_scatter': True, 'cost_function': 'L2',
@@ -477,7 +470,7 @@ class DirectBeamDerivativeOpen(TestCase):
         jacobian = []
         for i in range(solver._npts):
             raygrad = np.zeros((solver._nstokes, solver._maxpg, 1))
-            raygrad = pyshdom.core.compute_direct_beam_deriv(
+            raygrad = at3d.core.compute_direct_beam_deriv(
                 dpath=solver._direct_derivative_path[:,i],
                 dptr=solver._direct_derivative_ptr[:,i],
                 numder=1,
@@ -486,9 +479,7 @@ class DirectBeamDerivativeOpen(TestCase):
                 abscell=1.0,
                 inputweight=solver._dirflux[i],
                 nstokes=1,
-                npx=solver._pa.npx,
-                npy=solver._pa.npy,
-                npz=solver._pa.npz,
+                longest_path_pts=solver._longest_path_pts,
                 maxpg=solver._maxpg,
                 raygrad=raygrad,
             )

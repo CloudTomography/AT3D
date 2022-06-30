@@ -396,7 +396,8 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .                ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .                CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .                XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		          NPART, MAXPG, PHASEWTP, MAXNMICRO)
+     .		          NPART, MAXPG, PHASEWTP, MAXNMICRO,
+     .              LONGEST_PATH_PTS)
 C       Makes the direct beam solar flux for the internal base grid.
 C     DIRFLUX is set to F*exp(-tau_sun).
 C     Actually calls DIRECT_BEAM_PROP to do all the hard work.
@@ -417,7 +418,6 @@ Cf2py intent(in) :: ZLEVELS, TEMPP, EXTINCTP, ALBEDOP
       REAL LEGENP(*), ZCKD(*), GASABS(*)
       INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART), NZCKD
 Cf2py intent(in) :: LEGENP, ZCKD, GASABS, IPHASEP, NZCKD
-
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
 Cf2py intent(out) :: CX, CY, CZ, CXINV, CYINV, CZINV
       INTEGER IPDIRECT, DI, DJ, DK
@@ -428,10 +428,14 @@ Cf2py intent(out) :: EPSS, EPSZ, XDOMAIN, YDOMAIN
 Cf2py intent(out) :: UNIFORMZLEV, DELXD, DELYD
       REAL    DIRFLUX(*), EXTDIRP(*)
 Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
+      INTEGER LONGEST_PATH_PTS
+Cf2py intent(out) :: LONGEST_PATH_PTS
 
       INTEGER SIDE, IP
       LOGICAL VALIDBEAM
       REAL    UNIFZLEV, XO, YO, ZO, DIR, DIRPATH
+
+      LONGEST_PATH_PTS = 0
 
       CALL DIRECT_BEAM_PROP (1, 0.0, 0.0, 0.0, BCFLAG, IPFLAG,
      .            DELTAM, ML, NSTLEG, NLEGP,
@@ -443,7 +447,8 @@ Cf2py intent(in, out) :: DIRFLUX, EXTDIRP
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .	          NPART, MAXPG, PHASEWTP, MAXNMICRO)
+     .	          NPART, MAXPG, PHASEWTP, MAXNMICRO,
+     .            LONGEST_PATH_PTS)
       DO IP = 1, NPTS
 C27237,27283
         DIRPATH = 0.0
@@ -458,7 +463,8 @@ C27237,27283
      .            ZCKD, GASABS, CX, CY, CZ, CXINV, CYINV,
      .            CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .            XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .		  NPART, MAXPG, PHASEWTP, MAXNMICRO)
+     .		  NPART, MAXPG, PHASEWTP, MAXNMICRO,
+     .      LONGEST_PATH_PTS)
       ENDDO
       RETURN
       END
@@ -2230,7 +2236,7 @@ C      TAUTOL = 0.2
       RADIANCE(:) = 0.0D0
 
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
-      MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
+      MAXCELLSCROSS = 500*MAX(NX,NY,NZ)
       PI = ACOS(-1.0D0)
 
 C       Calculate the generalized spherical harmonics for this direction
@@ -2532,7 +2538,7 @@ C           Get the location coordinate
 C           If the transmission is greater than zero and not at a
 C             boundary then prepare for next cell
 C.OR. NGRID.GT.MAXCELLSCROSS
-        IF (TRANSMIT .LT. TRANSCUT) THEN
+        IF (TRANSMIT .LT. TRANSCUT .OR. NGRID.GT.MAXCELLSCROSS) THEN
           VALIDRAD = .TRUE.
         ELSE IF (INEXTCELL .EQ. 0 .AND. IFACE .GE. 5) THEN
           VALIDRAD = .TRUE.

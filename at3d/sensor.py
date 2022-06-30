@@ -25,7 +25,7 @@ import sys
 import xarray as xr
 import numpy as np
 
-import pyshdom.checks
+import at3d.checks
 
 def make_sensor_dataset(x, y, z, mu, phi, stokes, wavelength, fill_ray_variables=False):
     """
@@ -220,11 +220,11 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
        list or string of stokes components to observe ['I', 'Q', 'U', 'V']
     sub_pixel_ray_args : dict
         dictionary defining the method for generating sub-pixel rays. The callable
-        which generates the position_perturbations and weights (e.g. pyshdom.sensor.gaussian)
+        which generates the position_perturbations and weights (e.g. at3d.sensor.gaussian)
         should be set as the 'method', while arguments to that callable, should be set as
         other entries in the dict. Each argument have two values, one for each of the
         x and y axes of the image plane, respectively.
-        E.g. sub_pixel_ray_args={'method':pyshdom.sensor.gaussian, 'degree': (2, 3)}
+        E.g. sub_pixel_ray_args={'method':at3d.sensor.gaussian, 'degree': (2, 3)}
 
     Returns
     -------
@@ -236,7 +236,7 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
 
     See Also
     --------
-    pyshdom.sensor.make_sensor_dataset
+    at3d.sensor.make_sensor_dataset
 
     Notes
     -----
@@ -248,7 +248,7 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
     """
     mu = np.cos(np.deg2rad(zenith))
     phi = np.deg2rad(azimuth)
-    pyshdom.checks.check_grid(bounding_box)
+    at3d.checks.check_grid(bounding_box)
     xmin, ymin, zmin = bounding_box.x.data.min(), bounding_box.y.data.min(), bounding_box.z.data.min()
     xmax, ymax, zmax = bounding_box.x.data.max(), bounding_box.y.data.max(), bounding_box.z.data.max()
 
@@ -396,11 +396,11 @@ def perspective_projection(wavelength, fov, x_resolution, y_resolution,
        list or string of stokes components to observe ['I', 'Q', 'U', 'V'].
     sub_pixel_ray_args : dict
         dictionary defining the method for generating sub-pixel rays. The callable
-        which generates the position_perturbations and weights (e.g. pyshdom.sensor.gaussian)
+        which generates the position_perturbations and weights (e.g. at3d.sensor.gaussian)
         should be set as the 'method', while arguments to that callable, should be set as
         other entries in the dict. Each argument have two values, one for each of the
         x and y axes of the image plane, respectively.
-        E.g. sub_pixel_ray_args={'method':pyshdom.sensor.gaussian, 'degree': (2, 3)}
+        E.g. sub_pixel_ray_args={'method':at3d.sensor.gaussian, 'degree': (2, 3)}
 
     Returns
     -------
@@ -580,11 +580,11 @@ def domaintop_projection(wavelength, bounding_box, x_resolution, y_resolution, a
        list or string of stokes components to observe ['I', 'Q', 'U', 'V']
     sub_pixel_ray_args : dict
         dictionary defining the method for generating sub-pixel rays. The callable
-        which generates the position_perturbations and weights (e.g. pyshdom.sensor.gaussian)
+        which generates the position_perturbations and weights (e.g. at3d.sensor.gaussian)
         should be set as the 'method', while arguments to that callable, should be set as
         other entries in the dict. Each argument have two values, one for each of the
         x and y axes of the image plane, respectively.
-        E.g. sub_pixel_ray_args={'method':pyshdom.sensor.gaussian, 'degree': (2, 3)}
+        E.g. sub_pixel_ray_args={'method':at3d.sensor.gaussian, 'degree': (2, 3)}
 
     Returns
     -------
@@ -596,10 +596,10 @@ def domaintop_projection(wavelength, bounding_box, x_resolution, y_resolution, a
 
     See Also
     --------
-    pyshdom.sensor.make_sensor_dataset
-    pyshdom.sensor.orthographic_projection
+    at3d.sensor.make_sensor_dataset
+    at3d.sensor.orthographic_projection
     """
-    sensor = pyshdom.sensor.orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution, 0.0,
+    sensor = at3d.sensor.orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution, 0.0,
                                            0.0, altitude='TOA', stokes=stokes,
                                                    sub_pixel_ray_args=sub_pixel_ray_args)
     sensor.cam_x[:] += x_offset

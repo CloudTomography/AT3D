@@ -12,8 +12,8 @@ from collections import OrderedDict
 import numpy as np
 import xarray as xr
 
-import pyshdom.core
-import pyshdom.checks
+import at3d.core
+import at3d.checks
 
 def to_grid(wavelengths, atmosphere, rte_grid):
     """
@@ -45,7 +45,7 @@ def to_grid(wavelengths, atmosphere, rte_grid):
     -----
     single scattering albedo is assumed to be 1.0.
     """
-    pyshdom.checks.check_grid(rte_grid)
+    at3d.checks.check_grid(rte_grid)
     wavelengths = np.atleast_1d(wavelengths)
     atmosphere_on_rte_grid = atmosphere.interp({'z': rte_grid.z})
     rayleigh_poly_tables = compute_table(wavelengths).rename('legcoef')
@@ -107,7 +107,7 @@ def compute_table(wavelengths):
         radiative transfer and coherent backscattering. Cambridge University Press, 2006.
     """
     wavelengths = np.atleast_1d(wavelengths)
-    legcoefs, table_types = zip(*[pyshdom.core.rayleigh_phase_function(wvl) for wvl in wavelengths])
+    legcoefs, table_types = zip(*[at3d.core.rayleigh_phase_function(wvl) for wvl in wavelengths])
     data_arrays = [
         xr.DataArray(name='rayleigh_table',
                      data=legcoef[..., None],
@@ -163,7 +163,7 @@ def compute_extinction(wavelengths, temperature_profile, surface_pressure=1013.0
         dims='z',
         name='rayleigh_extinction_profile',
         coords={'z': temperature_profile.z.values, 'wavelength': wavelength},
-        data=pyshdom.core.rayleigh_extinct(nzt=temperature_profile.size,
+        data=at3d.core.rayleigh_extinct(nzt=temperature_profile.size,
                                    zlevels=temperature_profile.z,
                                    temp=temperature_profile.data,
                                    raysfcpres=surface_pressure,

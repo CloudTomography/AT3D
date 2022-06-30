@@ -18,20 +18,132 @@ DataGenerator objects are used in the inverse problem to hold fixed variables
 for each scatterer to produce updated optical properties as the state changes.
 
 StateGenerator is used in the inverse problem to update the solvers as the
-state changes (see pyshdom.containers.SolversDict).
+state changes (see at3d.containers.SolversDict).
 """
 import itertools
 import typing
 import warnings
+import time
 
 from collections import OrderedDict
 import pandas as pd
 import numpy as np
 import xarray as xr
-import pyshdom.checks
+import at3d.checks
 
+def make_optical_properties(grid, extinction, ssalb, phase_function_indices,
+                            phase_function_table, phase_function_weights=None):
+    """
+    Construct an xr.Dataset optical properties by specifying extinction, single scatter albedo
+    and gridpoint phase functions.
+
+    This method is provided for the direct specification of optical properties
+    rather than using a Mie or other microphysical model which is useful when constructing
+    idealized media. This leaves it to the useful to specify the `phase_function_weights`
+    and `phase_function_indices` and therefore is best utilized in only simple scenarios.
+
+    Parameters
+    ----------
+    grid : xr.Dataset
+        A valid grid object with x, y, z coordinates. See at3d.grid for details.
+    extinction : np.ndarray, float, ndim=3
+        An array of volume extinction coefficient values in [1/km].
+        This should have the same shape as the `grid` object.
+    ssalb : np.ndarray, float ndim=3
+        An array of single scatter albedos in [0, 1]. This should have the same shape as the `grid` object.
+    phase_function_indices : np.ndarray, int, ndim=4
+        An array of indices which point to entries in `phase_function_table` to indicate which entries are used
+        to form each grid point function. The first dimension denotes the set of phase functions that are
+        combined according to `phase_function_weights` to form the phase function at each grid point. The
+        next 3 dimensions should match the shape of `grid`.
+        Indices are assumed to start from 0 though in the output they start from 1 according to
+        Fortran conventions.
+    phase_function_table : np.ndarray, ndim=3
+        The legendre / Wigner-d function expansion of the phase functions of
+        shape=(StokesIndex, legendreIndex, PhaseFunctionIndex)
+    phase_function_weights : np.ndarray, float, ndim=4
+        Weights that are used to represent the grid point phase functions as a sum over the table entries.
+        If `phase_function_indices` is only specified with one pointer per grid point and this is None
+        then uniform weights are specified.
+
+    Return : optical_properties, xr.Dataset
+        Valid optical properties
+    """
+    at3d.checks.check_grid(grid)
+    if extinction.shape != grid.grid.shape:
+        raise ValueError(
+            "`extinction` shape is not consistent with `grid`."
+        )
+    if ssalb.shape != grid.grid.shape:
+        raise ValueError(
+            "`extinction` shape is not consistent with `grid`."
+        )
+    if phase_function_indices.ndim == 3:
+        phase_function_indices = phase_function_indices[None, ...]
+
+    if phase_function_indices.shape[0] == 1:
+        phase_function_weights = np.ones(phase_function_indices.shape)
+    elif phase_function_weights is None:
+        raise ValueError(
+            "phase_function_weights must be specified."
+        )
+
+    if phase_function_indices.shape[1:] != grid.grid.shape:
+        raise ValueError(
+            "`phase_function_indices` shape is not consistent with `grid`."
+        )
+    if phase_function_weights.shape != phase_function_indices.shape:
+        raise ValueError(
+            "`phase_function_indices` and `phase_function_weights` do not have consistent shape."
+        )
+
+    optical_properties = grid.copy(deep=True)
+    optical_properties['ssalb'] = (['x', 'y', 'z'], ssalb)
+    optical_properties['extinction'] = (['x', 'y', 'z'], extinction)
+    optical_properties['phase_weights'] = (
+        ['num_micro', 'x', 'y', 'z'],
+        phase_function_weights
+    )
+    optical_properties['legcoef'] = (['stokes_index', 'legendre_index', 'table_index'],
+                                    phase_function_table)
+    optical_properties['table_index'] = (
+        ['num_micro', 'x', 'y', 'z'],
+        1+phase_function_indices.astype(np.int32)
+    )
+    at3d.checks.check_optical_properties(optical_properties)
+    return optical_properties
 
 class OpticalPropertyGenerator:
+    """
+    Transforms microphysical properties into optical properties and calculates
+    derivatives of optical properties with respect to microphysical properties
+    according to Mie theory.
+
+    Parameters
+    ----------
+    scatterer_name : str
+        The name of the scatterer for reference. e.g. cloud, aerosol.
+    monodisperse_tables : Dict
+        A dictionary of xr.Dataset objects which contain mie scattering properties as
+        generated by at3d.mie.get_mono_table.
+    size_distribution_function : callable
+        The function which maps microphysical properties to a number density distribution.
+        See at3d.size_distribution.gamma as an example.
+    particle_density : float
+        The density used in the calculation of number density distribution for normalizing
+        size_distribution_functions. This is a kwarg to `size_distribution_function`.
+    maxnphase : int
+        The maximum number of unique phase functions to generate in the optical properties.
+        If exceeded, then `interpolation_mode` will be forced to 'table' mode.
+    interpolation_mode : str
+        The interpolation mode to use when calculating phase functions from microphysical properties.
+        If 'exact' then all phase functions will be generated up to `maxnphase`.
+    density_normalization : str
+        A kwarg for `size_distribution_function` that sets the normalization of the number density
+        distribution.
+    size_distribution_parameters : np.ndarray
+        The
+    """
 
     # TODO.
     # turn this into two different objects.
@@ -70,16 +182,16 @@ class OpticalPropertyGenerator:
             size_distribution_function
         )
         if density_normalization == 'density':
-            self._density_bounds = (1e-9, 1e2)
+            self._density_bounds = (0.0, 1e2)
         elif density_normalization == 'geometric_extinction':
-            self._density_bounds = (1e-9, 1e3)
+            self._density_bounds = (0.0, 1e3)
         elif density_normalization == 'number_concentration':
-            self._density_bounds = (1e-9, 1e4)
+            self._density_bounds = (0.0, 1e4)
         else:
             warnings.warn(
                 "No support for default bounds for the specified `density_normalization`."
                 )
-            self._density_bounds = (1e-9, np.inf)
+            self._density_bounds = (0.0, None)
 
 
         for variable_name, parameters in size_distribution_parameters.items():
@@ -98,7 +210,7 @@ class OpticalPropertyGenerator:
 
         self._size_distribution_grids = OrderedDict()
         for key, monodisperse_table in self._monodisperse_tables.items():
-            self._size_distribution_grids[key] = pyshdom.size_distribution.get_size_distribution_grid(
+            self._size_distribution_grids[key] = at3d.size_distribution.get_size_distribution_grid(
                 monodisperse_table.radius,
                 size_distribution_function=self._size_distribution_function,
                 particle_density=self._particle_density,
@@ -136,6 +248,13 @@ class OpticalPropertyGenerator:
     def size_distribution_function(self):
         return self._size_distribution_function
 
+    @property
+    def cached_optical_properties(self):
+        copied = OrderedDict()
+        for key,value in self._cached_optical_properties.items():
+            copied[key] = value.copy(deep=True)
+        return copied
+
     def __call__(self, microphysics):
 
         interp_coords = self._check_input(microphysics)
@@ -145,7 +264,7 @@ class OpticalPropertyGenerator:
         # cached optical properties. (Maybe need to perform deep copying? Need to test.)
         # really we cache to save time when calculating derivatives afterwards.
         if microphysics.equals(self._cached_microphysics):
-            optical_properties = self._cached_optical_properties
+            optical_properties = self.cached_optical_properties#self._cached_optical_properties.copy(deep=True)
 
         else:
             # cache poly tables for the nearest interpolation mode to save time
@@ -153,8 +272,8 @@ class OpticalPropertyGenerator:
             if self._interpolation_mode == 'nearest' and not self._poly_tables:
                 for key, table in self._monodisperse_tables.items():
                     # make sure this worked.
-                    poly_table = pyshdom.mie.get_poly_table(self._size_distribution_grids[key], table)
-                    pyshdom.checks.check_legendre(poly_table)
+                    poly_table = at3d.mie.get_poly_table(self._size_distribution_grids[key], table)
+                    at3d.checks.check_legendre(poly_table)
                     self._poly_tables[key] = poly_table
 
             if self._interpolation_mode == 'nearest':
@@ -195,9 +314,9 @@ class OpticalPropertyGenerator:
 
         if self._interpolation_mode == 'nearest' and not self._poly_tables:
             for key, table in self._monodisperse_tables.items():
-                poly_table = pyshdom.mie.get_poly_table(self._size_distribution_grids[key], table)
+                poly_table = at3d.mie.get_poly_table(self._size_distribution_grids[key], table)
                 # make sure this worked.
-                pyshdom.checks.check_legendre(poly_table)
+                at3d.checks.check_legendre(poly_table)
                 self._poly_tables[key] = poly_table
 
         # cache differentiated poly tables for the nearest interpolation mode to save time
@@ -378,8 +497,8 @@ class OpticalPropertyGenerator:
 
     def _check_input(self, microphysics):
 
-        pyshdom.checks.check_positivity(microphysics, 'density')
-        pyshdom.checks.check_grid(microphysics)
+        at3d.checks.check_positivity(microphysics, 'density')
+        at3d.checks.check_grid(microphysics)
 
         interp_names = set([name for name in self._size_distribution_parameters])
         microphysics_names = set([name for name in microphysics.variables.keys()
@@ -415,7 +534,7 @@ class OpticalPropertyGenerator:
         #transfer the grid variables. NOTE that delx, dely exist and be passed.
         # while nx/ny/nz are optional. delx/dely are checked for by check_grid.
 
-        optical_properties = pyshdom.grid.add_grid_variables(microphysics, optical_properties)
+        optical_properties = at3d.grid.add_grid_variables(microphysics, optical_properties)
 
         optical_properties = optical_properties.assign_attrs(microphysics.attrs)
         optical_properties['interp_method'] = self._interpolation_mode
@@ -543,11 +662,11 @@ class OpticalPropertyGenerator:
         )
 
         # Use the poly_table as the Dataset to add the main optical properties to.
-        poly_table = pyshdom.mie.get_poly_table(size_dist_grid, monodisperse_table)
+        poly_table = at3d.mie.get_poly_table(size_dist_grid, monodisperse_table)
 
 
         # make sure this worked.
-        pyshdom.checks.check_legendre(poly_table)
+        at3d.checks.check_legendre(poly_table)
         optical_properties = poly_table.copy(deep=True)
 
         extinct_efficiency = np.sum(
@@ -717,8 +836,8 @@ class OpticalPropertyGenerator:
         if not self._poly_tables:
             for key, table in self._monodisperse_tables.items():
                 # make sure this worked.
-                poly_table = pyshdom.mie.get_poly_table(self._size_distribution_grids[key], table)
-                pyshdom.checks.check_legendre(poly_table)
+                poly_table = at3d.mie.get_poly_table(self._size_distribution_grids[key], table)
+                at3d.checks.check_legendre(poly_table)
                 self._poly_tables[key] = poly_table
 
         reference = OrderedDict()
@@ -752,7 +871,7 @@ class OpticalPropertyGenerator:
             )
 
             # Use the poly_table as the Dataset to add the main optical properties to.
-            optical_properties = pyshdom.mie.get_poly_table(size_dist_grid, monodisperse_table)
+            optical_properties = at3d.mie.get_poly_table(size_dist_grid, monodisperse_table)
 
             to_interp = {name: xr.DataArray(random_perturbed[name], dims='table_index') for name in random_perturbed}
             ext_interped = table.extinction.interp(to_interp, method='linear')
@@ -786,7 +905,7 @@ def mix_optical_properties(*scatterers, asymmetry_tol=0.002, phase_tol=0.01, lin
         Each dataset should contain the optical properties (e.g. extinction, ssalb, phase function table)
         of a particle species on a spatial grid.
         All scatterers should be on the same spatial grid and these grids should conform to
-        the requirements (e.g. pyshdom.checks.check_grid).
+        the requirements (e.g. at3d.checks.check_grid).
     asymmetry_tol : float
         The maximum absolute error in the asymmetry parameter allowable for the subset of phase functions
         used to represent the mixture. Smaller values increase accuracy and increase number of phase
@@ -821,9 +940,9 @@ def mix_optical_properties(*scatterers, asymmetry_tol=0.002, phase_tol=0.01, lin
 
 
     """
-    #pyshdom.checks.check_grid_consistency(scatterers)
+    #at3d.checks.check_grid_consistency(scatterers)
     for i, scatterer in enumerate(scatterers):
-        pyshdom.checks.check_optical_properties(scatterer, i)
+        at3d.checks.check_optical_properties(scatterer, i)
 
     max_num_micro = max(
         [scatterer.num_micro.size for scatterer in scatterers]
@@ -873,7 +992,7 @@ def mix_optical_properties(*scatterers, asymmetry_tol=0.002, phase_tol=0.01, lin
 
     itr = 0
     while ierr == 1 and itr < maxiter:
-        mixed_phase_table, mixed_phase_indices, nphase, ierr, errmsg = pyshdom.core.phase_function_mixing(
+        mixed_phase_table, mixed_phase_indices, nphase, ierr, errmsg = at3d.core.phase_function_mixing(
             scatter_coefficients=scatter_coefficients,
             phase_tables=legendre_table,
             phase_indices=phase_indices,
@@ -887,8 +1006,8 @@ def mix_optical_properties(*scatterers, asymmetry_tol=0.002, phase_tol=0.01, lin
 
         itr += 1
         try:
-            pyshdom.checks.check_errcode(ierr, errmsg)
-        except pyshdom.exceptions.SHDOMError as err:
+            at3d.checks.check_errcode(ierr, errmsg)
+        except at3d.exceptions.SHDOMError as err:
             if itr == maxiter:
                 raise err
 
@@ -936,180 +1055,6 @@ def mix_optical_properties(*scatterers, asymmetry_tol=0.002, phase_tol=0.01, lin
 
     return mixed_optical_properties
 
-
-# class DataGenerator:
-#     """
-#     Data Generators are supposed to
-#     Not supposed to be used. Just consolidates code for the inheritors.
-#     """
-#     def _check_inputs(self, rte_grid, *fixed_data_arrays):
-#
-#         pyshdom.checks.check_grid(rte_grid)
-#         self._rte_grid = rte_grid
-#         self._rte_grid_shape = (
-#             self._rte_grid.x.size,
-#             self._rte_grid.y.size,
-#             self._rte_grid.z.size
-#         )
-#
-#         for data_array in fixed_data_arrays:
-#             if not isinstance(data_array, (xr.Dataset, xr.DataArray)):
-#                 raise TypeError(
-#                     "`fixed_data_arrays` should be of type 'xr.Dataset' "
-#                     "or xr.DataArray"
-#                 )
-#         dataset = xr.merge(fixed_data_arrays)
-#         # merge_list = []
-#         # for data_array in fixed_data_arrays:
-#         #     merge_list.append(data_array)
-#         #     dataset[data_array.name] = data_array
-#         return dataset
-#
-#     def _check_bound(self, bounds):
-#         if not isinstance(bounds, typing.Tuple):
-#             raise TypeError(
-#             "Each `bound` argument should be of type '{}'"
-#             "".format(typing.Tuple)
-#             )
-#         if not ((len(bounds) == 2) & isinstance(bounds[0], np.ndarray) & isinstance(bounds[1], np.ndarray)):
-#             raise TypeError(
-#             "Each `bounds` should be a Tuple of two np.ndarrays."
-#             )
-#         if (bounds[0].shape != self._rte_grid_shape) | (bounds[1].shape != self._rte_grid_shape):
-#             raise ValueError(
-#             "Each `bound` should be of the "
-#             "same shape as the `rte_grid`'s spatial coordinates."
-#             )
-#
-#     def get_bounds(self, variable_name):
-#         if variable_name not in self._variable_data_bounds:
-#             raise ValueError(
-#                 "No bounds for '{}'".format(variable_name)
-#             )
-#         return self._variable_data_bounds[variable_name]
-#
-#     def __call__(self, **variable_data):
-#         dataset = self._fixed_dataset.copy(deep=True)
-#
-#         for name, data in variable_data.items():
-#             if not isinstance(data, np.ndarray):
-#                 raise TypeError(
-#                     "values of argument `variable_data` should be of type '{}'"
-#                     "".format(np.ndarray)
-#                 )
-#             if data.shape != self._rte_grid_shape:
-#                 raise ValueError(
-#                     "values of argument `variable_data` should have shape matching "
-#                     "the specified rte_grid '{}' not '{}'".format(
-#                         self._rte_grid_shape, data.shape
-#                     )
-#                 )
-#             dataset[name] = (['x', 'y', 'z'], data)
-#         self._checks(dataset)
-#         return dataset
-#
-#     @property
-#     def optical_property_generator(self):
-#         return self._optical_property_generator
-#
-# class MicrophysicsGenerator(DataGenerator):
-#
-#     def __init__(self, rte_grid, optical_property_generator, *fixed_data_arrays, **variable_data_bounds):
-#
-#         if not isinstance(optical_property_generator, OpticalPropertyGenerator):
-#             raise TypeError(
-#                 "`optical_property_generator` argument should be of type "
-#                 "'{}'".format(OpticalPropertyGenerator)
-#             )
-#         self._optical_property_generator = optical_property_generator
-#         self.scatterer_name = optical_property_generator.scatterer_name
-#
-#         dataset = self._check_inputs(rte_grid, *fixed_data_arrays)
-#         self._process_bounds(**variable_data_bounds)
-#         self._fixed_dataset = pyshdom.grid.resample_onto_grid(rte_grid, dataset)
-#
-#     def _process_bounds(self, **variable_data_bounds):
-#         # use the optical_property_generator to decide the bounds on variables.
-#         bounds = OrderedDict()
-#         opt_gen = self._optical_property_generator
-#         coords = list(opt_gen._size_distribution_grids.values())[0]
-#         variable_names = list(opt_gen._size_distribution_parameters)
-#         variable_names.append('density')
-#         for name in variable_names:
-#             if name in variable_data_bounds:
-#                 bound = variable_data_bounds[name]
-#             elif name == 'density':
-#                 bound = (np.zeros(self._rte_grid_shape) + 1e-9,
-#                          np.zeros(self._rte_grid_shape) + 1e2)
-#             else:
-#                 bound = (np.zeros(self._rte_grid_shape) + coords[name].min().data,
-#                          np.zeros(self._rte_grid_shape) + coords[name].max().data)
-#             self._check_bound(bound)
-#             bounds[name] = bound
-#
-#         self._variable_data_bounds = bounds
-#
-#     def calculate_optical_properties(self, **variable_data):
-#         microphysics_data = self(**variable_data)
-#         optical_properties = self._optical_property_generator(microphysics_data)
-#         return optical_properties
-#
-#     def _checks(self, dataset):
-#
-#         pyshdom.checks.check_grid(dataset)
-#         # use the optical_property_generator to verify that all the
-#         # necssary variables are present for the generation of optical properties.
-#         # this is done anyway when the same optical property generator is used.
-#         if 'density' not in dataset.data_vars:
-#             raise ValueError(
-#                 "variable name 'density' is required to use this to generate "
-#                 "optical properties. Please specify it at initialization or "
-#                 "when calling this MicrophysicsGenerator."
-#             )
-#         for variable in self._optical_property_generator.size_distribution_parameters:
-#             if variable not in dataset:
-#                 raise ValueError(
-#                     "variable '{}' is needed in order to use this to generate "
-#                     "optical properties. Please specify it at initialization or "
-#                     "when calling this MicrophysicsGenerator.".format(variable)
-#                 )
-#
-# class OpticalGenerator(DataGenerator):
-#
-#     def __init__(self, rte_grid, scatterer_name, wavelength, *fixed_data_arrays, **variable_data_bounds):
-#         self._optical_property_generator = pyshdom.medium.OpticalDerivativeGenerator(scatterer_name, wavelength)
-#         self.scatterer_name = scatterer_name
-#         self.wavelength = wavelength
-#         dataset = self._check_inputs(rte_grid, *fixed_data_arrays)
-#         self._process_bounds(**variable_data_bounds)
-#         self._fixed_dataset = pyshdom.grid.add_grid_variables(rte_grid, dataset)
-#
-#     def _process_bounds(self, **variable_data_bounds):
-#         # use the optical_property_generator to decide the bounds on variables.
-#         bounds = OrderedDict()
-#         names = list(variable_data_bounds)
-#         names.extend(['extinction', 'ssalb'])
-#         for name in names:
-#             if name in variable_data_bounds:
-#                 bound = variable_data_bounds[name]
-#             elif name == 'extinction':
-#                 bound = (np.zeros(self._rte_grid_shape)+ 1e-9,
-#                          np.zeros(self._rte_grid_shape) + 1e3)
-#             elif name == 'ssalb':
-#                 bound = (np.zeros(self._rte_grid_shape)+ 1e-9,
-#                          np.ones(self._rte_grid_shape))
-#             # no supported bounds on legendre as we don't know
-#             # how big the table is.
-#             self._check_bound(bound)
-#             bounds[name] = bound
-#
-#         self._variable_data_bounds = bounds
-#
-#
-#     def _checks(self, dataset):
-#         # checks for optical properties are easy.
-#         pyshdom.checks.check_optical_properties(dataset)
-
 class GridToOpticalProperties:
 
     def __init__(self, rte_grid, scatterer_name, wavelength, fixed_dataset=None, *fixed_data_arrays,
@@ -1117,7 +1062,7 @@ class GridToOpticalProperties:
 
         self.scatterer_name = scatterer_name
         self.wavelength = wavelength
-        pyshdom.checks.check_grid(rte_grid)
+        at3d.checks.check_grid(rte_grid)
         self._rte_grid = rte_grid
         self.grid_shape = rte_grid.grid.shape
         self._variable_data_bounds = self._process_bounds(**variable_data_bounds)
@@ -1129,7 +1074,7 @@ class GridToOpticalProperties:
                         "or xr.DataArray"
                     )
             dataset = xr.merge(fixed_data_arrays)
-            fixed_dataset = pyshdom.grid.resample_onto_grid(self._rte_grid, dataset)
+            fixed_dataset = at3d.grid.resample_onto_grid(self._rte_grid, dataset)
 
         self._fixed_dataset = fixed_dataset
 
@@ -1204,7 +1149,7 @@ class GridToOpticalProperties:
 
     def _checks(self, dataset):
         # checks for optical properties are easy.
-        pyshdom.checks.check_optical_properties(dataset)
+        at3d.checks.check_optical_properties(dataset)
 
     def calculate_optical_properties(self, **variable_data):
         optical_properties = self.make_full_dataset(**variable_data)
@@ -1346,7 +1291,7 @@ class MicrophysicsGridToOpticalProperties(GridToOpticalProperties):
 
     def _checks(self, dataset):
 
-        pyshdom.checks.check_grid(dataset)
+        at3d.checks.check_grid(dataset)
         # use the optical_property_generator to verify that all the
         # necssary variables are present for the generation of optical properties.
         # this is done anyway when the same optical property generator is used.
@@ -1372,7 +1317,10 @@ class MicrophysicsGridToOpticalProperties(GridToOpticalProperties):
         return self._optical_property_generator
 
 class TransformSet(tuple):
-
+    """
+    A simple object whose only purpose is to remove the need to remember the ordering
+    of the two transforms in a Tuple.
+    """
     @property
     def coordinate_transform(self):
         return self[0]
@@ -1382,7 +1330,39 @@ class TransformSet(tuple):
         return self[1]
 
 class UnknownScatterer:
+    """
+    Specifies volumetric unknowns associated with a particular particle species
+    (e.g. cloud water / aerosol / cloud ice) for retrieval.
 
+    The unknown variables and their associated transforms can be supplied
+    through the `variable_names` args and `variable_transforms` kwargs they can be
+    left unspecified and added later using the UnknownScatterer.add_variable method
+    which has an easier to understand signature.
+
+    Parameters
+    ----------
+    grid_to_optical_properties : at3d.medium.GridToOpticalProperties
+        Specifies how to map from a particular set of gridded unknowns to a complete
+        set of optical properties for the particle species (ie for input as one entry
+        in the `medium` argument to solver.RTE).
+    variable_names : str
+        The names of variables to set as unknowns to retrieve for this scatterer. This
+        argument is used when no transforms are associated with the unknown variable.
+    variable_transforms : Tuple
+        Each kwarg key should be the variable name and the value should be a Tuple of
+        a Cooordinate Transform and a StateToGrid transform. See at3d.transformsfor
+        details.
+
+    Notes
+    -----
+    There is some redundancy between `grid_to_optical_properties` and `variable_names`
+    as `grid_to_optical_properties` should contain sufficient information to specify
+    every missing variable that NEEDS to be retrieved in order to provide valid optical
+    properties. The unique aspect of this object is that it is the point where transforms
+    are added. Names need to be respecified to link transforms to variables. This
+    explicitness also prevents mistakes happening due to misspecification of the
+    `fixed_data_arrays` arguments to the `grid_to_optical_properties` object.
+    """
     def __init__(self, grid_to_optical_properties, *variable_names, **variable_transforms):
 
         self.scatterer_name = grid_to_optical_properties.scatterer_name
@@ -1404,24 +1384,84 @@ class UnknownScatterer:
 
     def add_variable(self, variable_name, coordinate_transform=None,
                      state_to_grid_transform=None):
+        """
+        Add an unknown variable to retrieve associated with this scatterer.
 
+        The `state_to_grid_transform` argument sets the spatial representation
+        of the unknowns to reconstruct by enabling a space of possibly reduced dimension
+        for the reconstruction such as a single vertical profile of unknowns or a
+        single unknown per column or only a subset of grid points making up the unknowns.
+        This simplifies the optimization problem by reducing its dimensionality.
+        The `coordinate_transform` enables the use of an abstract set of coordinates for
+        the optimization which may provide better conditioned cost function curvature
+        and therefore better convergence.
+
+        Parameters
+        ----------
+        variable_name : str
+            The name of the variable. Should be a valid optical property name
+            or the name of a microphysical variable associated with the
+            `grid_to_optical_properties` object.
+        coordinate_transform : at3d.transforms.CoordinateTransform
+            Performs coordinate transforms to and from abstract and physical coordinates
+            for this variable.
+        state_to_grid_transform : at3d.transforms.StateToGridMask
+            Performs a transform from gridded data to the 1D state vector of unknowns
+
+        """
         if coordinate_transform is None:
-            coordinate_transform = pyshdom.transforms.CoordinateTransformNull()
+            coordinate_transform = at3d.transforms.CoordinateTransform()
         if state_to_grid_transform is None:
-            state_to_grid_transform = pyshdom.transforms.StateToGridMask(
+            state_to_grid_transform = at3d.transforms.StateToGridMask(
                 self.grid_to_optical_properties.grid_shape
                 )
-        self.variables[variable_name] = TransformSet([coordinate_transform, state_to_grid_transform])
+        self.variables[variable_name] = TransformSet(
+            [coordinate_transform, state_to_grid_transform]
+            )
 
     def get_grid_data(self, variable_name, state_subset):
+        """
+        Maps the subset of the abstract state vector corresponding to this unknown variable
+        to gridded data in physical coordinates.
 
+        Parameters
+        ----------
+        variable_name : str
+            The name of the variable to form the gridded data for
+        state_subset : np.ndarray, ndim=1
+            The subset of the 1D state vector corresponding to this variable.
+
+        Returns
+        -------
+        state_subset_on_grid : np.ndarray, ndim=3
+            The gridded data in physical coordinates for this retrieved variable.
+        """
         coordinate_transform, state_to_grid_transform = self.variables[variable_name]
         state_in_physical_coordinates = coordinate_transform(state_subset)
         state_subset_on_grid = state_to_grid_transform(state_in_physical_coordinates)
         return state_subset_on_grid
 
     def calculate_optical_properties(self, state, state_representation):
+        """
+        Calculate optical properties for this scatterer from the abstract state.
 
+        This is done by identifying subsets of the state vector corresponding to
+        each variable and then transforming them to gridded data which is then either
+        directly used in the optical properties or used to produce optical properties.
+
+        Parameters
+        ----------
+        state : np.ndarray, ndim=1
+            The full abstract state vector
+        state_representation : at3d.medium.StateRepresentation
+            Knows the organization of different variables into the 1D state vector.
+
+        Returns
+        -------
+        optical_properties : collections.OrderedDict
+            Optical properties for this scatterer organized by solver key
+            which is typically wavelength.
+        """
         gridded_data = {}
         for variable_name in self.variables.keys():
             state_subset = state_representation.select_variable(
@@ -1442,6 +1482,14 @@ class StateRepresentation:
     that is built from possibly several variables of unequal size.
     This structure is built based on the state_to_grid transforms contained in
     each `UnknownScatterer` object.
+
+    Parameters
+    ----------
+    unknown_scatterers : at3d.containers.UnknownScatterers
+
+    Notes
+    -----
+    This object will need to be updated to include surface unknowns.
     """
     def __init__(self, unknown_scatterers):
 
@@ -1482,7 +1530,38 @@ class StateRepresentation:
 
 
 class StateGenerator:
+    """
+    Updates the solver.RTE objects to reflect changes in the retrieval state vector
+    and projects gradients calculated by at3d.gradient.LevisApproxGradient onto
+    the retrieval state vector.
 
+    Parameters
+    ----------
+    `solvers_dict` : at3d.containers.SolversDict
+        Contains the solver.RTE objects required to simulate the measurements.
+    `unknown_scatterers` : at3d.containers.UnknownScatterers
+        Contains the at3d.Medium.UnkonwnScatterer objects for all unknowns.
+    `surfaces` : Dict
+        The fixed surface properties used to define the solver.RTE objects during the retrieval
+        organized as a function of solver key.
+    `numerical_params` : Dict
+        The fixed numerical properties used to define sthe solver.RTE objects  during the retrieval
+        organized as a function of solver key.
+    `sources` : Dict
+        The fixed sources used to define the solver.RTE objects  during the retrieval
+        organized as a function of solver key.
+    `background_optical_scatterers` : Dict
+        A nested dictionary of optical properties organized first by solver key and then
+        by scatterer name which forms part of the `medium` argument to the solver.RTE
+        objects.
+    `num_stokes` : Dict
+        The number of Stokes parameters to use in the solver.RTE objects organized
+        by solver key.
+
+    Notes
+    -----
+    Most of the arguments correspond to those in solver.RTE objects.
+    """
     def __init__(self, solvers_dict, unknown_scatterers, surfaces,
                  numerical_parameters, sources, background_optical_scatterers,
                  num_stokes, names=None):
@@ -1490,16 +1569,16 @@ class StateGenerator:
         # check compatibility between UnknownScatterers and all other containers.
         # if other containers don't exist then generate them from UnknownScatterers.
 
-        if not isinstance(unknown_scatterers, pyshdom.containers.UnknownScatterers):
+        if not isinstance(unknown_scatterers, at3d.containers.UnknownScatterers):
             raise TypeError(
                 "`unknown_scatterers` arguments should be of type '{}'"
-                " ".format(type(pyshdom.containers.UnknownScatterers)))
+                " ".format(type(at3d.containers.UnknownScatterers)))
         self._unknown_scatterers = unknown_scatterers
 
-        if not isinstance(solvers_dict, pyshdom.containers.SolversDict):
+        if not isinstance(solvers_dict, at3d.containers.SolversDict):
             raise TypeError(
                 "`solvers_dict` arguments should be of type '{}'"
-                " ".format(type(pyshdom.containers.SolversDict)))
+                " ".format(type(at3d.containers.SolversDict)))
         self._solvers_dict = solvers_dict
 
         self._rte_grid = list(unknown_scatterers.values())[0].grid_to_optical_properties._rte_grid
@@ -1549,7 +1628,7 @@ class StateGenerator:
                             "should be a dictionary."
                         )
                     for opt_scat in opt_scat_dict.values():
-                        pyshdom.checks.check_optical_properties(opt_scat)
+                        at3d.checks.check_optical_properties(opt_scat)
             elif name == 'num_stokes':
                 for value in variable.values():
                     if not value in (1, 3, 4):
@@ -1575,7 +1654,7 @@ class StateGenerator:
         self._names = names
 
         for scatterer_name, unknown_scatterer in self._unknown_scatterers.items():
-            if isinstance(unknown_scatterer.grid_to_optical_properties, pyshdom.medium.GridToOpticalProperties):
+            if isinstance(unknown_scatterer.grid_to_optical_properties, at3d.medium.GridToOpticalProperties):
                 if len(self._sources) != 1:
                     raise ValueError(
                     "Optical property unknowns are not supported for multi-spectral data. "
@@ -1585,11 +1664,27 @@ class StateGenerator:
         for key in self._sources:
             self._old_solutions[key] = None
 
+        self._total_solver_time = 0.0
+        self._total_overhead_time = 0.0
+
     def __call__(self, state):
         """
         Update the solvers to reflect the new state vector. This does not include
         SOLVING the solver objects. That is performed elsewhere.
+
+        Parameters
+        ----------
+        state : np.ndarray, ndim=1
+            The 1D abstract state vector.
         """
+        # first extract the previous cpu_time from the solver.
+        # To get the total, we have to remember to also do this at the "end" of a retrieval.
+        # To get the time for the final call. otherwise it will be biased low.
+        for solver in self._solvers_dict.values():
+            if hasattr(solver, '_cpu_time'):
+                self._total_solver_time += solver._cpu_time
+
+        time1 = time.process_time()
         state = self._unknown_scatterers.global_transform(state)
         new_optical_properties = OrderedDict()
         for scatterer_name, unknown_scatterer in self._unknown_scatterers.items():
@@ -1606,7 +1701,7 @@ class StateGenerator:
             for scatterer_name, optical_properties in new_optical_properties.items():
                 background_optical_scatterer[scatterer_name] = optical_properties[wavelength]
 
-            solver = pyshdom.solver.RTE(
+            solver = at3d.solver.RTE(
                 numerical_params=self._numerical_parameters[wavelength],
                 medium=background_optical_scatterer,
                 source=self._sources[wavelength],
@@ -1617,10 +1712,16 @@ class StateGenerator:
             if self._old_solutions[wavelength] is not None:
                 solver.load_solution(self._old_solutions[wavelength])
             self._solvers_dict.add_solver(wavelength, solver)
+        self._total_overhead_time += time.process_time() - time1
 
     def get_state(self):
         """
         Extract the current state vector from the solvers_dict.
+
+        Returns
+        -------
+        state : np.ndarray, ndim=1
+            The abstract state vector.
         """
         if not self._solvers_dict:
             raise ValueError(
@@ -1649,7 +1750,7 @@ class StateGenerator:
             The abstract state.
         gradient_dset : xr.Dataset
             gridded derivatives with respect to physical unknowns.
-            See pyshdom.gradient.make_gradient_dataset.
+            See at3d.gradient.make_gradient_dataset.
 
         Returns
         -------
@@ -1672,7 +1773,16 @@ class StateGenerator:
         return gradient
 
     def transform_bounds(self):
+        """
+        Transforms physical bounds to bounds for the 1D state vector.
 
+        Returns
+        -------
+        lower_bounds_out : np.ndarray, ndim=1
+            An array of lower bounds of the same shape as the state_vector
+        upper_bounds_out : np.ndarray, ndim=1
+            An array of upper bounds of the same shape as the state_vector
+        """
         total_number_unknowns = self._state_representation.number_of_unknowns
         lower_bounds = np.zeros(total_number_unknowns)
         upper_bounds = np.zeros(total_number_unknowns)
@@ -1691,350 +1801,10 @@ class StateGenerator:
         upper_bounds = self._unknown_scatterers.global_transform.inverse_transform(upper_bounds)
 
         # hack in case the transforms reverse the signs of the bounds.
-        lower_bounds = np.minimum(lower_bounds, upper_bounds)
-        upper_bounds = np.maximum(lower_bounds, upper_bounds)
+        lower_bounds_out = np.minimum(lower_bounds, upper_bounds)
+        upper_bounds_out = np.maximum(lower_bounds, upper_bounds)
 
-        return lower_bounds, upper_bounds
-
-
-# class StateGenerator:
-#
-#     def __init__(self, solvers_dict, unknown_scatterers, rte_grid, surfaces,
-#                  numerical_parameters, sources, background_optical_scatterers,
-#                  num_stokes, names=None, state_to_grid=None, state_representation=None,
-#                  state_transform='log'):
-#
-#         # check compatibility between UnknownScatterers and all other containers.
-#         # if other containers don't exist then generate them from UnknownScatterers.
-#
-#         if not isinstance(unknown_scatterers, pyshdom.containers.UnknownScatterers):
-#             raise TypeError(
-#                 "`unknown_scatterers` arguments should be of type '{}'"
-#                 " ".format(type(pyshdom.containers.UnknownScatterers)))
-#         self._unknown_scatterers = unknown_scatterers
-#
-#         if not isinstance(solvers_dict, pyshdom.containers.SolversDict):
-#             raise TypeError(
-#                 "`solvers_dict` arguments should be of type '{}'"
-#                 " ".format(type(pyshdom.containers.SolversDict)))
-#         self._solvers_dict = solvers_dict
-#
-#         pyshdom.checks.check_grid(rte_grid)
-#         self._rte_grid = rte_grid
-#         self._grid_shape = (rte_grid.x.size, rte_grid.y.size, rte_grid.z.size)
-#
-#         # process state_to_grid.
-#         if state_to_grid is None:
-#             # set it to Null, this assumes the whole rte_grid is used.
-#             self._state_to_grid = pyshdom.transforms.StateToGridNull()
-#             # add all unknown names here.
-#             for scatterer_name, variable_data in self._unknown_scatterers.items():
-#                 for variable_name in variable_data['variable_name_list']:
-#                     self._state_to_grid.add_transform(
-#                         scatterer_name, variable_name, self._rte_grid
-#                         )
-#
-#         elif isinstance(state_to_grid, pyshdom.transforms.IndependentTransform):
-#             # a supplied StateToGrid object. Check for compatibility with
-#             # unknown_scatterers in terms of names.
-#             for scatterer_name, variable_data in self._unknown_scatterers.items():
-#                 if scatterer_name not in state_to_grid.transforms:
-#                     raise ValueError(
-#                         "Unknown scatterer name '{}' is not found in "
-#                         "supplied `state_to_grid` object".format(scatterer_name)
-#                     )
-#                 for variable_name in variable_data['variable_name_list']:
-#                     if variable_name not in state_to_grid.transforms[scatterer_name]:
-#                         raise ValueError(
-#                             "Unknown variable '{}' for scatterer '{}' is not found "
-#                             "in supplied `state_to_grid` object".format(
-#                                 variable_name, scatterer_name)
-#                         )
-#             self._state_to_grid = state_to_grid
-#
-#         elif isinstance(state_to_grid, np.ndarray):
-#             # assume that this is a mask to use for all variables.
-#             if state_to_grid.shape == self._grid_shape:
-#                 mask = state_to_grid
-#                 self._state_to_grid = pyshdom.transforms.StateToGridMask()
-#                 # add all unknown names here.
-#                 for scatterer_name, variable_data in self._unknown_scatterers.items():
-#                     for variable_name in variable_data['variable_name_list']:
-#                         self._state_to_grid.add_transform(
-#                             scatterer_name, variable_name, mask, 0.0
-#                             )
-#             else:
-#                 raise ValueError(
-#                     "If `state_to_grid` argument is of type {} it should be of same shape "
-#                     "as the `rte_grid` argument.".format(np.ndarray)
-#                 )
-#         else:
-#             raise TypeError(
-#                 "`state_to_grid` argument is not of valid type."
-#             )
-#
-#         # process state_representation
-#         if state_representation is None:
-#             # make it from state_to_grid transfrom.
-#             self._state_representation = pyshdom.transforms.StateRepresentation(
-#                 self._state_to_grid, self._rte_grid
-#                 )
-#         elif isinstance(state_representation, pyshdom.transforms.StateRepresentation):
-#             for scatterer_name, variable_data in self._unknown_scatterers.items():
-#                 if scatterer_name not in state_representation.start_end_points:
-#                     raise ValueError(
-#                         "Unknown scatterer name '{}' is not found in "
-#                         "supplied `state_representation` object".format(scatterer_name)
-#                     )
-#                 for variable_name in variable_data['variable_name_list']:
-#                     if variable_name not in state_representation.start_end_points[scatterer_name]:
-#                         raise ValueError(
-#                             "Unknown variable '{}' for scatterer '{}' is not found "
-#                             "in supplied `state_representation` object".format(
-#                                 variable_name, scatterer_name)
-#                         )
-#             self._state_representation = state_representation
-#         else:
-#             raise TypeError(
-#                 "`state_representation` argument is not of valid type."
-#             )
-#
-#         # process state_transform
-#         if state_transform is None:
-#             state_transform = pyshdom.transforms.NullStateTransform(self._state_representation)
-#             for scatterer_name, variable_data in self._unknown_scatterers.items():
-#                 for variable_name in variable_data['variable_name_list']:
-#                     state_transform.add_transform(scatterer_name, variable_name)
-#         elif state_transform == 'log':
-#             state_transform = pyshdom.transforms.LogStateTransform(self._state_representation)
-#             for scatterer_name, variable_data in self._unknown_scatterers.items():
-#                 for variable_name in variable_data['variable_name_list']:
-#                     state_transform.add_transform(scatterer_name, variable_name)
-#         elif isinstance(state_transform, pyshdom.transforms.StateTransform):
-#             warnings.warn(
-#                 "No checks are made on the internal consistency of this custom "
-#                 "transform."
-#             )
-#         elif isinstance(state_transform, pyshdom.transforms.IndependentStateTransform):
-#             for scatterer_name, variable_data in self._unknown_scatterers.items():
-#                 if scatterer_name not in state_transform.transforms:
-#                     raise ValueError(
-#                         "Unknown scatterer name '{}' is not found in "
-#                         "supplied `state_representation` object".format(scatterer_name)
-#                     )
-#                 for variable_name in variable_data['variable_name_list']:
-#                     if variable_name not in state_transform.transforms[scatterer_name]:
-#                         raise ValueError(
-#                             "Unknown variable '{}' for scatterer '{}' is not found "
-#                             "in supplied `state_representation` object".format(
-#                                 variable_name, scatterer_name)
-#                         )
-#         else:
-#             raise TypeError(
-#                 "`state_transform` argument is not of valid type."
-#             )
-#         self._state_transform = state_transform
-#
-#         # check for compatibility in terms of keys for all solver.RTE inputs.
-#         # don't check the typing of the inputs, that is done when the solver is formed
-#         # ie when self.__call__() is executed.
-#         variables_to_test = [
-#             sources, num_stokes, surfaces, background_optical_scatterers,
-#             numerical_parameters
-#         ]
-#         names_to_test = [
-#             'sources', 'num_stokes', 'surfaces', 'background_optical_scatterers',
-#             'numerical_parameters'
-#         ]
-#         if names is None:
-#             names = OrderedDict()
-#             for key in sources:
-#                 names[key] = None
-#         else:
-#             variables_to_test.append(names)
-#             names_to_test.append('names')
-#
-#         ref_keys = None
-#         for variable, name in zip(variables_to_test, names_to_test):
-#             if not isinstance(variable, typing.Dict):
-#                 raise TypeError(
-#                     "`{}` argument should be of type Dict".format(name)
-#                 )
-#             if ref_keys is None:
-#                 ref_keys = variable.keys()
-#
-#             if ref_keys != variable.keys():
-#                 raise ValueError(
-#                     "All of the solver.RTE arguments should have a consistent "
-#                     "set of keys. '{}'".format(names_to_test)
-#                 )
-#             if name == 'background_optical_scatterers':
-#                 for opt_scat_dict in background_optical_scatterers.values():
-#                     if not isinstance(opt_scat_dict, typing.Dict):
-#                         raise TypeError(
-#                             "Each entry in `background_optical_scatterers` argument "
-#                             "should be a dictionary."
-#                         )
-#                     for opt_scat in opt_scat_dict.values():
-#                         pyshdom.checks.check_optical_properties(opt_scat)
-#             elif name == 'num_stokes':
-#                 for value in variable.values():
-#                     if not value in (1, 3, 4):
-#                         raise ValueError(
-#                             "`num_stokes` should be an integer from (1, 3, 4) "
-#                             "not {}".format(variable)
-#                         )
-#             else:
-#                 for value in variable.values():
-#                     if value is not None:
-#                         if not isinstance(value, xr.Dataset):
-#                             raise TypeError(
-#                                 "Each entry in `{}` should be of type '{}'".format(
-#                                     name, xr.Dataset
-#                                 )
-#                             )
-#
-#         self._sources = sources
-#         self._num_stokes = num_stokes
-#         self._surfaces = surfaces
-#         self._numerical_parameters = numerical_parameters
-#         self._background_optical_scatterers = background_optical_scatterers
-#         self._names = names
-#
-#         for scatterer_name, scatterer_data in self._unknown_scatterers.items():
-#             if isinstance(scatterer_data['dataset_generator'], pyshdom.medium.OpticalPropertyGenerator):
-#                 if len(self._sources) != 1:
-#                     raise ValueError(
-#                     "Optical property unknowns are not supported for multi-spectral data. "
-#                     "for similar effect - try forming a 'microphysics' representation. "
-#                     )
-#         self._old_solutions = OrderedDict()
-#         for key in self._sources:
-#             self._old_solutions[key] = None
-#
-#     def get_state(self):
-#         """
-#         Extract the state vector from the solvers_dict.
-#         """
-#         if not self._solvers_dict:
-#             raise ValueError(
-#                 "State must first be set using the call method."
-#             )
-#         state = np.zeros(self._state_representation.number_of_unknowns)
-#         solver = list(self._solvers_dict.values())[0]
-#         for scatterer_name, variable_data in self._unknown_scatterers.items():
-#             for variable_name in variable_data['variable_name_list']:
-#                 unknown_data = solver.medium[scatterer_name][variable_name].data
-#                 state_vector = self._state_to_grid.inverse(
-#                     unknown_data, scatterer_name, variable_name
-#                     )
-#                 state = self._state_representation.update_state_vector(
-#                     state, scatterer_name, variable_name, state_vector
-#                 )
-#         state = self._state_transform.inverse(state)
-#         return state
-#
-#     def __call__(self, state):
-#         """
-#         Update the solvers to reflect the new state vector. This does not include
-#         SOLVING the solver objects. That is performed elsewhere.
-#         """
-#         state_in_physical_coordinates = self._state_transform(state)
-#
-#         new_optical_properties = OrderedDict()
-#         for scatterer_name, variable_data in self._unknown_scatterers.items():
-#             data_generator = variable_data['dataset_generator']
-#             gridded_state_data = {}
-#             for variable_name in variable_data['variable_name_list']:
-#                 selected_state = self._state_representation.select_variable(
-#                     state_in_physical_coordinates, scatterer_name, variable_name
-#                     )
-#                 gridded_state_data[variable_name] = self._state_to_grid(
-#                     selected_state, scatterer_name, variable_name
-#                     )
-#
-#             generated_data = data_generator(**gridded_state_data)
-#             new_optical_properties[scatterer_name] = data_generator.optical_property_generator(
-#                 generated_data
-#                 )
-#
-#         for wavelength in self._num_stokes:
-#
-#             # group the optical properties for this wavelength.
-#             # and add the background_optical_scatterer
-#             background_optical_scatterer = self._background_optical_scatterers[wavelength]
-#             for scatterer_name, optical_properties in new_optical_properties.items():
-#                 background_optical_scatterer[scatterer_name] = optical_properties[wavelength]
-#
-#             solver = pyshdom.solver.RTE(
-#                 numerical_params=self._numerical_parameters[wavelength],
-#                 medium=background_optical_scatterer,
-#                 source=self._sources[wavelength],
-#                 surface=self._surfaces[wavelength],
-#                 num_stokes=self._num_stokes[wavelength],
-#                 name=self._names[wavelength]
-#             )
-#             if self._old_solutions[wavelength] is not None:
-#                 solver.load_solution(self._old_solutions[wavelength])
-#             self._solvers_dict.add_solver(wavelength, solver)
-#
-#     def project_gradient_to_state(self, state, gradient_dset):
-#         """
-#         Project the gradient to the abstract state.
-#
-#         Parameters
-#         ----------
-#         state : np.array, ndim=1
-#             The abstract state.
-#         gradient_dset : xr.Dataset
-#             gridded derivatives with respect to physical unknowns.
-#             See pyshdom.gradient.make_gradient_dataset.
-#
-#         Returns
-#         -------
-#         gradient : np.array
-#             Same shape as `state`. This is the gradient for the
-#             abstract state instead of the gridded physical ones.
-#         """
-#         gradient = np.zeros(self._state_representation.number_of_unknowns)
-#         for scatterer_name, variable_data in self._unknown_scatterers.items():
-#             for variable_name in variable_data['variable_name_list']:
-#                 gradient_variable = gradient_dset.gradient.sel(
-#                     scatterer_name=scatterer_name, variable_name=variable_name
-#                     ).data
-#                 gradient_vector = self._state_to_grid.calc_derivative(
-#                     gradient_variable, scatterer_name, variable_name
-#                     )
-#                 gradient = self._state_representation.update_state_vector(
-#                     gradient, scatterer_name, variable_name, gradient_vector
-#                 )
-#         gradient = self._state_transform.calc_derivative(state, gradient)
-#         return gradient
-#
-#     def transform_bounds(self):
-#         total_number_unknowns = self._state_representation.number_of_unknowns
-#         lower_bounds = np.zeros(total_number_unknowns)
-#         upper_bounds = np.zeros(total_number_unknowns)
-#         for scatterer_name, variable_data in self._unknown_scatterers.items():
-#             data_generator = variable_data['dataset_generator']
-#             for variable_name in variable_data['variable_name_list']:
-#                 lower, upper = data_generator.get_bounds(variable_name)
-#                 for data, big_data in zip((lower, upper), (lower_bounds, upper_bounds)):
-#                     vector = self._state_to_grid.inverse_bounds(
-#                         data, scatterer_name, variable_name
-#                         )
-#                         # need to verify line below.
-#                     big_data = self._state_representation.update_state_vector(
-#                         big_data, scatterer_name, variable_name, vector
-#                     )
-#         lower_bounds = self._state_transform.inverse(lower_bounds)
-#         upper_bounds = self._state_transform.inverse(upper_bounds)
-#
-#         return lower_bounds, upper_bounds
-#
-#     @property
-#     def state_transform(self):
-#         return self._state_transform
+        return lower_bounds_out, upper_bounds_out
 
 
 def table_to_grid(microphysics, poly_table, inverse_mode=False):
@@ -2081,10 +1851,10 @@ def table_to_grid(microphysics, poly_table, inverse_mode=False):
     any mie properties. To ensure high accuracy, the spacing of the table
     should be fine, see size_distribution.py.
     """
-    pyshdom.checks.check_positivity(microphysics, 'density')
-    pyshdom.checks.check_grid(microphysics)
+    at3d.checks.check_positivity(microphysics, 'density')
+    at3d.checks.check_grid(microphysics)
     if not inverse_mode:
-        pyshdom.checks.check_legendre(poly_table)
+        at3d.checks.check_legendre(poly_table)
 
     interp_names = set([name for name in poly_table.coords
                         if name not in ('table_index', 'stokes_index')])
@@ -2183,7 +1953,7 @@ def table_to_grid(microphysics, poly_table, inverse_mode=False):
 #         return valid
 #
 #     def __call__(self, data):
-#         pyshdom.checks.check_optical_properties(data)
+#         at3d.checks.check_optical_properties(data)
 #         output = OrderedDict()
 #         output[self.wavelength] = data
 #         return output
@@ -2346,8 +2116,8 @@ def table_to_grid(microphysics, poly_table, inverse_mode=False):
 #     (unlike `table_to_grid`) and possibly more so at the expense of
 #     computation time.
 #     """
-#     pyshdom.checks.check_positivity(microphysics, 'density')
-#     pyshdom.checks.check_grid(microphysics)
+#     at3d.checks.check_positivity(microphysics, 'density')
+#     at3d.checks.check_grid(microphysics)
 #
 #     interp_names = set([name for name in size_distribution_grid_parameters])
 #     microphysics_names = set([name for name in microphysics.variables.keys()
@@ -2364,7 +2134,7 @@ def table_to_grid(microphysics, poly_table, inverse_mode=False):
 #                 size_distribution_grid_parameters[variable_name] = {'coords': parameters}
 #     # make the grid of size distributions. This is only utilized for the computation of the
 #     # coordinates so this could be sped up by isolating that code instead.
-#     number_density_grid = pyshdom.size_distribution.get_size_distribution_grid(
+#     number_density_grid = at3d.size_distribution.get_size_distribution_grid(
 #         list(mie_mono_tables.values())[0].radius,
 #         size_distribution_function=size_distribution_function,
 #         particle_density=particle_density,
@@ -2538,9 +2308,9 @@ def table_to_grid(microphysics, poly_table, inverse_mode=False):
 #             coords=coords,
 #             attrs=size_dist_attrs
 #         )
-#         poly_table = pyshdom.mie.get_poly_table(size_dist_grid, mie_mono_table)
+#         poly_table = at3d.mie.get_poly_table(size_dist_grid, mie_mono_table)
 #         # make sure this worked.
-#         pyshdom.checks.check_legendre(poly_table)
+#         at3d.checks.check_legendre(poly_table)
 #
 #         extinct_efficiency = np.sum(
 #             interpolation_weights*poly_table.extinction.data[phase_indices],

@@ -112,7 +112,8 @@ C             Extrapolate ray to domain top if above
      .			             X0, Y0, Z0, PATH, IPHASE,
      .                      ALBEDO, LEGEN, DELTAMPATH, DELTAM,
      .                      NPART, NSTLEG, NLEG,ML,N, PATHS_SIZE,
-     .                      INTERPMETHOD, PHASEMAX, PHASEINTERPWT)
+     .                      INTERPMETHOD, PHASEMAX, PHASEINTERPWT,
+     .                      MAXNMICRO)
 
 C     Integrates the extinction field (EXTINCT) along a ray and stores the minimum
 C     optical path that intersects a cell adjacent to each gridpoint.
@@ -1035,7 +1036,8 @@ C           Get the location coordinate
 
 C           If the transmission is greater than zero and not at a
 C             boundary then prepare for next cell
-        IF ((INEXTCELL .EQ. 0).OR.(NGRID.GT.MAXCELLSCROSS)) THEN
+C       .OR.(NGRID.GT.MAXCELLSCROSS)
+        IF ((INEXTCELL .EQ. 0)) THEN
           DONE = .TRUE.
         ELSE
           XE = XN
@@ -1539,7 +1541,7 @@ C     Compute trilinear interpolation kernel F(8)
      .		         IPDIRECT, DI, DJ, DK, CX, CY, CZ, CXINV,
      .		         CYINV, CZINV, EPSS, EPSZ, XDOMAIN, YDOMAIN,
      .		         UNIFORMZLEV, DELXD, DELYD, DPATH, DPTR,
-     .             IERR, ERRMSG)
+     .             IERR, ERRMSG, LONGEST_PATH_PTS)
 C     Calculates the sensitvity of the direct beam to the extinction
 C     along the path from each grid point to the sun.
 C     Actually calls DIRECT_BEAM_AND_PATHS_PROP to do all the hard work.
@@ -1558,8 +1560,10 @@ Cf2py intent(in) ::   CX, CY, CZ, CXINV, CYINV, CZINV
 Cf2py intent(in) :: EPSS, EPSZ, XDOMAIN, YDOMAIN
       DOUBLE PRECISION UNIFORMZLEV, DELXD, DELYD
 Cf2py intent(in) :: UNIFORMZLEV, DELXD, DELYD
-      REAL DPATH(8*(NPX+NPY+NPZ),NPTS)
-      INTEGER DPTR(8*(NPX+NPY+NPZ),NPTS)
+      INTEGER LONGEST_PATH_PTS
+Cf2py intent(in) :: LONGEST_PATH_PTS
+      REAL DPATH(LONGEST_PATH_PTS,NPTS)
+      INTEGER DPTR(LONGEST_PATH_PTS,NPTS)
 Cf2py intent(out) :: DPATH, DPTR
       INTEGER IERR
       CHARACTER ERRMSG*600
@@ -1579,7 +1583,8 @@ Cf2py intent(out) :: IERR, ERRMSG
      .            NPZ, DELX, DELY, XSTART, YSTART, ZLEVELS, CX, CY, CZ,
      .            CXINV, CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD,
      .            DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
-     .            DPATH(:,IP), DPTR(:,IP), IERR, ERRMSG)
+     .            DPATH(:,IP), DPTR(:,IP), IERR, ERRMSG,
+     .            LONGEST_PATH_PTS)
         IF (IERR .NE. 0) RETURN
       ENDDO
       RETURN
@@ -1591,14 +1596,14 @@ Cf2py intent(out) :: IERR, ERRMSG
      .           XSTART, YSTART, ZLEVELS, CX, CY, CZ, CXINV, CYINV,
      .           CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD, XDOMAIN,
      .           YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, DPATH, DPTR,
-     .           IERR, ERRMSG)
+     .           IERR, ERRMSG, LONGEST_PATH_PTS)
       IMPLICIT NONE
 
-      REAL    DPATH(8*(NPX+NPY+NPZ))
-      INTEGER DPTR(8*(NPX+NPY+NPZ))
+      REAL    DPATH(LONGEST_PATH_PTS)
+      INTEGER DPTR(LONGEST_PATH_PTS)
       INTEGER BCFLAG, SIDE
       REAL    XO, YO, ZO, XI, YI, ZI
-      INTEGER IERR
+      INTEGER IERR, LONGEST_PATH_PTS
       CHARACTER ERRMSG*600
 
       INTEGER IX, IY, IZ, JZ, IL, IM, IU
@@ -1939,11 +1944,11 @@ C       leading to errors.
 C       Compute the inner derivatives (minus the path lengths)
 C .NOT. OUTOFDOMAIN .AND.
 C        IF (K .LE. NPZ+1) THEN
-          IF (IDP+8 .GT. 8*(NPX+NPY+NPZ)) THEN
+          IF (IDP+8 .GT. LONGEST_PATH_PTS) THEN
             IERR = 1
             WRITE(ERRMSG,*) 'DIRECT_BEAM_AND_PATHS_PROP: ',
      .      'Max number of property points to pass',
-     .       'exceeded: IDP=', 8*(NPX+NPY+NPZ)
+     .       'exceeded: IDP=', LONGEST_PATH_PTS
             RETURN
           ENDIF
         DPATH(IDP+1) = SO*(A1 + 0.5D0*B1 +

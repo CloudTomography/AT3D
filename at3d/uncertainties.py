@@ -13,7 +13,7 @@ implemented they should be added as valid cases to `Uncertainty`.
 """
 import warnings
 import numpy as np
-import pyshdom.checks
+import at3d.checks
 
 class Uncertainty:
     """
@@ -87,7 +87,7 @@ class Uncertainty:
             A valid sensor containing Stokes components at specific locations
             and directions. See sensor.py for details.
         """
-        pyshdom.checks.check_sensor(sensor)
+        at3d.checks.check_sensor(sensor)
         big_uncertainties = self._process_uncertainties(sensor)
         #NB Be aware that repeated dims cause errors so the second dim is set to
         #'num_uncertainty2' even though they are identical.
@@ -127,7 +127,7 @@ class Uncertainty:
 
 
         perturbations = self._process_noise(sensor)
-        pyshdom.checks.check_sensor(sensor)
+        at3d.checks.check_sensor(sensor)
         for i, has_stokes in enumerate(sensor.stokes.data):
             if has_stokes:
                 if (not sensor.stokes_index.data[i] in sensor.data_vars):
@@ -165,19 +165,19 @@ class RadiometricNoiseUncertainty(Uncertainty):
     def _process_uncertainties(self, sensor):
 
         uncertainties = 1.0/(self._covariance[0, 0]*sensor.I.data + self._sigma_floor**2)
-        big_uncertainties = np.repeat(np.repeat(uncertainties[None,None],4,axis=0),4,axis=1)
+        big_uncertainties = np.repeat(np.repeat(uncertainties[None, None], 4, axis=0), 4, axis=1)
         return big_uncertainties
 
-    def _process_noise(self, sensor):
-        big_perturbations = np.random.multivariate_normal(
-            mean=np.zeros(self.num_uncertainty), cov=self._covariance, size=(sensor.sizes['npixels'])
-            )
-        big_perturbations *= (np.sqrt(sensor.I.data[:, None]))
-        big_perturbations += np.random.multivariate_normal(
-            mean=np.zeros(self.num_uncertainty), cov=np.diag([self._sigma_floor**2, 0.0, 0.0, 0.0]), size=(sensor.sizes['npixels'])
-            )
+    # def _process_noise(self, sensor):
+    #     big_perturbations = np.random.multivariate_normal(
+    #         mean=np.zeros(self.num_uncertainty), cov=self._covariance, size=(sensor.sizes['npixels'])
+    #         )
+    #     big_perturbations *= (np.sqrt(sensor.I.data[:, None]))
+    #     big_perturbations += np.random.multivariate_normal(
+    #         mean=np.zeros(self.num_uncertainty), cov=np.diag([self._sigma_floor**2, 0.0, 0.0, 0.0]), size=(sensor.sizes['npixels'])
+    #         )
 
-        return big_perturbations
+    #    return big_perturbations
 
 class NullUncertainty(Uncertainty):
     """
