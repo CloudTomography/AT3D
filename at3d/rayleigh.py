@@ -43,7 +43,7 @@ def to_grid(wavelengths, atmosphere, rte_grid):
 
     Notes
     -----
-    single scattering albedo is assumed to be 1.0.
+    single scattering albedo is 1.0.
     """
     at3d.checks.check_grid(rte_grid)
     wavelengths = np.atleast_1d(wavelengths)
@@ -57,17 +57,23 @@ def to_grid(wavelengths, atmosphere, rte_grid):
 
     rayleigh_ssalb = xr.DataArray(
         name='ssalb',
-        data = np.ones(rayleigh_extinction.extinction.shape, dtype=np.float32),
+        data=np.ones(rayleigh_extinction.extinction.shape, dtype=np.float32),
         dims=['wavelength', 'z']
     )
 
-    rayleigh = xr.merge([rayleigh_extinction,rayleigh_ssalb]).broadcast_like(rte_grid)
+    rayleigh = xr.merge([rayleigh_extinction, rayleigh_ssalb]).broadcast_like(rte_grid)
 
-    rayleigh['phase_weights'] = (['num_micro', 'x', 'y', 'z','wavelength'], np.ones((1,) +rayleigh.extinction.shape, dtype=np.float32))
-    rayleigh['table_index'] = (['num_micro', 'x', 'y', 'z','wavelength'], np.ones((1,) +rayleigh.extinction.shape, dtype=np.int32))
+    rayleigh['phase_weights'] = (['num_micro', 'x', 'y', 'z', 'wavelength'],
+                                 np.ones((1,) +rayleigh.extinction.shape, dtype=np.float32)
+                                )
+    rayleigh['table_index'] = (['num_micro', 'x', 'y', 'z', 'wavelength'],
+                               np.ones((1,) +rayleigh.extinction.shape, dtype=np.int32)
+                               )
 
     rayleigh = rayleigh.set_coords('table_index')
-    rayleigh_final = xr.merge([rayleigh, rayleigh_poly_tables.expand_dims(dim='table_index', axis=-2)])
+    rayleigh_final = xr.merge(
+        [rayleigh, rayleigh_poly_tables.expand_dims(dim='table_index', axis=-2)]
+        )
 
 
     output = OrderedDict()
@@ -84,7 +90,8 @@ def to_grid(wavelengths, atmosphere, rte_grid):
 
 def compute_table(wavelengths):
     """
-    Retrieve the Rayleigh Wigner d-function coefficients of the phase matrix at each specified wavelength.
+    Retrieve the Rayleigh Wigner d-function coefficients of the phase matrix at
+    each specified wavelength.
 
     Parameters
     ----------
@@ -103,8 +110,9 @@ def compute_table(wavelengths):
 
     References
     ----------
-    .. [1] Mishchenko, Michael I., Larry D. Travis, and Andrew A. Lacis. Multiple scattering of light by particles:
-        radiative transfer and coherent backscattering. Cambridge University Press, 2006.
+    .. [1] Mishchenko, Michael I., Larry D. Travis, and Andrew A. Lacis.
+    Multiple scattering of light by particles: radiative transfer and coherent
+    backscattering. Cambridge University Press, 2006.
     """
     wavelengths = np.atleast_1d(wavelengths)
     legcoefs, table_types = zip(*[at3d.core.rayleigh_phase_function(wvl) for wvl in wavelengths])
@@ -114,7 +122,7 @@ def compute_table(wavelengths):
                      dims=['stokes_index', 'legendre_index', 'wavelength'],
                      coords={'stokes_index': (['stokes_index'], ['P11','P22','P33','P44','P12','P34']),
                              'wavelength': np.array([wavelength])})
-        for legcoef, table_type, wavelength in zip(legcoefs, table_types, wavelengths) #TODO table_type not used? -> 'vector' hard coded below
+        for legcoef, wavelength in zip(legcoefs, wavelengths) 
     ]
     table = xr.concat(data_arrays, dim='wavelength')
     table.attrs = {'table_type': 'vector',
