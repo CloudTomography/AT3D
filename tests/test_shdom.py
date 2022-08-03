@@ -256,11 +256,12 @@ class Verify_Solver(TestCase):
     def test_solver(self):
         print(np.max(np.abs(self.testing-self.truth)))
         print(np.argmax(np.abs(self.testing-self.truth)))
-        print(np.sqrt(np.mean((self.testing-self.truth)**2)))
+        print(np.sqrt(np.mean((self.testing-self.truth)**2))/np.mean(self.truth))
         self.assertTrue(np.allclose(self.testing, self.truth, atol=5e-7))
 
     def test_radiance(self):
-        self.assertTrue(np.allclose(self.integrated_rays.I.data, self.radiances[:,2].data, atol=3e-3))
+        print(np.sqrt(np.mean((self.integrated_rays.I.data-self.radiances[:,2].data)**2))/np.mean(self.radiances[:,2].data))
+        self.assertTrue(np.allclose(self.integrated_rays.I.data, self.radiances[:,2].data,atol=3e-3))# atol=3e-3))
 
     def test_Q(self):
         self.assertTrue(np.allclose(self.integrated_rays.Q.data, self.radiances[:,3].data, atol=2e-4))

@@ -84,5 +84,9 @@
   "transcut": {
     "default_value": 1e-05,
     "description": "The minimum transmission to integrate to when calculating radiances."
+  },
+  "transmin": {
+    "default_value": 1.0,
+    "description": "The minimum transmission to integrate in the short characteristics scheme. Values less than 1.0 turn 1-cell characteristics into potentially long characteristics."
   }
 }

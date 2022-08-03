@@ -336,6 +336,7 @@ class RTE:
         self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
         self._work2, ierr, errmsg, self._phaseinterpwt, self._cpu_time \
          = at3d.core.solution_iterations(
+            transmin=self._transmin,
             newmethod=self._newmethod,
             verbose=verbose,
             solve=solve,
@@ -1829,6 +1830,7 @@ class RTE:
         self._tautol = numerical_params.tautol.data
         self._angle_set = numerical_params.angle_set.data
         self._transcut = numerical_params.transcut.data
+        self._transmin = numerical_params.transmin.data
 
         if self._deltam.dtype != np.bool:
             raise TypeError("numerical_params.deltam should be of boolean type.")
@@ -1856,6 +1858,11 @@ class RTE:
             )
         if not (self._transcut >= 0.0 or self._transcut <= 5e-5):
             warnings.warn("TRANSCUT should be a small number in (0, 5e-5) not {}".format(self._transcut))
+
+        if (self._transmin < 0.0 or self._transmin > 1.0):
+            raise at3d.exceptions.OutOfRangeError(
+            "Numerical parameter `transmin` should be between 0.0 and 1.0."
+            )
 
         return numerical_params
 

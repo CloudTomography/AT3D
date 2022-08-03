@@ -1,4 +1,5 @@
 import setuptools
+from numpy.distutils.core import setup, Extension
 import os
 import subprocess
 
@@ -146,6 +147,7 @@ F2PY_CORE_API = [
     'ylmall',
     'transmission_integral',
     'test_source',
+    'wigner_transform'
 ]
 
 def _run_command(cmd):

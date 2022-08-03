@@ -445,7 +445,8 @@ C           inequality holds.
      .               WORK, WORK1, WORK2, UNIFORM_SFC_BRDF, SFC_BRDF_DO,
      .               ITERFIXSH, INTERPMETHOD, IERR, ERRMSG, MAXPG,
      .               PHASEINTERPWT, PHASEMAX, NLEGP,
-     .               MAXNMICRO, PHASEWTP, SOLVE, COMPTIME, NEWMETHOD)
+     .               MAXNMICRO, PHASEWTP, SOLVE, COMPTIME, NEWMETHOD,
+     .               TRANSMIN)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -575,6 +576,8 @@ Cf2py intent(out) :: IERR, ERRMSG
 Cf2py intent(in) :: SOLVE, NEWMETHOD
       REAL COMPTIME
 Cf2py intent(out) :: COMPTIME
+      REAL TRANSMIN
+Cf2py intent(in) :: TRANSMIN
 
       REAL A
       INTEGER SP, STACK(50)
@@ -705,7 +708,8 @@ C             discrete ordinates.
      .           DIRFLUX, FLUXES, TOTAL_EXT(:NPTS),
      .           SHPTR, SOURCE, RSHPTR, RADIANCE,
      .           WORK, WORK1, WORK2, OLDNPTS, SP, STACK, IX, IY,
-     .           IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ)
+     .           IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ,
+     .           TRANSMIN)
 
 C            Compute the source function from the radiance field,
 C              do the adaptive spherical harmonics truncation, compute
@@ -1703,7 +1707,8 @@ C     input acceleration parameter (ACCELPAR).
      .             DIRFLUX, FLUXES, EXTINCT,
      .             SHPTR, SOURCE, RSHPTR, RADIANCE,
      .             WORK, SWEEPORD, GRIDRAD, OLDNPTS, SP, STACK,
-     .        IX, IY, IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ)
+     .        IX, IY, IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ,
+     .        TRANSMIN)
 C       Performs the path integrations through the medium specified by
 C     the extinction (EXTINCT) and source function (SOURCE) in
 C     spherical harmonic space.  The source function is transformed to
@@ -1782,15 +1787,18 @@ Cf2py intent(in,out) :: SOURCE
 Cf2py intent(in) :: SRCTYPE, UNITS, SFCTYPE
       INTEGER OLDNPTS
 Cf2py intent(in) :: OLDNPTS
+      REAL TRANSMIN
+Cf2py intent(in) :: TRANSMIN
       INTEGER I, I1, K, NR, IPHI, IMU, IBC, IANG, IUPDOWN
       integer joct, ipt, ip, iorder, ipcell, icorner
       LOGICAL LAMBERTIAN, BTEST, theflag
-      REAL    A, TRANSMIN
+      REAL    A
       INTEGER SP, STACK(50)
       INTEGER IX, IY, IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ
 
 C         Set the minimum transmission for the cell tracing (1 for single cell)
-      TRANSMIN = 1.00
+C      This is no a parameter determined at run-time not compile time.
+C      TRANSMIN = 1.00
 
 C         Make the new grid cell/point sweeping order if need to
       IF (NPTS .NE. OLDNPTS) THEN
