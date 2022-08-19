@@ -60,8 +60,6 @@ Start a clean virtual environment and setup enviroment variables
 ```
 conda create -n at3d python=3
 conda activate at3d
-conda env config vars set AT3D_DIR=$(pwd)
-conda activate AT3D
 ```
 
 Install [xarray](http://xarray.pydata.org/) and its dependencies

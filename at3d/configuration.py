@@ -22,7 +22,8 @@ def make_config(config_file_name, x_boundary_condition='open',
                 iterfixsh=30,
                 tautol=0.1,
                 angle_set=2,
-                transcut=1e-5):
+                transcut=1e-5,
+                transmin=1.0):
 
     shdom_parameters = make_config_data(
         x_boundary_condition=x_boundary_condition,
@@ -43,7 +44,8 @@ def make_config(config_file_name, x_boundary_condition='open',
         iterfixsh=iterfixsh,
         tautol=tautol,
         angle_set=angle_set,
-        transcut=transcut
+        transcut=transcut,
+        transmin=transmin
     )
     json.dump(shdom_parameters, open(config_file_name +'.json', 'w'), indent=2)
 
@@ -64,7 +66,9 @@ def make_config_data(x_boundary_condition='open',
                 iterfixsh=30,
                 tautol=0.1,
                 angle_set=2,
-                transcut=1e-5):
+                transcut=1e-5,
+                transmin=1.0
+                ):
     """
     See default_config.json for description of parameters along with shdom.txt
     or read this function's code.
@@ -155,6 +159,10 @@ def make_config_data(x_boundary_condition='open',
         'transcut': {
             'default_value': transcut,
             'description': 'The minimum transmission to integrate to when calculating radiances.'
+        },
+        'transmin': {
+            'default_value': transmin,
+            'description': 'The minimum transmission to integrate in the short characteristics scheme. Values less than 1.0 turn 1-cell characteristics into potentially long characteristics.'
         }
     }
     return shdom_parameters

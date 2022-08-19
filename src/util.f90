@@ -6,6 +6,62 @@
 ! There is also a ray integration routine to allow linear tomography methods
 ! utilizing an SHDOM-type grid.
 
+
+subroutine wigner_transform(p1, p2, p3, p4, coef, nrank, wts, nangle, &
+  mu)
+! This subroutine converts a 4 component phase matrix as a function of angle
+! to the wigner function coefficient expansion.
+! This is useful for converting from tabulations as a function of angle
+! to phase functions that can be used in SHDOM.
+! It does not include the possible p5, p6 entries from non-spherical particles.
+  implicit none
+
+  integer nangle, nrank
+!f2py intent(in) :: nangle, nrank
+  double precision wts(nangle), coef(6,0:nrank), mu(nangle)
+!f2py intent(in) :: wts, mu
+!f2py intent(out) :: coef
+  double precision p1(nangle), p2(nangle), p3(nangle), p4(nangle)
+!f2py intent(in) :: p1, p2, p3, p4
+
+  double precision D00(0:nrank), D20(0:nrank),D22P(0:nrank)
+  double precision D22M(0:nrank)
+  double precision a2, a3, f
+  integer i,l
+
+  coef = 0.0d0
+
+  do i=1, nangle
+    call wignerfct(mu(i), nrank, 0,0, D00)
+    call wignerfct(mu(i), nrank, 2,2, D22P)
+    call wignerfct(-mu(i), nrank, 2,2, D22M)
+    call wignerfct(mu(i), nrank, 2,0, D20)
+
+    do l=0, nrank
+      f = (-1.0d0)**l
+      coef(1,l) = coef(1,l) + (l+0.5D0)*wts(i)*P1(i)*D00(l)
+      coef(2,l) = coef(2,l) + (l+0.5D0)*wts(i)*(P1(i)+P3(i))*D22P(l)
+      coef(3,l) = coef(3,l) + (l+0.5D0)*wts(i)*(P1(i)-P3(i))*f*D22M(l)
+      coef(4,l) = coef(4,l) + (l+0.5D0)*wts(i)*P3(i)*D00(l)
+      coef(5,l) = coef(5,l) - (l+0.5D0)*wts(i)*P2(i)*D20(l)
+      coef(6,l) = coef(6,l) - (l+0.5D0)*wts(i)*P4(i)*D20(l)
+    enddo
+  enddo
+
+  do l = 0, nrank
+    a2 = 0.5d0*(coef(2,l) + coef(3,l))
+    a3 = 0.5d0*(coef(2,l) - coef(3,l))
+    coef(2,l) = a2
+    coef(3,l) = a3
+  enddo
+
+end subroutine
+
+
+
+
+
+
 subroutine grid_smoothing(xgrid, ygrid, zgrid, nx, ny, nz, &
   field, cost, gradient, weights, mode, ierr, errmsg, &
   direction_weights, huber_parameter)
