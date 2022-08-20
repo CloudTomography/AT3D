@@ -84,12 +84,12 @@ After successful installation, run the tests using Python's [nosetests](https://
 and make sure they all succeed:
 ```
 cd tests
-nosetests
+nose2 -v
 ```
 This command will execute all files starting with *test_\*.py*.
-To execute only one specific test file, use
+To execute only one specific test file, `test.py` use
 ```
-nosetests test_XYZ.py
+nose2 -v test
 ```
 
 &nbsp;
