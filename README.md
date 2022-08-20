@@ -56,18 +56,13 @@ git clone https://github.com/CloudTomography/AT3D.git
 cd AT3D
 ```
 
-Start a clean virtual environment and setup enviroment variables
+Start a clean virtual environment and setup environment variables
 ```
-conda create -n at3d python=3
+conda create -n at3d python=3.10.4
 conda activate at3d
 ```
 
-Install [xarray](http://xarray.pydata.org/) and its dependencies
-```
-conda install -c conda-forge xarray dask netCDF4 bottleneck
-```
-
-Install other required packages
+Install required packages
 ```
 pip install -r requirements.txt
 ```
