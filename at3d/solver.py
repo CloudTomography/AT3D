@@ -2307,18 +2307,25 @@ class RTE:
         #about optical thickness of cells. High optical thickness across a cell
         #leads to lower accuracy for SHDOM.
         reshaped_ext = self._total_ext[:self._nbpts].reshape(self._nx1, self._ny1, self._nz)
-        if self._nx1 == 1:
+
+        if (self._nx1 == 1) and (self._ny1 == 1):
+            cell_averaged_extinct = 0.5*(reshaped_ext[:, :, 1:] + reshaped_ext[:, :, :-1])
+            cell_volume = np.diff(self._zgrid)
+        elif self._nx1 == 1:
             cell_averaged_extinct = (reshaped_ext[:, 1:, 1:] + reshaped_ext[:, 1:, :-1] +   \
                                      reshaped_ext[:, :-1, 1:] + reshaped_ext[:, :-1, :-1])/4.0
+            cell_volume = np.sqrt(np.diff(self._zgrid)*np.diff(self._ygrid.data)[0])
         elif self._ny1 == 1:
             cell_averaged_extinct = (reshaped_ext[:1, :, 1:] + reshaped_ext[:1, :, :-1] + \
                                  reshaped_ext[:-1, :, 1:] + reshaped_ext[:-1, :, :-1])/4.0
+            cell_volume = np.sqrt(np.diff(self._zgrid)*np.diff(self._xgrid.data)[0])
         else:
             cell_averaged_extinct = (reshaped_ext[1:, 1:, 1:] + reshaped_ext[1:, 1:, :-1] +   \
                                      reshaped_ext[1:, :-1, 1:] + reshaped_ext[1:, :-1, :-1] + \
                                      reshaped_ext[:-1, 1:, 1:] + reshaped_ext[:-1, 1:, :-1] + \
                                      reshaped_ext[:-1, :-1, 1:] + reshaped_ext[:-1, :-1, :-1])/8.0
-        cell_volume = (np.diff(self._zgrid)*np.diff(self._xgrid.data)[0]*np.diff(self._ygrid.data)[0])**(1/3)
+            cell_volume = (np.diff(self._zgrid)*np.diff(self._xgrid.data)[0]*np.diff(self._ygrid.data)[0])**(1/3)
+
         cell_tau_approx = cell_volume[np.newaxis, np.newaxis, :]*cell_averaged_extinct
         number_thick_cells = np.sum(cell_tau_approx >= 2.0)
 
