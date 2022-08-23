@@ -225,13 +225,12 @@ if __name__ == "__main__":
     createSignatureFile()
 
     setup(
-        configuration = configuration,
-        packages = setuptools.find_packages(),
-        include_package_data = True,
-        platforms = ["any"],
-        requires = ["numpy", "scipy"],
-        tests_require = ['nose',],
-        test_suite = 'nose.collector',
-        zip_safe = True,
-        classifiers = classifiers
+        configuration=configuration,
+        packages=setuptools.find_packages(),
+        include_package_data=True,
+        platforms=["any"],
+        requires=["numpy", "scipy"],
+        tests_require=['nose2',],
+        zip_safe=True,
+        classifiers=classifiers
     )

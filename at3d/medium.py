@@ -1825,9 +1825,6 @@ def table_to_grid(microphysics, poly_table, inverse_mode=False):
     poly_table : xr.Dataset
         Should contain extinction efficiency, single scatter albedo and phase
         functions as a function microphysical parameters (e.g. effective radius).
-    exact_table : bool
-        Sets the interpolation method for the calculation of extinction and ssalb.
-        linear if False, and nearest if True.
     inverse_mode : bool
         A flag for whether optical properties or their derivatives with respect
         to microphysical properties are being interpolated.
@@ -1875,37 +1872,74 @@ def table_to_grid(microphysics, poly_table, inverse_mode=False):
                 "Microphysical coordinate '{}' is not"
                 " within the range of the mie table.".format(interp_coord)
                 )
+
     interp_method = 'linear' #this is hardcoded as it is suitable for N-dimensions.
-    ssalb = poly_table.ssalb.interp(interp_coords, method=interp_method)
-    extinction_efficiency = poly_table.extinction.interp(interp_coords, method=interp_method)
+    extinction_efficiency = poly_table.extinction.drop(['table_index']).interp(interp_coords, method=interp_method)
 
     if not inverse_mode:
         extinction = extinction_efficiency * microphysics.density
     else:
         extinction = extinction_efficiency
 
-    assert not np.any(np.isnan(ssalb.data)), 'Unexpected NaN in ssalb'
+    extinction.name = 'extinction'
+
     assert not np.any(np.isnan(extinction.data)), 'Unexpected NaN in extinction'
 
-    # Different method for phase functions / indices.
-    extinction.name = 'extinction'
-    table_index = poly_table.coords['table_index'].interp(
-        coords=interp_coords, method='nearest'
-        ).round().astype(int)
-    unique_table_indices, inverse = np.unique(table_index.data, return_inverse=True)
-    subset_table_index = xr.DataArray(name=table_index.name,
-                                      data=inverse.reshape(table_index.shape) + 1,
-                                      dims=table_index.dims,
-                                      coords=table_index.coords,
-                                      )
 
-    legendre_table_stack = poly_table['legcoef'].stack(table_index=interp_coords)
-    subset_legcoef = legendre_table_stack.isel({'table_index':unique_table_indices})
-    subset_legcoef = xr.DataArray(name='legcoef',
-                                  data=subset_legcoef.data,
-                                  dims=['stokes_index', 'legendre_index', 'table_index'],
-                                  coords={'stokes_index':subset_legcoef.coords['stokes_index']}
-                                 )
+    if not interp_coords:
+        # This means that the table has no microphysical dimensions, so just
+        # includes a single phase function etc so we don't do the interpolation (which will break)
+        # Under these assumptions, the assertion should always pass.
+        assert set(poly_table.legcoef.dims) == set(['stokes_index', 'legendre_index'])
+
+        ssalb = xr.DataArray(
+            name='ssalb',
+            data=poly_table.ssalb.data*np.ones(microphysics.density.shape),
+            dims=['x','y','z'],
+            coords={
+                'x': microphysics.x,
+                'y': microphysics.y,
+                'z': microphysics.z,
+            }
+        )
+        subset_legcoef= xr.DataArray(
+            name='legcoef',
+            data=poly_table.legcoef.expand_dims('table_index', -1),
+            dims=['stokes_index', 'legendre_index', 'table_index'],
+            coords={
+                'stokes_index': poly_table.stokes_index,
+            }
+        )
+
+        subset_table_index = xr.DataArray(
+            data=np.ones(microphysics.density.shape, dtype=int),
+            dims=ssalb.dims,
+            coords=ssalb.coords,
+        )
+
+    else:
+
+
+        ssalb = poly_table.ssalb.drop(['table_index']).interp(interp_coords, method=interp_method)
+
+        # Different method for phase functions / indices.
+        table_index = poly_table.coords['table_index'].interp(
+            coords=interp_coords, method='nearest'
+            ).round().astype(int)
+        unique_table_indices, inverse = np.unique(table_index.data, return_inverse=True)
+        subset_table_index = xr.DataArray(name=table_index.name,
+                                          data=inverse.reshape(table_index.shape) + 1,
+                                          dims=table_index.dims,
+                                          coords=table_index.coords,
+                                          )
+
+        legendre_table_stack = poly_table['legcoef'].stack(table_index=interp_coords)
+        subset_legcoef = legendre_table_stack.isel({'table_index':unique_table_indices})
+        subset_legcoef = xr.DataArray(name='legcoef',
+                                      data=subset_legcoef.data,
+                                      dims=['stokes_index', 'legendre_index', 'table_index'],
+                                      coords={'stokes_index':subset_legcoef.coords['stokes_index']}
+                                     )
 
     optical_properties = xr.merge([extinction, ssalb, subset_legcoef])
     optical_properties['density'] = microphysics.density
@@ -1913,6 +1947,8 @@ def table_to_grid(microphysics, poly_table, inverse_mode=False):
 
     optical_properties = optical_properties.assign_coords(table_coords)
     optical_properties['phase_weights'] = (['num_micro', 'x', 'y', 'z'], np.ones(optical_properties.table_index.shape))
+
+    assert not np.any(np.isnan(ssalb.data)), 'Unexpected NaN in ssalb'
     assert not np.any(np.isnan(optical_properties.table_index.data)), 'Unexpected NaN in table_index'
     assert not np.any(np.isnan(optical_properties.legcoef.data)), 'Unexpected NaN in legcoef'
 

@@ -6,12 +6,11 @@ experiments/
 build/
 dist/
 mie_tables/
-pyshdom.egg-info/
-pyshdom/__pycache__/
+at3d.egg-info/
+at3d/__pycache__/
 tests/__pycache__/
-pyshdom/*.so
+at3d/*.so
 venv/
 images/
-data/
 src/core.pyf
 src/coremodule.c
