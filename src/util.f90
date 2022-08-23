@@ -237,7 +237,6 @@ subroutine grid_smoothing(xgrid, ygrid, zgrid, nx, ny, nz, &
 
 end subroutine grid_smoothing
 
-
 subroutine phase_function_mixing(scatter_coefficients, phase_tables, &
   phase_indices, interpolation_weights, &
   nparticles, maxpg, maxleg, nstleg, mixed_phase_table, mixed_phase_indices, &
@@ -250,7 +249,6 @@ subroutine phase_function_mixing(scatter_coefficients, phase_tables, &
 !   maximum relative error across nangles of the phase function or maximum relative
 !   error in the asymmetry parameter are exceeded across all of the set of
 !   phase functions.
-!   There is no check for agreement in polarization.
 !
 !   We set a hard upper limit on the total number of phase functions
 !   to use and the method will fail if exceeded. Full arrays are allocated
