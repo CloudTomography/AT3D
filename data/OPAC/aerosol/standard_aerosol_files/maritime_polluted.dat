@@ -1,0 +1,23 @@
+# Aerosol file for maritime_polluted 
+# 
+# Definition similar to OPAC, not exactly the same, because OPAC 
+# definition is for number concentrations while libRadtran uses 
+# mass concentrations (which correspond to OPAC at 50% relative 
+# humidity.) 
+# The mass concentrations are given in g/m^3. 
+#
+# z(km)  inso 	   waso 	 soot 	   ssam 	sscm      suso 
+35.0 	0.000e+00  0.000e+00  0.000e+00  0.000e+00  0.000e+00    0.000e+00  
+12.0 	0.000e+00  0.000e+00  0.000e+00  0.000e+00  0.000e+00    6.840e-08  
+11.0 	7.436e-07  1.484e-07  4.420e-09  0.000e+00  0.000e+00    0.000e+00  
+10.0 	8.427e-07  1.682e-07  5.009e-09  0.000e+00  0.000e+00    0.000e+00  
+9.0 	9.549e-07  1.905e-07  5.676e-09  0.000e+00  0.000e+00    0.000e+00  
+8.0 	1.082e-06  2.159e-07  6.432e-09  0.000e+00  0.000e+00    0.000e+00  
+7.0 	1.226e-06  2.447e-07  7.288e-09  0.000e+00  0.000e+00    0.000e+00  
+6.0 	1.389e-06  2.772e-07  8.259e-09  0.000e+00  0.000e+00    0.000e+00  
+5.0 	1.574e-06  3.142e-07  9.358e-09  0.000e+00  0.000e+00    0.000e+00  
+4.0 	1.784e-06  3.560e-07  1.060e-08  0.000e+00  0.000e+00    0.000e+00  
+3.0 	2.021e-06  4.034e-07  1.202e-08  0.000e+00  0.000e+00    0.000e+00  
+2.0 	2.291e-06  4.571e-07  1.362e-08  0.000e+00  0.000e+00    0.000e+00  
+1.0 	0.000e+00  4.088e-06  1.614e-07  2.076e-05  4.841e-07    0.000e+00  
+0.0 	0.000e+00  1.111e-05  4.386e-07  5.644e-05  1.316e-06    0.000e+00  

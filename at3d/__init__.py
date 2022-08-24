@@ -26,6 +26,7 @@ distribution functions (BRDF) for the surface are implemented, and more may be a
 SHDOM may be run on a single processor or on multiple processors (e.g. an SMP machine or a
 cluster) using the Message Passing Interface (MPI).
 """
+import at3d.aerosol
 import at3d.rayleigh
 import at3d.medium
 import at3d.mie
