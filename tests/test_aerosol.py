@@ -10,7 +10,7 @@ import at3d.aerosol
 # but internally there are a bunch of checks on things.
 # This is basically a test that the tables are found etc.
 
-class Mie_tables(TestCase):
+class OPAC_mixture(TestCase):
     @classmethod
     def setUpClass(cls):
 
