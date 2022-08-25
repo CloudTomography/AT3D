@@ -1055,6 +1055,109 @@ def mix_optical_properties(*scatterers, asymmetry_tol=0.002, phase_tol=0.01, lin
 
     return mixed_optical_properties
 
+def merge_optical_properties(*scatterers):
+    """
+    Exactly mixes the optical properties from several different scatterers.
+
+    This method uses interpolation weights to mix the species so that the total
+    number of phase functions is simply the sum of all of the species.
+
+    This is much faster to run than the method in `medium.mix_optical_properties`,
+    doesn't make any approximations and can often produce much fewer phase functions.
+    The tradeoff is increased expense in the SHDOM solver. See Notes.
+
+    Parameters
+    ----------
+    scatterers : xr.Dataset
+        xarray datasets with valid optical properties. See `medium.make_optical_properties`.
+
+    Returns
+    -------
+    merged_optical_properties : xr.Dataset
+        The merged optical properties.
+
+    Notes
+    -----
+    This method is useful for forward computations but has not yet been integrated into the
+    inverse pipeline. This is TODO.
+    The increase in computation time in the SHDOM solve is smaller than passing
+    each `scatterer` to a solver.RTE object separately for legacy reasons in
+    the inverse pipeline (gradient calculation) that have yet to be resolved.
+
+    See Also
+    --------
+    `medium.make_optical_properties`
+    `medium.mix_optical_properties`
+    """
+    for i, scatterer in enumerate(scatterers):
+        at3d.checks.check_optical_properties(scatterer, i)
+
+    max_num_micro = max(
+        [scatterer.num_micro.size for scatterer in scatterers]
+    )
+
+    max_legendre = max([scatterer.sizes['legendre_index'] for
+                        scatterer in scatterers])
+    padded_legcoefs = [scatterer.legcoef.pad(
+        {'legendre_index':
+         (0, max_legendre - scatterer.legcoef.sizes['legendre_index'])
+         }, constant_values=0.0)
+                       for scatterer in scatterers]
+
+    legendre_table = xr.concat(padded_legcoefs, dim='table_index')
+    maxpg = scatterers[0].sizes['x']*scatterers[0].sizes['y']*scatterers[0].sizes['z']
+
+    table_sizes = [padded_legcoef.table_index.size for padded_legcoef in padded_legcoefs]
+
+    cumsum_table = 0
+    padded_table_index = []
+    total_scatter_coef = []
+    phase_weights = []
+
+    for table_size, scatterer in zip(table_sizes, scatterers):
+        padded_table_index.append(scatterer.table_index[:].drop('table_index') + cumsum_table)
+        cumsum_table += table_size
+        phase_weights.append(scatterer.phase_weights.drop('table_index')*scatterer.extinction*scatterer.ssalb)
+        total_scatter_coef.append(scatterer.extinction*scatterer.ssalb)
+
+    phase_weights = xr.concat(phase_weights, dim='num_micro')
+    scatter_coefs = xr.concat(total_scatter_coef,dim='num_micro').sum('num_micro')
+    new_weights = phase_weights/scatter_coefs
+    new_weights = new_weights.fillna(0.0)
+    no_phase = np.where(new_weights.sum('num_micro').data==0.0)
+    new_weights.values[0,no_phase[0],no_phase[1],no_phase[2]] = 1.0
+
+    new_table_index = xr.concat(padded_table_index, dim='num_micro')
+
+    extinction = sum([scatterer.extinction for scatterer in scatterers])
+    albedo = sum(total_scatter_coef)/extinction
+    albedo.values[np.where(extinction.values == 0.0)] = 0.0
+
+    merged_optical_properties = xr.Dataset(
+        data_vars={
+            'extinction': extinction,
+            'ssalb': albedo,
+            'phase_weights': new_weights,
+            'legcoef': legendre_table,
+            'table_index': new_table_index,
+        },
+        coords={
+            'x': extinction.x,
+            'y': extinction.y,
+            'z': extinction.z,
+        }
+    )
+
+    merged_optical_properties = at3d.grid.add_grid_variables(scatterer, merged_optical_properties)
+
+    at3d.checks.check_optical_properties(merged_optical_properties)
+
+    merged_optical_properties.attrs['description'] = "This set of optical properties is a"\
+                                            " merger of different scattering species."\
+    " All detailed information about the species that were combined has been discarded."
+
+    return merged_optical_properties
+
 class GridToOpticalProperties:
 
     def __init__(self, rte_grid, scatterer_name, wavelength, fixed_dataset=None, *fixed_data_arrays,
