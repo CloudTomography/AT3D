@@ -2,7 +2,9 @@
 
 AT3D performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]].
 The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[4]].
-The python package was created by [Aviad Levis](https://www.aviadlevis.com/3d-remote-sensing), Amit Aides (Technion - Israel Institute of Technology) and [Jesse Loveridge](https://atmos.illinois.edu/directory/profile/jesserl2) (University of Illinois). Code contributions were made by Linda Forster and Vadim Holodovsky.
+
+The python package was created by [Aviad Levis](https://www.aviadlevis.info), Amit Aides (Technion - Israel Institute of Technology) and [Jesse Loveridge](https://atmos.illinois.edu/directory/profile/jesserl2) (University of Illinois). Code contributions were made by Linda Forster and Vadim Holodovsky.
+
 
 [1]: http://openaccess.thecvf.com/content_iccv_2015/html/Levis_Airborne_Three-Dimensional_Cloud_ICCV_2015_paper.html
 [2]: http://openaccess.thecvf.com/content_cvpr_2017/html/Levis_Multiple-Scattering_Microphysics_Tomography_CVPR_2017_paper.html
