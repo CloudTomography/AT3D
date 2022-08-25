@@ -148,7 +148,7 @@ def interp_optical_property_table(table, method='cubic', **coordinates):
     This is only designed to interpolate the OPAC tables in wavelength
     but might be useful elsewhere but hasn't been tested.
     """
-    for name, coord in coordinates.items():
+    for name in coordinates:
         if name not in table.coords:
             raise KeyError(
                 "Interpolation coordinate, '{}' is not a coordinate in `table`.".format(
