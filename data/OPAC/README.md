@@ -12,7 +12,7 @@ The standard OPAC aerosol mixture profiles used by libRadtran have fixed mass de
 
 If you have any questions, please contact me.
 
- -Jesse Loveridge
+ -Jesse Loveridge (jesserl2@illinois.edu)
 
  [1]: https://doi.org/10.1175/1520-0477(1998)079<0831:OPOAAC>2.0.CO;2
  [2]: http://www.libradtran.org/doku.php?id=download

@@ -17,6 +17,8 @@ https://journals.ametsoc.org/view/journals/bams/79/5/1520-0477_1998_079_0831_opo
 Currently these aerosol species are not easily optimizeable. In principle,
 the `density` field could be retrieved after assuming a certain aerosol component
 but that is not a flexible way to handle mixtures of aerosol during retrieval.
+
+See data/OPAC/aerosol/README.md for more info.
 """
 import glob
 import os
