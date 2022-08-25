@@ -67,6 +67,8 @@ class MassToNumberConverter:
         self._look_up_tables = {key: None for key in self._config_indices}
 
     def __call__(self, species_name, humidity):
+        """Calculates a conversion factor for the
+        """
 
         if species_name not in self._look_up_tables:
             raise ValueError(
@@ -85,6 +87,16 @@ class MassToNumberConverter:
 
 
     def make_look_up_table(self, species_name):
+        """Prepares the conversion factors for all humidities for
+        `species_name`.
+
+        Parameters
+        ----------
+        species_name : str
+            The shortened version of the species name that matches the file names
+            in ../data/OPAC/aerosol/optical_properties/
+            E.g. inso, waso. See also self._config_indices
+        """
 
         conversion_factors = np.array(
             [self._get_conversion_factor(species_name, humidity)
@@ -104,6 +116,25 @@ class MassToNumberConverter:
         self._look_up_tables[species_name] = dset
 
     def _get_conversion_factor(self, species_name, humidity):
+        """Calculates the mass to number concentration ratio
+        for the size distribution parameters specified in size_distr.cfg.
+
+        Parameters
+        ----------
+        species_name : str
+            The shortened version of the species name that matches the file names
+            in ../data/OPAC/aerosol/optical_properties/
+            E.g. inso, waso. See also self._config_indices
+        humidity : float
+            The relative humidity as a fraction (e.g. 0.5).
+
+        Returns
+        -------
+        conversion_factor : float
+            The number concentration in particles per cubic centimeter for
+            the particular size distribution normalized to unit mass concentration
+            (1 g/m^3).
+        """
 
         config = self._size_config[np.where(self._size_config[:, 0] == self._config_indices[species_name])[0], 1:]
 
@@ -111,7 +142,7 @@ class MassToNumberConverter:
             humidity_index = np.where(config[:, 0] == humidity*100)
             config = config[humidity_index]
 
-        rmin, rmax, rmod, rho, sigma = config[0,1:]
+        rmin, rmax, rmod, rho, sigma = config[0, 1:]
 
         r = np.linspace(rmin, rmax, 1000)
         delr = np.sqrt(r*np.append(r[1:], r[-1])) - np.sqrt(r*np.append(r[0], r[:-1]))
@@ -373,10 +404,25 @@ class OPACMixture:
 
     def get_profile(self, mixture_type):
         """
-        Load the mass mixing ratios of a given standard aerosol profile.
+        Load the mass concentrations (g/m^3) of a given standard aerosol profile.
 
         Profiles are at the fixed humidity of 50%.
 
+        Parameters
+        ----------
+        mixture_type : str
+            The name of the standard aerosol profile mixture.
+
+        Returns
+        -------
+        profile : xr.Dataset
+            The aerosol profile data loaded from the file with abbreviated names
+            for each species. See self._component_files for names.
+
+        Notes
+        -----
+        Long names of aerosol components are TODO as these profiles are
+        expected to mostly used internally by OPACMixture.__call__
         """
 
         if mixture_type not in self._expected_types:
