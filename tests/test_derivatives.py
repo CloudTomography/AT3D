@@ -4,9 +4,14 @@ import numpy as np
 import xarray as xr
 import at3d
 from scipy import stats
-
+import sys
 import warnings
 warnings.filterwarnings('ignore')
+
+import builtins as __builtin__
+def print(*args, **kwargs):
+    if '-vv' in sys.argv:
+        return __builtin__.print(*args, **kwargs)
 
 class PlanckDerivative(TestCase):
 

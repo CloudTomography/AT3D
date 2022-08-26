@@ -5,10 +5,15 @@ from collections import OrderedDict
 import numpy as np
 import xarray as xr
 import at3d
-from scipy import stats
+import sys
 
 import warnings
 warnings.filterwarnings('ignore')
+
+import builtins as __builtin__
+def print(*args, **kwargs):
+    if '-vv' in sys.argv:
+        return __builtin__.print(*args, **kwargs)
 
 def cloud_direct_beam(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_temperature, step=0.0, index=(1,1,1),
           nmu=16, split=0.03, load_solution=None, resolution=1, boundary='open',deltam=True):

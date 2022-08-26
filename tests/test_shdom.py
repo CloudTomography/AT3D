@@ -4,8 +4,15 @@ import warnings
 import numpy as np
 import xarray as xr
 import at3d
+import sys
 
 warnings.filterwarnings('ignore')
+
+import builtins as __builtin__
+def print(*args, **kwargs):
+    if '-vv' in sys.argv:
+        return __builtin__.print(*args, **kwargs)
+
 
 def parse_shdom_output(filename, comment='*'):
     """
@@ -471,7 +478,7 @@ class Parallelization_No_SubpixelRays(TestCase):
         print(np.abs(diff).max())
         print(np.argmax(np.abs(diff)), diff.shape)
         print(np.sqrt(np.mean(diff**2)))
-        self.assertTrue(test.equals(self.Sensordict['MISR']['sensor_list'][0]))
+        xr.testing.assert_allclose(test, self.Sensordict['MISR']['sensor_list'][0], rtol=1e-5)
 
 
 class Parallelization_SubpixelRays(TestCase):
@@ -584,7 +591,7 @@ class Parallelization_SubpixelRays(TestCase):
         print(np.abs(diff).max())
         print(np.argmax(np.abs(diff)), diff.shape)
         print(np.sqrt(np.mean(diff**2)))
-        self.assertTrue(test.equals(self.Sensordict['MISR']['sensor_list'][0]))
+        xr.testing.assert_allclose(test, self.Sensordict['MISR']['sensor_list'][0], rtol=1e-5)
 
 
 class Verify_Lambertian_Surfaces(TestCase):
@@ -969,7 +976,6 @@ class Verify_Thermal(TestCase):
         cls.rad = rad
 
     def test_radiance(self):
-
         #print(self.rad,self.rad2, self.integrated_rays.I.data)
         print(100*np.max(np.abs(self.rad - self.integrated_rays.I.data)/self.rad))
         print(np.max(np.abs(self.rad - self.integrated_rays.I.data)))
@@ -1044,7 +1050,6 @@ class VerifyCombined(TestCase):
         cls.rad = rad
 
     def test_radiance(self):
-
         #print(self.rad,self.rad2, self.integrated_rays.I.data)
         print(100*np.max(np.abs(self.rad - self.integrated_rays.I.data)/self.rad))
         print(np.max(np.abs(self.rad - self.integrated_rays.I.data)))
