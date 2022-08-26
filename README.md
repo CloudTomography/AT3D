@@ -50,7 +50,8 @@ To contribute to the development effort, contact us! see `Usage and Contact` sec
 &nbsp;
 
 ## Installation
-Compilation of this package requires Fortran & C compilers (e.g. GCC 9.3.0_1) to be available and correctly linked. Installation has been tested on Mac and Linux using using [anaconda](https://www.anaconda.com/) package management.
+Compilation of this package requires Fortran & C compilers (e.g. GCC 9.3.0_1) to be available and correctly linked. Installation has been tested on Mac and Linux using using [anaconda](https://www.anaconda.com/) package management. 
+The treatment of legacy Fortran code has changed from GCC 9.X to 10.X+ so currently there is a flag in the setup.py script which needs to be commented if trying to install using GCC 9.X or earlier versions. The flag is `extra_f77_compile_args=["-fallow-argument-mismatch"]`. There is additional discussion of this point written as comments in setup.py but please feel raise an issue or discussion if you run into issues with the compiler version. The default version of the package should compile with GCC v11.3.
 
 Clone the repository into your local machine
 ```
