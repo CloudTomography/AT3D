@@ -179,7 +179,7 @@ class SensorsDict(OrderedDict):
                 "`solvers` should be of type '{}' not '{}'".format(
                     SolversDict, type(solvers))
                 )
-        if not isinstance(destructive, np.bool):
+        if not isinstance(destructive, bool):
             raise TypeError("`destructive` should be a boolean.")
 
         rte_sensors, sensor_mappings = self.sort_sensors(solvers)

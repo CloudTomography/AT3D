@@ -290,9 +290,9 @@ def check_sensor(dataset):
                 " Valid values are 'I', 'Q', 'U', 'V'.".format(i)
                 )
     check_hasdim(dataset, stokes='stokes_index')
-    if dataset.stokes.dtype != np.bool:
+    if dataset.stokes.dtype != bool:
         raise TypeError("'stokes' variable in sensor dataset should be of boolean type.")
-    if dataset.use_subpixel_rays.dtype != np.bool:
+    if dataset.use_subpixel_rays.dtype != bool:
         raise TypeError("'use_subpixel_rays' variable in sensor dataset should be of boolean type.")
     if dataset.use_subpixel_rays.size != 1:
         raise ValueError("'use_subpixel_rays' variable should have a single value shape=(1,).")

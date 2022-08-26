@@ -289,11 +289,11 @@ class RTE:
         verbose: boolean
             True will output solution iteration information into stdout.
         """
-        if not isinstance(verbose, np.bool):
+        if not isinstance(verbose, bool):
             raise TypeError("`verbose` should be a boolean.")
-        if not isinstance(init_solution, np.bool):
+        if not isinstance(init_solution, bool):
             raise TypeError("`init_solution` should be a boolean.")
-        if not isinstance(setup_grid, np.bool):
+        if not isinstance(setup_grid, bool):
             raise TypeError("`setup_grid` should be a boolean.")
 
         # Part 1: Initialize solution (from a 1D layered model)
@@ -1832,9 +1832,9 @@ class RTE:
         self._transcut = numerical_params.transcut.data
         self._transmin = numerical_params.transmin.data
 
-        if self._deltam.dtype != np.bool:
+        if self._deltam.dtype != bool:
             raise TypeError("numerical_params.deltam should be of boolean type.")
-        if self._highorderrad.dtype != np.bool:
+        if self._highorderrad.dtype != bool:
             raise TypeError("numerical_params.high_order_radiance should be of boolean type.")
 
         if self._nphi < self._nmu:
@@ -1979,7 +1979,8 @@ class RTE:
             delyp=self._pa.dely,
             zlevels=self._pa.zlevels
         )
-
+        self._xgrid = self._xgrid[:self._nx1]
+        self._ygrid = self._ygrid[:self._ny1]
         self._setup_memory()
 
         self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
