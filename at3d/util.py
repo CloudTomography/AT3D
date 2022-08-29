@@ -22,6 +22,7 @@ from pathlib import Path
 import at3d.core
 import at3d.solver
 import at3d.grid
+import at3d.configuration
 
 def github_version():
     """
@@ -549,8 +550,13 @@ def load_forward_model(file_name):
         else:
             atmosphere=None
 
-        numerical_params['transcut'] = 1e-5
-        numerical_params['angle_set'] = 2
+        default_config = at3d.configuration.get_config()
+        for name in default_config:
+            if not name in numerical_params:
+                numerical_params[name] = default_config[name]
+
+        #numerical_params['transcut'] = 1e-5
+        #numerical_params['angle_set'] = 2
 
         solver_dict.add_solver(float(key), at3d.solver.RTE(numerical_params=numerical_params,
                                             medium=mediums,
