@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: Loveridge
+    given-names: Jesse
+    orcid: https://orcid.org/0000-0002-7127-6907
+  - family-names: Levis
+    given-names: Aviad
+  - family-names: Forster
+    given-names: Linda
+  - family-names: Holodovsky
+    given-names: Vadim
+title: "Atmospheric Tomography with 3D Radiative Transfer"
+version: 4.1.1
+doi: 10.5281/zenodo.7025718
+date-released: 2022-08-26
+url: https://github.com/CloudTomography/AT3D
