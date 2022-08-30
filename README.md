@@ -14,16 +14,19 @@ If you want to acknowledge the use of this repository in a publication (e.g. sci
 
 If you want to acknowledge the scientific origin of a particular feature of this software in a publication, then please cite the appropriate journal or conference articles in which the feature originates [[1],[2],[3]]. This work relies on the generosity of Frank Evans in making his code publicly available, for which we are very grateful. Please acknowledge his work appropriately. In particular, use of the SHDOM solver as a part of the AT3D software in a scientific work should cite [[5]].
 
+Any publications using the synthetic les clouds in the ./data/synthetic_cloud_fields/jpl_les directory which is included in the distribution must cite the following work [[7]].
+
 ## Contact
 
 If you find this package useful and/or would like to contribute code please let us know: aviad.levis@gmail.com; jesserl2@illinois.edu. 
 
 [1]: http://openaccess.thecvf.com/content_iccv_2015/html/Levis_Airborne_Three-Dimensional_Cloud_ICCV_2015_paper.html
 [2]: http://openaccess.thecvf.com/content_cvpr_2017/html/Levis_Multiple-Scattering_Microphysics_Tomography_CVPR_2017_paper.html
-[3]: https://www.mdpi.com/2072-4292/12/17/2831
+[3]: https://doi.org/10.3390/rs12172831
 [4]: http://coloradolinux.com/~evans/shdom.html
-[5]: https://journals.ametsoc.org/view/journals/atsc/55/3/1520-0469_1998_055_0429_tshdom_2.0.co_2.xml
-[6]: https://journals.ametsoc.org/view/journals/bams/79/5/1520-0477_1998_079_0831_opoaac_2_0_co_2.xml
+[5]: https://doi.org/10.1175/1520-0469(1998)055<0429:TSHDOM>2.0.CO;2
+[6]: https://doi.org/10.1175/1520-0477(1998)079<0831:OPOAAC>2.0.CO;2
+[7]: https://doi.org/10.1175/JAS-D-13-0306.1
 
 &nbsp;
 
