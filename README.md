@@ -1,17 +1,32 @@
 # Atmospheric Tomography with 3D Radiative Transfer (AT3D)
 
+AT3D performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]].
+The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[4],[5]].
+
+The python package was created by [Aviad Levis](https://www.aviadlevis.info), Amit Aides (Technion - Israel Institute of Technology) and [Jesse Loveridge](https://atmos.illinois.edu/directory/profile/jesserl2) (University of Illinois). Code contributions have been made so far by Linda Forster and Vadim Holodovsky.
+
+## Usage
+
+The AT3D software is built around SHDOM, which is freely distributed online [[4]]. Please contact Frank Evans if you have concerns about the licensing of his code as it appears in this package. This package (AT3D) is distributed under the GNU General Public License (see the `LICENSE` file).
+If you want to acknowledge the use of this repository in a publication (e.g. scientific journal article), then please cite the appropriate release, or the most recent release, which is available at the following DOI. See the `CITATION.cff` file for how to reference this repository.
+
 [![DOI](https://zenodo.org/badge/342386439.svg)](https://zenodo.org/badge/latestdoi/342386439)
 
-AT3D performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]].
-The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[4]].
+If you want to acknowledge the scientific origin of a particular feature of this software in a publication, then please cite the appropriate journal or conference articles in which the feature originates [[1],[2],[3]]. This work relies on the generosity of Frank Evans in making his code publicly available, for which we are very grateful. Please acknowledge his work appropriately. In particular, use of the SHDOM solver as a part of the AT3D software in a scientific work should cite [[5]].
 
-The python package was created by [Aviad Levis](https://www.aviadlevis.info), Amit Aides (Technion - Israel Institute of Technology) and [Jesse Loveridge](https://atmos.illinois.edu/directory/profile/jesserl2) (University of Illinois). Code contributions were made by Linda Forster and Vadim Holodovsky.
+Any publications using the synthetic les clouds in the ./data/synthetic_cloud_fields/jpl_les directory which is included in the distribution must cite the following work [[7]].
 
+## Contact
+
+If you find this package useful and/or would like to contribute code please let us know: aviad.levis@gmail.com; jesserl2@illinois.edu. 
 
 [1]: http://openaccess.thecvf.com/content_iccv_2015/html/Levis_Airborne_Three-Dimensional_Cloud_ICCV_2015_paper.html
 [2]: http://openaccess.thecvf.com/content_cvpr_2017/html/Levis_Multiple-Scattering_Microphysics_Tomography_CVPR_2017_paper.html
-[3]: https://www.mdpi.com/2072-4292/12/17/2831
+[3]: https://doi.org/10.3390/rs12172831
 [4]: http://coloradolinux.com/~evans/shdom.html
+[5]: https://doi.org/10.1175/1520-0469(1998)055<0429:TSHDOM>2.0.CO;2
+[6]: https://doi.org/10.1175/1520-0477(1998)079<0831:OPOAAC>2.0.CO;2
+[7]: https://doi.org/10.1175/JAS-D-13-0306.1
 
 &nbsp;
 
@@ -28,7 +43,7 @@ The key features of polarized SHDOM are included
 Note that each RTE solution is serial (**unlike SHDOM**) but independent wavelengths and pixel radiance calculations are parallelized using either MPI or a multi-threading shared memory framework.
 Other key features that are implemented are:
   * Several sensor configurations (e.g. Perspective, Orthographic) and arbitrary observation geometries.
-  * Mie & Rayleigh scattering optical property calculations. Optical properties of other species (e.g. non-spherical ice or aerosol or absorbing gases) can be included but must be calculated externally.
+  * Mie & Rayleigh scattering optical property calculations including [OPAC aerosols](6). Optical properties of other species (e.g. non-spherical ice or aerosol or absorbing gases) can be included but must be calculated externally.
   * Microphysical/optical properties can be generated or be read from netCDF or the SHDOM/[I3RC](https://i3rc.gsfc.nasa.gov/) file format.
 
 #### Inverse (remote-sensing):
@@ -41,7 +56,7 @@ Future improvement include:
 * Parallelize RTE solution with MPI.
 * Include retrieval of surface BRDF.
 
-To contribute to the development effort, contact us! see `Usage and Contact` section below.
+To contribute to the development effort, contact us! see `Contact` section above.
 
 &nbsp;
 
@@ -52,7 +67,9 @@ To contribute to the development effort, contact us! see `Usage and Contact` sec
 &nbsp;
 
 ## Installation
-Compilation of this package requires Fortran & C compilers (e.g. GCC 9.3.0_1) to be available and correctly linked. Installation has been tested on Mac and Linux using using [anaconda](https://www.anaconda.com/) package management.
+Compilation of this package requires Fortran & C compilers (e.g. GCC 9.3.0_1) to be available and correctly linked. Installation has been tested on Mac and Linux using using [anaconda](https://www.anaconda.com/) package management. 
+
+The treatment of legacy Fortran code has changed from GCC 9.X to 10.X+ so currently there is a flag in the setup.py script which needs to be commented if trying to install using GCC 9.X or earlier versions. The flag is `extra_f77_compile_args=["-fallow-argument-mismatch"]`. There is additional discussion of this point written as comments in setup.py but please feel raise an issue or discussion if you run into issues with the compiler version. The default version of the package should compile with GCC v11.3.
 
 Clone the repository into your local machine
 ```
@@ -110,10 +127,3 @@ For basic usage follow the following jupyter notebook tutorials under the notebo
 For generating rendering and optimization scripts see the list below.
 The scripts folder contains another readme file with examples of how to run each script.
 TODO
-
-
-&nbsp;
-
-## Usage and Contact
-If you find this package useful and/or would like to contribute code please let us know: aviad.levis@gmail.com; jesserl2@illinois.edu.  
-If you use this package in an academic publication please acknowledge the appropriate publications (see LICENSE file).

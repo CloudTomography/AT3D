@@ -84,7 +84,7 @@ class LevisApproxGradient:
             uncertainty_kwargs['add_noise'] = False
             warnings.warn("'add_noise' flag was unspecified. It has been set to False.")
         else:
-            if not isinstance(uncertainty_kwargs['add_noise'], np.bool):
+            if not isinstance(uncertainty_kwargs['add_noise'], bool):
                 raise TypeError("uncertainty_kwargs['add_noise'] should be of boolean type.")
         if 'cost_function' not in gradient_kwargs:
             raise ValueError("'cost_function' must be specified in `gradient_kwargs`. Supported values "
