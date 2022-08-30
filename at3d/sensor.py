@@ -271,14 +271,14 @@ def orthographic_projection(wavelength, bounding_box, x_resolution, y_resolution
     x_s, y_s = projected_bounding_box[:2, :].min(axis=1)
     x_e, y_e = projected_bounding_box[:2, :].max(axis=1)
 
-    if np.isclose(x_s, xmin) or np.isclose(x_s, xmax):
-        x = np.arange(x_s, x_e + 1e-6, x_resolution)
-    elif np.isclose(x_e, xmin) or np.isclose(x_e, xmax):
-        x = -1*np.arange(-1*x_e, -1*x_s+1e-6, x_resolution)[::-1]
-    if np.isclose(y_s, ymin) or np.isclose(y_s, ymax):
-        y = np.arange(y_s, y_e + 1e-6, y_resolution)
-    elif np.isclose(y_e, ymin) or np.isclose(y_e, ymax):
-        y = -1*np.arange(-1*y_e, -1*y_s+1e-6, y_resolution)[::-1]
+    # Always pad this so that there is a point at the domain edge
+    # even if it is past it.
+    # Note that this introduces an asymmetry between a forward and backward
+    # sampling sensor i.e. between a nadir sensor with azimuths of 0 and 180.0
+    # even though they should be identical.
+    x = np.arange(x_s, x_e + x_resolution, x_resolution)
+    y = np.arange(y_s, y_e + y_resolution, y_resolution)
+
     z = altitude
     image_shape = [x.size, y.size]
 
