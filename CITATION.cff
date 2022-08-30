@@ -11,6 +11,7 @@ authors:
     given-names: Amit
   - family-names: Forster
     given-names: Linda
+    orcid: https://orcid.org/0000-0002-9738-9571
   - family-names: Holodovsky
     given-names: Vadim
 title: "Atmospheric Tomography with 3D Radiative Transfer"
