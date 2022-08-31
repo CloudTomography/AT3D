@@ -269,7 +269,7 @@ class OPACMixture:
             'mineral_transport': 'mitr.mie.cdf'
         }
 
-        self._aerosol_mass_converter = MassToNumberConverter()
+        self._aerosol_mass_converter = MassToNumberConverter(directory=os.path.join(self._directory,'size_distr.cfg'))
 
         self._optprop_tables = {}
 
@@ -355,8 +355,7 @@ class OPACMixture:
                 *all_species_optical_props
                 )
             merged_optical_properties.attrs['wavelength_center'] = wavelength
-            merged_optical_properties.attrs['description'] = "OPAC Aerosol with "
-            "mixture type {}. See at3d.aerosol.AerosolMixture for details.".format(mixture_type)
+            merged_optical_properties.attrs['description'] = "OPAC Aerosol with mixture type {}. See at3d.aerosol.AerosolMixture for details.".format(mixture_type)
 
             aerosol_optical_properties[wavelength] = merged_optical_properties
 
