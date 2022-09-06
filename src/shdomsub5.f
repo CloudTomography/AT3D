@@ -599,6 +599,7 @@ C         Interpolate the source and extinction to the current point
                 FM = 0.0
                 DO Q=1,8*MAXNMICRO
                   FM = FM +
+     .              PHASEINTERPWT(Q,GRIDPTR(J,ICELL),IPART)*
      .              LEGEN(1,ML+1,IPHASE(Q,GRIDPTR(J,ICELL),IPART))
                 ENDDO
               ENDIF
@@ -660,6 +661,7 @@ C             many subgrid intervals to use
                 FM = 0.0
                 DO Q=1,8*MAXNMICRO
                   FM = FM +
+     .              PHASEINTERPWT(Q,GRIDPTR(J,ICELL),IPART)*
      .              LEGEN(1,ML+1,IPHASE(Q,GRIDPTR(J,ICELL),IPART))
                 ENDDO
               ENDIF
@@ -744,7 +746,7 @@ C             boundary then prepare for next cell
      .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .             BCFLAG, IPFLAG, CAMX, CAMY, CAMZ,
      .             CAMMU, CAMPHI, NPIX, VOLUME, FLAGS, WEIGHTS,
-     .              LINEAR, COUNTS)
+     .              LINEAR, COUNTS, DISTANCE_LIMITS)
 C    Performs a space carving algorithm by counting intersections between
 C    cells and rays. Can also backproject a set of weights. A nearest neighbor
 C    interpolation kernel is assumed. The linear one does not operate correctly
@@ -768,6 +770,8 @@ Cf2py intent(in) :: NPIX
 Cf2py intent(in) :: FLAG
       DOUBLE PRECISION WEIGHTS(*)
 Cf2py intent(in) :: WEIGHTS
+      DOUBLE PRECISION DISTANCE_LIMITS(*)
+Cf2py intent(in) :: DISTANCE_LIMITS
       LOGICAL LINEAR
 Cf2py intent(in) LINEAR
       DOUBLE PRECISION  VOLUME(NPTS)
@@ -776,7 +780,7 @@ Cf2py intent(out):: VOLUME, COUNTS
 
       INTEGER N, K, FLAG
       DOUBLE PRECISION    MURAY, PHIRAY, MU2, PHI2, WEIGHT
-      DOUBLE PRECISION X0, Y0, Z0, R, PI
+      DOUBLE PRECISION X0, Y0, Z0, R, PI, DISTANCE_LIMIT
 
       PI = ACOS(-1.0D0)
       VOLUME = 0.0D0
@@ -790,6 +794,7 @@ C         Loop over pixels in image
         PHI2 = CAMPHI(N)
         FLAG = FLAGS(N)
         WEIGHT = WEIGHTS(N)
+        DISTANCE_LIMIT = DISTANCE_LIMITS(N)
         MURAY = -MU2
         PHIRAY = PHI2 - PI
 C             Extrapolate ray to domain top if above
@@ -807,12 +812,14 @@ C             Extrapolate ray to domain top if above
           STOP
         ENDIF
 
+        DISTANCE_LIMIT = DISTANCE_LIMIT - R
+
         CALL SPACE_CARVE_1RAY(NX, NY, NZ, NPTS, NCELLS,
      .                       GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .                       BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,
      .                       GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
      .			             X0, Y0, Z0, VOLUME, FLAG, WEIGHT, LINEAR,
-     .                   COUNTS)
+     .                   COUNTS, DISTANCE_LIMIT)
 900     CONTINUE
 
       ENDDO
@@ -826,7 +833,7 @@ C             Extrapolate ray to domain top if above
      .                       BCFLAG, IPFLAG, XGRID, YGRID, ZGRID,
      .                       GRIDPOS, MURAY, PHIRAY, MU2, PHI2,
      .			             X0, Y0, Z0, VOLUME, FLAG, WEIGHT, LINEAR,
-     .                   COUNTS)
+     .                   COUNTS, DISTANCE_LIMIT)
 
 C     Performs the space carving by traversing the grid.
 C     LINEAR mode is untested.
@@ -836,6 +843,7 @@ C     LINEAR mode is untested.
       INTEGER*2 CELLFLAGS(*)
       REAL    XGRID(NX+1), YGRID(NY+1), ZGRID(NZ), GRIDPOS(3,NPTS)
       DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2, WEIGHT
+      DOUBLE PRECISION DISTANCE_LIMIT
       DOUBLE PRECISION X0, Y0, Z0
       DOUBLE PRECISION  VOLUME(NPTS), PATH_SUM
       LOGICAL LINEAR
@@ -851,12 +859,14 @@ C     LINEAR mode is untested.
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
       DOUBLE PRECISION XE, YE, ZE, XN, YN, ZN, XI, YI, ZI
       DOUBLE PRECISION SO, SOX, SOY, SOZ, EPS
+      DOUBLE PRECISION DISTANCE
       DATA OPPFACE/2,1,4,3,6,5/
       DATA ONEY/0,0,-1,-2,0,0,-5,-6/, ONEX/0,-1,0,-3,0,-5,0,-7/
 
       EPS = 1.0E-5*(GRIDPOS(3,GRIDPTR(8,1))-GRIDPOS(3,GRIDPTR(1,1)))
       MAXCELLSCROSS = 50*MAX(NX,NY,NZ)
 
+      DISTANCE = 0.0D0
 
 C         Make the ray direction (opposite to the discrete ordinate direction)
       CX = SQRT(1.0-MURAY**2)*COS(PHIRAY)
@@ -973,12 +983,14 @@ C	If this is not a boundary cell (currently assuming that the bc conditions are 
         OUTOFDOMAIN = (BTEST(INT(CELLFLAGS(ICELL)),0).OR.
      .                 BTEST(INT(CELLFLAGS(ICELL)),1))
         OUTOFDOMAIN = .FALSE.
-        IF (.NOT.OUTOFDOMAIN) THEN
+        IF (.NOT. OUTOFDOMAIN) THEN
             DO K=1,8
-              IF (FLAG .EQ. 1) THEN
-                COUNTS(1,GRIDPTR(K,ICELL))=
+              IF ((FLAG .EQ. 1) .AND.
+     .          (DISTANCE .GE. DISTANCE_LIMIT)) THEN
+                COUNTS(1,GRIDPTR(K,ICELL)) =
      .              COUNTS(1,GRIDPTR(K,ICELL)) + 1
-              ELSEIF (FLAG .EQ. 0) THEN
+              ELSE
+!              ELSEIF (FLAG .EQ. 0) THEN
                  COUNTS(2,GRIDPTR(K,ICELL))=
      .                COUNTS(2,GRIDPTR(K,ICELL)) + 1
               ENDIF
@@ -1033,6 +1045,8 @@ C           Get the location coordinate
             ZN = GRIDPOS(3,GRIDPTR(IOCT,INEXTCELL))
           ENDIF
         ENDIF
+
+        DISTANCE = DISTANCE + SO
 
 C           If the transmission is greater than zero and not at a
 C             boundary then prepare for next cell

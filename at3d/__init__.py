@@ -41,6 +41,7 @@ import at3d.checks
 import at3d.gradient
 import at3d.optimize
 import at3d.space_carve
+import at3d.stereo
 import at3d.util
 import at3d.uncertainties
 import at3d.callback
