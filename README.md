@@ -18,7 +18,7 @@ Any publications using the synthetic les clouds in the ./data/synthetic_cloud_fi
 
 ## Contact
 
-If you find this package useful and/or would like to contribute code please let us know: aviad.levis@gmail.com; jesserl2@illinois.edu. 
+If you find this package useful and/or would like to contribute code please let us know: aviad.levis@gmail.com; jesserl2@illinois.edu.
 
 [1]: http://openaccess.thecvf.com/content_iccv_2015/html/Levis_Airborne_Three-Dimensional_Cloud_ICCV_2015_paper.html
 [2]: http://openaccess.thecvf.com/content_cvpr_2017/html/Levis_Multiple-Scattering_Microphysics_Tomography_CVPR_2017_paper.html
@@ -67,7 +67,7 @@ To contribute to the development effort, contact us! see `Contact` section above
 &nbsp;
 
 ## Installation
-Compilation of this package requires Fortran & C compilers (e.g. GCC 9.3.0_1) to be available and correctly linked. Installation has been tested on Mac and Linux using using [anaconda](https://www.anaconda.com/) package management. 
+Compilation of this package requires Fortran & C compilers (e.g. GCC 9.3.0_1) to be available and correctly linked. Installation has been tested on Mac and Linux using using [anaconda](https://www.anaconda.com/) package management.
 
 The treatment of legacy Fortran code has changed from GCC 9.X to 10.X+ so currently there is a flag in the setup.py script which needs to be commented if trying to install using GCC 9.X or earlier versions. The flag is `extra_f77_compile_args=["-fallow-argument-mismatch"]`. There is additional discussion of this point written as comments in setup.py but please feel raise an issue or discussion if you run into issues with the compiler version. The default version of the package should compile with GCC v11.3.
 
@@ -90,8 +90,10 @@ pip install -r requirements.txt
 
 Install AT3D distribution. This should be run from within the folder containing setup.py. For development mode add the flag `-e`.
 ```
+export F90=mpifort
 pip install .
 ```
+Install tested with mpirun (Open MPI) 4.1.3 and Gfortran  v11.3.0.
 
 &nbsp;
 
