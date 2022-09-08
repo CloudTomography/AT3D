@@ -178,7 +178,7 @@ class StereoMatcher:
             os.environ[var] = val
             self._config[var] = val
 
-    def match_stereorectified_images(self, ref_image, other_image):
+    def match_stereorectified_images(self, ref_image, other_image, verbose=False):
         """
         Run the matcher on two images.
 
@@ -208,6 +208,8 @@ class StereoMatcher:
         backflow : np.ndarray
             The values of `other_image` backflowed to the `ref_image`.
         """
+        current_cwd = os.getcwd()
+        os.chdir(self._mgm_directory)
 
         ref_other = []
         for name, image in zip(['ref_image', 'other_image'], [ref_image, other_image]):
@@ -236,25 +238,13 @@ class StereoMatcher:
         cost_name = os.path.join(self._temp_directory, 'cost.tif')
         backflow_name = os.path.join(self._temp_directory, 'backflow.tif')
 
-        current_cwd = os.getcwd()
-
-        os.chdir(self._mgm_directory)
-
         cmd = """./mgm -r {0} -R {1} -s {2} -t {3} -O {4} -P1 {5} -P2 {6} """.format(
             self.min_disparity, self.max_disparity, self.subpixel, self.matching_cost,
             self.n_directions, self.P1, self.P2 \
         ) + full_names[0] + ' ' + full_names[1] + ' ' + disparity_name + \
         ' ' + cost_name +' ' + backflow_name
 
-        try:
-            run(cmd, verbose=True)
-        except subprocess.CalledProcessError:
-            # Try again because sometimes this doesn't work.
-            run(cmd, verbose=True)
-        finally:
-            warnings.warn(
-            "Running 'mgm' matcher resulted in an error but we tried again and it worked."
-            )
+        run(cmd, verbose=verbose)
 
         disparity = np.array(Image.open(disparity_name))
         cost = np.array(Image.open(cost_name))
