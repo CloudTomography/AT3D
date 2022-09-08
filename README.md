@@ -1,7 +1,7 @@
 # Atmospheric Tomography with 3D Radiative Transfer (AT3D)
 
 AT3D performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]].
-The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[4],[5]].
+The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank Evans [[4],[5]].
 
 The python package was created by [Aviad Levis](https://www.aviadlevis.info), Amit Aides (Technion - Israel Institute of Technology) and [Jesse Loveridge](https://atmos.illinois.edu/directory/profile/jesserl2) (University of Illinois). Code contributions have been made so far by Linda Forster and Vadim Holodovsky.
 
@@ -18,7 +18,7 @@ Any publications using the synthetic les clouds in the ./data/synthetic_cloud_fi
 
 ## Contact
 
-If you find this package useful and/or would like to contribute code please let us know: aviad.levis@gmail.com; jesserl2@illinois.edu. 
+If you find this package useful and/or would like to contribute code please let us know: aviad.levis@gmail.com; jesserl2@illinois.edu.
 
 [1]: http://openaccess.thecvf.com/content_iccv_2015/html/Levis_Airborne_Three-Dimensional_Cloud_ICCV_2015_paper.html
 [2]: http://openaccess.thecvf.com/content_cvpr_2017/html/Levis_Multiple-Scattering_Microphysics_Tomography_CVPR_2017_paper.html
@@ -67,7 +67,7 @@ To contribute to the development effort, contact us! see `Contact` section above
 &nbsp;
 
 ## Installation
-Compilation of this package requires Fortran & C compilers (e.g. GCC 9.3.0_1) to be available and correctly linked. Installation has been tested on Mac and Linux using using [anaconda](https://www.anaconda.com/) package management. 
+Compilation of this package requires Fortran & C compilers (e.g. GCC 9.3.0_1) to be available and correctly linked. Installation has been tested on Mac and Linux using using [anaconda](https://www.anaconda.com/) package management.
 
 The treatment of legacy Fortran code has changed from GCC 9.X to 10.X+ so currently there is a flag in the setup.py script which needs to be commented if trying to install using GCC 9.X or earlier versions. The flag is `extra_f77_compile_args=["-fallow-argument-mismatch"]`. There is additional discussion of this point written as comments in setup.py but please feel raise an issue or discussion if you run into issues with the compiler version. The default version of the package should compile with GCC v11.3.
 
@@ -107,6 +107,10 @@ To execute only one specific test file, `test.py` use
 ```
 nose2 -v test
 ```
+
+Don't panic if the tests involving the SHDOM solver has an error (Verify_Solver.test_solver). This test uses a static reference generated on a particular computer with a particular compiler. Due to the use of the adaptive grid, small numerical differences due to differences in computer systems may be amplified to a level that tests can fail. Run the test again with the verbose option (`nose2 test_shdom -vv`) and check to see whether the number of grid points are the same between the reference and the test.
+
+If they are the same but the test still fails then there is problem and it might be worth regenerating the static reference on your own machine using the original SHDOM code. The input data are supplied in the tests/data/ folder as `shdom_verification_polarized`. The test uses custom output from SHDOM which requires modifying the original distribution. If you have trouble reproducing this test and have some questions then please raise an issue on GitHub or email me (jesserl2@illinois.edu).
 
 &nbsp;
 
