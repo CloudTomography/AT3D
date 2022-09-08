@@ -12,7 +12,9 @@ If you want to acknowledge the use of this repository in a publication (e.g. sci
 
 [![DOI](https://zenodo.org/badge/342386439.svg)](https://zenodo.org/badge/latestdoi/342386439)
 
-If you want to acknowledge the scientific origin of a particular feature of this software in a publication, then please cite the appropriate journal or conference articles in which the feature originates [[1],[2],[3]]. This work relies on the generosity of Frank Evans in making his code publicly available, for which we are very grateful. Please acknowledge his work appropriately. In particular, use of the SHDOM solver as a part of the AT3D software in a scientific work should cite [[5]].
+If you want to acknowledge the scientific origin of a particular feature of this software in a publication, then please cite the appropriate journal or conference articles in which the feature originates [[1],[2],[3]]. If you use a feature of this repository that is not published elsewhere but is scientifically important to your study then please reach out to discuss the possibility of co-authorship. See the `Contact` section below.
+
+This work relies on the generosity of Frank Evans in making his code publicly available, for which we are very grateful. Please acknowledge his work appropriately. In particular, use of the SHDOM solver as a part of the AT3D software in a scientific work should cite [[5]].
 
 Any publications using the synthetic les clouds in the ./data/synthetic_cloud_fields/jpl_les directory which is included in the distribution must cite the following work [[7]].
 
