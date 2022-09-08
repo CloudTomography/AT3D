@@ -7,7 +7,7 @@ The python package was created by [Aviad Levis](https://www.aviadlevis.info), Am
 
 ## Usage
 
-The AT3D software is built around SHDOM, which is freely distributed online [[4]]. Please contact Frank Evans if you have concerns about the licensing of his code as it appears in this package. This package (AT3D) is distributed under the GNU General Public License (see the `LICENSE` file).
+The AT3D software is built around SHDOM, which is freely distributed [online][4]. Please contact Frank Evans if you have concerns about the licensing of his code as it appears in this package. This package (AT3D) is distributed under the GNU General Public License (see the `LICENSE` file).
 If you want to acknowledge the use of this repository in a publication (e.g. scientific journal article), then please cite the appropriate release, or the most recent release, which is available at the following DOI. See the `CITATION.cff` file for how to reference this repository.
 
 [![DOI](https://zenodo.org/badge/342386439.svg)](https://zenodo.org/badge/latestdoi/342386439)
@@ -24,8 +24,8 @@ If you find this package useful and/or would like to contribute code please let 
 [2]: http://openaccess.thecvf.com/content_cvpr_2017/html/Levis_Multiple-Scattering_Microphysics_Tomography_CVPR_2017_paper.html
 [3]: https://doi.org/10.3390/rs12172831
 [4]: http://coloradolinux.com/~evans/shdom.html
-[5]: https://doi.org/10.1175/1520-0469(1998)055<0429:TSHDOM>2.0.CO;2
-[6]: https://doi.org/10.1175/1520-0477(1998)079<0831:OPOAAC>2.0.CO;2
+[5]: https://journals.ametsoc.org/view/journals/atsc/55/3/1520-0469_1998_055_0429_tshdom_2.0.co_2.xml
+[6]: https://journals.ametsoc.org/view/journals/bams/79/5/1520-0477_1998_079_0831_opoaac_2_0_co_2.xml
 [7]: https://doi.org/10.1175/JAS-D-13-0306.1
 
 &nbsp;
