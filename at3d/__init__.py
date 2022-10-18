@@ -37,6 +37,7 @@ import at3d.configuration
 import at3d.solver
 import at3d.sensor
 import at3d.grid
+import at3d.gas_absorption
 import at3d.checks
 import at3d.gradient
 import at3d.optimize
