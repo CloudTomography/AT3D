@@ -110,14 +110,21 @@ class RTE:
 
     Rather than reading inputs from files, the xr.Datasets are directly passed to
     instantiate this class.
+
     Parameters
     ----------
-    medium: list or xr.dataset
+    medium : list or xr.Dataset
         A list or dataset containing the optical properties of the different scatter types within the medium
-    numerical_params: xr.dataset
-        A dataset containing the numerical parameters requiered for the RTE solution. These can be loaded
-        from a config file (see ancillary_data/config.cfg).
-    num_stokes: int, default=1
+    numerical_params : xr.Dataset
+        A dataset containing the numerical parameters required for the RTE solution. These can be loaded
+        from a config file (see default_config.json).
+    source : xr.Dataset
+        A dataset containing the source specification for the RTE solution (collimated solar / thermal emission).
+        Can include a uniform isotropic illumination of the domain top. See source.py.
+    surface : xr.Dataset
+        Specifies the spatially varying surface Bidrectional Reflectance Distribution Function (BRDF).
+        See surface.py.
+    num_stokes : int, default=1
         The number of stokes for which to solve the RTE can be 1, 3, or 4.
         num_stokes=1 means unpolarized.
         num_stokes=3 means linear polarization.
@@ -126,7 +133,9 @@ class RTE:
        The name for the solver. Will be used when printing solution iteration messages.
        If non specified a default <type> <wavelength> is given, where <type> is Radiance for num_stokes=1 and
        Polarized for num_stokes>1
-
+    atmosphere : xr.Dataset, optional
+        Contains the temperature and gas_absorption (volume extinction coefficients) for the solver.
+        temperature should be specified for thermal emission problems.
     Notes
     -----
     k-distribution not supported.

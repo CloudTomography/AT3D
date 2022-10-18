@@ -1,6 +1,8 @@
 """
 Generates and saves/loads numerical parameters for SHDOM.
 json is used as it is human readable rather than netCDF.
+
+See ./shdom.txt for more details of the numerical parameters.
 """
 
 import json

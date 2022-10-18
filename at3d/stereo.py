@@ -5,9 +5,9 @@ You need to install the MGM matcher first from:
 
 https://github.com/gfacciol/mgm
 
-If the MGM package doesn't work you are probably on your own.
+If the MGM package doesn't work you are on your own.
 
-Cite the software as if you use it:
+Cite the software if you use it:
 
 @inproceedings{BMVC2015_90,
 	title={MGM: A Significantly More Global Matching for Stereovision},
@@ -58,7 +58,7 @@ def digitize_image(img, dtype=np.uint8):
     rounded_im = np.round(np.iinfo(dtype).max * (np.clip(img, a, b) - a) / (b - a)).astype(dtype)
     return rounded_im
 
-
+# This function is adapted from https://github.com/centreborelli/s2p
 def run(cmd, env=os.environ, timeout=None, shell=False, verbose=False):
     """
     Runs a shell command, and print it before running.
@@ -96,12 +96,6 @@ class StereoMatcher:
     temp_directory : str
         The name of a temporary directory which will be created inside `mgm_directory`
         and used to store output from the MGM matcher.
-    min_disparity : int
-        The minimum disparity to search for valid correspondences between images
-        in units of pixels in the image.
-    max_disparity : int
-        The maximum disparity to search for valid correspondences between images
-        in units of pixels in the image.
     matching_cost : str
         The matching cost function e.g. normalized cross correlation or
         census transform.
@@ -129,7 +123,6 @@ class StereoMatcher:
         Set as an environmental variable.
     """
     def __init__(self, mgm_directory='./', temp_directory='./mgm_temp',
-                min_disparity=-20, max_disparity=20,
                 matching_cost='census', P1=1, P2=10,
                 n_directions=8, subpixel='cubic',
                 OMP_NUM_THREADS=4, MEDIAN=1,
@@ -161,8 +154,6 @@ class StereoMatcher:
         self.matching_cost = matching_cost
         self.P1 = P1
         self.P2 = P2
-        self.min_disparity = min_disparity
-        self.max_disparity = max_disparity
         self.n_directions = n_directions
         self.subpixel = subpixel
 
@@ -178,14 +169,15 @@ class StereoMatcher:
             os.environ[var] = val
             self._config[var] = val
 
-    def match_stereorectified_images(self, ref_image, other_image, verbose=False):
+    def match_stereorectified_images(self, ref_image, other_image, min_disparity=-20,
+									 max_disparity=20, verbose=False):
         """
         Run the matcher on two images.
 
-        Runs the MGM matcher as a subprocess using `stereo.run`. Matching occurs
+        Runs the MGM matcher as a subprocess. Matching occurs
         along the second dimension of the images. Images are assumed to already be epipolar
-        rectified. The search window is one dimensional. Read the details of the
-        mgm matcher for more details.
+        rectified. The search window is one dimensional. For more details read
+        the documentation for the mgm matcher.
 
         Parameters
         ----------
@@ -197,6 +189,12 @@ class StereoMatcher:
             This is the comparison image.
             Either a dataset with a `I` variable that is used 2D and used as the image
             or a numpy array.
+	    min_disparity : int
+	        The minimum disparity to search for valid correspondences between images
+	        in units of pixels in the image.
+	    max_disparity : int
+	        The maximum disparity to search for valid correspondences between images
+	        in units of pixels in the image.
 
         Returns
         -------
@@ -239,7 +237,7 @@ class StereoMatcher:
         backflow_name = os.path.join(self._temp_directory, 'backflow.tif')
 
         cmd = """./mgm -r {0} -R {1} -s {2} -t {3} -O {4} -P1 {5} -P2 {6} """.format(
-            self.min_disparity, self.max_disparity, self.subpixel, self.matching_cost,
+            min_disparity, max_disparity, self.subpixel, self.matching_cost,
             self.n_directions, self.P1, self.P2 \
         ) + full_names[0] + ' ' + full_names[1] + ' ' + disparity_name + \
         ' ' + cost_name +' ' + backflow_name

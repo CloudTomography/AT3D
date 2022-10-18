@@ -33,8 +33,12 @@ class SpaceCarver:
     grid : xr.Dataset
         A valid SHDOM grid object containing the x, y, z coordinates. See grid.py
         for more details.
+    bcflag : int
+        Sets the horizontal boundary conditions for the ray tracing. The default
+        is 3 for open boundary conditions, 0 for periodic in both horizontal
+        directions.
     """
-    def __init__(self, grid, bcflag):
+    def __init__(self, grid, bcflag=3):
         at3d.checks.check_grid(grid)
         self._grid = grid
         if np.any([var in self._grid.data_vars for var in ('nx', 'ny', 'nz')]):
@@ -203,6 +207,10 @@ class SpaceCarver:
             cammu = sensor['ray_mu'].data
             camphi = sensor['ray_phi'].data
             flags = sensor['cloud_mask'].data
+            if 'distance_limits' in sensor.data_vars:
+                distance_limits = sensor['distance_limits'].data
+            else:
+                distance_limits = np.zeros(flags.shape)
             if 'weights' in sensor.data_vars:
                 weights = sensor['weights'].data
             else:
@@ -235,7 +243,8 @@ class SpaceCarver:
                 npix=total_pix,
                 flags=flags,
                 weights=weights,
-                linear=linear_mode
+                linear=linear_mode,
+                distance_limits=distance_limits
             )
             grid_counts = count.reshape(2, self._nx1, self._ny1, self._nz)
             grid_carved_volume = carved_volume.reshape(self._nx1, self._ny1, self._nz)
