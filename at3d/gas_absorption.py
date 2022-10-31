@@ -259,9 +259,11 @@ class Reptran:
 
         atmosphere['gas_absorption'] = (dimensions, np.stack(volume_extinctions, axis=0))
         atmosphere['weights'] = ('wavelength', self.reference.iwvl_weight[:len(iwvl_band), band_index].data)
-        atmosphere['irradiance'] = ('wavelength', self.reference.extra[iwvl_band-1].data)
-        atmosphere.irradiance.attrs['description'] = 'Extraterrestrial solar flux at representative wavelengths'
-        atmosphere.irradiance.attrs['units'] = 'mW / (m2 nm)'
+
+        if 'solar' in self.parameterization_name:
+            atmosphere['irradiance'] = ('wavelength', self.reference.extra[iwvl_band-1].data)
+            atmosphere.irradiance.attrs['description'] = 'Extraterrestrial solar flux at representative wavelengths'
+            atmosphere.irradiance.attrs['units'] = 'mW / (m2 nm)'
         atmosphere['spectral_integral'] = self.reference.wvl_integral[band_index].data
         atmosphere.spectral_integral.attrs['description'] = 'Integral of band response function over wavelength'
         atmosphere.spectral_integral.attrs['units'] = 'nm'

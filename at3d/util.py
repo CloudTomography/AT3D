@@ -544,7 +544,7 @@ def load_forward_model(file_name):
             mediums[name] = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
                         'solvers/'+str(key)+'/medium/'+str(name)]))
 
-        if 'atmosphere' in solver.groups.keys():
+        if 'atmosphere' in solver.groups:
             atmosphere = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
                 'solvers/'+str(key)+'/atmosphere']))
         else:
@@ -563,7 +563,8 @@ def load_forward_model(file_name):
                                            source=source,
                                            surface=surface,
                                             num_stokes=num_stokes,
-                                            name=None
+                                            name=None,
+                                            atmosphere=atmosphere
                                            )
                                            )
         rte_grid = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/grid']))
