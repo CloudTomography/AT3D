@@ -147,7 +147,8 @@ F2PY_CORE_API = [
     'ylmall',
     'transmission_integral',
     'test_source',
-    'wigner_transform'
+    'wigner_transform',
+    'sh_to_do_unpol'
 ]
 
 def _run_command(cmd):

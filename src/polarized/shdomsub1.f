@@ -165,7 +165,8 @@ Cf2py intent(in) :: INTERPMETHOD
 Cf2py intent(in) :: PHASEINTERPWT, PHASEMAX
       LOGICAL DELTAM, ACCELFLAG, INRADFLAG
 Cf2py intent(in) :: DELTAM, ACCELFLAG, INRADFLAG
-      REAL    SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD, SHACC
+      REAL    SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD(NSTOKES,NMU,NPHI0MAX)
+      REAL    SHACC
 Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD, SHACC
       REAL    GNDTEMP, GNDALBEDO
 Cf2py intent(in) :: GNDTEMP, GNDALBEDO
@@ -265,6 +266,8 @@ Cf2py intent(in) :: NEWMETHOD
       INTEGER LONGEST_PATH_PTS
 Cf2py intent(out) :: LONGEST_PATH_PTS
 
+      REAL SKYRADALB
+      INTEGER IMU,IPHI
       INTEGER I, J, SIDE
       DOUBLE PRECISION XE, YE,ZE, TRANSMIT, PI
       IERR = 0
@@ -340,11 +343,18 @@ C           Make the Ylm transform coefficients
 C        Initialize the radiance on the base grid using Eddington
 C        two-stream plane-parallel
       IF (INRADFLAG) THEN
+        SKYRADALB = 0.0
+        DO IMU=1,NMU
+          DO IPHI=1,NPHI0(IMU)
+            SKYRADALB = SKYRADALB + WTDO(IMU,IPHI)*SKYRAD(1,IMU,IPHI)
+          ENDDO
+        ENDDO
+
         CALL INIT_RADIANCE(NSTOKES, NX1*NY1, NZ, NSTLEG, NLEG,
      .    RSHPTR, ZGRID, EXTINCT(:NBPTS,:), ALBEDO(:NBPTS,:), LEGEN,
      .    TEMP, NUMPHASE, IPHASE(:,:NBPTS,:), SRCTYPE, SOLARFLUX,
-     .    SOLARMU,
-     .    GNDALBEDO, GNDTEMP, SKYRAD, UNITS, WAVENO, WAVELEN, RADIANCE,
+     .    SOLARMU, GNDALBEDO, GNDTEMP, SKYRADALB, UNITS, WAVENO,
+     .    WAVELEN, RADIANCE,
      .    NPART, TOTAL_EXT(:NBPTS), PHASEINTERPWT(:,:NBPTS,:), DELTAM,
      .    ML, PHASEMAX, INTERPMETHOD, MAXNMICRO)
 
@@ -466,7 +476,7 @@ Cf2py intent(in) :: MAXIV, MAXIC, MAXIG, MAXIDO, NLEGP, MAXNMICRO
 Cf2py intent(in) :: MAXBCRAD, MAXNBC
       LOGICAL DELTAM, ACCELFLAG, HIGHORDERRAD
 Cf2py intent(in) :: DELTAM, ACCELFLAG, HIGHORDERRAD
-      REAL    SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD
+      REAL    SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD(NSTOKES,NMU,NPHI0MAX)
 Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD
       REAL    GNDTEMP, GNDALBEDO
 Cf2py intent(in) :: GNDTEMP, GNDALBEDO
@@ -1754,7 +1764,7 @@ Cf2py intent(in,out) :: CELLFLAGS
 Cf2py intent(in) :: SWEEPORD
       LOGICAL FFTFLAG(*), UNIFORM_SFC_BRDF
 Cf2py intent(in) :: FFTFLAG, UNIFORM_SFC_BRDF
-      REAL    SOLARMU, SOLARAZ, SKYRAD
+      REAL    SOLARMU, SOLARAZ, SKYRAD(NSTOKES,NMU,NPHI0MAX)
 Cf2py intent(in) :: SOLARMU, SOLARAZ, SKYRAD
       REAL    GNDTEMP, GNDALBEDO
 Cf2py intent(in) :: GNDTEMP, GNDALBEDO
@@ -1829,8 +1839,8 @@ C               bottom grid points.
         ENDIF
       ENDIF
 C         Make the isotropic radiances for the top boundary
-      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
-     .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
+C      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
+C     .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
 
 C         Zero the flux arrays and set temporary radiance to -1 for not valid
       DO I = 1, NPTS
@@ -1887,6 +1897,13 @@ C           Loop over the azimuthal angles
 
           IF (MU(IMU) .LT. 0.0) THEN
 C               For downward ordinates, initialize the top boundary radiances
+
+            CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD,WAVENO,WAVELEN,
+     .                              UNITS, NTOPPTS, NSTOKES, BCRAD,
+     .                              NPHI0MAX, NMU, IMU, IPHI,
+     .                              -2.0, -2.0, MU, PHI, NPHI0,
+     .                              .FALSE.)
+
             IUPDOWN = 1
             DO IBC = 1, NTOPPTS
               I = BCPTR(IBC,1)
@@ -2133,33 +2150,107 @@ C     not be uniform.
 
 
 
+C      SUBROUTINE COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD,WAVENO,WAVELEN,
+C     .                                  UNITS, NTOPPTS, NSTOKES, BCRAD)
+CC       Returns the beginning of the BCRAD array with the downwelling
+CC     radiance for the NTOPPTS top boundary points.  Currently all
+CC     points have the same unpolarized isotropic radiance.
+C      IMPLICIT NONE
+C      INTEGER NTOPPTS, NSTOKES
+CCf2py intent(in) :: NTOPPTS, NSTOKES
+C      REAL    SKYRAD, WAVENO(2), WAVELEN
+CCf2py intent(in) :: SKYRAD, WAVENO, WAVELEN
+C      REAL    BCRAD(NSTOKES, *)
+CCf2py intent(in, out) :: BCRAD
+C      CHARACTER  SRCTYPE*1, UNITS*1
+CCf2py intent(in) :: SRCTYPE, UNITS
+C      INTEGER IBC, K
+C      REAL    SKYRAD2
+C
+CC           At top, boundary radiance is any isotropic sky radiation
+C      IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
+C        SKYRAD2 = SKYRAD
+C      ELSE
+C        CALL PLANCK_FUNCTION (SKYRAD, UNITS, WAVENO, WAVELEN, SKYRAD2)
+C      ENDIF
+CC         Loop over all points assigning the uniform radiance
+C      DO IBC = 1, NTOPPTS
+C        BCRAD(1,IBC) = SKYRAD2
+C        BCRAD(2:,IBC) = 0.0
+C      ENDDO
+C      RETURN
+C      END
+
       SUBROUTINE COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD,WAVENO,WAVELEN,
-     .                                  UNITS, NTOPPTS, NSTOKES, BCRAD)
+     .                                  UNITS, NTOPPTS, NSTOKES, BCRAD,
+     .                                  NPHI0MAX, NMU, IMU, IPHI,
+     .                                  MU, PHI, MUS, PHIS, NPHI0,
+     .                                  INTERPOLATE_FLAG)
 C       Returns the beginning of the BCRAD array with the downwelling
 C     radiance for the NTOPPTS top boundary points.  Currently all
 C     points have the same unpolarized isotropic radiance.
       IMPLICIT NONE
       INTEGER NTOPPTS, NSTOKES
 Cf2py intent(in) :: NTOPPTS, NSTOKES
-      REAL    SKYRAD, WAVENO(2), WAVELEN
+      INTEGER NMU, IMU, NPHI0MAX, IPHI
+Cf2py intent(in) :: NMI, IMU, NPHI0MAX, IPHI
+      REAL MU, PHI, MUS(NMU), PHIS(NMU, NPHI0MAX)
+Cf2py intent(in) :: MU, PHI, MUS, PHIS
+      INTEGER NPHI0(NMU)
+Cf2py intent(in) :: NPHI0
+      LOGICAL INTERPOLATE_FLAG
+Cf2py intent(in) :: INTERPOLATE_FLAG
+      REAL    SKYRAD(NSTOKES,NMU,NPHI0MAX), WAVENO(2), WAVELEN
 Cf2py intent(in) :: SKYRAD, WAVENO, WAVELEN
       REAL    BCRAD(NSTOKES, *)
 Cf2py intent(in, out) :: BCRAD
       CHARACTER  SRCTYPE*1, UNITS*1
 Cf2py intent(in) :: SRCTYPE, UNITS
-      INTEGER IBC, K
-      REAL    SKYRAD2
 
-C           At top, boundary radiance is any isotropic sky radiation
-      IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
-        SKYRAD2 = SKYRAD
+      INTEGER IBC, K
+      REAL    SKYRAD2(NSTOKES), SKYRAD3(NSTOKES)
+
+      INTEGER I,J
+      DOUBLE PRECISION POWER, DISTANCE, WEIGHTEDSUM(NSTOKES)
+      DOUBLE PRECISION WEIGHTSUM, WEIGHT
+
+C           At top, boundary radiance either directly evaluated
+C       at discrete ordinate points or interpolated to a specific
+C       MU, PHI. The latter is only done when evaluating a radiance
+C       (not during the solution iterations) and only affects
+C       upward looking (ground based) instruments.
+
+      IF (INTERPOLATE_FLAG) THEN
+C     Inverse distance weighting interpolation (Cubic).
+C     Distance is based on the the scattering angle between the two angles.
+        POWER = 3.0D0
+        WEIGHTEDSUM = 0.0D0
+        WEIGHTSUM = 0.0D0
+        DO I = 1, NMU/2
+          DO J=1, NPHI0(I)
+            DISTANCE = ACOS(MU*MUS(I) +
+     .          SQRT((1.0-MU**2)*(1.0-MUS(I)**2))*
+     .          COS(PHI-PHIS(I,J)))
+            WEIGHT = 1.0D0/(DISTANCE**POWER)
+            WEIGHTEDSUM(:) = WEIGHTEDSUM(:) + SKYRAD(:,I,J)*WEIGHT
+            WEIGHTSUM = WEIGHTSUM + WEIGHT
+          ENDDO
+        ENDDO
+        SKYRAD3 = WEIGHTEDSUM/WEIGHTSUM
       ELSE
-        CALL PLANCK_FUNCTION (SKYRAD, UNITS, WAVENO, WAVELEN, SKYRAD2)
+        SKYRAD3 = SKYRAD(:,IMU,IPHI)
       ENDIF
+      IF (SRCTYPE .EQ. 'T') THEN
+        SKYRAD2(1:) = 0.0
+          CALL PLANCK_FUNCTION (SKYRAD3(1), UNITS,
+     .                        WAVENO, WAVELEN, SKYRAD2(1))
+      ELSE
+        SKYRAD2 = SKYRAD3
+      ENDIF
+
 C         Loop over all points assigning the uniform radiance
       DO IBC = 1, NTOPPTS
-        BCRAD(1,IBC) = SKYRAD2
-        BCRAD(2:,IBC) = 0.0
+        BCRAD(:,IBC) = SKYRAD2(:)
       ENDDO
       RETURN
       END
@@ -2604,12 +2695,20 @@ C     The number of floating point operations for the zenith angle transform
 C     is 2*Nmu*Nlm.
       IMPLICIT NONE
       INTEGER NPTS
+Cf2py intent(in) :: NPTS
       INTEGER ML, MM, NLM, NMU, NPHI0MAX, NPHI0
+Cf2py intent(in) :: ML, MM, NLM, NMU, NPHI0MAX, NPHI0
       INTEGER IMU, SHPTR(NPTS+1)
+Cf2py intent(in) :: IMU, SHPTR
       LOGICAL FFTFLAG(NMU)
+Cf2py intent(in) :: FFTFLAG
       REAL    INDATA(*), OUTDATA(NPHI0MAX,NPTS)
+Cf2py intent(in) :: INDATA
+Cf2py intent(out) :: OUTDATA
       REAL    CMU1(NLM,NMU), CPHI1(-16:16,32,NMU)
+Cf2py intent(in) :: CMU1, CPHI1
       REAL    WSAVE(3*NPHI0MAX+15,NMU)
+Cf2py intent(in) :: WSAVE
       INTEGER I, J, K, L, M, M2, N, IPHI, MS, ME, MR, IS, NSH
       REAL    SUM1
       INTEGER, ALLOCATABLE :: MOFJ(:)

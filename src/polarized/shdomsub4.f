@@ -138,7 +138,8 @@ Cf2py intent(in) :: INTERPMETHOD
 Cf2py intent(in) :: DELTAM
       REAL    SOLARMU, SOLARAZ
 Cf2py intent(in) :: SOLARMU, SOLARAZ
-      REAL    GNDTEMP, GNDALBEDO, SKYRAD, WAVENO(2), WAVELEN
+      REAL    GNDTEMP, GNDALBEDO, SKYRAD(NSTOKES,NMU,NPHI0MAX)
+      REAL    WAVENO(2), WAVELEN
 Cf2py intent(in) :: GNDTEMP, GNDALBEDO, SKYRAD, WAVENO, WAVELEN
       REAL    MU(*), PHI(NMU,*), WTDO(NMU,*)
 Cf2py intent(in) :: MU, PHI, WTDO
@@ -170,7 +171,7 @@ Cf2py intent(out) :: IERR, ERRMSG
       DOUBLE PRECISION TAUTOL
 Cf2py intent(in) :: TAUTOL
       INTEGER I, J, L, SIDE
-      INTEGER IVIS
+      INTEGER IVIS, ITOP
       LOGICAL VALIDRAD
       DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
       DOUBLE PRECISION U, R, PI
@@ -184,8 +185,10 @@ Cf2py intent(in) :: TAUTOL
       TIME_SOURCE = 0.0
       IERR = 0
 C         Make the isotropic radiances for the top boundary
-      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
-     .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
+C      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
+C     .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
+
+
 C         Make the bottom boundary radiances for the Lambertian surfaces.
 C          Compute the upwelling bottom radiances using the downwelling fluxes.
       IF (SFCTYPE .EQ. 'FL') THEN
@@ -224,6 +227,19 @@ C             Extrapolate ray to domain top if above
           WRITE (ERRMSG,*) 'RENDER: Level below domain'
           RETURN
         ENDIF
+
+        IF (MURAY .GT. 0.0) THEN
+          CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD,WAVENO,WAVELEN,
+     .                              UNITS, NTOPPTS, NSTOKES, BCRAD(1,1),
+     .                              NPHI0MAX, NMU, 1, 1,
+     .                              MU2, PHI2, MU, PHI, NPHI0,
+     .                              .TRUE.)
+        ELSE
+          DO ITOP=1,NTOPPTS
+            BCRAD(:,ITOP) = 0.0
+          ENDDO
+        ENDIF
+
 
 C         Integrate the extinction and source function along this ray
 C         to calculate the Stokes radiance vector for this pixel
@@ -342,7 +358,8 @@ Cf2py intent(in) ::PHASEINTERPWT, PHASEMAX
 Cf2py intent(in) :: DELTAM
       REAL    SOLARFLUX, SOLARMU, SOLARAZ
 Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ
-      REAL    GNDTEMP, GNDALBEDO, SKYRAD, WAVENO(2), WAVELEN
+      REAL    GNDTEMP, GNDALBEDO, SKYRAD(NSTOKES,NMU,NPHI0MAX)
+      REAL    WAVENO(2), WAVELEN
 Cf2py intent(in) :: GNDTEMP, GNDALBEDO, SKYRAD, WAVENO, WAVELEN
       REAL    MU(*), PHI(NMU,*), WTDO(NMU,*)
 Cf2py intent(in) :: MU, PHI, WTDO
@@ -438,7 +455,7 @@ Cf2py intent(in) :: MAXSUBGRIDINTS, LONGEST_PATH_PTS
       DOUBLE PRECISION X0, Y0, Z0
       DOUBLE PRECISION XE,YE,ZE, TRANSMIT
       INTEGER M, ME, MS, NS, NS1
-      INTEGER I2
+      INTEGER I2, ITOP
       REAL TIME_SOURCE(3), TIME_DIRECT_POINT, TIME_DIRECT_SURFACE
       REAL TIME_RADIANCE, TIME_RAY_TOTAL, TIME1, TIME2
       REAL TIME_SUBGRID, TIME_ALLOCATE
@@ -467,8 +484,8 @@ C      CALL CPU_TIME(TIME1)
       ENDDO
 
 C         Make the isotropic radiances for the top boundary
-      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
-     .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
+C      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
+C     .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
 C         Make the bottom boundary radiances for the Lambertian surfaces.
 C          Compute the upwelling bottom radiances using the downwelling fluxes.
       IF (SFCTYPE .EQ. 'FL') THEN
@@ -513,6 +530,20 @@ C             Extrapolate ray to domain top if above
             WRITE (ERRMSG,*) 'LEVISAPPROX_GRADIENT: Level below domain'
             RETURN
           ENDIF
+
+          IF (MURAY .GT. 0.0) THEN
+            CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD,WAVENO,WAVELEN,
+     .                              UNITS, NTOPPTS, NSTOKES, BCRAD(1,1),
+     .                              NPHI0MAX, NMU, 1, 1,
+     .                              MU2, PHI2, MU, PHI, NPHI0,
+     .                              .TRUE.)
+          ELSE
+            DO ITOP=1,NTOPPTS
+              BCRAD(:,ITOP) = 0.0
+            ENDDO
+          ENDIF
+
+
 C         Integrate the extinction and source function along this ray
 C         to calculate the Stokes radiance vector for this pixel.
 C         Simultaneously calculate the approximate Frechet derivatives
@@ -989,6 +1020,9 @@ C             many subgrid intervals to use
         TAUGRID = SO*0.5*(EXT1+EXTN)
         NTAU = MAX(1,1+INT(TAUGRID/TAUTOL))
         DELS = SO/NTAU
+
+        SRCSINGSCAT = 0.0
+
 C           Loop over the subgrid cells
         DO IT = 1, NTAU
 
@@ -1071,7 +1105,8 @@ C             subroutine.
 
                IF (EXACT_SINGLE_SCATTER .AND.
      .           SRCTYPE .NE. 'T') THEN
-                 SRCSINGSCAT = ( 0.5*(SINGSCAT0+SINGSCAT1)
+                 SRCSINGSCAT = SRCSINGSCAT + TRANSMIT*ABSCELL*
+     .                    ( 0.5*(SINGSCAT0+SINGSCAT1)
      .            + 0.08333333333*(EXT0*SINGSCAT1-EXT1*SINGSCAT0)*DELS
      .                    *(1.0 - 0.05*(EXT1-EXT0)*DELS) )/EXT
                ENDIF
@@ -1107,18 +1142,18 @@ C          CALL CPU_TIME(TIME1)
                   RAYGRAD(:,IB,:) = RAYGRAD(:,IB,:) +
      .            TRANSMIT*SRCGRAD(:,K,KK,:)*ABSCELL
                 ENDDO
-                IF (EXACT_SINGLE_SCATTER .AND. (SRCTYPE .EQ. 'S'
-     .            .OR. SRCTYPE .EQ. 'B')) THEN
-C             Add gradient component due to the direct solar beam.
-C             Sensitivity of single scattered radiation to
-C             extinction along the path between the gridpoint and the sun.
-                  CALL COMPUTE_DIRECT_BEAM_DERIV(DPATH(:,IP),
-     .            DPTR(:,IP),
-     .            NUMDER, DEXTM, TRANSMIT,
-     .            ABSCELL, SRCSINGSCAT, NSTOKES,
-     .            MAXPG,RAYGRAD, LONGEST_PATH_PTS)
-
-                ENDIF
+C                IF (EXACT_SINGLE_SCATTER .AND. (SRCTYPE .EQ. 'S'
+C     .            .OR. SRCTYPE .EQ. 'B')) THEN
+CC             Add gradient component due to the direct solar beam.
+CC             Sensitivity of single scattered radiation to
+CC             extinction along the path between the gridpoint and the sun.
+C                  CALL COMPUTE_DIRECT_BEAM_DERIV(DPATH(:,IP),
+C     .            DPTR(:,IP),
+C     .            NUMDER, DEXTM, TRANSMIT,
+C     .            ABSCELL, SRCSINGSCAT, NSTOKES,
+C     .            MAXPG,RAYGRAD, LONGEST_PATH_PTS)
+C
+C                ENDIF
               ENDDO
             ENDIF
 C          CALL CPU_TIME(TIME2)
@@ -1153,6 +1188,23 @@ C     .      TIME2 - TIME1
           SINGSCAT1 = SINGSCAT0
 C                End of sub grid cell loop
         ENDDO
+
+C       C             Add gradient component due to the direct solar beam.
+C             Sensitivity of single scattered radiation to
+C             extinction along the path between the gridpoint and the sun.
+        IF (EXACT_SINGLE_SCATTER .AND. (SRCTYPE .EQ. 'S'
+     .       .OR. SRCTYPE .EQ. 'B')) THEN
+          DO KK =1,8
+            IP = GRIDPTR(KK,ICELL)
+                  CALL COMPUTE_DIRECT_BEAM_DERIV(DPATH(:,IP),
+     .            DPTR(:,IP),
+     .            NUMDER, DEXTM, 1.0d0,
+     .            1.0d0, SRCSINGSCAT(:,KK), NSTOKES,
+     .            MAXPG,RAYGRAD, LONGEST_PATH_PTS)
+
+          ENDDO
+        ENDIF
+
 
 C               Get the intersection face number (i.e. neighptr index)
         IF (SOX .LE. SOZ .AND. SOX .LE. SOY) THEN

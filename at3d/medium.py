@@ -113,6 +113,18 @@ def make_optical_properties(grid, extinction, ssalb, phase_function_indices,
     at3d.checks.check_optical_properties(optical_properties)
     return optical_properties
 
+def gas_to_scatterer(gas_absorption):
+
+    phase_function_table = np.zeros((6,2,1))
+    phase_function_table[0,0,0] = 1.0
+    phase_function_table[0,1,0] = 0.0
+    gas_scatterer = at3d.medium.make_optical_properties(gas_absorption, gas_absorption.gas_absorption.data,
+                                       ssalb=np.zeros(gas_absorption.gas_absorption.shape),
+                                       phase_function_indices=np.zeros(gas_absorption.gas_absorption.shape,
+                                                                     dtype=int),
+                                       phase_function_table=phase_function_table)
+    return gas_absorption
+
 class OpticalPropertyGenerator:
     """
     Transforms microphysical properties into optical properties and calculates
