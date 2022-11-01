@@ -2042,12 +2042,6 @@ class RTE:
         else:
             raise AttributeError
 
-        if self._skyrad.size == 1: #upscale to isotropic.
-            self._skyrad = self._skyrad*np.ones((self._nstokes, self._nmu, self._nphi0max))
-        elif  self._skyrad.shape != (self._nstokes, self._nmu, self._nphi0max):
-            raise ValueError(
-            "`skyrad` variable should be either a float or of shape (NSTOKES, NMU, NPHI0MAX)"
-            )
         #max_legendre and numphase are recalculated
         max_legendre = max([scatterer.sizes['legendre_index'] for
                             scatterer in self.medium.values()])
@@ -2404,6 +2398,14 @@ class RTE:
             setup_grid = False
         if setup_grid:
             self._setup_grid(self._grid)
+
+        # Make the anisotropic domain top source.
+        if self._skyrad.size == 1: #upscale to isotropic.
+            self._skyrad = self._skyrad*np.ones((self._nstokes, self._nmu, self._nphi0max))
+        elif  self._skyrad.shape != (self._nstokes, self._nmu, self._nphi0max):
+            raise ValueError(
+            "`skyrad` variable should be either a float or of shape (NSTOKES, NMU, NPHI0MAX)"
+            )
 
         # Restart solution criteria
         self._oldnpts = 0
