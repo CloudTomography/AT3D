@@ -395,6 +395,7 @@ C            bottom grid points.
      .             SFCGRIDPARMS)
         CALL CHECK_UNIFORM_SFC (NXSFC, NYSFC, NSFCPAR, SFCPARMS,
      .                          UNIFORM_SFC_BRDF)
+
         IF (UNIFORM_SFC_BRDF) THEN
           IF (NSTOKES*(NMU/2)*NPHI0MAX .GT.
      .         SQRT(1.0*HUGE(NMU)/KIND(NMU))) THEN
@@ -2385,7 +2386,58 @@ C     are output in BCRAD(*,*,1).
       INTEGER JMU, JPHI, IBC, I, JANG, K, K1, K2
       REAL    OPI, REFLECT(4,4), W, SUM0, SUM1, RADSPEC(4)
 
+      INTEGER L,IMU, IPHI
+      REAL BESTDIFF, DIFF
+      LOGICAL INTERPOLATE
+
       OPI = 1.0/ACOS(-1.0)
+
+
+      IF (SFCTYPE .EQ. 'VP') THEN
+C      Special case where we have prescribed upwelling radiance at the
+C      bottom boundary that is independent of the downwelling (no reflection).
+C      Note that this should only be called
+C      when the upwelling directions are the set of discrete ordinate directions
+C      Other input values of MU2 and PHI2 will cause the program to STOP.
+        INTERPOLATE = .FALSE.
+        BESTDIFF = 1e8
+        DO L=1,NMU
+          DIFF = ABS(MU(L) - MU2)
+          IF (DIFF .LT. BESTDIFF) THEN
+            BESTDIFF = DIFF
+            IMU = L
+          ENDIF
+        ENDDO
+        IF (BESTDIFF .GT. 1e-6) THEN
+          INTERPOLATE = .TRUE.
+        ENDIF
+
+        BESTDIFF = 1e8
+        DO L=1,NPHI0(IMU)
+          DIFF = ABS(PHI(IMU,L) - PHI2)
+          IF (DIFF .LT. BESTDIFF) THEN
+            BESTDIFF = DIFF
+            IPHI = L
+          ENDIF
+        ENDDO
+        IF (BESTDIFF .GT. 1e-6) THEN
+          INTERPOLATE = .TRUE.
+        ENDIF
+
+        IF (INTERPOLATE) THEN
+          STOP 'NON DISCRETE ORDINATE DIRECTION NOT CURRENTLY SUPPORTED'
+        ENDIF
+        I = (sum(NPHI0(NMU/2 + 1:IMU-1)) + IPHI)*NSTOKES
+
+        IF (I .GT. NSFCPAR) THEN
+          PRINT *, I, NSFCPAR, IMU, IPHI, NMU, NPHI0(IMU), NSTOKES
+          STOP 'BAD INDEX IN PRESCRIBED SURFACE EMISSION'
+        ENDIF
+        DO IBC = IBEG, IEND
+          BCRAD(:,IBC,1) = SFCGRIDPARMS(1+I,IBC)
+        ENDDO
+
+      ELSE
 
       DO IBC = IBEG, IEND
 
@@ -2423,6 +2475,7 @@ C             Add in the polarized thermal emission
         ENDDO
 
       ENDDO
+      ENDIF
       RETURN
       END
 

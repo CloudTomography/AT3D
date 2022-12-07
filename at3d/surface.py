@@ -538,6 +538,10 @@ def _make_surface_dataset(surface_type, ground_temperature, delx, dely, **kwargs
     elif surface_type == 'rpv_unpolarized':
         maxsfcpars = 4
         sfctype = 'VR'
+    elif surface_type == 'prescribed_emission':
+        maxsfcpars = kwargs['radiance'].shape[0]+1
+        kwargs = {'ordinate_{}'.format(i): rad for i,rad in enumerate(kwargs['radiance'])}
+        sfctype = 'VP'
     else:
         raise NotImplementedError
 

@@ -123,7 +123,7 @@ def gas_to_scatterer(gas_absorption):
                                        phase_function_indices=np.zeros(gas_absorption.gas_absorption.shape,
                                                                      dtype=int),
                                        phase_function_table=phase_function_table)
-    return gas_absorption
+    return gas_scatterer
 
 class OpticalPropertyGenerator:
     """

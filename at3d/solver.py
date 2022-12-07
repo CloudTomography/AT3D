@@ -1673,10 +1673,10 @@ class RTE:
                 raise KeyError("'temperature' variable was not specified in "
                                "`atmosphere` despite using thermal source.")
 
-            if 'gas_absorption' in atmosphere.data_vars:
-                raise ValueError("'gas_absorption' in `atmosphere` is not currently supported. "
-                            "GAS ABSORPTION IS NOT BEING ADDED!"
-                            "Please add the gas absorption to medium. Use `at3d.medium.gas_to_scatterer`.")
+            #if 'gas_absorption' in atmosphere.data_vars:
+                # raise ValueError("'gas_absorption' in `atmosphere` is not currently supported. "
+                #             "GAS ABSORPTION IS NOT BEING ADDED!"
+                #             "Please add the gas absorption to medium. Use `at3d.medium.gas_to_scatterer`.")
 
             #     at3d.checks.check_positivity(atmosphere, 'gas_absorption')
             #     at3d.checks.check_hasdim(atmosphere, gas_absorption=['x', 'y', 'z'])
@@ -1787,7 +1787,7 @@ class RTE:
                                       dtype=np.float32,
                                       order='F')
 
-        if self._sfctype not in ('FL', 'VL', 'VW', 'VD', 'VO', 'VR'):
+        if self._sfctype not in ('FL', 'VL', 'VW', 'VD', 'VO', 'VR', 'VP'):
             raise ValueError("surface type '{}' not recognized. "
                              "Make sure to choose a supported surface from"
                              " surface.py".format(self._sfctype))

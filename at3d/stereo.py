@@ -248,6 +248,10 @@ class StereoMatcher:
         cost = np.array(Image.open(cost_name))
         backflow = np.array(Image.open(backflow_name))
 
+		# undo digitization on backflow
+        a, b = np.nanpercentile(other_image, (0, 100))
+        backflow = (backflow*(b-a)/np.iinfo(np.uint16).max) + a
+
         os.remove(disparity_name)
         os.remove(cost_name)
         os.remove(backflow_name)

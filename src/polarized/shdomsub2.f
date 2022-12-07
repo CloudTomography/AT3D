@@ -1196,6 +1196,10 @@ C       R  RPV-original  rho0, k, Theta
       INTEGER NSTOKES
       REAL    REFPARMS(*), WAVELEN, MU1, PHI1, MU2, PHI2, REFLECT(4,4)
       CHARACTER  SFCTYPE*1
+!f2py intent(in) :: NSTOKES, WAVELEN, MU1, PHI1, MU2, PHI2, SFCTYPE
+!f2py intent(in) :: REFPARMS
+!f2py intent(out) :: REFLECT
+
       INTEGER K1, K2
       REAL   PI
       REAL   RPV_REFLECTION
@@ -1232,6 +1236,8 @@ C         O: Ocean BRDF from 6S modified by Norm Loeb
         ENDIF
         CALL ocean_brdf_sw (REFPARMS(1), -1., REFPARMS(2), WAVELEN,
      .                      -MU1, MU2, PHI1-PHI2, PHI1, REFLECT(1,1))
+      ELSE IF (SFCTYPE .EQ. 'P') THEN
+        PRINT *, 'THIS SHOULD NEVER BE CALLED'
       ELSE
         STOP 'SURFACE_BRDF: Unknown BRDF type'
       ENDIF

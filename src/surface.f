@@ -45,7 +45,7 @@ Cf2py intent(in) ::PARMS_IN
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
       INTEGER COUNT
-      INTEGER N, I, I0, IX, IY, J
+      INTEGER N, I, I0, IX, IY, J, Q
       REAL    ALB, TEMP, MRE, MIM, RHO0, KR, THETA, WSPD, PCL
       REAL    A, B, ZETA, SIGMA
 
@@ -208,6 +208,23 @@ C     Atmosphere 2012, 3, 591-619; doi:10.3390/atmos3040591.)
             GNDTEMP = GNDTEMP + TEMP
             GNDALBEDO = GNDALBEDO + A
             N = N + 1
+          ENDIF
+        ENDDO
+
+      ELSE IF (SFCTYPE .EQ. 'VP') THEN
+        NSFCPAR = MAXSFCPARS
+        DO COUNT=1,NXSFC*NYSFC
+          IX = GRID_COORDS(1,COUNT)
+          IY = GRID_COORDS(2,COUNT)
+          TEMP = PARMS_IN(1,COUNT)
+          IF (IX .GE. 1 .AND. IX .LE. NXSFC .AND.
+     .        IY .GE. 1 .AND. IY .LE. NYSFC) THEN
+              I = NSFCPAR*(IX-1 + (NXSFC+1)*(IY-1))
+              SFCPARMS(I+1) = TEMP
+              DO Q=2,NSFCPAR
+                SFCPARMS(I+Q) = PARMS_IN(Q,COUNT)
+              ENDDO
+              N = N + 1
           ENDIF
         ENDDO
 

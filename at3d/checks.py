@@ -76,7 +76,7 @@ def check_positivity(dataset, *names, precision=7):
     for name in names:
         variable = dataset[name]
         if not np.all(variable.data >= 0.0):
-            dataset[name][:] = np.round(variable, decimals=precision)
+            dataset[name].values[:] = np.round(variable.data, decimals=precision)
             if not np.all(variable.data >= 0.0):
                 raise at3d.exceptions.NegativeValueError(
                     "Negative values found in '{}'".format(name)

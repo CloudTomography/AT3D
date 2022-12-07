@@ -505,7 +505,7 @@ def load_from_netcdf(path, density=None):
     return dset
 
 
-def load_forward_model(file_name):
+def load_forward_model(file_name, load_solver=True):
     """
     Load from netCDF the solvers and sensors that were saved using
     `save_forward_model` below.
@@ -529,45 +529,46 @@ def load_forward_model(file_name):
         #     sensor_list.append(xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
         #         'sensors/'+str(key)+'/'+str(i)])))
         # sensor_dict[key] = {'sensor_list':sensor_list}
+    if load_solver:
+        for key, solver in solvers.items():
+            numerical_params = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
+                            'solvers/'+str(key)+'/numerical_parameters']))
+            numerical_params['deltam'] = numerical_params.deltam.data.astype(bool)
+            numerical_params['high_order_radiance'] = numerical_params.high_order_radiance.data.astype(bool)
+            num_stokes = numerical_params.num_stokes.data
+            surface = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/surface']))
+            source = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/source']))
 
-    for key, solver in solvers.items():
-        numerical_params = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
-                        'solvers/'+str(key)+'/numerical_parameters']))
-        numerical_params['deltam'] = numerical_params.deltam.data.astype(bool)
-        numerical_params['high_order_radiance'] = numerical_params.high_order_radiance.data.astype(bool)
-        num_stokes = numerical_params.num_stokes.data
-        surface = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/surface']))
-        source = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/source']))
+            mediums = OrderedDict()
+            for name, med in solver['medium'].groups.items():
+                mediums[name] = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
+                            'solvers/'+str(key)+'/medium/'+str(name)]))
 
-        mediums = OrderedDict()
-        for name, med in solver['medium'].groups.items():
-            mediums[name] = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
-                        'solvers/'+str(key)+'/medium/'+str(name)]))
+            if 'atmosphere' in solver.groups:
+                atmosphere = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
+                    'solvers/'+str(key)+'/atmosphere']))
+            else:
+                atmosphere=None
 
-        if 'atmosphere' in solver.groups:
-            atmosphere = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
-                'solvers/'+str(key)+'/atmosphere']))
-        else:
-            atmosphere=None
+            default_config = at3d.configuration.get_config()
+            for name in default_config:
+                if not name in numerical_params:
+                    numerical_params[name] = default_config[name]
 
-        default_config = at3d.configuration.get_config()
-        for name in default_config:
-            if not name in numerical_params:
-                numerical_params[name] = default_config[name]
+            #numerical_params['transcut'] = 1e-5
+            #numerical_params['angle_set'] = 2
 
-        #numerical_params['transcut'] = 1e-5
-        #numerical_params['angle_set'] = 2
-
-        solver_dict.add_solver(float(key), at3d.solver.RTE(numerical_params=numerical_params,
-                                            medium=mediums,
-                                           source=source,
-                                           surface=surface,
-                                            num_stokes=num_stokes,
-                                            name=None,
-                                            atmosphere=atmosphere
-                                           )
-                                           )
-        rte_grid = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/grid']))
+            solver_dict.add_solver(float(key), at3d.solver.RTE(numerical_params=numerical_params,
+                                                medium=mediums,
+                                               source=source,
+                                               surface=surface,
+                                                num_stokes=num_stokes,
+                                                name=None,
+                                                atmosphere=atmosphere
+                                               )
+                                               )
+    key = list(solvers.keys())[0]
+    rte_grid = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/grid']))
 
     return sensor_dict, solver_dict, rte_grid
 

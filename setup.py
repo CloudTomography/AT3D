@@ -148,7 +148,8 @@ F2PY_CORE_API = [
     'transmission_integral',
     'test_source',
     'wigner_transform',
-    'sh_to_do_unpol'
+    'sh_to_do_unpol',
+    'surface_brdf'
 ]
 
 def _run_command(cmd):
