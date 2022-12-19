@@ -343,7 +343,8 @@ class RTE:
         self._radiance, self._fluxes, self._dirflux, self._uniformzlev, \
         self._pa.extdirp, self._oldnpts, self._total_ext, self._deljdot, \
         self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
-        self._work2, ierr, errmsg, self._phaseinterpwt, self._cpu_time \
+        self._work2, ierr, errmsg, self._phaseinterpwt, self._cpu_time, \
+        self._splitcrit \
          = at3d.core.solution_iterations(
             transmin=self._transmin,
             newmethod=self._newmethod,

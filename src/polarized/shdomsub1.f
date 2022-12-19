@@ -457,7 +457,7 @@ C           inequality holds.
      .               ITERFIXSH, INTERPMETHOD, IERR, ERRMSG, MAXPG,
      .               PHASEINTERPWT, PHASEMAX, NLEGP,
      .               MAXNMICRO, PHASEWTP, SOLVE, COMPTIME, NEWMETHOD,
-     .               TRANSMIN)
+     .               TRANSMIN, SPLITCRIT)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -589,6 +589,8 @@ Cf2py intent(in) :: SOLVE, NEWMETHOD
 Cf2py intent(out) :: COMPTIME
       REAL TRANSMIN
 Cf2py intent(in) :: TRANSMIN
+      REAL SPLITCRIT
+Cf2py intent(out) :: SPLITCRIT
 
       REAL A
       INTEGER SP, STACK(50)
@@ -598,7 +600,7 @@ Cf2py intent(in) :: TRANSMIN
       INTEGER MAXNANGBND, NANGBND(4,2), IPA
       LOGICAL FIXSH, SPLITTESTING, DOSPLIT, OUTOFMEM
 
-      REAL    STARTADAPTSOL, ENDADAPTSOL, ADAPTRANGE, SPLITCRIT
+      REAL    STARTADAPTSOL, ENDADAPTSOL, ADAPTRANGE
       REAL    STARTSPLITACC, CURSPLITACC, AVGSOLCRIT, BETA, ACCELPAR
 
       REAL TIME1, TIME2

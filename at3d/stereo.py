@@ -121,12 +121,15 @@ class StereoMatcher:
     TSGM : int
         The level of regularity. See MGM paper for more details.
         Set as an environmental variable.
+	prefilter : str
+		'none', 'census', 'sobelx', 'gblur'
     """
     def __init__(self, mgm_directory='./', temp_directory='./mgm_temp',
                 matching_cost='census', P1=1, P2=10,
                 n_directions=8, subpixel='cubic',
                 OMP_NUM_THREADS=4, MEDIAN=1,
-                CENSUS_NCC_WIN=5, TSGM=3):
+                CENSUS_NCC_WIN=5, TSGM=3, prefilter='none',
+				aP1=1, aP2=1, aThresh=5):
 
         # do some checks that mgm is there.
         joined_path = os.path.join(mgm_directory, 'mgm')
@@ -156,6 +159,10 @@ class StereoMatcher:
         self.P2 = P2
         self.n_directions = n_directions
         self.subpixel = subpixel
+        self.prefilter = prefilter
+        self.aP1 = aP1
+        self.aP2 = aP2
+        self.aThresh = aThresh
 
     @property
     def config(self):
@@ -236,9 +243,9 @@ class StereoMatcher:
         cost_name = os.path.join(self._temp_directory, 'cost.tif')
         backflow_name = os.path.join(self._temp_directory, 'backflow.tif')
 
-        cmd = """./mgm -r {0} -R {1} -s {2} -t {3} -O {4} -P1 {5} -P2 {6} """.format(
+        cmd = """./mgm -r {0} -R {1} -s {2} -t {3} -O {4} -P1 {5} -P2 {6} -p {7} -aP1 {8} -aP2 {9} -aThresh {10} """.format(
             min_disparity, max_disparity, self.subpixel, self.matching_cost,
-            self.n_directions, self.P1, self.P2 \
+            self.n_directions, self.P1, self.P2, self.prefilter, self.aP1, self.aP2, self.aThresh \
         ) + full_names[0] + ' ' + full_names[1] + ' ' + disparity_name + \
         ' ' + cost_name +' ' + backflow_name
 
