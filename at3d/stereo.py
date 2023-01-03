@@ -144,7 +144,7 @@ class StereoMatcher:
         # where temporary images will be stored.
         if not os.path.exists(os.path.join(os.getcwd(), temp_directory)):
             os.makedirs(os.path.join(os.getcwd(), temp_directory))
-        self._temp_directory = temp_directory
+        self._temp_directory = os.path.join(os.getcwd(), temp_directory)
 
         config = {
             'OMP_NUM_THREADS': str(OMP_NUM_THREADS),
