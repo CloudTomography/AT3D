@@ -126,7 +126,10 @@ C      appropriate number is calculated and returned in NTERMS.
 
 
 C           If NTERMS is not specified calculate it
-      NSTOP = X + 4.0*X**0.3334 + 2
+C      NSTOP = X + 4.0*X**0.3334 + 2
+C     JRLoveridge - Revised higher based on this paper:
+C     Jesse R. Allardice and Eric C. Le Ru, "Convergence of Mie theory series: criteria for far-field and near-field properties," Appl. Opt. 53, 7224-7229 (2014)
+      NSTOP = X + 6.5*X**(0.3334) +2 
       IF (NTERMS .LE. 0)  NTERMS = NSTOP
       IF (NTERMS .GT. MAXTERMS) THEN
           WRITE (*,*)
