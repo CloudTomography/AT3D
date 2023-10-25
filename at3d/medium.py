@@ -1366,16 +1366,17 @@ class MicrophysicsGridToOpticalProperties(GridToOpticalProperties):
 
     def __init__(self, rte_grid, optical_property_generator, fixed_dataset=None,
                  *fixed_data_arrays, **variable_data_bounds):
-
+        
+        self._optical_property_generator = optical_property_generator
         GridToOpticalProperties.__init__(
             self,
             rte_grid,
             optical_property_generator.scatterer_name,
+            None, # a filler wavelength.
             fixed_dataset=fixed_dataset,
             *fixed_data_arrays,
             **variable_data_bounds
             )
-        self._optical_property_generator = optical_property_generator
 
     def calculate_optical_properties(self, **variable_data):
 
@@ -1403,6 +1404,7 @@ class MicrophysicsGridToOpticalProperties(GridToOpticalProperties):
                          np.zeros(self.grid_shape) + coords[name].max().data)
             self._check_bound(bound)
             bounds[name] = bound
+        return bounds
 
     def _checks(self, dataset):
 
