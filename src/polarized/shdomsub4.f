@@ -279,7 +279,7 @@ C      PRINT *, 'TIME_SOURCE', TIME_SOURCE
 
       SUBROUTINE LEVISAPPROX_GRADIENT(NSTOKES, NX, NY, NZ, NPTS,
      .           NCELLS,MAXPG,
-     .           NBCELLS, ML, MM, NCS, NLM, NSTLEG, NLEG, NUMPHASE,
+     .           ML, MM, NLM, NSTLEG, NLEG, NUMPHASE,
      .           NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .           BCFLAG, IPFLAG, SRCTYPE, DELTAM, SOLARMU, SOLARAZ,
      .           SFCTYPE, NSFCPAR, SFCGRIDPARMS, MAXNBC, NTOPPTS,
@@ -303,7 +303,7 @@ C      PRINT *, 'TIME_SOURCE', TIME_SOURCE
      .           PHASEINTERPWT, ALBEDOP, EXTINCTP, OPTINTERPWT,
      .           INTERPPTR, EXTMIN, SCATMIN, DOEXACT, TEMP, PHASEMAX,
      .           DTEMP, DEXTM, DALBM, DFJ, MAXSUBGRIDINTS,
-     .           TRANSCUT, LONGEST_PATH_PTS)
+     .           TRANSCUT, LONGEST_PATH_PTS,DERIV_MAXNMICRO)
 C    Calculates the cost function and its gradient using the Levis approximation
 C    to the Frechet derivatives of the radiative transfer equation.
 C    Calculates the Stokes Vector at the given directions (CAMMU, CAMPHI)
@@ -328,17 +328,17 @@ Cf2py intent(in) :: NCOST, NGRAD
       LOGICAL EXACT_SINGLE_SCATTER
 Cf2py intent(in) ::  EXACT_SINGLE_SCATTER
       INTEGER NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG, NPTS
-      INTEGER MAXPG, NCELLS, NBCELLS
+      INTEGER MAXPG, NCELLS
 Cf2py intent(in) :: NSTOKES, NX, NY, NZ, BCFLAG, IPFLAG,
-Cf2py intent(in) :: NPTS, NCELLS, MAXPG, NBCELLS
+Cf2py intent(in) :: NPTS, NCELLS, MAXPG
       INTEGER NPX, NPY, NPZ
       REAL    DELX, DELY, XSTART, YSTART
       REAL    ZLEVELS(*)
       REAL    EXTDIRP(*)
       DOUBLE PRECISION UNIFORMZLEV
 Cf2py intent(in) :: DELX, DELY, XSTART, YSTART, NPX, NPY, NPZ, ZLEVELS, EXTDIRP, UNIFORMZLEV
-      INTEGER ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
-Cf2py intent(in) :: ML, MM, NCS, NSTLEG, NLM, NLEG, NUMPHASE, NPART
+      INTEGER ML, MM, NSTLEG, NLM, NLEG, NUMPHASE, NPART
+Cf2py intent(in) :: ML, MM, NSTLEG, NLM, NLEG, NUMPHASE, NPART
       INTEGER  DNUMPHASE
 Cf2py intent(in) :: DNUMPHASE
       INTEGER NMU, NPHI0MAX, NPHI0(*)
@@ -381,10 +381,12 @@ Cf2py intent(in) :: NPIX, MAXNMICRO
       REAL   MEASUREMENTS(NSTOKES,*), DLEG(NSTLEG,0:NLEG,DNUMPHASE)
       REAL   DEXT(MAXPG,NUMDER), DALB(MAXPG,NUMDER)
 Cf2py intent(in) :: MEASUREMENTS, DEXT ,DALB,  DLEG
-      INTEGER DIPHASEP(MAXNMICRO,MAXPG,NUMDER)
+      INTEGER DERIV_MAXNMICRO
+Cf2py intent(in) :: DERIV_MAXNMICRO
+      INTEGER DIPHASEP(DERIV_MAXNMICRO,MAXPG,NUMDER)
       INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
       REAL    PHASEWTP(MAXNMICRO,MAXPG,NPART)
-      REAL    DPHASEWTP(MAXNMICRO,MAXPG,NUMDER)
+      REAL    DPHASEWTP(DERIV_MAXNMICRO,MAXPG,NUMDER)
       REAL    DTEMP(MAXPG,NUMDER)
 Cf2py intent(in) :: DIPHASEP, IPHASEP, PHASEWTP, DPHASEWTP,DTEMP
       REAL    OPTINTERPWT(8,NPTS)
@@ -426,7 +428,7 @@ Cf2py intent(in) :: DPATH, DPTR, UNCERTAINTIES
 Cf2py intent(in,out) :: JACOBIAN
       LOGICAL MAKEJACOBIAN
 Cf2py intent(in) :: MAKEJACOBIAN
-      INTEGER JI,JJ,JK, NUM_JACOBIAN_PTS, JACOBIANPTR(NUM_JACOBIAN_PTS)
+      INTEGER JI,NUM_JACOBIAN_PTS, JACOBIANPTR(NUM_JACOBIAN_PTS)
 Cf2py intent(in) :: NUM_JACOBIAN_PTS, JACOBIANPTR
       INTEGER RAYS_PER_PIXEL(*)
 Cf2py intent(in) :: RAYS_PER_PIXEL
@@ -451,7 +453,7 @@ Cf2py intent(in) :: MAXSUBGRIDINTS, LONGEST_PATH_PTS
       INTEGER IPIX, J, L, SIDE, IRAY
       LOGICAL VALIDRAD, VERBOSE
       DOUBLE PRECISION MURAY, PHIRAY, MU2, PHI2
-      DOUBLE PRECISION U, R, PI
+      DOUBLE PRECISION R, PI
       DOUBLE PRECISION X0, Y0, Z0
       DOUBLE PRECISION XE,YE,ZE, TRANSMIT
       INTEGER M, ME, MS, NS, NS1
@@ -572,7 +574,7 @@ C         while traversing the SHDOM grid.
      .             IPHASEP, DIPHASEP, WAVENO, UNITS, EXTMIN, SCATMIN,
      .             DOEXACT, INTERPMETHOD, DTEMP, DEXTM, DALBM,
      .             DFJ, MAXSUBGRIDINTS, TRANSCUT,LONGEST_PATH_PTS,
-     .             TIME_SOURCE,
+     .             TIME_SOURCE,DERIV_MAXNMICRO,
      .             TIME_DIRECT_POINT, TIME_DIRECT_SURFACE,
      .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE,
      .             VERBOSE)
@@ -637,7 +639,7 @@ C      PRINT *, 'TIME_ALLOCATE', TIME_ALLOCATE
      .             IPHASEP, DIPHASEP, WAVENO, UNITS, EXTMIN, SCATMIN,
      .             DOEXACT, INTERPMETHOD, DTEMP, DEXTM,DALBM,
      .             DFJ, MAXSUBGRIDINTS, TRANSCUT, LONGEST_PATH_PTS,
-     .             TIME_SOURCE,
+     .             TIME_SOURCE, DERIV_MAXNMICRO,
      .             TIME_DIRECT_POINT, TIME_DIRECT_SURFACE,
      .             TIME_RADIANCE, TIME_SUBGRID, TIME_ALLOCATE,
      .          VERBOSE)
@@ -690,11 +692,12 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
 
       REAL      OPTINTERPWT(8,NPTS)
       INTEGER   INTERPPTR(8,NPTS), MAXNMICRO
+      INTEGER   DERIV_MAXNMICRO
       REAL      EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG,NPART)
       REAL      PHASEWTP(MAXNMICRO,MAXPG,NPART)
-      REAL      DPHASEWTP(MAXNMICRO,MAXPG,NUMDER)
+      REAL      DPHASEWTP(DERIV_MAXNMICRO,MAXPG,NUMDER)
       INTEGER   IPHASEP(MAXNMICRO,MAXPG,NPART)
-      INTEGER   DIPHASEP(MAXNMICRO,MAXPG,NUMDER)
+      INTEGER   DIPHASEP(DERIV_MAXNMICRO,MAXPG,NUMDER)
       REAL      WAVENO(2)
       DOUBLE PRECISION EXTMIN, SCATMIN
       INTEGER   DOEXACT(NUMDER)
@@ -751,9 +754,6 @@ C     the partial derivatives DEXT, DALB, DIPHASE, DLEG, DPHASETAB.
       DOUBLE PRECISION, ALLOCATABLE :: PASSEDINTERP1(:,:)
       DOUBLE PRECISION, ALLOCATABLE :: PASSEDDELS(:)
       INTEGER NPASSED, K, MAXBYOPT
-      REAL MAXTAU, DZMAX
-      DOUBLE PRECISION  RADGRAD(NSTOKES), RAD0(NSTOKES)
-      DOUBLE PRECISION  RAD1(NSTOKES)
       REAL TIME1, TIME2
       LOGICAL DOSINGSCAT
 
@@ -917,7 +917,7 @@ C      CALL CPU_TIME(TIME1)
      .             NSTOKES, NSTLEG, ML, MM, NLM, NLEG, NUMPHASE,
      .             NPTS, DELTAM, SRCTYPE, SOLARMU,
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, PHASEINTERPWT,
-     .             DIRFLUX,
+     .             DIRFLUX,DERIV_MAXNMICRO,
      .             SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
      .             DONETHIS, OLDIPTS, OEXTINCT8, OSRCEXT8,
      .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART, RSHPTR,
@@ -1273,7 +1273,8 @@ C         debugging purposes.
           PASSEDTRANSMIT(NPASSED) = TRANSMIT
           PASSEDABSCELL(NPASSED) = -1.0
 C         zero radiance before adding to it.
-          PASSEDRAD(1,NPASSED) = 0.0
+          PASSEDRAD(1:NSTOKES,NPASSED) = 0.0
+          
           DO KK=1,NPASSED
             PASSEDRAD(:,KK) = PASSEDRAD(:,KK) +
      .        TRANSMIT*RADBND(:)/PASSEDTRANSMIT(KK)
@@ -1331,7 +1332,6 @@ C      PASSEDRAD(:,NPASSED) = 0.0
       IF (IERR .NE. 0) RETURN
 C      CALL CPU_TIME(TIME2)
 C      TIME_RADIANCE = TIME_RADIANCE + TIME2 - TIME1
-
       DEALLOCATE (PASSEDPOINTS, PASSEDRAD,PASSEDINTERP0,
      .            PASSEDINTERP1, PASSEDDELS, PASSEDABSCELL,
      .            PASSEDTRANSMIT)
@@ -1342,7 +1342,7 @@ C      TIME_RADIANCE = TIME_RADIANCE + TIME2 - TIME1
      .             NSTOKES, NSTLEG, ML, MM, NLM, NLEG, NUMPHASE,
      .             NPTS, DELTAM, SRCTYPE, SOLARMU,
      .             EXTINCT, ALBEDO, LEGEN, IPHASE, PHASEINTERPWT,
-     .             DIRFLUX,
+     .             DIRFLUX,DERIV_MAXNMICRO,
      .             SHPTR, SOURCE, YLMDIR, YLMSUN, SUNDIRLEG, SINGSCAT,
      .             DONETHIS, OLDIPTS, OEXTINCT8, OSRCEXT8,
      .             EXTINCT8, SRCEXT8, TOTAL_EXT, NPART, RSHPTR,
@@ -1367,7 +1367,7 @@ C     This is unapproximated (apart from practicalities of discretization).
       IMPLICIT NONE
       REAL TIME_SOURCE(3)
       INTEGER ICELL, NSTOKES, NSTLEG, NPTS, ML, MM, NLM, NLEG, NUMPHASE
-      INTEGER MAXNMICRO
+      INTEGER MAXNMICRO, DERIV_MAXNMICRO
       INTEGER GRIDPTR(8,*), SHPTR(*), RSHPTR(*)
       INTEGER DONETHIS(8), OLDIPTS(8), DNUMPHASE
       INTEGER IPHASE(8*MAXNMICRO,NPTS,NPART), NPART, NUMDER, MAXPG
@@ -1390,7 +1390,7 @@ C     This is unapproximated (apart from practicalities of discretization).
       REAL    DLEG(NSTLEG,0:NLEG,DNUMPHASE), DEXT(MAXPG,NUMDER)
       REAL    DALB(MAXPG,NUMDER)
       REAL    PHASEWTP(MAXNMICRO,MAXPG,NPART)
-      REAL    DPHASEWTP(MAXNMICRO,MAXPG,NUMDER)
+      REAL    DPHASEWTP(DERIV_MAXNMICRO,MAXPG,NUMDER)
       REAL    DTEMP(MAXPG,NUMDER)
       REAL    EXTINCTP(MAXPG,NPART), ALBEDOP(MAXPG, NPART)
       REAL    DEXTM(MAXPG,NUMDER), DALBM(8,NPTS,NUMDER)
@@ -1399,7 +1399,7 @@ C     This is unapproximated (apart from practicalities of discretization).
       REAL    OPTINTERPWT(8,NPTS)
       INTEGER INTERPPTR(8,NPTS)
       INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
-      INTEGER DIPHASEP(MAXNMICRO,MAXPG,NUMDER), KK
+      INTEGER DIPHASEP(DERIV_MAXNMICRO,MAXPG,NUMDER), KK
       REAL    DSINGSCAT(NSTOKES,DNUMPHASE)
       INTEGER LOFJ(*), PARTDER(NUMDER), RNS, RIS, IDR, IB,NB
       INTEGER IP, J, JT, L, M, MS, ME, IPH, IS, NS, N, I,IPA,K
@@ -1701,7 +1701,7 @@ C              CALL CPU_TIME(TIME3)
      .          SRCTYPE, SINGSCAT, DSINGSCAT, DTEMP(IB,IDR),
      .          TEMP(IP), INTERPMETHOD, GRAD8(:,NB,N,IDR), SINGSCATJ,
      .          SOURCET, LEGENT, UNITS, WAVELEN, WAVENO, DEXTM(IB,IDR),
-     .          DALBM(NB,IP,IDR), DFJ(NB,IP,IDR))
+     .          DALBM(NB,IP,IDR), DFJ(NB,IP,IDR), DERIV_MAXNMICRO)
 C              CALL CPU_TIME(TIME4)
 C              TIME_SOURCE(3) = TIME_SOURCE(3) + TIME4 - TIME3
             ENDDO
@@ -2104,7 +2104,7 @@ C           If doing polarization, sum the second Wigner function series
      .  SRCTYPE, SINGSCAT, DSINGSCAT, DTEMP, TEMP,
      . INTERPMETHOD, GRADTEMP, SINGSCATJ,
      . SOURCET, LEGENT, UNITS, WAVELEN, WAVENO, EXTINCT_GRAD,
-     . ALBEDO_GRAD, DFJ)
+     . ALBEDO_GRAD, DFJ, DERIV_MAXNMICRO)
 C      Calculates the gradient of the source/extinction product at a given RTE grid point
 C      for a given species with respect to unknowns on a given property grid point
 C      using partial derivatives of optical properties on property grid with
@@ -2140,16 +2140,16 @@ Cf2py intent(in) :: DIRFLUX, SECMU0, YLMDIR, YLMSUN
 Cf2py intent(in) :: XI, ALBEDOP, EXTINCTP, DEXT, DALB, DTEMP, TEMP
       REAL ALBEDO, EXTINCT
 Cf2py intent(in) :: ALBEDO, EXTINCT
-      INTEGER DIPHASEP(MAXNMICRO), IPHASEP(MAXNMICRO)
+      INTEGER DIPHASEP(DERIV_MAXNMICRO), IPHASEP(MAXNMICRO)
 Cf2py intent(in) :: DIPHASEP, IPHASEP
-      REAL PHASEWTP(MAXNMICRO), DPHASEWTP(MAXNMICRO)
+      REAL PHASEWTP(MAXNMICRO), DPHASEWTP(DERIV_MAXNMICRO)
 Cf2py intent(in) :: PHASEWTP, DPHASEWTP
       REAL SINGSCAT(NSTOKES, NUMPHASE), DSINGSCAT(NSTOKES, DNUMPHASE)
 Cf2py intent(in) :: SINGSCAT, DSINGSCAT
       REAL RADIANCE(NSTOKES, *)
 Cf2py intent(in) :: RADIANCE
-      INTEGER RIS, RNS, LOFJ(NLM)
-Cf2py intent(in) :: RIS, RNS, LOFJ
+      INTEGER RIS, RNS, LOFJ(NLM), DERIV_MAXNMICRO
+Cf2py intent(in) :: RIS, RNS, LOFJ, DERIV_MAXNMICRO
       CHARACTER SRCTYPE*1, INTERPMETHOD*2, UNITS*1
 Cf2py intent(in) :: SRCTYPE, INTERPMETHOD, UNITS
       REAL LEGEN(NSTLEG,0:NLEG, NUMPHASE)
@@ -2195,19 +2195,9 @@ C       Otherwise the phase function at this point is represented by
 C       linear interpolation for this variable. In this case we calculate
 C       derivative using a weighted sum over phase functions with the
 C       weights held in DPHASEWTP.
-      DO Q=1,MAXNMICRO
-        IF (DOEXACT .EQ. 1) THEN
-          IF (DELTAM) THEN
-            DSINGSCATP = DSINGSCATP + PHASEWTP(Q)*
-     .         DSINGSCAT(:,DIPHASEP(Q))
-          ENDIF
-          DLEGP = DLEGP + PHASEWTP(Q)*
-     .        DLEG(:,:,DIPHASEP(Q))
-        ENDIF
-
-C       Prepare the unscaled LEGEN for this property grid point.
-        UNSCALED_LEGEN = LEGEN(:,:,IPHASEP(Q))
-        IF (DELTAM) THEN
+      IF (DELTAM) THEN
+        DO Q=1,MAXNMICRO
+          UNSCALED_LEGEN = LEGEN(:,:,IPHASEP(Q))
           FTEMP = UNSCALED_LEGEN(1,ML+1)
           IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
             UNSCALED_LEGEN(1,0:ML) =
@@ -2219,19 +2209,84 @@ C       Prepare the unscaled LEGEN for this property grid point.
             UNSCALED_LEGEN(2:4,0:ML) =
      .        UNSCALED_LEGEN(2:4,0:ML) + FTEMP
           ENDIF
-        ENDIF
-        LEGENP = LEGENP +
-     .    PHASEWTP(Q)*UNSCALED_LEGEN
-        IF (DOEXACT .EQ. 0) THEN
-          DLEGP = DLEGP +
-     .        DPHASEWTP(Q)*UNSCALED_LEGEN
+          LEGENP = LEGENP +
+     .    PHASEWTP(Q)*UNSCALED_LEGEN          
+        ENDDO
+      ELSE
+        DO Q=1,MAXNMICRO
+          LEGENP = LEGENP + PHASEWTP(Q)*LEGEN(:,:,IPHASEP(Q))
+        ENDDO
+      ENDIF
 
+      DO Q=1,DERIV_MAXNMICRO        
+
+        IF (DOEXACT .EQ. 1) THEN
+          IF (DELTAM) THEN
+            DSINGSCATP = DSINGSCATP + PHASEWTP(Q)*
+     .          DSINGSCAT(:,DIPHASEP(Q))
+          ENDIF
+          DLEGP = DLEGP + PHASEWTP(Q)*
+     .        DLEG(:,:,DIPHASEP(Q))
+        ELSE IF (DOEXACT .EQ. 0) THEN
+          UNSCALED_LEGEN = LEGEN(:,:,IPHASEP(Q))
           IF (DELTAM) THEN
             DSINGSCATP = DSINGSCATP +
      .        DPHASEWTP(Q)*SINGSCAT(:,IPHASEP(Q))
+
+            FTEMP = UNSCALED_LEGEN(1,ML+1)
+            IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+              UNSCALED_LEGEN(1,0:ML) =
+     .        UNSCALED_LEGEN(1,0:ML)*(1-FTEMP)
+            ENDIF
+            UNSCALED_LEGEN(1,0:ML) =
+     .      UNSCALED_LEGEN(1,0:ML) + FTEMP
+            IF (NSTLEG .GT. 1) THEN
+              UNSCALED_LEGEN(2:4,0:ML) =
+     .        UNSCALED_LEGEN(2:4,0:ML) + FTEMP
+            ENDIF
           ENDIF
+          DLEGP = DLEGP +
+     .        DPHASEWTP(Q)*UNSCALED_LEGEN
         ENDIF
-      ENDDO
+      ENDDO          
+! 
+!       DO Q=1,MAXNMICRO
+!         IF (DOEXACT .EQ. 1) THEN
+!           IF (DELTAM) THEN
+!             DSINGSCATP = DSINGSCATP + PHASEWTP(Q)*
+!      .         DSINGSCAT(:,DIPHASEP(Q))
+!           ENDIF
+!           DLEGP = DLEGP + PHASEWTP(Q)*
+!      .        DLEG(:,:,DIPHASEP(Q))
+!         ENDIF
+
+! C       Prepare the unscaled LEGEN for this property grid point.
+!         UNSCALED_LEGEN = LEGEN(:,:,IPHASEP(Q))
+!         IF (DELTAM) THEN
+!           FTEMP = UNSCALED_LEGEN(1,ML+1)
+!           IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+!             UNSCALED_LEGEN(1,0:ML) =
+!      .        UNSCALED_LEGEN(1,0:ML)*(1-FTEMP)
+!           ENDIF
+!           UNSCALED_LEGEN(1,0:ML) =
+!      .      UNSCALED_LEGEN(1,0:ML) + FTEMP
+!           IF (NSTLEG .GT. 1) THEN
+!             UNSCALED_LEGEN(2:4,0:ML) =
+!      .        UNSCALED_LEGEN(2:4,0:ML) + FTEMP
+!           ENDIF
+!         ENDIF
+!         LEGENP = LEGENP +
+!      .    PHASEWTP(Q)*UNSCALED_LEGEN
+!         IF (DOEXACT .EQ. 0) THEN
+!           DLEGP = DLEGP +
+!      .        DPHASEWTP(Q)*UNSCALED_LEGEN
+
+!           IF (DELTAM) THEN
+!             DSINGSCATP = DSINGSCATP +
+!      .        DPHASEWTP(Q)*SINGSCAT(:,IPHASEP(Q))
+!           ENDIF
+!         ENDIF
+!       ENDDO
 
 C     Calculate some components of extinct / albedo / phase
 C     gradients that will be used again.
@@ -2375,7 +2430,6 @@ C      INTEGER DOEXACT(NUMDER)
       REAL XI, EXTGRAD, RADGRAD0(NSTOKES)
       REAL RADGRAD1(NSTOKES), RADGRAD(NSTOKES)
 
-
       DO KK=1,NPASSED-1
         EXT0 = 0.0
         EXT1 = 0.0
@@ -2427,7 +2481,8 @@ C     .            EXTINCTP(IB,IPA), DPHASEWTP(:,IB,IDR), ML)
       SUBROUTINE EXTINCTION_DERIVATIVE_POINT(DEXT, DOEXACT, XI,
      .      LEGEN, NLEG, NSTLEG, NUMPHASE, DNUMPHASE, PHASEWTP,
      .      DELTAM, IPHASEP, DIPHASEP, EXTGRAD, DLEG, MAXNMICRO,
-     .      DALB, ALBEDOP, EXTINCTP, DPHASEWTP, ML)
+     .      DALB, ALBEDOP, EXTINCTP, DPHASEWTP, ML,
+     .      DERIV_MAXNMICRO)
 C     Evaluate the derivative of the delta-M scaled extinction
 C     with respect to the unscaled optical properties on the
 C     property grid.
@@ -2442,12 +2497,12 @@ C     times at each grid point for the direct beam derivatives.
 Cf2py intent(in) :: NLEG, NSTLEG, NUMPHASE, DNUMPHASE, MAXNMICRO
       REAL LEGEN(NSTLEG,0:NLEG,NUMPHASE), DLEG(NSTLEG,0:NLEG,DNUMPHASE)
 Cf2py intent(in) :: LEGEN, DLEG
-      REAL PHASEWTP(MAXNMICRO), DPHASEWTP(MAXNMICRO)
+      REAL PHASEWTP(MAXNMICRO), DPHASEWTP(DERIV_MAXNMICRO)
 Cf2py intent(in) :: PHASEWTP, DPHASEWTP
-      INTEGER IPHASEP(MAXNMICRO), DIPHASEP(MAXNMICRO)
+      INTEGER IPHASEP(MAXNMICRO), DIPHASEP(DERIV_MAXNMICRO)
 Cf2py intent(in) :: IPHASEP, DIPHASEP
-      INTEGER DOEXACT, ML
-Cf2py intent(in) :: DOEXACT, ML
+      INTEGER DOEXACT, ML, DERIV_MAXNMICRO
+Cf2py intent(in) :: DOEXACT, ML, DERIV_MAXNMICRO
       LOGICAL DELTAM
 Cf2py intent(in) :: DELTAM
       REAL DEXT, DALB, ALBEDOP, EXTINCTP, XI, EXTGRAD
@@ -2461,20 +2516,41 @@ C     DFP is the derivative of the delta-M scale factor with
 C     respect to the unknowns.
       FP = 0.0
       DFP = 0.0
-      DO Q=1,MAXNMICRO
-        IF (PHASEWTP(Q) .LE. 1E-6) CYCLE
-        IF (DELTAM) THEN
+      IF (DELTAM) THEN
+        DO Q=1,MAXNMICRO
+          IF (PHASEWTP(Q) .LE. 1E-6) CYCLE
           FP = FP + PHASEWTP(Q)*
-     .                LEGEN(1,ML+1,IPHASEP(Q))
-          IF (DOEXACT .EQ. 1) THEN
-            DFP = DFP + PHASEWTP(Q)*
-     .                  DLEG(1,ML+1,DIPHASEP(Q))
-          ELSEIF (DOEXACT .EQ. 0) THEN
+     .            LEGEN(1,ML+1,IPHASEP(Q))
+        ENDDO     
+
+        IF (DOEXACT .EQ. 0) THEN
+          DO Q=1,DERIV_MAXNMICRO
             DFP = DFP + DPHASEWTP(Q)*
-     .                  LEGEN(1,ML+1,IPHASEP(Q))
-          ENDIF
+     .             LEGEN(1,ML+1,IPHASEP(Q))
+          ENDDO
+        ELSE IF (DOEXACT .EQ. 1) THEN
+          DO Q=1,DERIV_MAXNMICRO
+            IF (PHASEWTP(Q) .LE. 1E-6) CYCLE
+            DFP = DFP + PHASEWTP(Q)*
+     .        DLEG(1,ML+1,DIPHASEP(Q))
+          ENDDO
         ENDIF
-      ENDDO
+      ENDIF
+
+    !   DO Q=1,MAXNMICRO
+    !     IF (PHASEWTP(Q) .LE. 1E-6) CYCLE
+    !     IF (DELTAM) THEN
+    !       FP = FP + PHASEWTP(Q)*
+    !  .                LEGEN(1,ML+1,IPHASEP(Q))
+    !       IF (DOEXACT .EQ. 1) THEN
+    !         DFP = DFP + PHASEWTP(Q)*
+    !  .                  DLEG(1,ML+1,DIPHASEP(Q))
+    !       ELSEIF (DOEXACT .EQ. 0) THEN
+    !         DFP = DFP + DPHASEWTP(Q)*
+    !  .                  LEGEN(1,ML+1,IPHASEP(Q))
+    !       ENDIF
+    !     ENDIF
+    !   ENDDO
       EXTGRAD = XI*(DEXT*(1-FP*ALBEDOP) -
      .            DALB*FP*EXTINCTP -
      .            EXTINCTP*ALBEDOP*DFP)
@@ -2566,8 +2642,8 @@ Cf2py intent(in) :: RADIANCE, SOURCET
       CHARACTER SRCTYPE*1
       REAL YLMSUN(NSTLEG, NLM), DIRFLUX, SECMU0
 
-      INTEGER L, ME, MS, M, JT, J
-      REAL A1, B1, DA
+      INTEGER J
+
 
        DO J = 1, RNS
          SOURCET(1) = SOURCET(1)
@@ -2630,7 +2706,7 @@ Cf2py intent(in) :: RADIANCE, SOURCET
      .    ALBEDOP, EXTINCTP, NPART, DALB, DEXT,
      .    NUMDER, PARTDER, DOEXACT, ML, DELTAM,
      .    ALBEDO, IPHASE, PHASEINTERPWT, PHASEMAX,
-     .    INTERPMETHOD)
+     .    INTERPMETHOD, DERIV_MAXNMICRO)
 C     This subroutine just precomputes the interpolation weights
 C     (OPTINTERPWT) and pointers (INTERPPTR) from the property
 C     grid onto the RTE grid in SHDOM analagously to in
@@ -2662,15 +2738,15 @@ Cf2py intent(in) :: DELX, DELY, XSTART, YSTART
 Cf2py intent(in) :: ZLEVELS
       INTEGER NUMPHASE, NSTLEG, DNUMPHASE, MAXNMICRO
 Cf2py intent(in) :: NUMPHASE, NSTLEG, DNUMPHASE, MAXNMICRO
-      INTEGER DOEXACT(NUMDER)
-Cf2py intent(in) :: DOEXACT
+      INTEGER DOEXACT(NUMDER), DERIV_MAXNMICRO
+Cf2py intent(in) :: DOEXACT, DERIV_MAXNMOCRO
       REAL LEGEN(NSTLEG,0:NLEG,NUMPHASE)
       REAL DLEG(NSTLEG,0:NLEG, DNUMPHASE)
 Cf2py intent(in) :: LEGEN, DLEG
       REAL PHASEWTP(MAXNMICRO, MAXPG,NPART)
-      REAL DPHASEWTP(MAXNMICRO,MAXPG,NUMDER)
+      REAL DPHASEWTP(DERIV_MAXNMICRO,MAXPG,NUMDER)
       INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
-      INTEGER DIPHASEP(MAXNMICRO,MAXPG,NUMDER)
+      INTEGER DIPHASEP(DERIV_MAXNMICRO,MAXPG,NUMDER)
 Cf2py intent(in) :: DPHASEWTP, DPHASEWTP, IPHASEP, DIPHASEP
       REAL ALBEDOP(MAXPG, NPART), EXTINCTP(MAXPG,NPART)
       REAL DALB(MAXPG,NUMDER), DEXT(MAXPG,NUMDER)
@@ -2689,7 +2765,6 @@ Cf2py intent(out) :: IERR, ERRMSG
 
       INTEGER IP,IDR, Q, IPA
       REAL F, ALBEDOJ, DIVIDE
-      REAL TIME2, TIME1
 
       IERR = 0
       DO IDR=1,NUMDER
@@ -2727,7 +2802,7 @@ C         compute F and ALBEDOJ
      .       DIPHASEP(:,:,IDR), DPHASEWTP(:,:,IDR),
      .       EXTINCTP(:,IPA), ALBEDOP(:,IPA), DOEXACT(IDR),
      .       ML, F, DIVIDE, ALBEDOJ, DELTAM, NUMPHASE,
-     .       DNUMPHASE)
+     .       DNUMPHASE, DERIV_MAXNMICRO)
             IF (IERR .NE. 0) RETURN
         ENDDO
       ENDDO
@@ -2739,7 +2814,7 @@ C         compute F and ALBEDOJ
      .  INTERPPTR, MAXPG, DALBM, DEXTM, DFJ, DEXT, DALB, MAXNMICRO,
      .  NSTLEG,NLEG, LEGEN, DLEG, PHASEWTP, IPHASEP, DIPHASEP,
      .  DPHASEWTP, EXTINCTP, ALBEDOP, DOEXACT, ML, F, DIVIDE,
-     .  ALBEDOJ, DELTAM, NUMPHASE, DNUMPHASE)
+     .  ALBEDOJ, DELTAM, NUMPHASE, DNUMPHASE, DERIV_MAXNMICRO)
 C     Modified from TRILIN_INTERP_PROP to only return the interpolation
 C     weights (OPTINTERPWT) and pointers (INTERPPTR)from the property grid
 C     onto the RTE grid for use in gradient calculations.
@@ -2751,20 +2826,20 @@ C     onto the RTE grid for use in gradient calculations.
       REAL    X, Y, Z
       LOGICAL DELTAM
 
-      INTEGER NPX, NPY, NPZ, MAXPG, ML
+      INTEGER NPX, NPY, NPZ, MAXPG, ML, DERIV_MAXNMICRO
       INTEGER NUMPHASE, DNUMPHASE, NLEG, NSTLEG, MAXNMICRO
       REAL DELX, DELY, XSTART, YSTART
       REAL ZLEVELS(*)
       REAL LEGEN(NSTLEG,0:NLEG,NUMPHASE)
       REAL DLEG(NSTLEG,0:NLEG,DNUMPHASE)
       REAL DEXT(MAXPG), DALB(MAXPG), EXTINCTP(MAXPG), ALBEDOP(MAXPG)
-      REAL PHASEWTP(MAXNMICRO,MAXPG), DPHASEWTP(MAXNMICRO,MAXPG)
-      INTEGER IPHASEP(MAXNMICRO,MAXPG), DIPHASEP(MAXNMICRO,MAXPG)
+      REAL PHASEWTP(MAXNMICRO,MAXPG), DPHASEWTP(DERIV_MAXNMICRO,MAXPG)
+      INTEGER IPHASEP(MAXNMICRO,MAXPG), DIPHASEP(DERIV_MAXNMICRO,MAXPG)
       INTEGER DOEXACT
       REAL F, ALBEDOJ, DIVIDE
 
-      INTEGER IX, IXP, IY, IYP, IZ, L, IL, IM, IU, J
-      INTEGER I1, I2, I3, I4, I5, I6, I7, I8, I
+      INTEGER IX, IXP, IY, IYP, IZ, IL, IM, IU
+      INTEGER I1, I2, I3, I4, I5, I6, I7, I8
       DOUBLE PRECISION U, V, W, F1, F2, F3, F4, F5, F6, F7, F8
       INTEGER Q,NB,IB
       REAL FP,DFP
@@ -2850,8 +2925,7 @@ C     DFP is the derivative of the delta-M scale factor with
 C     respect to the unknowns.
         FP = 0.0
         DFP = 0.0
-        DO Q=1,MAXNMICRO
-          IF (PHASEWTP(Q,IB) .LE. 1E-6) CYCLE
+        DO Q=1,DERIV_MAXNMICRO
           IF (DELTAM) THEN
             FP = FP + PHASEWTP(Q,IB)*
      .          LEGEN(1,ML+1,IPHASEP(Q,IB))

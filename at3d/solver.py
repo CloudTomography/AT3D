@@ -1249,18 +1249,18 @@ class RTE:
                 unknown_scatterer_indices.append(scatterer_index+1)
             i += 1
 
-        deriv_max_num_micro = max(num_micros)
+        self._deriv_max_num_micro = max(num_micros)
         max_legendre = max(max_legendre)
         self._unknown_scatterer_indices = np.array(unknown_scatterer_indices).astype(np.int32)
         self._table_phase_derivative_flag = np.array(table_phase_derivative_flag).astype(np.int32)
 
         diphase = np.zeros(
-            shape=[deriv_max_num_micro, self._maxpg, num_derivatives],
+            shape=[self._deriv_max_num_micro, self._maxpg, num_derivatives],
             dtype=np.int32
         )
 
         dphasewt = np.zeros(
-            shape=[deriv_max_num_micro, self._maxpg, num_derivatives],
+            shape=[self._deriv_max_num_micro, self._maxpg, num_derivatives],
             dtype=np.float32
         )
 
@@ -1279,7 +1279,7 @@ class RTE:
                 dalb[:, i] = variable_derivative.ssalb.data.ravel()
                 dphasewt[..., i] = np.pad(
                     variable_derivative.phase_weights.data.reshape((-1,self._maxpg)),
-                    ((0,deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
+                    ((0,self._deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
                     mode='constant' # default pads with zeros.
                 )
 
@@ -1293,7 +1293,7 @@ class RTE:
                     ))
                 diphase[..., i] = np.pad(
                     variable_derivative.table_index.data.reshape((-1,self._maxpg)) + dleg_max,
-                    ((0,deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
+                    ((0,self._deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
                     mode='constant' # default pads with zeros.
                 )
                 i += 1
@@ -1307,19 +1307,43 @@ class RTE:
         diphase[np.where(diphase == 0)] = 1
 
         # Concatenate all legendre tables into one table
-        legendre_table = xr.concat(dleg_table, dim='table_index')
-        if self._pa.nlegp + 1 > legendre_table.sizes['legendre_index']:
-            legendre_table = legendre_table.pad(
-                {'legendre_index':
-                 (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])
-                }, constant_values=0.0
-            )
-        self._dnumphase = legendre_table.sizes['table_index']
-        dleg = legendre_table.data
+        if dleg_table:
+            legendre_table = xr.concat(dleg_table, dim='table_index')
+            if self._pa.nlegp + 1 > legendre_table.sizes['legendre_index']:
+                legendre_table = legendre_table.pad(
+                    {'legendre_index':
+                    (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])
+                    }, constant_values=0.0
+                ) 
+            self._dnumphase = legendre_table.sizes['table_index']
+            dleg = legendre_table.data
 
-        scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0, self._pa.nlegp+1)]))
-        dleg[0, 0, :] = 0.0
-        dleg = dleg[:self._nstleg] / scaling_factor
+            scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0, self._pa.nlegp+1)]))
+            dleg[0, 0, :] = 0.0
+            dleg = dleg[:self._nstleg] / scaling_factor
+
+            # compute lut of phase function derivatives evaluated at scattering angles.
+            self._dphasetab, ierr, errmsg = at3d.core.precompute_phase_check_grad(
+                negcheck=False,
+                nstphase=self._nstphase,
+                nstleg=self._nstleg,
+                nscatangle=self._nscatangle,
+                nstokes=self._nstokes,
+                dnumphase=self._dnumphase,
+                ml=self._ml,
+                nlm=self._nlm,
+                nleg=self._pa.nlegp,
+                dleg=dleg,
+                deltam=self._deltam
+            )
+            at3d.checks.check_errcode(ierr, errmsg)
+            # now that we have dphasetab we can truncate dleg
+            # to the RTE accuracy.
+            self._dleg = dleg[:, :self._nleg+1]
+        else:
+            self._dnumphase = 1
+            self._dleg = np.zeros((self._nstleg, self._nleg+1, self._dnumphase))
+            self._dphasetab = np.zeros((self._nstphase, self._nscatangle, self._dnumphase))
 
         self._dext = dext
         self._dalb = dalb
@@ -1328,24 +1352,6 @@ class RTE:
         # temperature derivatives are not yet supported in the python interface.
         self._dtemp = np.zeros((dext.shape))
 
-        # compute lut of phase function derivatives evaluated at scattering angles.
-        self._dphasetab, ierr, errmsg = at3d.core.precompute_phase_check_grad(
-            negcheck=False,
-            nstphase=self._nstphase,
-            nstleg=self._nstleg,
-            nscatangle=self._nscatangle,
-            nstokes=self._nstokes,
-            dnumphase=self._dnumphase,
-            ml=self._ml,
-            nlm=self._nlm,
-            nleg=self._pa.nlegp,
-            dleg=dleg,
-            deltam=self._deltam
-        )
-        at3d.checks.check_errcode(ierr, errmsg)
-        # now that we have dphasetab we can truncate dleg
-        # to the RTE accuracy.
-        self._dleg = dleg[:, :self._nleg+1]
         # make property grid to RTE grid pointers and interpolation weights.
         self._optinterpwt, self._interpptr, ierr, errmsg, \
         self._dalbm, self._dextm, self._dfj = \
@@ -1372,6 +1378,7 @@ class RTE:
             diphasep=self._diphasep,
             nleg=self._nleg,
             maxnmicro=self._pa.max_num_micro,
+            deriv_maxnmicro=self._deriv_max_num_micro,
             albedop=self._pa.albedop,
             extinctp=self._pa.extinctp,
             npart=self._npart,
