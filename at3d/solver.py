@@ -2043,6 +2043,13 @@ class RTE:
         self._ml = self._nmu - 1
         self._mm = max(0, int(self._nphi / 2) - 1)
         self._nlm = (2 * self._mm + 1) * (self._ml + 1) - self._mm * (self._mm + 1)
+        if self._nlm < 4:
+            raise at3d.exceptions.SHDOMError(
+                "Insufficient Spherical Harmonics (NLM={})."
+                " Make sure `num_mu_bins`={} is large enough (>=2) and `num_phi_bins`"
+                "={} is ~2 times as large.".format(self._nlm, self._nmu, self._nphi)
+            )
+
         if self._ncs == 1:
             self._nphi0max = int((self._nphi + 2) / 2)
         elif self._ncs == 2:
