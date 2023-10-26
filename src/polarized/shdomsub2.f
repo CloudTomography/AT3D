@@ -341,7 +341,7 @@ C     the property grid to each internal grid point.
       REAL PHASEWTP(MAXNMICRO,MAXPG,NPART)
       INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
       INTEGER NZCKD
-      REAL ZCKD(*), GASABS(*)
+      REAL ZCKD(*), GASABS(*), KG
       DOUBLE PRECISION EXTMIN, SCATMIN
 
 C         Initialize: transfer the tabulated phase functions
@@ -356,7 +356,7 @@ C     below.
      .                      ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .                      ZCKD, GASABS, EXTMIN, SCATMIN,
      .                      INTERPMETHOD, IERR,ERRMSG,PHASEINTERPWT,
-     .                      NLEGP, MAXNMICRO, PHASEWTP)
+     .                      NLEGP, MAXNMICRO, PHASEWTP,KG)
       IF (IERR .NE. 0) RETURN
 
 C         Trilinearly interpolate from the property grid to the adaptive grid
@@ -374,9 +374,12 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
      .            INTERPMETHOD, IERR, ERRMSG,
      .            PHASEINTERPWT(:,IP,IPA),
-     .            NLEGP, MAXNMICRO, PHASEWTP(:,:,IPA))
+     .            NLEGP, MAXNMICRO, PHASEWTP(:,:,IPA), KG)
             IF (IERR .NE. 0) RETURN
-	           TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
+            IF (IPA .EQ. 1) THEN
+              TOTAL_EXT(IP) = TOTAL_EXT(IP) + KG
+            ENDIF
+	          TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
 	       ENDDO
       ENDDO
 
@@ -539,10 +542,19 @@ C                LEGEN(6,L,IPH) = LEGEN(6,L,IPH)
         ENDIF
       ENDIF
 
-      IF (DELTAM) TOTAL_EXT(:NPTS) = 0.0
-      DO IPA = 1, NPART
-        DO I = 1, NPTS
-          IF (DELTAM) THEN
+C      IF (DELTAM) TOTAL_EXT(:NPTS) = 0.0
+C     Subtract everything but gas absorption.
+      IF (DELTAM) THEN
+        TOTAL_EXT(:NPTS) = TOTAL_EXT(:NPTS) - 
+     .                     SUM(EXTINCT(:NPTS,:),dim=2)
+C     Double check for rounding that makes small negative errors.
+        WHERE (TOTAL_EXT(:NPTS) < 0.0)
+          TOTAL_EXT(:NPTS) = 0.0
+        ELSEWHERE
+          TOTAL_EXT(:NPTS) = TOTAL_EXT
+        END WHERE
+        DO IPA = 1, NPART
+          DO I = 1, NPTS
             IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
               F = LEGEN(1,ML+1,IPHASE(1,I,IPA))
             ELSE
@@ -556,14 +568,41 @@ C                LEGEN(6,L,IPH) = LEGEN(6,L,IPH)
             ALBEDO(I,IPA) = (1.0-F)*ALBEDO(I,IPA)/
      .			   (1.0-ALBEDO(I,IPA)*F)
             TOTAL_EXT(I) = TOTAL_EXT(I) + EXTINCT(I,IPA)
-          ENDIF
-	        ALBMAX = MAX(ALBMAX, ALBEDO(I,IPA))
-	        IF (SRCTYPE .NE. 'S') THEN
-	           CALL PLANCK_FUNCTION (TEMP(I), UNITS,WAVENO,WAVELEN,BB)
-	            PLANCK(I,IPA) = (1.0-ALBEDO(I,IPA))*BB
-          ENDIF
-	      ENDDO
-      ENDDO
+          ENDDO
+        ENDDO            
+      ENDIF
+      IF (SRCTYPE .NE. 'S') THEN
+        DO IPA = 1, NPART
+          DO I = 1, NPTS
+            CALL PLANCK_FUNCTION (TEMP(I), UNITS,WAVENO,WAVELEN,BB)
+            PLANCK(I,IPA) = (1.0-ALBEDO(I,IPA))*BB
+          ENDDO
+        ENDDO
+      ENDIF
+      ALBMAX = MAX(ALBMAX, MAXVAL(ALBEDO(:NPTS,:)))
+
+    !       IF (DELTAM) THEN
+    !         IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+    !           F = LEGEN(1,ML+1,IPHASE(1,I,IPA))
+    !         ELSE
+    !           F = 0.0
+    !           DO Q=1,8*MAXNMICRO
+    !             F = F + LEGEN(1,ML+1,IPHASE(Q,I,IPA))*
+    !  .            PHASEINTERPWT(Q,I,IPA)
+    !           ENDDO
+    !         ENDIF
+    !         EXTINCT(I,IPA) = (1.0-ALBEDO(I,IPA)*F)*EXTINCT(I,IPA)
+    !         ALBEDO(I,IPA) = (1.0-F)*ALBEDO(I,IPA)/
+    !  .			   (1.0-ALBEDO(I,IPA)*F)
+    !         TOTAL_EXT(I) = TOTAL_EXT(I) + EXTINCT(I,IPA)
+    !       ENDIF
+	  !       ALBMAX = MAX(ALBMAX, ALBEDO(I,IPA))
+	  !       IF (SRCTYPE .NE. 'S') THEN
+	  !          CALL PLANCK_FUNCTION (TEMP(I), UNITS,WAVENO,WAVELEN,BB)
+	  !           PLANCK(I,IPA) = (1.0-ALBEDO(I,IPA))*BB
+    !       ENDIF
+	  !     ENDDO
+    !   ENDDO
 
       RETURN
       END

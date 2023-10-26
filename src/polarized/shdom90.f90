@@ -21,7 +21,7 @@
                      ALBEDOP, LEGENP, IPHASEP, NZCKD, &
                      ZCKD, GASABS, EXTMIN, SCATMIN, INTERPMETHOD, &
                      IERR, ERRMSG, PHASEINTERPWT, NLEGP, MAXNMICRO, &
-                     PHASEWTP)
+                     PHASEWTP, KG)
 !      Trilinearly interpolates the quantities on the input property
 !     grid at the single point (X,Y,Z) to get the output TEMP,EXTINCT,
 !     ALBEDO, and LEGEN or IPHASE.  Interpolation is done on the
@@ -34,13 +34,13 @@
       INTEGER NSTLEG, NLEG, NLEGP, MAXNMICRO
       INTEGER IPHASE(8*MAXNMICRO)
       LOGICAL INIT
-      REAL PHASEINTERPWT(8*MAXNMICRO)
+      REAL PHASEINTERPWT(8*MAXNMICRO), KG
       REAL    X, Y, Z,  TEMP, EXTINCT, ALBEDO, LEGEN(NSTLEG,0:NLEG,*)
       INTEGER IX, IXP, IY, IYP, IZ, L, IL, IM, IU, J
       INTEGER I1, I2, I3, I4, I5, I6, I7, I8, I
       DOUBLE PRECISION U, V, W, F1, F2, F3, F4, F5, F6, F7, F8, F
       DOUBLE PRECISION SCAT1,SCAT2,SCAT3,SCAT4,SCAT5,SCAT6,SCAT7,SCAT8
-      DOUBLE PRECISION SCATTER, MAXSCAT, KG, EXTMIN, SCATMIN
+      DOUBLE PRECISION SCATTER, MAXSCAT, EXTMIN, SCATMIN
       INTEGER Q, Q2, CURRENTI
       CHARACTER INTERPMETHOD*2
       INTEGER IERR
@@ -300,9 +300,6 @@
 !           LEGEN(1,L,1) = LEGEN(1,L,1)/(2*L+1)
 !         ENDDO
 !       ENDIF
-
-
-!         Add in the gaseous absorption to extinction and albedo
       IF (NZCKD .GT. 0) THEN
         IL = 1
         IU = NZCKD
@@ -318,13 +315,33 @@
         F = (Z-ZCKD(I))/(ZCKD(I+1)-ZCKD(I))
         F = MIN( MAX(F,0.0D0), 1.0D0)
         KG = (1.0-F)*GASABS(I) + F*GASABS(I+1)
-        IF (EXTINCT+KG .GT. 0.0) THEN
-          ALBEDO = ALBEDO*EXTINCT /(EXTINCT + KG)
-        ELSE
-          ALBEDO = 0.0
-        ENDIF
-        EXTINCT = EXTINCT + KG
-      ENDIF
+      ELSE
+        KG = 0.0
+      ENDIF       
+
+!         Add in the gaseous absorption to extinction and albedo
+      ! IF (NZCKD .GT. 0) THEN
+      !   IL = 1
+      !   IU = NZCKD
+      !   DO WHILE (IU-IL .GT. 1)
+      !     IM=(IU+IL)/2
+      !     IF (Z .LE. ZCKD(IM)) THEN
+      !       IL = IM
+      !     ELSE
+      !       IU = IM
+      !     ENDIF
+      !   ENDDO
+      !   I = MIN(MAX(IL,1),NZCKD-1)
+      !   F = (Z-ZCKD(I))/(ZCKD(I+1)-ZCKD(I))
+      !   F = MIN( MAX(F,0.0D0), 1.0D0)
+      !   KG = (1.0-F)*GASABS(I) + F*GASABS(I+1)
+      !   IF (EXTINCT+KG .GT. 0.0) THEN
+      !     ALBEDO = ALBEDO*EXTINCT /(EXTINCT + KG)
+      !   ELSE
+      !     ALBEDO = 0.0
+      !   ENDIF
+      !   EXTINCT = EXTINCT + KG
+      ! ENDIF
       RETURN
       END
 

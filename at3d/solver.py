@@ -1681,47 +1681,47 @@ class RTE:
                 raise KeyError("'temperature' variable was not specified in "
                                "`atmosphere` despite using thermal source.")
 
-            #if 'gas_absorption' in atmosphere.data_vars:
+            if 'gas_absorption' in atmosphere.data_vars:
                 # raise ValueError("'gas_absorption' in `atmosphere` is not currently supported. "
                 #             "GAS ABSORPTION IS NOT BEING ADDED!"
                 #             "Please add the gas absorption to medium. Use `at3d.medium.gas_to_scatterer`.")
 
-            #     at3d.checks.check_positivity(atmosphere, 'gas_absorption')
-            #     at3d.checks.check_hasdim(atmosphere, gas_absorption=['x', 'y', 'z'])
-            #     if np.all(atmosphere.gas_absorption[0, 0] == atmosphere.gas_absorption):
-            #         self._pa.nzckd = atmosphere.sizes['z']
-            #         self._pa.zckd = atmosphere.z.data
-            #         self._pa.gasabs = atmosphere.gas_absorption[0, 0].data
-            #     else:
-            #         warnings.warn("'gas_absorption' does not collapse to 1D so is being added "
-            #                       "to `medium`.")
-            #         if 'gas_absorption' in self.medium:
-            #             KeyError("'gas_absorption' key was already in `medium`.")
-            #         else:
-            #             gas_absorption_scatterer = xr.Dataset(
-            #                 data_vars={
-            #                     'extinction': (['x', 'y', 'z'], atmosphere.gas_absorption.data),
-            #                     'ssalb': (['x', 'y', 'z'],
-            #                                np.zeros(atmosphere.gas_absorption.shape)),
-            #                     'table_index': (['num_micro', 'x', 'y', 'z'],
-            #                                     np.zeros((1,)+atmosphere.gas_absorption.shape,
-            #                                     dtype=np.int)),
-            #                     'phase_weights': (['num_micro', 'x', 'y', 'z'],
-            #                                     np.ones((1,)+atmosphere.gas_absorption.shape,
-            #                                     dtype=np.float32)),
-            #                     'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
-            #                                 np.zeros((6, 0, 0)))
-            #                 },
-            #                 coords={
-            #                     'x': atmosphere.x,
-            #                     'y': atmosphere.y,
-            #                     'z': atmosphere.z,
-            #                 }
-            #             )
-            #             self.medium['gas_absorption'] = gas_absorption_scatterer
-            # else:
-            #     warnings.warn("No gas absorption found in `atmosphere` dataset."
-            #                   " Name should be 'gas_absorption'.")
+                at3d.checks.check_positivity(atmosphere, 'gas_absorption')
+                at3d.checks.check_hasdim(atmosphere, gas_absorption=['x', 'y', 'z'])
+                if np.all(atmosphere.gas_absorption[0, 0] == atmosphere.gas_absorption):
+                    self._pa.nzckd = atmosphere.sizes['z']
+                    self._pa.zckd = atmosphere.z.data
+                    self._pa.gasabs = atmosphere.gas_absorption[0, 0].data
+                else:
+                    warnings.warn("'gas_absorption' does not collapse to 1D so is being added "
+                                  "to `medium`.")
+                    if 'gas_absorption' in self.medium:
+                        raise KeyError("'gas_absorption' key was already in `medium`.")
+                    else:
+                        gas_absorption_scatterer = xr.Dataset(
+                            data_vars={
+                                'extinction': (['x', 'y', 'z'], atmosphere.gas_absorption.data),
+                                'ssalb': (['x', 'y', 'z'],
+                                           np.zeros(atmosphere.gas_absorption.shape)),
+                                'table_index': (['num_micro', 'x', 'y', 'z'],
+                                                np.zeros((1,)+atmosphere.gas_absorption.shape,
+                                                dtype=np.int)),
+                                'phase_weights': (['num_micro', 'x', 'y', 'z'],
+                                                np.ones((1,)+atmosphere.gas_absorption.shape,
+                                                dtype=np.float32)),
+                                'legcoef': (['stokes_index', 'legendre_index', 'table_index'],
+                                            np.zeros((6, 0, 0)))
+                            },
+                            coords={
+                                'x': atmosphere.x,
+                                'y': atmosphere.y,
+                                'z': atmosphere.z,
+                            }
+                        )
+                        self.medium['gas_absorption'] = gas_absorption_scatterer
+            else:
+                warnings.warn("No gas absorption found in `atmosphere` dataset."
+                              " Name should be 'gas_absorption'.")
         else:
             raise TypeError("`atmosphere` should be an xr.Dataset or None")
         return atmosphere
