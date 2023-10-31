@@ -515,7 +515,7 @@ class RTE:
         #     warnings.warn("Actual adapt_grid_factor: {:.4f}".format(self._adapt_grid_factor_out))
         #     warnings.warn("Actual cell_point_ratio: {:.4f}".format(self._cell_point_out))
 
-    def integrate_to_sensor(self, sensor, single_scatter=False):
+    def integrate_to_sensor(self, sensor, single_scatter=False, nosurface=False):
         """Calculates the StokesVector at specified geometry using an RTE solution.
 
         Integrates the source function along rays with positions and
@@ -564,6 +564,7 @@ class RTE:
         self._precompute_phase()
 
         self._bcrad_output, output, ierr, errmsg = at3d.core.render(
+            nosurface=nosurface,
             correctinterpolate=self._correctinterpolate,
             singlescatter=single_scatter,
             transcut=self._transcut,
@@ -895,7 +896,7 @@ class RTE:
         """
         A simple check on whether the solver solution has actually converged.
 
-        Useful for determining if outputs should be truested. May be used just to
+        Useful for determining if outputs should be trusted. May be used just to
         print a warning or in some contexts the flag may be used to raise an Exception,
         for example.
         """
@@ -1884,6 +1885,16 @@ class RTE:
             raise at3d.exceptions.OutOfRangeError(
             "Numerical parameter `transmin` should be between 0.0 and 1.0."
             )
+        if self.source.skyrad.size != 1:
+            skyrad_shape = self.source.skyrad.shape
+            if (skyrad_shape[0] != self._nstokes) | (skyrad_shape[1] != self._nmu//2) | \
+                (skyrad_shape[2] != self._nphi):
+                raise ValueError(
+                    "Shape of `skyrad` ({}) in source is incompatible with numerical parameters "
+                    "NSTOKES={}, NMU/2={}, NPHI={}".format(
+                        skyrad_shape, self._nstokes,self._nmu//2,self._nphi
+                        )
+                )
 
         return numerical_params
 
@@ -2416,8 +2427,8 @@ class RTE:
 
         # Make the anisotropic domain top source.
         if self._skyrad.size == 1: #upscale to isotropic.
-            self._skyrad = self._skyrad*np.ones((self._nstokes, self._nmu, self._nphi0max))
-        elif  self._skyrad.shape != (self._nstokes, self._nmu, self._nphi0max):
+            self._skyrad = self._skyrad*np.ones((self._nstokes, self._nmu//2, self._nphi0max))
+        elif  self._skyrad.shape != (self._nstokes, self._nmu//2, self._nphi0max):
             raise ValueError(
             "`skyrad` variable should be either a float or of shape (NSTOKES, NMU, NPHI0MAX)"
             )
@@ -2663,6 +2674,82 @@ class RTE:
             )
         self._longest_path_pts = max(longest_path_pts, 1)
 
+    def _get_radiance_exiting_boundary(self, top=True):
+        """
+        Calculates the spatially averaged radiance at the 
+        discrete ordinate directions at the domain top or bottom.
+
+        Parameters
+        ----------
+        top : bool
+            If `True` then the radiances at the top face (in an upward direction)
+            are returned. If `False` then the radiances at the bottom face
+            (in a downward direction) are returned.
+
+        Returns
+        -------
+        skyrad : np.ndarray
+            The radiance exiting the boundary of shape (NSTOKES, NMU/2, NPHI).
+            Values at direction combinations where there is no discrete ordinate
+            are set to zero (e.g. for reduced Gaussian grid).
+
+        Raises
+        ------
+        at3d.exceptions.SHDOMError
+        """
+        self.check_solved(verbose=True)
+        if (not hasattr(self, '_source')):
+            raise at3d.exceptions.SHDOMError(
+                "Radiance exiting boundary cannot be calculated until "
+                "radiance field is initialized."
+            )
+
+        out_data = np.zeros((self._nstokes, self._nmu//2, self._nphi0max, self._npts))
+        
+        for i in range(self._nmu//2):
+            if top:
+                imu= i+1
+                iphi = i
+            else:
+                imu = i+self._nmu//2+1
+                iphi = i +self._nmu//2
+            if self._nstokes == 1:
+                transformer = at3d.core.sh_to_do_unpol
+                radiance_in = self._radiance[0]
+            else:
+                transformer = at3d.core.sh_to_do
+                radiance_in = self._radiance
+            
+            temp = transformer(
+                indata=radiance_in,
+                npts=self._npts,
+                ml=self._ml,
+                mm=self._mm,
+                nlm=self._nlm,
+                nmu=self._nmu,
+                nphi0max=self._nphi0max,
+                nphi0=self._nphi0[iphi],
+                imu=imu,
+                shptr=self._rshptr[:self._npts+1],
+                cmu1=self._cmu1,
+                cphi1=self._cphi1,
+                wsave=self._wphisave,
+                fftflag=self._fftflag
+            )
+            out_data[:,i] = temp
+        
+        # spatially averaged radiance exiting the boundary.
+        if top:
+            skyrad = out_data[:,:,:,self._bcptr[:self._ntoppts,0]-1].mean(axis=-1)
+        else:
+            skyrad = out_data[:,:,:,self._bcptr[:self._nbotpts,1]-1].mean(axis=-1)
+
+        # zero everything negative.
+        # positivity should be maintained at the discrete ordinate directions which are
+        # what is sampled.
+        skyrad[np.where(skyrad < 0.0)] = 0.0
+        return skyrad
+    
     @property
     def num_iterations(self):
         return self._iters

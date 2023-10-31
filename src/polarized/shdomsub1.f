@@ -165,7 +165,8 @@ Cf2py intent(in) :: INTERPMETHOD
 Cf2py intent(in) :: PHASEINTERPWT, PHASEMAX
       LOGICAL DELTAM, ACCELFLAG, INRADFLAG
 Cf2py intent(in) :: DELTAM, ACCELFLAG, INRADFLAG
-      REAL    SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD(NSTOKES,NMU,NPHI0MAX)
+      REAL    SOLARFLUX, SOLARMU, SOLARAZ 
+      REAL    SKYRAD(NSTOKES,NMU/2,NPHI0MAX)
       REAL    SHACC
 Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD, SHACC
       REAL    GNDTEMP, GNDALBEDO
@@ -344,7 +345,7 @@ C        Initialize the radiance on the base grid using Eddington
 C        two-stream plane-parallel
       IF (INRADFLAG) THEN
         SKYRADALB = 0.0
-        DO IMU=1,NMU
+        DO IMU=1,NMU/2
           DO IPHI=1,NPHI0(IMU)
             SKYRADALB = SKYRADALB + WTDO(IMU,IPHI)*SKYRAD(1,IMU,IPHI)
           ENDDO
@@ -477,7 +478,8 @@ Cf2py intent(in) :: MAXIV, MAXIC, MAXIG, MAXIDO, NLEGP, MAXNMICRO
 Cf2py intent(in) :: MAXBCRAD, MAXNBC
       LOGICAL DELTAM, ACCELFLAG, HIGHORDERRAD
 Cf2py intent(in) :: DELTAM, ACCELFLAG, HIGHORDERRAD
-      REAL    SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD(NSTOKES,NMU,NPHI0MAX)
+      REAL    SOLARFLUX, SOLARMU, SOLARAZ
+      REAL    SKYRAD(NSTOKES,NMU/2,NPHI0MAX)
 Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD
       REAL    GNDTEMP, GNDALBEDO
 Cf2py intent(in) :: GNDTEMP, GNDALBEDO
@@ -1767,7 +1769,7 @@ Cf2py intent(in,out) :: CELLFLAGS
 Cf2py intent(in) :: SWEEPORD
       LOGICAL FFTFLAG(*), UNIFORM_SFC_BRDF
 Cf2py intent(in) :: FFTFLAG, UNIFORM_SFC_BRDF
-      REAL    SOLARMU, SOLARAZ, SKYRAD(NSTOKES,NMU,NPHI0MAX)
+      REAL    SOLARMU, SOLARAZ, SKYRAD(NSTOKES,NMU/2,NPHI0MAX)
 Cf2py intent(in) :: SOLARMU, SOLARAZ, SKYRAD
       REAL    GNDTEMP, GNDALBEDO
 Cf2py intent(in) :: GNDTEMP, GNDALBEDO
@@ -1900,12 +1902,13 @@ C           Loop over the azimuthal angles
 
           IF (MU(IMU) .LT. 0.0) THEN
 C               For downward ordinates, initialize the top boundary radiances
-
+C            !PRINT *, "BEGIN COMPUTE_TOP_RADIANCES"
             CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD,WAVENO,WAVELEN,
      .                              UNITS, NTOPPTS, NSTOKES, BCRAD,
      .                              NPHI0MAX, NMU, IMU, IPHI,
      .                              -2.0, -2.0, MU, PHI, NPHI0,
      .                              .FALSE.)
+C           !PRINT *, BCRAD(1,:NTOPPTS)
 
             IUPDOWN = 1
             DO IBC = 1, NTOPPTS
@@ -2203,7 +2206,7 @@ Cf2py intent(in) :: MU, PHI, MUS, PHIS
 Cf2py intent(in) :: NPHI0
       LOGICAL INTERPOLATE_FLAG
 Cf2py intent(in) :: INTERPOLATE_FLAG
-      REAL    SKYRAD(NSTOKES,NMU,NPHI0MAX), WAVENO(2), WAVELEN
+      REAL    SKYRAD(NSTOKES,NMU/2,NPHI0MAX), WAVENO(2), WAVELEN
 Cf2py intent(in) :: SKYRAD, WAVENO, WAVELEN
       REAL    BCRAD(NSTOKES, *)
 Cf2py intent(in, out) :: BCRAD
@@ -2225,7 +2228,7 @@ C       upward looking (ground based) instruments.
 
       IF (INTERPOLATE_FLAG) THEN
 C     Inverse distance weighting interpolation (Cubic).
-C     Distance is based on the the scattering angle between the two angles.
+C     Distance is based on the scattering angle between the two angles.
         POWER = 3.0D0
         WEIGHTEDSUM = 0.0D0
         WEIGHTSUM = 0.0D0
@@ -2615,12 +2618,20 @@ C     input array is adaptive (with pointer SHPTR); the last term for
 C     each grid point must be the maximum m for the particular l term.
       IMPLICIT NONE
       INTEGER NPTS, NSTOKES, NSTLEG
+Cf2py intent(in) :: NPTS, NSTOKES, NSTLEG
       INTEGER ML, MM, NLM, NMU, NPHI0MAX, NPHI0
+Cf2py intent(in) :: ML, MM, NLM, NMU, NPHI0MAX, NPHI0
       INTEGER IMU, SHPTR(NPTS+1)
+Cf2py intent(in) :: IMU, SHPTR
       LOGICAL FFTFLAG(NMU)
-      REAL    INDATA(NSTOKES,*), OUTDATA(NSTOKES,NPHI0MAX,*)
+Cf2py intent(in) :: FFTFLAG
+      REAL    INDATA(NSTOKES,*), OUTDATA(NSTOKES,NPHI0MAX,NPTS)
+Cf2py intent(in) :: INDATA
+Cf2py intent(out) :: OUTDATA
       REAL    CMU1(NSTLEG,NLM,NMU), CPHI1(-16:16,32,NMU)
+Cf2py intent(in) :: CMU1, CPHI1
       REAL    WSAVE(3*NPHI0MAX+15,NMU)
+Cf2py intent(in) :: WSAVE
       INTEGER I, J, K, L, M, M2, N, IPHI, MS, ME, MR, IS, NSH
       REAL    SUM1
       INTEGER, ALLOCATABLE :: MOFJ(:)

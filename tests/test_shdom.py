@@ -354,22 +354,22 @@ class Parallelization_Subdivide_Rays(TestCase):
         cls.pixel_start_end = pixel_start_end
 
     def test_rays(self):
-        self.assertEqual(self.ray_start_end, [(0, 3429),
-                                             (3429, 6859),
-                                             (0, 4244),
-                                             (4244, 8483),
-                                             (8483, 12722),
-                                             (0, 1292),
-                                             (0, 323)])
+        self.assertEqual(self.ray_start_end, [(0, 3700),
+                                             (3700, 7400),
+                                             (0, 4590),
+                                             (4590, 9180),
+                                             (9180, 13770),
+                                             (0, 1440),
+                                             (0, 360)])
 
     def test_pixels(self):
-        self.assertEqual(self.pixel_start_end, [(0, 3429),
-                                                 (3429, 6859),
-                                                 (0, 651),
-                                                 (651, 1122),
-                                                 (1122, 1593),
-                                                 (0, 323),
-                                                 (0, 323)])
+        self.assertEqual(self.pixel_start_end, [(0, 3700),
+                                                 (3700, 7400),
+                                                 (0, 710),
+                                                 (710, 1220),
+                                                 (1220, 1730),
+                                                 (0, 360),
+                                                 (0, 360)])
 #
 class Parallelization_No_SubpixelRays(TestCase):
     @classmethod

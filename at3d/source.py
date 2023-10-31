@@ -66,7 +66,7 @@ def solar(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
             'srctype': 'S',
             'units': 'R',
             'wavenumber': [10000, 10001], #only used for CKD
-            'skyrad': skyrad #isotropic diffuse radiance from above
+            'skyrad': (['nstokes', 'nmu','nphi0max'], np.atleast_3d(skyrad)) #isotropic diffuse radiance from above
         }
     )
     return source_dataset

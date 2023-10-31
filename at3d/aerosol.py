@@ -334,7 +334,7 @@ class OPACMixture:
 
             for aerosol_type in humidified_profile:
 
-                aerosol['density'] = aerosol[aerosol_type]
+                aerosol['density'] = aerosol[aerosol_type].fillna(0.0)
                 aerosol['humidity'] = atmosphere.humidity*100.0
 
                 table = tables[aerosol_type].sel(

@@ -2208,7 +2208,8 @@ C      END
      .			              VALIDRAD, TOTAL_EXT, NPART, IERR, ERRMSG,
      .                    INTERPMETHOD, PHASEINTERPWT, PHASEMAX,
      .                    MAXNMICRO, TAUTOL, TIME_SOURCE,
-     .                    CORRECTINTERPOLATE, TRANSCUT, SINGLESCATTER)
+     .                    CORRECTINTERPOLATE, TRANSCUT, SINGLESCATTER,
+     .                     NOSURFACE)
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
 C     radiance (RADIANCE) at the point X0,Y0,Z0.
@@ -2229,7 +2230,7 @@ C     5=-Z,6=+Z).
       REAL    PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART), PHASEMAX
       CHARACTER INTERPMETHOD*2
       INTEGER BCPTR(MAXNBC,2)
-      LOGICAL DELTAM, VALIDRAD, SINGLESCATTER
+      LOGICAL DELTAM, VALIDRAD, SINGLESCATTER, NOSURFACE
       REAL    WTDO(NMU,NPHI0MAX), MU(NMU), PHI(NMU,NPHI0MAX)
       REAL    WAVELEN, SOLARMU, SOLARAZ
       REAL    SFCGRIDPARMS(NSFCPAR,NBOTPTS), BCRAD(*)
@@ -2595,7 +2596,9 @@ C.OR. NGRID.GT.MAXCELLSCROSS
      .                      SRCTYPE, WAVELEN, SOLARMU,SOLARAZ, DIRFLUX,
      .                      SFCTYPE, NSFCPAR, SFCGRIDPARMS,
      .                      RADBND)
-          RADIANCE(:) = RADIANCE(:) + TRANSMIT*RADBND(:)
+          IF (.NOT. NOSURFACE) THEN
+            RADIANCE(:) = RADIANCE(:) + TRANSMIT*RADBND(:)
+          ENDIF
         ELSE
           ICELL = INEXTCELL
         ENDIF
