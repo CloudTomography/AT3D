@@ -28,6 +28,58 @@ import xarray as xr
 
 import at3d.medium
 import at3d.checks
+import at3d.gas_absorption
+
+def aerosol_atmosphere(atmosphere=None, search_directory='../../data/ancillary/', atmosphere_name='tropical'):
+    """
+    Prepares gas concentrations for aerosol calculations.
+
+    Data is reversed in increasing `z` and relative humidity is returned along with 
+    temperature and pressure.
+
+    Parameters
+    ----------
+    atmosphere : xr.Dataset
+        Contains the gas concentrations following the convention of at3d.gas_absorption.load_standard_atmosphere.
+        If `None` then a standard atmosphere is loaded and converted.
+    search_directory : str
+        The directory where the atmosphere files are.
+    atmosphere_name : str
+        The name of the standard atmosphere to use.
+        Options include: 'midlatitude_summer', 'midlatitude_winter', 'tropical',
+        'subarctic_summer', 'subarctic_winter'
+
+    Returns
+    -------
+    atmosphere : xr.Dataset
+        Contains the gas concentrations in units of cm^-3 as well as
+        temperature in Kelvin, pressure in millibars and altitude ('z')
+        in kilometers.
+    """
+    if atmosphere is None:
+        atmosphere = at3d.gas_absorption.load_standard_atmosphere(search_directory=search_directory, atmosphere_name=atmosphere_name)
+    
+    R = 8.31447215
+    avogadro = 6.022e23
+    T = atmosphere.temperature.values
+    P = atmosphere.pressure.values
+    
+    es = 6.112*np.exp(17.67*(T-273.15)/(243.5 + (T-273.15)))
+    air_density = 100*P/(R*T)
+    RH = atmosphere.H2O.values*P/(es*air_density*avogadro*1e-6)
+    z = atmosphere.z.values
+    
+    atmosphere = xr.Dataset(
+        data_vars={
+            'humidity': ('z',RH[::-1]),
+            'temperature': ('z',T[::-1]),
+            'pressure': ('z',P[::-1])
+        },
+        coords={
+            'z': z[::-1]
+        }
+    )
+    return atmosphere
 
 class MassToNumberConverter:
     """

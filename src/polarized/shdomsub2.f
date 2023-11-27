@@ -717,7 +717,7 @@ C           Make layer properties for the Eddington routine
               ELSE
                 F1 = 0.0
                 DO Q=1,8*MAXNMICRO
-                  F1 = F1 + LEGEN(1,1,IPHASE(Q,IZ+1,I,:))*
+                  F1 = F1 + LEGEN(1,ML+1,IPHASE(Q,IZ+1,I,:))*
      .            PHASEINTERPWT(Q,IZ+1,I,:)
                 ENDDO
               ENDIF
