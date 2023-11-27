@@ -377,10 +377,10 @@ def load_2parameter_lwc_file(file_name, density='lwc'):
     SHDOM and i3rc monte carlo model.
     """
     header = pd.read_csv(file_name, nrows=4)
-    nx, ny, nz = np.fromstring(header['2 parameter LWC file'][0], sep=' ').astype(np.int)
-    dx, dy = np.fromstring(header['2 parameter LWC file'][1], sep=' ').astype(np.float)
-    z = np.fromstring(header['2 parameter LWC file'][2], sep=' ').astype(np.float)
-    temperature = np.fromstring(header['2 parameter LWC file'][3], sep=' ').astype(np.float)
+    nx, ny, nz = np.fromstring(header['2 parameter LWC file'][0], sep=' ').astype(int)
+    dx, dy = np.fromstring(header['2 parameter LWC file'][1], sep=' ').astype(float)
+    z = np.fromstring(header['2 parameter LWC file'][2], sep=' ').astype(float)
+    temperature = np.fromstring(header['2 parameter LWC file'][3], sep=' ').astype(float)
     dset = at3d.grid.make_grid(dx, nx, dy, ny, z)
 
     data = np.genfromtxt(file_name, skip_header=5)
@@ -388,7 +388,7 @@ def load_2parameter_lwc_file(file_name, density='lwc'):
     lwc = np.zeros((nx, ny, nz))*np.nan
     reff = np.zeros((nx, ny, nz))*np.nan
 
-    i, j, k = data[:, 0].astype(np.int)-1, data[:, 1].astype(np.int)-1, data[:, 2].astype(np.int)-1
+    i, j, k = data[:, 0].astype(int)-1, data[:, 1].astype(int)-1, data[:, 2].astype(int)-1
     lwc[i, j, k] = data[:, 3]
     reff[i, j, k] = data[:, 4]
 

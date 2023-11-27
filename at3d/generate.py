@@ -118,7 +118,7 @@ class SurrogateGenerator:
 
                 adjusted_temp_spectra = self._reference_fourier_amplitudes*temp_spectra/np.abs(temp_spectra)
                 spectra_adjusted = fft.ifftn(adjusted_temp_spectra).real
-                temp_ranks = st.rankdata(spectra_adjusted).astype(np.int) -1
+                temp_ranks = st.rankdata(spectra_adjusted).astype(int) -1
                 amplitude_adjusted_data = self._ranked_data[temp_ranks].reshape(self._normalized_data.shape)
                 surrogate_field = amplitude_adjusted_data
                 old_cost = cost

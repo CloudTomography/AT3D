@@ -1706,7 +1706,7 @@ class RTE:
                                            np.zeros(atmosphere.gas_absorption.shape)),
                                 'table_index': (['num_micro', 'x', 'y', 'z'],
                                                 np.zeros((1,)+atmosphere.gas_absorption.shape,
-                                                dtype=np.int)),
+                                                dtype=int)),
                                 'phase_weights': (['num_micro', 'x', 'y', 'z'],
                                                 np.ones((1,)+atmosphere.gas_absorption.shape,
                                                 dtype=np.float32)),
@@ -2102,7 +2102,7 @@ class RTE:
         #and not take more than 90% of it. This hasn't been tested so the 90%
         #value may need to be adjusted. - JRLoveridge 2021/02/20
         if self._max_total_mb * 1024**2 > 0.9*psutil.virtual_memory().total:
-            self._max_total_mb = 0.9*psutil.virtual_memory().total
+            self._max_total_mb = (0.9*psutil.virtual_memory().total)/(1024**2)
             warnings.warn("MAX_TOTAL_MB reduced to fit memory model: {}".format(
                 self._max_total_mb))
 

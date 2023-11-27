@@ -238,3 +238,77 @@ class Optimizer:
     @property
     def options(self):
         return self._options
+    
+# class ParticleFlow:
+#     """
+#     """
+#     def __init__(self,
+#                  objective_fn,
+#                  forward_model,
+#                  alpha,
+#                  nens,
+#                  prior_fn=None,
+#                  callback_fn=None):
+        
+#         self._alpha = alpha
+#         self._nens = nens
+#         self._objective_fn = objective_fn
+#         self._prior_fn = np.atleast_1d(prior_fn) if prior_fn is not None else None
+#         self._callback_fn = np.atleast_1d(callback_fn)
+#         self._iteration = None
+#         self._state = None
+
+#         # Copy objective function for each ensemble_member.
+
+#     def minimize(initial_step=1.0):
+
+#         # Initialize States from Prior Function
+
+#         cost, grad = self._objective_fn(psi)
+
+#         # 
+
+#         nx = grad.shape[0]
+#         ny = yy.size
+
+
+#         DMAT = np.zeros((nx,nx), order='F')
+#         psim0 = np.zeros(nx,order='F')
+#         invvar = np.zeros(nx,order='F')
+
+#         forcing = at3d.core.particle_flow(
+#             nx=nx,
+#             ny=ny,
+#             x=psi,
+#             psi=psi,
+#             yy=yy,
+#             y=forward_model(psi),
+#             rr=rr,
+#             invvar=np.asfortranarray(invvar),
+#             dmat=np.asfortranarray(DMAT),
+#             psim0=np.asfortranarray(psim0),
+#             alpha=self._alpha,
+#             grad=grad,
+#             grad_flag=True,
+#             init_flag=True,
+#         )
+#         iteration = 0
+#         def func(x):
+
+#         forcing = at3d.core.particle_flow(
+#             nx=nx,
+#             ny=ny,
+#             x=x,
+#             psi=psi,
+#             yy=yy,
+#             y=forward_model(psi),
+#             rr=rr,
+#             invvar=np.asfortranarray(invvar),
+#             dmat=np.asfortranarray(DMAT),
+#             psim0=np.asfortranarray(psim0),
+#             alpha=self._alpha,
+#             grad=grad,
+#             grad_flag=True,
+#             init_flag=True,
+#         )
+

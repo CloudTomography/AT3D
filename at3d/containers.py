@@ -522,7 +522,7 @@ class SensorsDict(OrderedDict):
 
             pixel_inds = np.cumsum(np.concatenate([np.array([0]),
                                                    merged_measurements.rays_per_pixel.data
-                                                   ])).astype(np.int)
+                                                   ])).astype(int)
             pixels_per_image = [np.where(pixel_inds == ray_image)[0][0]
                                 for ray_image in merged_measurements.rays_per_image.data]
 

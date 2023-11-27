@@ -197,7 +197,7 @@ class SpaceCarver:
             for instrument in sensor_masks:
                 sensor_list.extend(sensor_masks[instrument]['sensor_list'])
 
-        counts = np.zeros((len(sensor_list), 2, self._nx, self._ny, self._nz), dtype=np.int)
+        counts = np.zeros((len(sensor_list), 2, self._nx, self._ny, self._nz), dtype=int)
         adjoint_weights = np.zeros((len(sensor_list), self._nx, self._ny, self._nz))
         for i, sensor in enumerate(sensor_list):
 
@@ -268,7 +268,7 @@ class SpaceCarver:
 
         if agreement is not None:
             mask = ((space_carved.cloudy_counts/space_carved.total_counts > agreement[0]).astype(
-                np.int).mean('nsensors') >= agreement[1]).astype(np.int)
+                int).mean('nsensors') >= agreement[1]).astype(int)
             masked_weights = (space_carved.weights/space_carved.total_counts).mean('nsensors')
             space_carved['mask'] = mask
             space_carved['masked_weights'] = masked_weights

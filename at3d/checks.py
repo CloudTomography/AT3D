@@ -199,7 +199,7 @@ def check_grid(dataset):
     optional_grid_data = ('nx', 'ny', 'nz')
     for grid_data in optional_grid_data:
         if grid_data in dataset.data_vars:
-            if (dataset[grid_data].dtype != np.int) or (dataset[grid_data] < 1):
+            if (dataset[grid_data].dtype != int) or (dataset[grid_data] < 1):
                 raise at3d.exceptions.GridError(
                     "Optional SHDOM grid spacing {}={} should be an integer and greater "
                     "or equal to 1".format(grid_data, dataset[grid_data])
