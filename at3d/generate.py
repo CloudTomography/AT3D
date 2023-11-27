@@ -9,6 +9,8 @@ import numpy.fft as fft
 import copy
 import scipy.ndimage as ndi
 import xarray as xr
+import scipy.spatial as ss
+import at3d.grid 
 
 class SurrogateGenerator:
     """
@@ -473,3 +475,172 @@ class GaussianFieldGenerator:
         scaled_field = (scaled_field - scaled_field.mean())/scaled_field.std()
 
         return scaled_field
+
+
+def generate_cloud(nx,ny, dx, dy, dz, zmin, zmax, beta, beta_ext, cf, ext_rel_std, tau_mean, relstd,
+                  thickness_mean=0.35, tau_power=5.0/3.0, veff=0.07, N0=200.0, cbase=0.45, filter_sigma=0.5):
+    """
+    A stochastic cloud generator for single-layered clouds with flat bases and bumpy tops.
+    Microphysical assumptions and vertical variability follow quasi-adiabatic principles. 
+    Fourier spectrum techniques are used so the field follows an assumption of horizontal periodicitiy.
+
+    Parameters
+    ----------
+    nx, ny : int
+        The number of grid points in the horizontal direction.
+    dx, dy, dz : float
+        The spacing in the horizontal and vertical (`dz`) directions.
+    zmin : float
+        The minimum altitude of the domain (not cloud base).
+    zmax : float
+        The maximum altitude of the domain. Must be large enough to accomodate clouds.
+    beta : float
+        The exponent of the isotropic powerlaw governing the 2Dpower spectrum of the horizontal variance of 
+        the cloud top height field. Try -2
+    beta_ext : float 
+        The exponent of the isotropic powerlaw governing the 3D power spectrum of 
+        variability in the volume extinction field that is independent of cloud geometric thickness.
+        Try -5.0/3.
+    cf : float
+        The fraction of columns that contain cloud [0.0, 1.0]
+    ext_rel_std : float
+        The strength of lognormal variability in the extinction field that is independent of cloud geometric thickness.
+        Parameterized as a relative standard deviation around the mean.
+    tau_mean : float
+        The in-cloud mean of the geometric optics cloud optical depth.
+    relstd : float
+        The relative standard deviation of the cloud top height (and geometric thickness) fields.
+        The primary parameter governing the heterogeneity of the field. Relative to `thickness_mean`
+    thickness_mean : float
+        The mean of the geometric thickness in kilometers.
+    tau_power : float
+        The power law relating cloud geometric thickness to cloud optical depth following adiabatic
+        rules.
+    veff : float
+        The effective variance of the droplet size distribution. A single value for the whole domain.
+    N0 : float
+        The adiabatic droplet number concentration in units of #/cm^3
+    cbase : float
+        The altitude of cloud base in kilometers.
+    filter_sigma : float
+        The width of a smoothing kernel that smoothes the cloud-edge volume extinction coefficient 
+        and droplet number concentraiton, while preserving the droplet effective radius. 
+        Pass a value of `None` to turn off this smoothing.
+    
+    Returns
+    -------
+    cloud : xr.Dataset
+        Contains the 3D gridded cloud microphysical properties for generating cloud optical properties.
+        Note that the `density` variable is the geometric optics volume extinction coefficient.
+
+    Notes
+    -----
+    This function relies on random number generators so please set a seed using `np.random.seed(5)`
+    for reproducibility.
+    """
+    nz = int((zmax - cbase)/dz)
+    z = np.arange(zmin, zmax+dz, dz)
+
+    X,Y,Z = np.meshgrid(np.arange(0,dx*nx, dx), np.arange(0,dy*ny, dy),
+                       z, indexing='ij')
+    positions = np.stack([X.ravel(),Y.ravel(),Z.ravel()], axis=-1)
+
+    tree = ss.KDTree(positions)
+
+    generator = GaussianFieldGenerator(nx, ny, 1, beta, domain_size=[nx*dx, ny*dy, nz*dz])
+    field = generator.generate_field()
+
+    percentile = st.norm.ppf(1.0-cf)
+
+    field[np.where(field < percentile)] = np.nan
+    ranks = st.rankdata(field[np.where(~np.isnan(field))]).astype(int) - 1
+
+    r = st.truncnorm.rvs(a=percentile, b=np.inf, size=ranks.size)
+    r -= percentile
+    r *= thickness_mean/r.mean()
+
+    if cf > 0.99:
+        r -= thickness_mean
+        r *= thickness_mean*relstd/r.std()
+        r += thickness_mean
+
+    thickness = np.zeros(field.shape)*np.nan
+    thickness[np.where(~np.isnan(field))] = np.sort(r)[ranks]
+
+    generator_3d = GaussianFieldGenerator(nx, ny, z.size, beta_ext, domain_size=[nx*dx, ny*dy, z.max()-z.min()])
+    ext = generator_3d.generate_field()
+
+    big_z = np.repeat(np.repeat(z[None, None,:], nx, axis=0), ny, axis=1)
+    means = (big_z-cbase)**(tau_power - 1.0)
+    means[np.where(means < 0.0)] = np.nan
+    means[np.where(big_z-cbase > thickness)] = np.nan
+
+    means[np.where(np.isnan(thickness))[0],
+         np.where(np.isnan(thickness))[1],:] = np.nan
+
+    tau = np.nansum(0.5*(means[...,1:] + means[...,:-1])*dz, axis=-1)
+    means *= tau_mean/np.nanmean(tau[np.where(tau>0.0)])
+    ext = np.exp(ext)
+    ext -= ext.mean()
+    ext /= ext.std()
+    ext *= means*ext_rel_std/np.nanstd(ext)
+    ext += means - np.nanmean(ext)
+
+    ext[np.where(np.isnan(ext))] = 0.0
+    ext[np.where(ext < 0.0)] = 0.0
+
+    k = (1.0-veff)*(1.0-2*veff)
+    reff = np.sqrt(1e3*np.nanmean(means, axis=(0,1))/(2*np.pi*k*N0))[None,None]*np.ones(ext.shape)
+    reff[np.where(reff < 1.0)] = 1.0
+    reff[np.where(np.isnan(reff))] = 1.0
+
+    Ns = np.zeros(ext.shape)
+    Ns[np.where(ext > 0.0)] = (1e3*ext/(2*np.pi*k*reff**2))[np.where(ext > 0.0)]
+
+    # replace edge with smoothed value to approximate cloud edge dilution
+    if filter_sigma is not None:
+        #ext2 = ndi.gaussian_filter(ext, sigma=filter_sigma, mode='wrap', truncate=2.0)
+        Ns2 = ndi.gaussian_filter(Ns, sigma=filter_sigma, mode='wrap', truncate=2.0)
+
+        query_mask = np.where((Ns2 > 0.0)&(Ns==0.0))
+        queries = np.stack([X[query_mask], Y[query_mask], Z[query_mask]],axis=-1)
+        d,i = tree.query(queries, k=9)
+        Ns[np.unravel_index(i, ext.shape)] = Ns2[np.unravel_index(i, ext.shape)]
+        Ns[np.where(Ns < 10.0)] = 0.0
+        ext[np.unravel_index(i, ext.shape)] = (1e-3*Ns*2*np.pi*k*reff**2)[np.unravel_index(i, ext.shape)]
+
+    # reff
+    reff[np.where(reff < 1.0)] = 1.0
+    reff[np.where(ext ==0.0)] = 1.0
+
+    # no cloud on the top grid point.
+    ext[...,-1] = 0.0
+
+    tau = np.nansum(0.5*(ext[...,1:] + ext[...,:-1])*dz, axis=-1)
+    ext *= tau_mean/np.nanmean(tau[np.where(tau > 0.0)])
+
+    cloud = at3d.grid.make_grid(dx, nx, dy, ny, z=z)
+    cloud['density'] = (['x','y','z'], ext)
+    cloud['reff'] = (['x','y','z'], reff)
+    cloud['veff'] = (['x','y','z'], np.ones(reff.shape)*veff)
+
+    good_zs = np.where(cloud.density.max(('x','y')).data > 0)
+    goodz1 = max(good_zs[0][0]-1,0)
+    goodz2 = min(good_zs[0][-1]+1,cloud.z.size-1)
+    cloud = cloud.sel(z=slice(cloud.z[goodz1], cloud.z[goodz2]))
+
+    cloud.attrs['N0'] = N0
+    cloud.attrs['filter_sigma'] = filter_sigma
+    cloud.attrs['beta'] = beta
+    cloud.attrs['beta_ext'] = beta_ext
+    cloud.attrs['zmin'] = zmin
+    cloud.attrs['zmax'] = zmax
+    cloud.attrs['tau_power'] = tau_power
+    cloud.attrs['thickness_mean'] = thickness_mean
+    cloud.attrs['cbase'] = cbase
+    cloud.attrs['tau_mean'] = tau_mean
+    cloud.attrs['cf'] = cf
+    cloud.attrs['ext_rel_std'] = ext_rel_std
+    cloud.attrs['relstd'] = relstd
+
+    return cloud

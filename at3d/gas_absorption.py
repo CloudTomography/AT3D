@@ -1,3 +1,19 @@
+"""
+An interface to the REPTRAN absorption parameterization distributed with Libradtran (v2.0.3)
+from http://www.libradtran.org/doku.php?id=download.
+
+J. Gasteiger, C. Emde, B. Mayer, R. Buras, S.A. Buehler, O. Lemke,
+Representative wavelengths absorption parameterization applied to satellite channels and spectral bands,
+Journal of Quantitative Spectroscopy and Radiative Transfer, Volume 148, 2014, Pages 99-115, ISSN 0022-4073,
+https://doi.org/10.1016/j.jqsrt.2014.06.024.
+
+This module contains `load_standard_atmosphere` as a starting point to provide atmospheric data.
+Other input to the `Reptran` object which is the primary interface should follow the same
+data conventions. Currently, the `Reptran` interface only works with MODIS band models.
+Gas absorption data are found in ./data/reptran/. The coarse band data are also distributed
+but an interface is not yet implemented.
+"""
+
 import numpy as np
 import xarray as xr
 import os
