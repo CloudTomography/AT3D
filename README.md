@@ -43,7 +43,7 @@ The key features of polarized SHDOM are included
 Note that each RTE solution is serial (**unlike SHDOM**) but independent wavelengths and pixel radiance calculations are parallelized using either MPI or a multi-threading shared memory framework.
 Other key features that are implemented are:
   * Several sensor configurations (e.g. Perspective, Orthographic) and arbitrary observation geometries.
-  * Mie & Rayleigh scattering optical property calculations including [OPAC aerosols](6). Optical properties of other species (e.g. non-spherical ice or aerosol or absorbing gases) can be included but must be calculated externally.
+  * Mie & Rayleigh scattering optical property calculations including [OPAC aerosols](6). Optical properties of other species (e.g. non-spherical ice or aerosol) can be included but must be calculated externally.
   * Microphysical/optical properties can be generated or be read from netCDF or the SHDOM/[I3RC](https://i3rc.gsfc.nasa.gov/) file format.
 
 #### Inverse (remote-sensing):
