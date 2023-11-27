@@ -15,14 +15,14 @@ LONG_DESCRIPTION ="""at3d performs 3D reconstruction of cloud/aerosol microphysi
 """
 
 MAINTAINER = "Aviad Levis; Jesse Loveridge"
-MAINTAINER_EMAIL = "aviad.levis@gmail.com; jesserl2@illinois.edu"
+MAINTAINER_EMAIL = "aviad.levis@gmail.com; Jesse.Loveridge@colostate.edu"
 URL = "https://github.com/CloudTomography/at3d"
-LICENSE = "MIT"
-VERSION = "4.1.0"
+LICENSE = "GPL"
+VERSION = "4.1.3"
 
 classifiers =  ['Development Status :: 4 - Beta',
                 'Programming Language :: Python',
-                'License :: OSI Approved :: MIT License',
+                'License :: OSI Approved :: GPL License',
                 'Intended Audience :: Science/Research',
                 'Topic :: Scientific/Engineering',
                 'Topic :: Scientific/Engineering :: Mathematics',
@@ -151,7 +151,8 @@ F2PY_CORE_API = [
     'sh_to_do_unpol',
     'surface_brdf',
     'sh_to_do',
-    'particle_flow'
+    'particle_flow',
+    #'particle_flow_empirical'
 ]
 
 def _run_command(cmd):
