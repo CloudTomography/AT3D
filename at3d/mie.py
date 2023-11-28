@@ -15,9 +15,33 @@ expansions (Doicu et al., 2013, JQSRT, http://dx.doi.org/10.1016/j.jqsrt.2012.12
 import os
 import xarray as xr
 import numpy as np
+from collections import OrderedDict
 
 import at3d.core
 import at3d.checks
+
+def get_mie_band_model(band_model, particle_type,minimum_effective_radius=4.0,
+                   max_integration_radius=65.0,
+                   wavelength_resolution=0.001, refractive_index=None,
+                   relative_dir=None, verbose=True):
+    """
+    Light wrapper that prepares an assortment of monochromatic mie tables
+    based on a specified band model.
+    """
+    mie_mono_tables = OrderedDict()
+    for wavelength in band_model.wavelengths:
+        mie_mono_tables[wavelength] = get_mono_table(
+            particle_type, 
+            (wavelength,wavelength), 
+            minimum_effective_radius=minimum_effective_radius,
+            max_integration_radius=max_integration_radius, 
+            wavelength_averaging=False,
+            wavelength_resolution=wavelength_resolution, 
+            refractive_index=refractive_index,
+            relative_dir=relative_dir, 
+            verbose=verbose
+        )
+    return mie_mono_tables
 
 def get_mono_table(particle_type, wavelength_band, minimum_effective_radius=4.0,
                    max_integration_radius=65.0, wavelength_averaging=False,

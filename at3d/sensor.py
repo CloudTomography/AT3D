@@ -24,6 +24,7 @@ import inspect
 import sys
 import xarray as xr
 import numpy as np
+from collections import OrderedDict
 
 import at3d.checks
 
@@ -679,6 +680,60 @@ def _add_null_subpixel_rays(sensor):
     sensor['ray_weight'] = ('nrays', np.ones(len(sensor.cam_mu.data)))
     sensor['use_subpixel_rays'] = False
     return sensor
+
+class BandModel:
+
+    def __init__(self, identifier, wavelengths, weights):
+        self._identifier = identifier
+        self.weights = OrderedDict()
+        for wavelength, weight in zip(np.atleast_1d(wavelengths), np.atleast_1d(weights)):
+            self.weights[wavelength] = weight
+
+    def weight(self, wavelength):
+        return self.weights[wavelength]
+    
+    @property
+    def wavelengths(self):
+        return np.array(list(self.weights.keys()))
+
+    @property
+    def id(self):
+        return self._identifier
+        
+class Monochromatic(BandModel):
+
+    def __init__(self, wavelength):
+        BandModel.__init__(self, wavelength, wavelength, 1.0)
+        
+class Satellite(BandModel):
+
+    def __init__(self, instrument, band, parameterization='reptran'):
+
+        if parameterization != 'reptran':
+            raise ValueError(
+                "Only the `reptran` satellite band model is currently supported"
+            )
+            
+        if not instrument in ('terra-modis', 'aqua-modis'):
+            raise ValueError(
+                "Currently only supports Terra and Aqua MODIS not other instruments."
+            )
+
+        test_atmosphere = at3d.gas_absorption.load_standard_atmosphere()
+        try:
+            reptran = at3d.gas_absorption.Reptran()
+            gas_abs = reptran.get_absorption_data(test_atmosphere,instrument=instrument.split('-')[0],band=band)
+            weights = gas_abs.weights*gas_abs.irradiance
+            weights /= weights.sum('wavelength')
+            wavelengths = gas_abs.wavelength
+        except ValueError:
+            reptran = at3d.gas_absorption.Reptran(parameterization_name='thermal_modis')
+            gas_abs = reptran.get_absorption_data(test_atmosphere,instrument=instrument.split('-')[0],band=band)
+            weights = gas_abs.weights
+            weights /= weights.sum('wavelength')
+            wavelengths = gas_abs.wavelength
+
+        BandModel.__init__(self, instrument+'-'+str(band), wavelengths.values, weights.values)
 
 # def gaussian_cone(npixels,degree, FOV):
 #     """

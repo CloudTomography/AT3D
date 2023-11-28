@@ -3,6 +3,7 @@ import os
 import numpy as np
 import xarray as xr
 import at3d
+import importlib
 
 def make_test_cloud():
     """
@@ -39,12 +40,12 @@ def make_test_cloud():
     return scatterer, atmosphere
 
 class Load_from_csv_test(TestCase):
-    def test_load_from_csv(self, path= '../data/synthetic_cloud_fields/jpl_les/rico32x37x26.txt'):
+    def test_load_from_csv(self, path=os.path.join(importlib.resources.files('at3d'),'data/synthetic_cloud_fields/jpl_les/rico32x37x26.txt')):
         scatterer = at3d.util.load_from_csv(path, density='lwc', origin=(0.0,0.0))
 
 class Microphysics_load_from_csv_test(TestCase):
     def setUp(self):
-        self.droplets = at3d.util.load_from_csv('../data/synthetic_cloud_fields/jpl_les/rico32x37x26.txt', density='lwc', origin=(0.0,0.0))
+        self.droplets = at3d.util.load_from_csv(os.path.join(importlib.resources.files('at3d'),'data/synthetic_cloud_fields/jpl_les/rico32x37x26.txt'), density='lwc', origin=(0.0,0.0))
         self.droplets['veff'] = (self.droplets.reff.dims, np.full_like(self.droplets.reff.data, fill_value=0.1))
     def test_load_from_csv_lwc(self):
         self.assertAlmostEqual(self.droplets.density.data[self.droplets.density.data>0].mean(), 0.265432, places=6)
@@ -56,7 +57,7 @@ class Microphysics_load_from_csv_test(TestCase):
 
 class Test_resample_onto_grid(TestCase):
     def setUp(self):
-        scatterer = at3d.util.load_from_csv('../data/synthetic_cloud_fields/jpl_les/rico32x37x26.txt', density='lwc', origin=(0.0,0.0))
+        scatterer = at3d.util.load_from_csv(os.path.join(importlib.resources.files('at3d'),'data/synthetic_cloud_fields/jpl_les/rico32x37x26.txt'), density='lwc', origin=(0.0,0.0))
         scatterer['veff'] = (scatterer.reff.dims, np.full_like(scatterer.reff.data, fill_value=0.1))
         x = scatterer.x.data
         y = scatterer.y.data

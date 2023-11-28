@@ -22,6 +22,7 @@ See data/OPAC/aerosol/README.md for more info.
 """
 import glob
 import os
+import importlib
 
 import numpy as np
 import xarray as xr
@@ -30,7 +31,7 @@ import at3d.medium
 import at3d.checks
 import at3d.gas_absorption
 
-def aerosol_atmosphere(atmosphere=None, search_directory='../../data/ancillary/', atmosphere_name='tropical'):
+def aerosol_atmosphere(atmosphere=None, search_directory=None, atmosphere_name='tropical'):
     """
     Prepares gas concentrations for aerosol calculations.
 
@@ -272,8 +273,10 @@ class OPACMixture:
         The default assumes the code is called from the same directory
         as this file.
     """
-    def __init__(self, directory='../data/OPAC/aerosol/'):
+    def __init__(self, directory=None):#'../data/OPAC/aerosol/'):
 
+        if directory is None:
+            directory = os.path.join(importlib.resources.files('at3d'),'data/OPAC/aerosol/')            
         self._directory = directory
 
         self._expected_types = (

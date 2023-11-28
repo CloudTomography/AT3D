@@ -17,9 +17,10 @@ but an interface is not yet implemented.
 import numpy as np
 import xarray as xr
 import os
+import importlib
 from datetime import datetime
 
-def load_standard_atmosphere(search_directory='./data/ancillary/', atmosphere_name='tropical'):
+def load_standard_atmosphere(search_directory=None, atmosphere_name='tropical'):
     """
     Reads gas concentrations from AFGL standard atmospheres.
 
@@ -55,7 +56,11 @@ def load_standard_atmosphere(search_directory='./data/ancillary/', atmosphere_na
     except KeyError:
         raise KeyError("Invalid name for standard atmosphere. `atmosphere_name` should be one of {}".format(tuple(file_name_dict.keys())))
 
+    if search_directory is None:
+        search_directory = os.path.join(importlib.resources.files('at3d'),'data/ancillary/')
+
     main_path = os.path.join(search_directory, file_name)
+
     atmosphere_data = np.loadtxt(main_path)
     atmosphere = xr.Dataset(
         data_vars={
@@ -97,7 +102,10 @@ class Reptran:
     ---------
     https://doi.org/10.1016/j.jqsrt.2014.06.024
     """
-    def __init__(self, search_directory='./data/reptran/', parameterization_name='solar_modis'):
+    def __init__(self, parameterization_name='solar_modis', search_directory=None):
+
+        if search_directory is None:
+            search_directory = os.path.join(importlib.resources.files('at3d'),'data/reptran/')
 
         self.search_directory = search_directory
 
@@ -171,6 +179,11 @@ class Reptran:
                     "The MODIS instrument name (`terra` or `aqua`) must be specified "
                     "for the MODIS band parameterization."
                 )
+            
+            if not isinstance(band, int):
+                raise TypeError(
+                    "`band` should be an integer."
+                )
             absorption_data = self._get_band_absorption_data(atmosphere, instrument, band)
 
         else:
@@ -203,7 +216,12 @@ class Reptran:
         """
         short_name = 'modis_'+instrument +'_b{}'.format(str(band).zfill(2))
         band_name = (short_name).encode('utf-8').ljust(500)
-        band_index = np.where(self.reference.band_name == band_name)[0][0]
+        try:
+            band_index = np.where(self.reference.band_name == band_name)[0][0]
+        except IndexError:
+            raise ValueError(
+                "`band` {} is not a valid name".format(band)
+            )
 
         return self._process_data(atmosphere, short_name, band_index)
 
