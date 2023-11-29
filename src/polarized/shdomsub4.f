@@ -105,7 +105,8 @@ C       e.g. Dubovik et al. 2011 https://doi.org/10.5194/amt-4-975-2011.
      .                   NSCATANGLE, YLMSUN, PHASETAB, NSTPHASE,
      .                  IERR, ERRMSG, INTERPMETHOD, PHASEINTERPWT,
      .                   PHASEMAX, MAXNMICRO, TAUTOL,NOSURFACE,
-     .                  CORRECTINTERPOLATE, TRANSCUT, SINGLESCATTER)
+     .                  CORRECTINTERPOLATE, TRANSCUT, SINGLESCATTER,
+     .                  SFCGRIDRAD, NANG)
 C    Calculates the Stokes Vector at the given directions (CAMMU, CAMPHI)
 C    and positions CAMX,CAMY,CAMZ by integrating the source function.
 
@@ -152,6 +153,11 @@ Cf2py intent(in, out) :: BCRAD
       REAL    EXTINCT(NPTS,NPART), ALBEDO(NPTS,NPART)
       REAL    TOTAL_EXT(NPTS), LEGEN(NSTLEG,0:NLEG,*)
 Cf2py intent(in) :: EXTINCT, ALBEDO, LEGEN, TOTAL_EXT
+
+      REAL    SFCGRIDRAD(NANG/2 + 1, *)
+Cf2py intent(in) :: SFCGRIDRAD
+      INTEGER NANG
+Cf2py intent(in) :: NANG
 
       REAL    DIRFLUX(*), FLUXES(2,*), SOURCE(NSTOKES, *)
 Cf2py intent(in) :: DIRFLUX, FLUXES, SOURCE
@@ -234,7 +240,7 @@ C             Extrapolate ray to domain top if above
      .                              UNITS, NTOPPTS, NSTOKES, BCRAD(1,1),
      .                              NPHI0MAX, NMU, 1, 1,
      .                              MU2, PHI2, MU, PHI, NPHI0,
-     .                              .TRUE.)
+     .                              1)
         ELSE
           DO ITOP=1,NTOPPTS
             BCRAD(:,ITOP) = 0.0
@@ -263,7 +269,8 @@ C        CALL CPU_TIME(TIME1)
      .   	                 TOTAL_EXT, NPART, IERR,ERRMSG, INTERPMETHOD,
      .                     PHASEINTERPWT, PHASEMAX,MAXNMICRO, TAUTOL,
      .                     TIME_SOURCE, CORRECTINTERPOLATE,
-     .                     TRANSCUT, SINGLESCATTER, NOSURFACE)
+     .                     TRANSCUT, SINGLESCATTER, NOSURFACE,
+     .                     SFCGRIDRAD, NANG, UNITS, WAVENO)
       IF (IERR .NE. 0) RETURN
 C       CALL CPU_TIME(TIME2)
 C       TIME_RAY_TOTAL = TIME_RAY_TOTAL + TIME2-TIME1
@@ -540,7 +547,7 @@ C             Extrapolate ray to domain top if above
      .                              UNITS, NTOPPTS, NSTOKES, BCRAD(1,1),
      .                              NPHI0MAX, NMU, 1, 1,
      .                              MU2, PHI2, MU, PHI, NPHI0,
-     .                              .TRUE.)
+     .                              1)
           ELSE
             DO ITOP=1,NTOPPTS
               BCRAD(:,ITOP) = 0.0

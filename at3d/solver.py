@@ -331,6 +331,11 @@ class RTE:
         self._netfluxdiv = None
         self._shterms = None
 
+        self._sfcgridrad = np.zeros((self._nang//2 + 1,
+                                       self._maxnbc), 
+                                      dtype=np.float32,
+                                      order='F')
+
         # Part 2: Solution itertaions
         # This is the time consuming part, equivalent to SOLVE_RTE in SHDOM.
         # All of these arrays are initialized in _init_solution or _setup_grid.
@@ -344,8 +349,10 @@ class RTE:
         self._pa.extdirp, self._oldnpts, self._total_ext, self._deljdot, \
         self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
         self._work2, ierr, errmsg, self._phaseinterpwt, self._cpu_time, \
-        self._splitcrit \
+        self._splitcrit, self._sfcgridrad \
          = at3d.core.solution_iterations(
+            sfcgridrad=self._sfcgridrad,
+            surface_rad=self._surface_rad_source.ravel(order='F'),
             transmin=self._transmin,
             newmethod=self._newmethod,
             verbose=verbose,
@@ -564,6 +571,8 @@ class RTE:
         self._precompute_phase()
 
         self._bcrad_output, output, ierr, errmsg = at3d.core.render(
+            sfcgridrad=self._sfcgridrad,
+            nang=self._nang,
             nosurface=nosurface,
             correctinterpolate=self._correctinterpolate,
             singlescatter=single_scatter,
@@ -1824,6 +1833,14 @@ class RTE:
             warnings.warn("Ground temperature '{}' out of Earth range. "
                           "[150.0, 350.0]".format(self._gndtemp))
 
+        # setup the surface source.
+        self._surface_source = surface.surface_source.values.item()
+        if self._surface_source is not None:
+            if not isinstance(self._surface_source, at3d.surface.SurfaceSource):
+                raise TypeError(
+                    "`surface_source` should inherit from `at3d.surface.SurfaceSource."
+                )
+        
         return surface
 
     def _setup_numerical_params(self, numerical_params):
@@ -2480,6 +2497,41 @@ class RTE:
         self._netfluxdiv = None
         self._shterms = None
 
+        # Set the non-thermal surface emission. NB involves a redundant
+        # calculation of the Angle set.
+        # is also memory intensive.
+        nphi0, mu, phi, wtmu, wtdo, fftflag, nang = at3d.core.make_angle_set(
+            nmu=self._nmu,
+            nphi=self._nphi,
+            itype=self._angle_set,
+            nphi0max=self._nphi0max
+        )
+
+        mus = mu[:,None]*np.ones(phi.shape)
+        mu_all = []
+        phi_all = []
+        weight_all = []
+        for i in range(self._nmu//2, self._nmu):
+            mu_all.extend(mus[i,:nphi0[i]])
+            phi_all.extend(phi[i,:nphi0[i]])
+            weight_all.extend(wtdo[i,:nphi0[i]]*np.abs(mu[i]))
+        mu_all = np.array(mu_all)
+        phi_all = np.array(phi_all)
+        weight_all = np.array(weight_all)
+
+        x, y = np.meshgrid(np.append(self._xgrid, self._xgrid[0]), 
+                           np.append(self._ygrid, self._ygrid[0]), indexing='ij')
+
+        x = x.ravel()[:,None]*np.ones(mu_all.shape)[None,:]
+        y = y.ravel()[:,None]*np.ones(mu_all.shape)[None,:]
+        mu_all = mu_all[None,:]*np.ones(x.shape)
+        phi_all = phi_all[None,:]*np.ones(x.shape)
+        rads = self._surface_source(x.ravel(),y.ravel(),mu_all.ravel(),phi_all.ravel())
+
+        surface_rad_source = np.asfortranarray(rads.reshape(y.shape).T.reshape(nang//2, self._nx1+1, self._ny1+1))
+        self._surface_rad_flux = np.sum(surface_rad_source*weight_all[:,None,None],axis=0).mean()
+        self._surface_rad_source = np.append(np.zeros((1,self._nx1+1,self._ny1+1)), surface_rad_source,axis=0)
+
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, \
         self._sfcgridparms, self._ntoppts, self._nbotpts, self._bcptr, \
         self._rshptr, self._shptr, self._oshptr, self._source, self._delsource, \
@@ -2492,6 +2544,8 @@ class RTE:
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
         self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg, longest_path_pts\
          = at3d.core.init_solution(
+            surface_flux=self._surface_rad_flux,
+            surface_rad=self._surface_rad_source,
             newmethod=self._newmethod,
             ordinateset=self._angle_set,
             phasewtp=self._pa.phasewtp,

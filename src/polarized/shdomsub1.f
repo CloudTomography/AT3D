@@ -135,7 +135,8 @@ C       Get the maximum single scattering albedo over all processors
      .             INRADFLAG,NDELSOURCE, IERR, ERRMSG, MAXPG,
      .             WORK2_SIZE, PHASEINTERPWT, PHASEMAX,
      .             INTERPMETHOD, NLEGP, ADJFLAG, MAXNMICRO,
-     .             PHASEWTP, ORDINATESET, NEWMETHOD, LONGEST_PATH_PTS)
+     .             PHASEWTP, ORDINATESET, NEWMETHOD, LONGEST_PATH_PTS,
+     .             SURFACE_FLUX, SURFACE_RAD)
 Cf2py threadsafe
 C       Initialize the SHDOM solution procedure.
       IMPLICIT NONE
@@ -173,6 +174,8 @@ Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD, SHACC
 Cf2py intent(in) :: GNDTEMP, GNDALBEDO
       REAL    DELXSFC, DELYSFC, SFCPARMS(*)
 Cf2py intent(in) :: DELXSFC, DELYSFC, SFCPARMS
+      REAL    SURFACE_FLUX, SURFACE_RAD(*)
+Cf2py intent(in) :: SURFACE_FLUX, SURFACE_RAD
       REAL    WAVENO(2), WAVELEN
 Cf2py intent(in) :: WAVENO, WAVELEN
       REAL    TEMP(*), PLANCK(MAXIG,NPART)
@@ -347,8 +350,9 @@ C        two-stream plane-parallel
         SKYRADALB = 0.0
         DO IMU=1,NMU/2
           DO IPHI=1,NPHI0(IMU)
-            SKYRADALB = SKYRADALB + WTDO(IMU,IPHI)*SKYRAD(1,IMU,IPHI)
-          ENDDO
+            SKYRADALB = SKYRADALB + ABS(MU(IMU))*WTDO(IMU,IPHI)*
+     .                SKYRAD(1,IMU,IPHI)
+          ENDDO 
         ENDDO
 
         CALL INIT_RADIANCE(NSTOKES, NX1*NY1, NZ, NSTLEG, NLEG,
@@ -357,7 +361,7 @@ C        two-stream plane-parallel
      .    SOLARMU, GNDALBEDO, GNDTEMP, SKYRADALB, UNITS, WAVENO,
      .    WAVELEN, RADIANCE,
      .    NPART, TOTAL_EXT(:NBPTS), PHASEINTERPWT(:,:NBPTS,:), DELTAM,
-     .    ML, PHASEMAX, INTERPMETHOD, MAXNMICRO)
+     .    ML, PHASEMAX, INTERPMETHOD, MAXNMICRO, SURFACE_FLUX)
 
 C        Interpolate the radiance on the non-base grid points from the
 C          base grid points
@@ -458,7 +462,7 @@ C           inequality holds.
      .               ITERFIXSH, INTERPMETHOD, IERR, ERRMSG, MAXPG,
      .               PHASEINTERPWT, PHASEMAX, NLEGP,
      .               MAXNMICRO, PHASEWTP, SOLVE, COMPTIME, NEWMETHOD,
-     .               TRANSMIN, SPLITCRIT)
+     .               TRANSMIN, SPLITCRIT, SURFACE_RAD, SFCGRIDRAD)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -582,6 +586,10 @@ Cf2py intent(in, out) :: ITER
       LOGICAL UNIFORM_SFC_BRDF
       REAL    SFC_BRDF_DO(NSTOKES,NMU/2,NPHI0MAX,NSTOKES,NMU/2,NPHI0MAX)
 Cf2py intent(in) :: UNIFORM_SFC_BRDF, SFC_BRDF_DO
+      REAL    SURFACE_RAD(*)
+Cf2py intent(in) :: SURFACE_RAD
+      REAL    SFCGRIDRAD(*)
+Cf2py intent(in,out) :: SFCGRIDRAD
       INTEGER IERR
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
@@ -724,7 +732,8 @@ C             discrete ordinates.
      .           SHPTR, SOURCE, RSHPTR, RADIANCE,
      .           WORK, WORK1, WORK2, OLDNPTS, SP, STACK, IX, IY,
      .           IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ,
-     .           TRANSMIN)
+     .           TRANSMIN, SURFACE_RAD, NX1, NY1, DELX, DELY,
+     .           SFCGRIDRAD)
 
 C            Compute the source function from the radiance field,
 C              do the adaptive spherical harmonics truncation, compute
@@ -1723,7 +1732,7 @@ C     input acceleration parameter (ACCELPAR).
      .             SHPTR, SOURCE, RSHPTR, RADIANCE,
      .             WORK, SWEEPORD, GRIDRAD, OLDNPTS, SP, STACK,
      .        IX, IY, IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ,
-     .        TRANSMIN)
+     .        TRANSMIN, SURFACE_RAD, NX1, NY1, DELX, DELY, SFCGRIDRAD)
 C       Performs the path integrations through the medium specified by
 C     the extinction (EXTINCT) and source function (SOURCE) in
 C     spherical harmonic space.  The source function is transformed to
@@ -1804,6 +1813,15 @@ Cf2py intent(in) :: SRCTYPE, UNITS, SFCTYPE
 Cf2py intent(in) :: OLDNPTS
       REAL TRANSMIN
 Cf2py intent(in) :: TRANSMIN
+      REAL SURFACE_RAD(NANG/2 + 1, *)
+Cf2py intent(in) :: SURFACE_RAD
+      REAL SFCGRIDRAD(NANG/2 + 1,MAXNBC) 
+Cf2py intent(in,out) :: SFCGRIDRAD
+      INTEGER NX1, NY1
+Cf2py intent(in) :: NX1, NY1
+      REAL DELX, DELY
+Cf2py intent(in) :: DELX, DELY
+
       INTEGER I, I1, K, NR, IPHI, IMU, IBC, IANG, IUPDOWN
       integer joct, ipt, ip, iorder, ipcell, icorner
       LOGICAL LAMBERTIAN, BTEST, theflag
@@ -1840,8 +1858,12 @@ C               bottom grid points.
           CALL SURFACE_PARM_INTERP (NBOTPTS, BCPTR(1,2), GRIDPOS,
      .             SRCTYPE, WAVENO, WAVELEN, UNITS,
      .             NXSFC, NYSFC, DELXSFC, DELYSFC, NSFCPAR, SFCPARMS,
-     .             SFCGRIDPARMS)
+     .             SFCGRIDPARMS) 
         ENDIF
+        CALL SURFACE_PARM_INTERP (NBOTPTS, BCPTR(1,2), GRIDPOS,
+     .             SRCTYPE, WAVENO, WAVELEN, UNITS,
+     .             NX1, NY1, DELX, DELY, NANG/2+1, SURFACE_RAD,
+     .             SFCGRIDRAD)    
       ENDIF
 C         Make the isotropic radiances for the top boundary
 C      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
@@ -1907,7 +1929,7 @@ C            !PRINT *, "BEGIN COMPUTE_TOP_RADIANCES"
      .                              UNITS, NTOPPTS, NSTOKES, BCRAD,
      .                              NPHI0MAX, NMU, IMU, IPHI,
      .                              -2.0, -2.0, MU, PHI, NPHI0,
-     .                              .FALSE.)
+     .                              -1)
 C           !PRINT *, BCRAD(1,:NTOPPTS)
 
             IUPDOWN = 1
@@ -1941,8 +1963,9 @@ C                 BRDF matrix to do the integration.
             ENDIF
             DO IBC = 1, NBOTPTS
               I = BCPTR(IBC,2)
-              GRIDRAD(:,I) = BCRAD(:,IBC+NTOPPTS)
-            ENDDO
+              GRIDRAD(:,I) = BCRAD(:,IBC+NTOPPTS) + 
+     .                  SFCGRIDRAD(IANG-NANG/2 + 1,IBC) 
+            ENDDO 
           ENDIF
 
 C             Do backward path integration from each grid point not done yet
@@ -2094,11 +2117,17 @@ C     points are in SFCGRIDPARMS.  The first parameter is input as
 C     temperature, but converted to Planck function for output.
       IMPLICIT NONE
       INTEGER NBOTPTS, BCPTR(*),  NXSFC, NYSFC, NSFCPAR
+Cf2py intent(in) :: NBOTPTRS, BCPTR, NXSFC, NYSFC, NSFCPAR
       REAL    WAVENO(2), WAVELEN
+Cf2py intent(in) ::WAVENO, WAVELEN
       REAL    DELXSFC, DELYSFC
+Cf2py intent(in) :: DELXSFC, DELYSFC
       REAL    GRIDPOS(3,*), SFCPARMS(NSFCPAR,NXSFC+1,NYSFC+1)
+Cf2py intent(in) :: GRIDPOS, SFCPARMS
       REAL    SFCGRIDPARMS(NSFCPAR,NBOTPTS)
+Cf2py intent(out) :: SFCGRIDPARMS
       CHARACTER  SRCTYPE*1, UNITS*1
+Cf2py intent(in) :: SRCTYPE, UNITS
       INTEGER I, IBC, IX, IY, J
       REAL    RX, RY, U, V, TEMP, PLANCK
 
@@ -2204,7 +2233,7 @@ Cf2py intent(in) :: NMI, IMU, NPHI0MAX, IPHI
 Cf2py intent(in) :: MU, PHI, MUS, PHIS
       INTEGER NPHI0(NMU)
 Cf2py intent(in) :: NPHI0
-      LOGICAL INTERPOLATE_FLAG
+      INTEGER INTERPOLATE_FLAG
 Cf2py intent(in) :: INTERPOLATE_FLAG
       REAL    SKYRAD(NSTOKES,NMU/2,NPHI0MAX), WAVENO(2), WAVELEN
 Cf2py intent(in) :: SKYRAD, WAVENO, WAVELEN
@@ -2216,7 +2245,7 @@ Cf2py intent(in) :: SRCTYPE, UNITS
       INTEGER IBC, K
       REAL    SKYRAD2(NSTOKES), SKYRAD3(NSTOKES)
 
-      INTEGER I,J
+      INTEGER I,J, IANG
       DOUBLE PRECISION POWER, DISTANCE, WEIGHTEDSUM(NSTOKES)
       DOUBLE PRECISION WEIGHTSUM, WEIGHT
 
@@ -2226,7 +2255,7 @@ C       MU, PHI. The latter is only done when evaluating a radiance
 C       (not during the solution iterations) and only affects
 C       upward looking (ground based) instruments.
 
-      IF (INTERPOLATE_FLAG) THEN
+      IF (INTERPOLATE_FLAG .EQ. 1) THEN
 C     Inverse distance weighting interpolation (Cubic).
 C     Distance is based on the scattering angle between the two angles.
         POWER = 3.0D0
@@ -2239,6 +2268,23 @@ C     Distance is based on the scattering angle between the two angles.
      .          COS(PHI-PHIS(I,J)))
             WEIGHT = 1.0D0/(DISTANCE**POWER)
             WEIGHTEDSUM(:) = WEIGHTEDSUM(:) + SKYRAD(:,I,J)*WEIGHT
+            WEIGHTSUM = WEIGHTSUM + WEIGHT
+          ENDDO
+        ENDDO
+        SKYRAD3 = WEIGHTEDSUM/WEIGHTSUM
+      ELSE IF (INTERPOLATE_FLAG .EQ. 2) THEN
+C       For surface.
+        POWER = 3.0D0
+        WEIGHTEDSUM = 0.0D0
+        WEIGHTSUM = 0.0D0
+        DO I = NMU/2 + 1, NMU
+          DO J=1, NPHI0(I)
+            DISTANCE = ACOS(MU*MUS(I) +
+     .          SQRT((1.0-MU**2)*(1.0-MUS(I)**2))*
+     .          COS(PHI-PHIS(I,J)))
+            WEIGHT = 1.0D0/(DISTANCE**POWER)
+            WEIGHTEDSUM(:) = WEIGHTEDSUM(:) + 
+     .              SKYRAD(:,I - NMU/2,J)*WEIGHT
             WEIGHTSUM = WEIGHTSUM + WEIGHT
           ENDDO
         ENDDO
@@ -2356,9 +2402,6 @@ C         Loop over all bottom points
       ENDDO
       RETURN
       END
-
-
-
 
       SUBROUTINE VARIABLE_BRDF_SURFACE (NBOTPTS, IBEG, IEND, BCPTR,
      .               NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, MU2, PHI2,

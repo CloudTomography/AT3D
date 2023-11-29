@@ -617,7 +617,7 @@ C     Double check for rounding that makes small negative errors.
      .             SRCTYPE, SOLARFLUX, SOLARMU, GNDALBEDO, GNDTEMP,
      .             SKYRAD, UNITS, WAVENO, WAVELEN,  RADIANCE, NPART,
      .		       TOTAL_EXT, PHASEINTERPWT, DELTAM, ML, PHASEMAX,
-     .           INTERPMETHOD, MAXNMICRO)
+     .           INTERPMETHOD, MAXNMICRO, SURFACE_FLUX)
 C       Initializes radiance field by solving plane-parallel two-stream.
 C     Solves the L=1 M=0 SH system by transforming the pentadiagonal
 C     system to tridiagonal and calling solver.
@@ -633,7 +633,7 @@ C     Only the I Stokes parameter is initialized, the rest are zeroed.
       REAL    EXTINCT(NZ,NXY,NPART), ALBEDO(NZ,NXY,NPART)
       REAL    LEGEN(NSTLEG,0:NLEG,*)
       REAL    TEMP(NZ,NXY)
-      REAL    RADIANCE(NSTOKES,*), PHASEMAX
+      REAL    RADIANCE(NSTOKES,*), PHASEMAX, SURFACE_FLUX
       CHARACTER SRCTYPE*1, UNITS*1, INTERPMETHOD*2
       INTEGER MAXNMICRO
 
@@ -741,7 +741,7 @@ C           Call the Eddington flux routine
         CALL EDDRTF (NLAYER, OPTDEPTHS, ALBEDOS, ASYMMETRIES,
      .              TEMPS, .FALSE., SRCTYPE, SOLARFLUX, SOLARMU,
      .              GNDTEMP, GNDEMIS, SKYRAD, UNITS, WAVENO,WAVELEN,
-     .              FLUXES)
+     .              FLUXES, SURFACE_FLUX)
 C           Convert fluxes to first two moments of spherical harmonics
         DO IZ = 1, NZ
           L = NZ+1-IZ
@@ -765,7 +765,7 @@ C           Convert fluxes to first two moments of spherical harmonics
       SUBROUTINE EDDRTF (NLAYER, OPTDEPTHS, ALBEDOS, ASYMMETRIES,
      .              TEMPS, DELTAM, SRCTYPE, SOLARFLUX, SOLARMU,
      .              GNDTEMP, GNDEMIS, SKYRAD, UNITS, WAVENO,WAVELEN,
-     .              FLUXES)
+     .              FLUXES, SURFACE_FLUX)
 C
 C       EDDRTF computes the layer interface fluxes for a plane-parallel
 C     atmosphere with either solar or thermal source of radiation using
@@ -826,8 +826,8 @@ Cf2py intent(in) :: TEMPS
 Cf2py intent(in) :: OPTDEPTHS, ALBEDOS, ASYMMETRIES
       REAL      GNDTEMP, GNDEMIS, SKYRAD, SOLARFLUX, SOLARMU
 Cf2py intent(in) :: GNDTEMP, GNDEMIS, SKYRAD, SOLARFLUX, SOLARMU
-      REAL      WAVENO(2), WAVELEN
-Cf2py intent(in) ::WAVENO, WAVELEN
+      REAL      WAVENO(2), WAVELEN, SURFACE_FLUX
+Cf2py intent(in) ::WAVENO, WAVELEN, SURFACE_FLUX
       CHARACTER*1 SRCTYPE, UNITS
 Cf2py intent(in) :: SRCTYPE, UNITS
       REAL      FLUXES(3,NLAYER+1)
@@ -965,6 +965,7 @@ C           Set up boundary radiances
         CALL PLANCK_FUNCTION (SKYRAD,UNITS,WAVENO,WAVELEN,BBRAD)
         SKYFLUX = PI*BBRAD
       ENDIF
+      GNDFLUX = GNDFLUX + SURFACE_FLUX
 C           Setup for and call the tri-diagonal matrix solver
       RHS(1) = SKYFLUX
       DIAG(1) = 0.0
@@ -1071,9 +1072,15 @@ C     angles are the downwelling (mu<0) angles.  Also output are the
 C     maximum number of azimuthal angles (NPHI0MAX), the flags for doing
 C     an azimuthal FFT for each mu and the total number of angles.
       IMPLICIT NONE
-      INTEGER NMU, NPHI, ITYPE,  NPHI0MAX, NPHI0(NMU), NANG
+      INTEGER NMU, NPHI, ITYPE,  NPHI0MAX
+Cf2py intent(in) :: NMU, NPHI, ITYPE, NPHI0MAX
+      INTEGER NPHI0(NMU), NANG
+Cf2py intent(out) :: NPHI0, NANG
       LOGICAL FFTFLAG(NMU)
-      REAL    MU(NMU), PHI(NMU,*), WTMU(NMU), WTDO(NMU,*)
+Cf2py intent(out) :: FFTFLAG
+      REAL    MU(NMU), PHI(NMU,NPHI0MAX), WTMU(NMU)
+      REAL    WTDO(NMU,NPHI0MAX)
+Cf2py intent(out) :: MU, PHI, WTMU, WTDO
       INTEGER MAXNPHI, J, K, MM
       REAL    DELPHI
       PARAMETER (MAXNPHI=256)
@@ -2209,7 +2216,8 @@ C      END
      .                    INTERPMETHOD, PHASEINTERPWT, PHASEMAX,
      .                    MAXNMICRO, TAUTOL, TIME_SOURCE,
      .                    CORRECTINTERPOLATE, TRANSCUT, SINGLESCATTER,
-     .                     NOSURFACE)
+     .                     NOSURFACE, SFCGRIDRAD, NANG, SKYRAD,
+     .                     UNITS, WAVENO)
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
 C     radiance (RADIANCE) at the point X0,Y0,Z0.
@@ -2242,7 +2250,10 @@ C     5=-Z,6=+Z).
       REAL    PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
       DOUBLE PRECISION MU2, PHI2, X0,Y0,Z0, XE,YE,ZE
       DOUBLE PRECISION TRANSMIT, RADIANCE(NSTOKES)
-      CHARACTER SRCTYPE*1, SFCTYPE*2
+      CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
+      INTEGER NANG
+      REAL    SFCGRIDRAD(NANG/2 + 1, *), WAVENO(2)
+      REAL    SKYRAD(NSTOKES,NMU/2,NPHI0MAX)
 
       INTEGER BITX, BITY, BITZ, IOCT, ICELL, INEXTCELL, IFACE
       INTEGER IOPP, NTAU, IT, I, IPT1, IPT2, J, L
@@ -2595,7 +2606,8 @@ C.OR. NGRID.GT.MAXCELLSCROSS
      .                      NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .                      SRCTYPE, WAVELEN, SOLARMU,SOLARAZ, DIRFLUX,
      .                      SFCTYPE, NSFCPAR, SFCGRIDPARMS,
-     .                      RADBND)
+     .                      RADBND, SFCGRIDRAD, NANG,
+     .                      UNITS, WAVENO)
           IF (.NOT. NOSURFACE) THEN
             RADIANCE(:) = RADIANCE(:) + TRANSMIT*RADBND(:)
           ENDIF
@@ -2629,7 +2641,8 @@ C.OR. NGRID.GT.MAXCELLSCROSS
      .                      NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .                      SRCTYPE, WAVELEN, SOLARMU,SOLARAZ, DIRFLUX,
      .                      SFCTYPE, NSFCPAR, SFCGRIDPARMS,
-     .                      RADBND)
+     .                      RADBND, SFCGRIDRAD, NANG,
+     .                      UNITS, WAVENO)
 C       Returns the interpolated Stokes radiance at the boundary (RADBND).
 C     Inputs are the boundary location (XB,YB), ray direction away from
 C     boundary (MU2,PHI2), cell number (ICELL) and face (KFACE) at
@@ -2637,16 +2650,18 @@ C     the boundary point.
       IMPLICIT NONE
       INTEGER NSTOKES, ICELL, KFACE, MAXNBC, NTOPPTS, NBOTPTS
       INTEGER GRIDPTR(8,*), BCPTR(MAXNBC,2)
-      INTEGER NMU, NPHI0MAX, NPHI0(*), NSFCPAR
+      INTEGER NMU, NPHI0MAX, NPHI0(*), NSFCPAR, NANG
       REAL    MU2, PHI2, RADBND(NSTOKES)
       DOUBLE PRECISION XB, YB
       REAL    GRIDPOS(3,*)
       REAL    WTDO(NMU,*), MU(NMU), PHI(NMU,*)
       REAL    WAVELEN, SOLARMU, SOLARAZ, DIRFLUX(*)
       REAL    SFCGRIDPARMS(NSFCPAR,*), BCRAD(NSTOKES,*)
-      CHARACTER SRCTYPE*1, SFCTYPE*2
+      REAL    SFCGRIDRAD(NANG/2 + 1, *), WAVENO(2)
+      CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
 
-      INTEGER IL, IM, IU, IP, IBC, J
+      REAL    SFCRAD_TEMP(NSTOKES,NMU/2,NPHI0MAX)
+      INTEGER IL, IM, IU, IP, IBC, J,I, IANG,JA
       LOGICAL LAMBERTIAN
       REAL    X(4), Y(4), RAD(NSTOKES,4), U, V
       INTEGER GRIDFACE(4,6)
@@ -2704,7 +2719,22 @@ C           Do a binary search to locate the bottom boundary point
      .             SFCTYPE, NSFCPAR, SFCGRIDPARMS, NSTOKES,
      .             BCRAD(:,1+NTOPPTS))
           ENDIF
-          RAD(:,J) = BCRAD(:,NTOPPTS+IBC)
+C         Hack to use COMPUTE_TOP_RADIANCES to compute the surface
+C         emission.
+          IANG = 1
+          SFCRAD_TEMP = 0.0
+          DO I = 1, NMU/2
+            DO JA = 1, NPHI0(I)
+              SFCRAD_TEMP(1,I,JA) = SFCGRIDRAD(IANG+1,IBC)
+              IANG = IANG + 1
+            ENDDO
+          ENDDO
+          CALL COMPUTE_TOP_RADIANCES(SRCTYPE,SFCRAD_TEMP,WAVENO,
+     .                  WAVELEN,
+     .                  UNITS,1, NSTOKES, RAD(:,J), NPHI0MAX,
+     .                  NMU,-1,-1,MU2,PHI2,MU,PHI,NPHI0,2)
+          RAD(:,J) = RAD(:,J) + BCRAD(:,NTOPPTS+IBC)
+
         ENDIF
       ENDDO
       IF (X(2)-X(1) .GT. 0.0) THEN
