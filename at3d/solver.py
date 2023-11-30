@@ -20,6 +20,7 @@ import numpy as np
 import at3d.core
 import at3d.util
 import at3d.checks
+import at3d.surface
 
 
 class ShdomPropertyArrays(object):
@@ -336,6 +337,110 @@ class RTE:
                                       dtype=np.float32,
                                       order='F')
 
+        # # Calculate the Volume Source.
+        # nphi0, mu, phi, wtmu, wtdo, fftflag, nang = at3d.core.make_angle_set(
+        #     nmu=self._nmu,
+        #     nphi=self._nphi,
+        #     itype=self._angle_set,
+        #     nphi0max=self._nphi0max
+        # )
+
+        # mus = mu[:,None]*np.ones(phi.shape)
+        # mu_all = []
+        # phi_all = []
+        # weight_all = []
+        # for i in range(self._nmu//2, self._nmu):
+        #     mu_all.extend(mus[i,:nphi0[i]])
+        #     phi_all.extend(phi[i,:nphi0[i]])
+        #     weight_all.extend(wtdo[i,:nphi0[i]]*np.abs(mu[i]))
+        # mu_all = np.array(mu_all)
+        # phi_all = np.array(phi_all)
+        # weight_all = np.array(weight_all)
+
+        # rshptr = np.cumsum(np.ones(self._npts+1, dtype=np.int32)*self._nlm) - (self._nlm-1)
+        # vol_source_sh = np.zeros(rshptr[-1],dtype=np.float32)
+
+        # for imu in range(self._nmu):
+        #     x,y,z = self._gridpos[:,:self._npts]
+            
+        #     x = (x[None,:]*np.ones(self._nphi0max)[:,None]).ravel()
+        #     y = (y[None,:]*np.ones(self._nphi0max)[:,None]).ravel()
+        #     z = (z[None,:]*np.ones(self._nphi0max)[:,None]).ravel()
+        #     mu_all = np.ones(x.shape)*mu[imu]
+        #     phi_all = phi[imu][:,None]*np.ones(self._npts)
+        #     rad = self._volume_source(x,y,z,mu_all.ravel(), phi_all.ravel())
+
+        #     rad_grid = np.asfortranarray(rad.reshape(self._nstokes, self._nphi0max, self._npts))
+
+        #     if self._nstokes == 1:
+        #         vol_source_sh = at3d.core.do_to_sh_unpol(
+        #             npts=self._npts,
+        #             ml=self._ml,
+        #             mm=self._mm,
+        #             nlm=self._nlm,
+        #             nmu=self._nmu,
+        #             nphi0max=self._nphi0max,
+        #             nphi0=nphi0[imu],
+        #             imu=imu+1,
+        #             rshptr=rshptr,
+        #             fftflag=self._fftflag,
+        #             cmu2=self._cmu2,
+        #             cphi2=self._cphi2,
+        #             wsave=self._wphisave,
+        #             indata=rad_grid[0],
+        #             outdata=vol_source_sh
+        #         )
+        #     else:
+        #         vol_source_sh = at3d.core.do_to_sh_unpol(
+        #             npts=self._npts,
+        #             ml=self._ml,
+        #             mm=self._mm,
+        #             nlm=self._nlm,
+        #             nmu=self._nmu,
+        #             nphi0max=self._nphi0max,
+        #             nphi0=self._nphi0[imu],
+        #             imu=imu+1,
+        #             rshptr=rshptr,
+        #             fftflag=self._fftflag,
+        #             cmu2=self._cmu2,
+        #             cphi2=self._cphi2,
+        #             wsave=self._wphisave,
+        #             indata=rad_grid,
+        #             outdata=vol_source_sh
+        #         )        
+        # if self._nstokes == 1:
+        #    vol_source_sh = vol_source_sh[None,:]
+            
+        # valid_sh = np.where(np.abs(vol_source_sh) > max(self._shacc, 1e-6))[0]
+
+        # vol_source_gridptr = np.zeros((2,self._npts), dtype=np.int32)
+        # vol_source_shptr = np.zeros(valid_sh.size, dtype=np.int32)
+
+        # # find grid point.
+        # istart = 0
+        # nv = 0
+        # for i,ish in enumerate(valid_sh):
+        #     ind_diff = (rshptr-1) - ish
+        #     ind_pos = np.where(ind_diff==np.min(np.abs(ind_diff)))[0]
+        #     if ind_diff[ind_pos] < 0:
+        #         igrid = ind_pos-1
+        #     else:
+        #         igrid = ind_pos
+
+        #     vol_source_shptr[i] = ish - rshptr[igrid] + 2
+        #     nv += 1
+
+        #     if oldigrid != igrid:
+        #         vol_source_gridptr[0,oldigrid] = istart+1
+        #         vol_source_gridptr[1,igrid] = istart+1+nv
+        #         istart = i
+        #         nv = 0
+        #     oldigrid = igrid
+        # self._volsrcgridptr = vol_source_gridptr
+        # self._volsrcshptr = vol_source_shptr
+        # self._nvolsrc = valid_sh.size
+        # self._volsrc = vol_source_sh[:,valid_sh]
+
         # Part 2: Solution itertaions
         # This is the time consuming part, equivalent to SOLVE_RTE in SHDOM.
         # All of these arrays are initialized in _init_solution or _setup_grid.
@@ -351,6 +456,10 @@ class RTE:
         self._work2, ierr, errmsg, self._phaseinterpwt, self._cpu_time, \
         self._splitcrit, self._sfcgridrad \
          = at3d.core.solution_iterations(
+            volsrc=np.zeros((self._nstokes, 1),dtype=np.float32,order='F'),
+            volsrcgridptr=np.zeros((2,self._maxig),dtype=np.int32,order='F'),
+            volsrcshptr=np.zeros(2, dtype=np.int32),
+            nvolsrc=1,
             sfcgridrad=self._sfcgridrad,
             surface_rad=self._surface_rad_source.ravel(order='F'),
             transmin=self._transmin,
@@ -1764,6 +1873,12 @@ class RTE:
         self._skyrad = source.skyrad.data
         self._units = source.units.data
         self._waveno = source.wavenumber.data
+        self._volume_source = source.volume_source.values.item()
+        if not isinstance(self._volume_source, at3d.source.VolumeSource):
+            raise TypeError(
+                "`volume_source` should inherit from {}".format(at3d.source.VolumeSource)
+            )
+
 
         if self._srctype not in ('T', 'S', 'B'):
             raise ValueError("Invalid source type '{}'. Make sure to choose "
@@ -2450,6 +2565,41 @@ class RTE:
             "`skyrad` variable should be either a float or of shape (NSTOKES, NMU, NPHI0MAX)"
             )
 
+        # Set the non-thermal surface emission. NB involves a redundant
+        # calculation of the Angle set.
+        # is also memory intensive.
+        nphi0, mu, phi, wtmu, wtdo, fftflag, nang = at3d.core.make_angle_set(
+            nmu=self._nmu,
+            nphi=self._nphi,
+            itype=self._angle_set,
+            nphi0max=self._nphi0max
+        )
+
+        mus = mu[:,None]*np.ones(phi.shape)
+        mu_all = []
+        phi_all = []
+        weight_all = []
+        for i in range(self._nmu//2, self._nmu):
+            mu_all.extend(mus[i,:nphi0[i]])
+            phi_all.extend(phi[i,:nphi0[i]])
+            weight_all.extend(wtdo[i,:nphi0[i]]*np.abs(mu[i]))
+        mu_all = np.array(mu_all)
+        phi_all = np.array(phi_all)
+        weight_all = np.array(weight_all)
+
+        x, y = np.meshgrid(np.append(self._xgrid, self._xgrid[0]), 
+                           np.append(self._ygrid, self._ygrid[0]), indexing='ij')
+
+        x = x.ravel()[:,None]*np.ones(mu_all.shape)[None,:]
+        y = y.ravel()[:,None]*np.ones(mu_all.shape)[None,:]
+        mu_all = mu_all[None,:]*np.ones(x.shape)
+        phi_all = phi_all[None,:]*np.ones(x.shape)
+        rads = self._surface_source(x.ravel(),y.ravel(),mu_all.ravel(),phi_all.ravel())
+
+        surface_rad_source = np.asfortranarray(rads.reshape(y.shape).T.reshape(nang//2, self._nx1+1, self._ny1+1))
+        self._surface_rad_flux = np.sum(surface_rad_source*weight_all[:,None,None],axis=0).mean()
+        self._surface_rad_source = np.append(np.zeros((1,self._nx1+1,self._ny1+1)), surface_rad_source,axis=0)
+
         # Restart solution criteria
         self._oldnpts = 0
         self._solcrit = 1.0
@@ -2497,41 +2647,6 @@ class RTE:
         self._netfluxdiv = None
         self._shterms = None
 
-        # Set the non-thermal surface emission. NB involves a redundant
-        # calculation of the Angle set.
-        # is also memory intensive.
-        nphi0, mu, phi, wtmu, wtdo, fftflag, nang = at3d.core.make_angle_set(
-            nmu=self._nmu,
-            nphi=self._nphi,
-            itype=self._angle_set,
-            nphi0max=self._nphi0max
-        )
-
-        mus = mu[:,None]*np.ones(phi.shape)
-        mu_all = []
-        phi_all = []
-        weight_all = []
-        for i in range(self._nmu//2, self._nmu):
-            mu_all.extend(mus[i,:nphi0[i]])
-            phi_all.extend(phi[i,:nphi0[i]])
-            weight_all.extend(wtdo[i,:nphi0[i]]*np.abs(mu[i]))
-        mu_all = np.array(mu_all)
-        phi_all = np.array(phi_all)
-        weight_all = np.array(weight_all)
-
-        x, y = np.meshgrid(np.append(self._xgrid, self._xgrid[0]), 
-                           np.append(self._ygrid, self._ygrid[0]), indexing='ij')
-
-        x = x.ravel()[:,None]*np.ones(mu_all.shape)[None,:]
-        y = y.ravel()[:,None]*np.ones(mu_all.shape)[None,:]
-        mu_all = mu_all[None,:]*np.ones(x.shape)
-        phi_all = phi_all[None,:]*np.ones(x.shape)
-        rads = self._surface_source(x.ravel(),y.ravel(),mu_all.ravel(),phi_all.ravel())
-
-        surface_rad_source = np.asfortranarray(rads.reshape(y.shape).T.reshape(nang//2, self._nx1+1, self._ny1+1))
-        self._surface_rad_flux = np.sum(surface_rad_source*weight_all[:,None,None],axis=0).mean()
-        self._surface_rad_source = np.append(np.zeros((1,self._nx1+1,self._ny1+1)), surface_rad_source,axis=0)
-
         self._nang, self._nphi0, self._mu, self._phi, self._wtdo, \
         self._sfcgridparms, self._ntoppts, self._nbotpts, self._bcptr, \
         self._rshptr, self._shptr, self._oshptr, self._source, self._delsource, \
@@ -2544,6 +2659,10 @@ class RTE:
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
         self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg, longest_path_pts\
          = at3d.core.init_solution(
+            volsrc=np.zeros((self._nstokes, 1),dtype=np.float32,order='F'),
+            volsrcgridptr=np.zeros((2,self._maxig),dtype=np.int32,order='F'),
+            volsrcshptr=np.zeros(2, dtype=np.int32),
+            nvolsrc=1,
             surface_flux=self._surface_rad_flux,
             surface_rad=self._surface_rad_source,
             newmethod=self._newmethod,

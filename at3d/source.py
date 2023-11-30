@@ -11,7 +11,7 @@ Gradient calculations are only available for `solar` sources, not
 import xarray as xr
 import numpy as np
 
-def solar(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
+def solar(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0, volume_source=None):
     """Defines a solar source for use in solver.RTE (SHDOM).
 
     Parameters
@@ -69,9 +69,16 @@ def solar(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
             'skyrad': (['nstokes', 'nmu','nphi0max'], np.atleast_3d(skyrad)) #isotropic diffuse radiance from above
         }
     )
+    if volume_source is None:
+        volume_source = VolumeSource()
+    if not isinstance(volume_source, VolumeSource):
+        raise TypeError(
+            "`volume_source` should inherit from {}".format(VolumeSource)
+        )
+    source_dataset['volume_source'] = volume_source
     return source_dataset
 
-def thermal(wavelength, skyrad=0.0, units='radiance'):
+def thermal(wavelength, skyrad=0.0, units='radiance', volume_source=None):
     """Defines a thermal emission source for solver.RTE (SHDOM).
 
     Parameters
@@ -124,9 +131,16 @@ def thermal(wavelength, skyrad=0.0, units='radiance'):
             'skyrad': skyrad #in thermal only this is brightness temperature of the isotropic diffuse radiance.
         }
     )
+    if volume_source is None:
+        volume_source = VolumeSource()
+    if not isinstance(volume_source, VolumeSource):
+        raise TypeError(
+            "`volume_source` should inherit from {}".format(VolumeSource)
+        )
+    source_dataset['volume_source'] = volume_source
     return source_dataset
 
-def combined(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
+def combined(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0, volume_source=None):
     """Defines a combined (both solar and thermal) source for use in solver.RTE (SHDOM).
 
     Parameters
@@ -185,4 +199,76 @@ def combined(wavelength, solarmu, solar_azimuth, solarflux=1.0, skyrad=0.0):
             'skyrad': skyrad #In combined this is the same as solar (radiance)
         }
     )
+    if volume_source is None:
+        volume_source = VolumeSource()
+    if not isinstance(volume_source, VolumeSource):
+        raise TypeError(
+            "`volume_source` should inherit from {}".format(VolumeSource)
+        )
+    source_dataset['volume_source'] = volume_source
     return source_dataset
+
+
+class VolumeSource:
+    """
+    A generic class for defining (non-thermal) volume source.
+    """
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    def _check_inputs(self, *args):
+        for arg in args:
+            if not isinstance(arg, np.ndarray):
+                raise TypeError(
+                    "Coordinates should be passed as numpy arrays."
+                )
+            if not arg.ndim == 1:
+                raise ValueError(
+                    "Coordinates should be arrays of rank 1"
+                )
+        if not all([arg.size==args[0].size for arg in args]):
+            raise ValueError(
+                "Coordinates should all have the same size."
+            )
+
+    def _rad_func(self, x,y,z,mu,phi):
+        return np.zeros(x.shape)
+
+    def _check_output(self, rad):
+        if np.any(~np.isfinite(rad)):
+            raise ValueError(
+                "Non-finite values in output of volume source model"
+            )
+    
+    def __call__(self, x, y,z, mu, phi):
+        self._check_inputs(x,y,z,mu,phi)
+        rad_out = self._rad_func(x,y,z,mu,phi)
+        self._check_output(rad_out)
+        return rad_out
+
+class IsotropicPointSource(VolumeSource):
+    """
+    An Isotropic Volume point source.
+
+    Parameters
+    ----------
+    x0, y0, z0 : float
+        The location of the point source.
+    dr : float
+        The radius of the point source. This parameter is provided so that there is some tolerance
+        if the location does not perfectly match up with one of the radiative transfer grid's
+        points.
+    intensity : float
+        The intensity of the radiance at every angle.
+    """
+    def __init__(self, x0=0.32,y0=0.32,z0=1.0,dr=0.05, intensity=1.0/(4*np.pi)):
+        VolumeSource.__init__(self, x0=x0, y0=y0, z0=z0, dr=dr, intensity=intensity)
+
+    def _rad_func(self, x, y, z, mu, phi):
+        self._check_inputs(x,y,z,mu,phi)
+        d = (x-self.x0)**2 + (y-self.y0)**2 + (z-self.z0)**2
+        cond = np.where(np.sqrt(d)<= self.dr)
+        rad_out = np.zeros((x.shape))
+        rad_out[cond] = self.intensity
+        return rad_out

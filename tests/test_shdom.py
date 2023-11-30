@@ -1205,8 +1205,11 @@ class VerifyRadianceIntegration(TestCase):
                     phasemax=solver_grid._phasemax,
                     nlegp=solver_grid._pa.nlegp,
                     maxnmicro=solver_grid._pa.max_num_micro,
-                    phasewtp=solver_grid._pa.phasewtp
-
+                    phasewtp=solver_grid._pa.phasewtp,
+                    nvolsrc=1,
+                    volsrc=np.zeros((solver_grid._nstokes, 1),dtype=np.float32,order='F'),
+                    volsrcgridptr=np.zeros((2,solver_grid._npts),dtype=np.int32,order='F'),
+                    volsrcshptr=np.zeros(2, dtype=np.int32),
                 )
                 solver_grid.solve(100,init_solution=False,verbose=False)
 

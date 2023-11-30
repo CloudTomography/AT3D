@@ -151,7 +151,11 @@ F2PY_CORE_API = [
     'sh_to_do_unpol',
     'surface_brdf',
     'sh_to_do',
-    'particle_flow',
+    'make_angle_set',
+    'surface_parm_interp',
+    'do_to_sh',
+    'do_to_sh_unpol',
+    #'particle_flow',
     #'particle_flow_empirical'
 ]
 
