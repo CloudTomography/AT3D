@@ -16,10 +16,11 @@ Major additions include:
 - Radiative transfer experiments with SHDOM
 
 ## Repository Structure
-at3d/
-scripts/
-experiments/
-notebooks/
+AT3D-airmspi
+├── at3d/ Core radiative transfer code (AT3D)
+├── scripts/ Simulation and retrieval scripts
+├── experiments/ Experiment configurations and results
+└── notebooks/ Analysis and visualization notebooks
 
 # Atmospheric Tomography with 3D Radiative Transfer (AT3D)
 
