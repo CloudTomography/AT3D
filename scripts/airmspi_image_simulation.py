@@ -1,0 +1,1379 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+SimulatingRadiances_v5b.py
+----------------------------------
+Per-wavelength AT3D simulation pipeline with:
+- Original camera-view PNGs via imshow()
+- Ground-projected, cropped terrain PNGs using user's crop/plot functions
+- Configurable ground crop ranges via YAML (ground_crop.x_range / y_range)
+- Same NPZ / NC outputs as v3c, plus expanded metadata (angles, lat/lon, elevation, mask)
+- NEW: Read lat/lon columns from wrf_to_shdom_coarse.txt and propagate to outputs
+
+Created on Thu Nov 20 13:19:59 2025
+
+Author: Benting Chen
+"""
+
+import os
+import sys
+import time
+import yaml
+import argparse
+import numpy as np
+import xarray as xr
+from collections import OrderedDict
+from dataclasses import dataclass
+from typing import Dict, List, Tuple, Optional
+
+# External libs
+import at3d
+from scipy.ndimage import map_coordinates
+from skimage.measure import block_reduce
+import matplotlib.pyplot as plt
+import utils
+from at3dclass import (
+    OutputConfig, SensorConfig, BandsConfig, DownsampleConfig, SaveVersionsConfig,
+    PlotConfig, GroundGridConfig, ComputeConfig, GroundCropConfig, SceneConfig,
+    CameraConfig, SolarConfig, SolverConfig, AerosolConfig
+)
+import cartopy.crs as ccrs
+from scipy.ndimage import distance_transform_edt
+from scipy.interpolate import RegularGridInterpolator
+# =============================
+#%% Section 1: Config dataclasses
+# =============================
+
+# @dataclass
+# class OutputConfig:
+#     root_dir: str
+#     save_png: bool
+#     save_nc: bool
+#     plot_mode: str  # "skip" | "if_missing" | "overwrite"
+#     png_dpi: int = 300
+
+# @dataclass
+# class SensorConfig:
+#     type: str  # "perspective_projection" or "orthographic_projection"
+#     altitude_km: float
+#     fov_deg: float
+#     resolution_km: float
+#     views_names: List[str]
+#     views_zenith_deg: List[float]
+#     views_azimuth_deg: List[float]
+
+# @dataclass
+# class BandsConfig:
+#     wavelength_nm: List[int]
+#     is_polarized: List[bool]
+
+# @dataclass
+# class DownsampleConfig:
+#     factor: int
+#     method: str  # "mean"
+
+# @dataclass
+# class SaveVersionsConfig:
+#     versions: List[str]
+
+# @dataclass
+# class PlotConfig:
+#     enable_3d_geometry: bool
+#     enable_ground_image: bool
+#     colormap: str
+
+# @dataclass
+# class GroundGridConfig:
+#     x_min: float
+#     x_max: float
+#     nx: int
+#     y_min: float
+#     y_max: float
+#     ny: int
+
+# @dataclass
+# class ComputeConfig:
+#     n_jobs: Optional[int] = None
+
+# @dataclass
+# class GroundCropConfig:
+#     x_range: List[float]
+#     y_range: List[float]
+
+
+# =============================
+#%% Section 2: Utilities
+# =============================
+
+
+# =============================
+#%% Section 3: Geometry / Registration
+# =============================
+
+def calculate_up_vector(position, look_at_point, world_up=np.array([0, 0, 1])):
+    forward_vec = look_at_point - position
+    forward_vec = forward_vec / np.linalg.norm(forward_vec)
+    if np.abs(np.dot(forward_vec, world_up)) > 0.9999:
+        right_vec = np.array([1, 0, 0])
+        up_vec = np.cross(right_vec, forward_vec)
+        if np.linalg.norm(up_vec) < 1e-6:
+            right_vec = np.array([0, -1, 0])
+            up_vec = np.cross(right_vec, forward_vec)
+    else:
+        right_vec = np.cross(forward_vec, world_up)
+        right_vec = right_vec / np.linalg.norm(right_vec)
+        up_vec = np.cross(right_vec, forward_vec)
+    return up_vec
+
+def calculate_sensor_trajectory(sensor_zenith_list,
+                                sensor_azimuth_list,
+                                look_at_point=np.array([0.0, 0.0, 0.0]),
+                                sensor_altitude=20.0):
+    positions = []
+    up_vectors = []
+    for zenith, azimuth in zip(sensor_zenith_list, sensor_azimuth_list):
+        zen = np.deg2rad(zenith); azi = np.deg2rad(azimuth)
+        v = np.array([np.sin(zen) * np.cos(azi),
+                      np.sin(zen) * np.sin(azi),
+                      -np.cos(zen)])
+        R = sensor_altitude / np.cos(zen)
+        pos = look_at_point - R * v
+        pos[2] = sensor_altitude
+        positions.append(pos)
+    positions = np.array(positions)
+    
+    # 如果只有一个位置，无法计算 trajectory direction
+    if len(positions) < 2:
+        # 默认方向 = 朝向地面或一个固定方向
+        # 可以设置为 0,0,-1 或者 lookat - position
+        traj_dirs = np.array([[1, 0, 0]])
+    else:
+        # 多视角正常计算轨迹方向
+        traj = np.gradient(positions, axis=0)
+        traj_dirs = np.array([d / np.linalg.norm(d) for d in traj])
+    
+    for pos, traj_dir in zip(positions, traj_dirs):
+        look_dir = look_at_point - pos; 
+        look_dir /= np.linalg.norm(look_dir)
+        up_vec = np.cross(traj_dir, look_dir); 
+        up_vec /= np.linalg.norm(up_vec)
+        up_vectors.append(up_vec)
+    return positions, up_vectors
+
+def project_to_ground_lookat(img, pos, look_at_point, up_vector, fov_diag_deg, Xg, Yg):
+    ny, nx = img.shape
+    img_ground = np.full(Xg.shape, np.nan, dtype=np.float32)
+    fov_diag_rad = np.deg2rad(fov_diag_deg)
+    z_cam = np.array(look_at_point) - np.array(pos); z_cam /= np.linalg.norm(z_cam)
+    x_cam = np.cross(np.array(up_vector), z_cam)
+    if np.linalg.norm(x_cam) < 1e-9:
+        world_x = np.array([1.0, 0.0, 0.0]); x_cam = np.cross(z_cam, world_x)
+        if np.linalg.norm(x_cam) < 1e-9:
+            world_y = np.array([0.0, 1.0, 0.0]); x_cam = np.cross(world_y, z_cam)
+    x_cam /= np.linalg.norm(x_cam)
+    y_cam = np.cross(z_cam, x_cam)
+    rotation_matrix = np.array([x_cam, y_cam, z_cam])
+    P_ground = np.stack([Xg, Yg, np.zeros_like(Xg)], axis=-1)
+    pos_arr = np.array(pos).reshape(1, 1, 3)
+    vec_world = P_ground - pos_arr
+    norm = np.linalg.norm(vec_world, axis=-1, keepdims=True); norm[norm == 0] = 1e-9
+    vec_world_norm = vec_world / norm
+    vec_cam = np.einsum('ij,hwj->hwi', rotation_matrix, vec_world_norm)
+    vx, vy, vz = vec_cam[..., 0], vec_cam[..., 1], vec_cam[..., 2]
+    cos_half_fov = np.cos(fov_diag_rad / 2.0)
+    valid_mask = vz > cos_half_fov
+    u = np.full_like(vx, np.nan); v = np.full_like(vy, np.nan)
+    u[valid_mask] = vx[valid_mask] / vz[valid_mask]
+    v[valid_mask] = vy[valid_mask] / vz[valid_mask]
+    aspect_ratio = nx / ny
+    tan_half_fov_diag = np.tan(fov_diag_rad / 2.0)
+    tan_half_fov_h = tan_half_fov_diag * aspect_ratio / np.sqrt(aspect_ratio**2 + 1)
+    tan_half_fov_v = np.tan(fov_diag_rad / 2.0) / np.sqrt(aspect_ratio**2 + 1)
+    px = (u / tan_half_fov_h) * (nx / 2.0) + (nx / 2.0 - 0.5)
+    py = (-v / tan_half_fov_v) * (ny / 2.0) + (ny / 2.0 - 0.5)
+    valid_indices = np.where(valid_mask)
+    coords_to_sample = np.vstack((py[valid_indices], px[valid_indices]))
+    sampled_values = map_coordinates(img, coords_to_sample, order=1, mode='constant', cval=np.nan)
+    img_ground[valid_indices] = sampled_values
+    return img_ground
+
+def reproject_to_ground(sensor, ground_z=0.0):
+    """
+    Reproject camera image pixels to ground coordinates (assuming a flat ground plane z = ground_z).
+
+    Parameters
+    ----------
+    sensor : xr.Dataset
+        The dataset output from `perspective_projection()`.
+    ground_z : float
+        The z (Up) coordinate of the ground plane [km]. Default is 0.
+
+    Returns
+    -------
+    ground_coords : xr.Dataset
+        Dataset containing the ground-projected (x, y, z=ground_z) coordinates
+        corresponding to each image pixel.
+    """
+
+    # ---- 从 sensor.attrs 中恢复几何信息 ----
+    nx = int(sensor.attrs['x_resolution'])
+    ny = int(sensor.attrs['y_resolution'])
+    position = np.array(sensor.attrs['position'])
+    rotation_matrix = np.array(sensor.attrs['rotation_matrix']).reshape(3, 3)
+    k = np.array(sensor.attrs['sensor_to_camera_transform_matrix']).reshape(3, 3)
+    fov = sensor.attrs['fov_deg']
+
+    # ---- 相机坐标网格 ----
+    M = max(nx, ny)
+    R = np.array([nx, ny]) / M
+    dy = 2 * R[1] / ny
+    dx = 2 * R[0] / nx
+    x_s, y_s = np.meshgrid(
+        np.linspace(-R[0] + dx / 2, R[0] - dx / 2, nx),
+        np.linspace(-R[1] + dy / 2, R[1] - dy / 2, ny)
+    )
+
+    # ---- 相机焦距（归一化单位）----
+    focal = 1.0 / np.tan(np.deg2rad(fov) / 2.0)
+
+    # ---- 像素坐标转射线方向（在相机坐标系中）----
+    inv_k = np.linalg.inv(k)
+    homogeneous_coords = np.stack([x_s.ravel(), y_s.ravel(), np.ones_like(x_s).ravel()])
+    rays_cam = inv_k @ homogeneous_coords
+    rays_cam = rays_cam / np.linalg.norm(rays_cam, axis=0)
+
+    # ---- 转换到世界坐标系 ----
+    rays_world = rotation_matrix @ rays_cam
+    rays_world = rays_world / np.linalg.norm(rays_world, axis=0)
+
+    # ---- 计算与地面 (z=ground_z) 的交点 ----
+    cam_z = position[2]
+    dir_z = rays_world[2, :]
+    t = (ground_z - cam_z) / dir_z  # 每个射线到地面的比例因子
+    t[dir_z == 0] = np.nan  # 平行射线处理
+
+    x_ground = position[0] + t * rays_world[0, :]
+    y_ground = position[1] + t * rays_world[1, :]
+    z_ground = np.full_like(x_ground, ground_z)
+
+    # ---- 整理为 DataArray ----
+    x_ground = x_ground.reshape(ny, nx)
+    y_ground = y_ground.reshape(ny, nx)
+    z_ground = z_ground.reshape(ny, nx)
+
+    ground_coords = xr.Dataset({
+        "x_ground": (("y", "x"), x_ground),
+        "y_ground": (("y", "x"), y_ground),
+        "z_ground": (("y", "x"), z_ground)
+    })
+
+    ground_coords.attrs = {
+        "description": "Ground-projected coordinates from camera pixels",
+        "ground_z": ground_z,
+        "camera_position": position.tolist()
+    }
+
+    return ground_coords
+
+def compute_vout_map_from_sensor(sensor_ds):
+    """
+    Returns v_out_map (ny, nx, 3): propagation direction from scene -> sensor
+    in world coordinates (x North, y East, z Up).
+    """
+    nx = int(sensor_ds.attrs['x_resolution'])
+    ny = int(sensor_ds.attrs['y_resolution'])
+    rotation_matrix = np.array(sensor_ds.attrs['rotation_matrix']).reshape(3, 3)
+    k = np.array(sensor_ds.attrs['sensor_to_camera_transform_matrix']).reshape(3, 3)
+
+    # camera grid (same as your reproject_to_ground)
+    M = max(nx, ny)
+    R = np.array([nx, ny]) / M
+    dy = 2 * R[1] / ny
+    dx = 2 * R[0] / nx
+    x_s, y_s = np.meshgrid(
+        np.linspace(-R[0] + dx / 2, R[0] - dx / 2, nx),
+        np.linspace(-R[1] + dy / 2, R[1] - dy / 2, ny)
+    )
+
+    inv_k = np.linalg.inv(k)
+    homogeneous = np.stack([x_s.ravel(), y_s.ravel(), np.ones_like(x_s).ravel()])
+    rays_cam = inv_k @ homogeneous
+    rays_cam /= np.linalg.norm(rays_cam, axis=0, keepdims=True)
+
+    # camera -> world
+    rays_world = rotation_matrix @ rays_cam
+    rays_world /= np.linalg.norm(rays_world, axis=0, keepdims=True)
+
+    # outgoing propagation direction: scene -> sensor
+    v_out = -rays_world.T.reshape(ny, nx, 3)
+    return v_out
+
+def assign_latlon_from_grid(xg, yg, wrf_x, wrf_y, xlats, xlons):
+    """
+    将相机重投影地面坐标 (xg, yg) 映射为对应的 (lat, lon)。
+
+    Parameters:
+        xg, yg : (ny, nx)
+            相机每个像素的地面投影坐标（单位：km）。
+        wrf_x, wrf_y : 1D or 2D
+            WRF 网格的 x, y 坐标（km），通常为 1D。
+        xlats, xlons : (ny_wrf, nx_wrf)
+            每个 WRF 网格点的纬度、经度。
+
+    Returns:
+        lat_img, lon_img : (ny, nx)
+            每个相机像元的 (lat, lon)
+    """
+
+    # 如果是 2D 网格点，转换为 1D
+    if wrf_x.ndim == 2:
+        wrf_x = wrf_x[0, :]
+    if wrf_y.ndim == 2:
+        wrf_y = wrf_y[:, 0]
+
+    # Normalize lat/lon array orientation for interpolator axes (x, y).
+    # Common case is (ny, nx); convert to (nx, ny) by transpose.
+    nx = wrf_x.size
+    ny = wrf_y.size
+    if xlats.shape == (ny, nx):
+        lat_field = xlats.T
+        lon_field = xlons.T
+    elif xlats.shape == (nx, ny):
+        lat_field = xlats
+        lon_field = xlons
+    else:
+        raise ValueError(
+            f"lat/lon shape {xlats.shape} does not match wrf grid "
+            f"(ny,nx)=({ny},{nx}) or (nx,ny)=({nx},{ny})."
+        )
+
+    lat_interp = RegularGridInterpolator(
+        (wrf_x, wrf_y),
+        lat_field,
+        bounds_error=False,
+        fill_value=np.nan
+    )
+
+    lon_interp = RegularGridInterpolator(
+        (wrf_x, wrf_y),
+        lon_field,
+        bounds_error=False,
+        fill_value=np.nan
+    )
+    
+    
+
+    # 展开 pixel 坐标
+    pts = np.stack([xg.ravel(), yg.ravel()], axis=-1)
+    
+    
+    # plt.scatter(xg, yg, s=1)
+    # xxx,yyy = np.meshgrid(wrf_x, wrf_y)
+    # plt.scatter(xxx, yyy, s=1,c='red')
+    # plt.xlabel("xg")
+    # plt.ylabel("yg")
+    # plt.gca().set_aspect("equal")
+    # plt.show()
+    
+    
+
+    # 执行插值
+    lat_img = lat_interp(pts).reshape(xg.shape)
+    
+    lon_img = lon_interp(pts).reshape(xg.shape)
+    
+    # plt.imshow(lat_img)
+    # plt.show()
+    
+    # plt.imshow(lon_img)
+    # plt.show()
+
+    return lat_img, lon_img
+#%% Section 3.1: User-provided helpers for ground cropping & plotting
+# =============================
+
+def centers_to_edges_2d(xc, yc):
+    ny, nx = xc.shape
+    xv = 0.25*(xc[:-1,:-1] + xc[1:,:-1] + xc[:-1,1:] + xc[1:,1:])
+    yv = 0.25*(yc[:-1,:-1] + yc[1:,:-1] + yc[:-1,1:] + yc[1:,1:])
+    def _extrap1d(a, axis):
+        a1 = np.take(a, indices=0, axis=axis)
+        a2 = np.take(a, indices=1, axis=axis)
+        a_end = np.take(a, indices=-1, axis=axis)
+        a_end2 = np.take(a, indices=-2, axis=axis)
+        a0 = 2*a1 - a2
+        a_last = 2*a_end - a_end2
+        return np.concatenate([np.expand_dims(a0, axis=axis),
+                               a,
+                               np.expand_dims(a_last, axis=axis)], axis=axis)
+    xv = _extrap1d(xv, axis=0)
+    yv = _extrap1d(yv, axis=0)
+    xv = _extrap1d(xv, axis=1)
+    yv = _extrap1d(yv, axis=1)
+    return xv, yv
+
+def crop_by_world_box(data, xg, yg, x_range, y_range):
+    x1, x2 = sorted(x_range)
+    y1, y2 = sorted(y_range)
+    mask = (xg >= x1) & (xg <= x2) & (yg >= y1) & (yg <= y2)
+    rows = np.where(np.any(mask, axis=1))[0]
+    cols = np.where(np.any(mask, axis=0))[0]
+    if rows.size == 0 or cols.size == 0:
+        raise ValueError("No data within crop range. Check x_range/y_range.")
+    row_slice = slice(rows.min(), rows.max() + 1)
+    col_slice = slice(cols.min(), cols.max() + 1)
+    if hasattr(data, "where") and hasattr(data, "isel"):
+        data_c = data.where(mask)
+        xg_c = np.where(mask, xg, np.nan)
+        yg_c = np.where(mask, yg, np.nan)
+        if hasattr(data, "dims"):
+            dims = list(data.dims)
+            if ("imgdim1" in dims) and ("imgdim0" in dims):
+                data_c = data_c.isel(imgdim1=row_slice, imgdim0=col_slice)
+            else:
+                indexer = {dims[-2]: row_slice, dims[-1]: col_slice}
+                data_c = data_c.isel(**indexer)
+        else:
+            data_c = data[row_slice, col_slice]
+        xg_c = xg[row_slice, col_slice]
+        yg_c = yg[row_slice, col_slice]
+        return data_c, xg_c, yg_c
+    data_c = data[row_slice, col_slice]
+    xg_c = xg[row_slice, col_slice]
+    yg_c = yg[row_slice, col_slice]
+    return data_c, xg_c, yg_c
+
+def plot_on_ground(data, xg, yg, title='', cmap='viridis', vmin=None, vmax=None, save_path=None, show=False):
+    xv, yv = centers_to_edges_2d(xg, yg)
+    fig, ax = plt.subplots(figsize=(7, 6))
+    pm = ax.pcolormesh(xv, yv, data, shading='flat', cmap=cmap, vmin=vmin, vmax=vmax)
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 6)
+    ax.set_aspect('equal', adjustable='box')
+    ax.set_xlabel('x_ground [km] (North +)')
+    ax.set_ylabel('y_ground [km] (East +)')
+    ax.set_title(title)
+    fig.colorbar(pm, ax=ax, label='value')
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"✅ 图像已保存: {save_path}")
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+        
+def plot_image(data, xg, yg, 
+               cmap='viridis', vmin=None, vmax=None, 
+               title='', xlabel = '',ylable = '',
+               save_path=None, show=False):
+    xc, yc = np.meshgrid(xg, yg)
+    fig, ax = plt.subplots(figsize=(7, 6))
+    pm = ax.pcolormesh(xc, yc, data, shading='flat', cmap=cmap, vmin=vmin, vmax=vmax)
+    ax.set_aspect('equal', adjustable='box')
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylable)
+    ax.set_title(title)
+    fig.colorbar(pm, ax=ax, label='value')
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"✅ 图像已保存: {save_path}")
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
+
+# =============================
+#%% Section 4: Scene/Sensors (single band) with lat/lon ingestion
+# =============================
+
+def make_ground_grid(cfg: GroundGridConfig) -> Tuple[np.ndarray, np.ndarray]:
+    x = np.linspace(cfg.x_min, cfg.x_max, cfg.nx)
+    y = np.linspace(cfg.y_min, cfg.y_max, cfg.ny)
+    Xg, Yg = np.meshgrid(x, y)
+    return Xg, Yg
+
+def _read_lat_lon_from_txt(cloud_scatterer: xr.Dataset):
+    """
+    从已加载的 cloud_scatterer（例如 wrf_to_shdom_coarse.txt 转成的 xarray.Dataset）
+    中读取经纬度信息（假定包含 x, y, z, lwc, reff, lat, lon 字段）。
+
+    返回:
+        lat_2d, lon_2d : ndarray, shape (ny, nx)
+    """
+    # 检查关键字段是否存在
+    required_fields = ["x", "y", "lat", "lon"]
+    for f in required_fields:
+        if f not in cloud_scatterer:
+            raise ValueError(f"cloud_scatterer 缺少必要字段 '{f}'，无法提取 lat/lon。")
+
+    # 取出坐标与字段
+    x_col = np.array(cloud_scatterer["x"])
+    y_col = np.array(cloud_scatterer["y"])
+    lat_col = np.array(cloud_scatterer["lat"])
+    lon_col = np.array(cloud_scatterer["lon"])
+
+    # 若数据为 1D 向量，尝试 reshape 成 2D 网格
+    if lat_col.ndim == 1 or lon_col.ndim == 1:
+        xs, ys = np.unique(x_col), np.unique(y_col)
+        nx, ny = len(xs), len(ys)
+        order = np.lexsort((x_col, y_col))  # 按 y, 再按 x 排序
+        lat_sorted = lat_col[order]
+        lon_sorted = lon_col[order]
+        lat_2d = lat_sorted[:ny * nx].reshape(ny, nx)
+        lon_2d = lon_sorted[:ny * nx].reshape(ny, nx)
+    else:
+        # 如果已经是 2D，直接返回
+        lat_2d = lat_col
+        lon_2d = lon_col
+
+    return lat_2d, lon_2d
+
+def build_scene_and_sensors_single_band(sen: SensorConfig,
+                                        wavelength_nm: int,
+                                        is_polarized: bool,
+                                        out_path:str,
+                                        scene_cfg: SceneConfig,
+                                        cam_cfg: CameraConfig,
+                                        solar_cfg: SolarConfig,
+                                        solver_cfg: SolverConfig,
+                                        aerosol_cfg: AerosolConfig):
+    input_path = scene_cfg.input_path
+    cloud_scatterer = at3d.util.load_from_csv(input_path, density='cv', origin=(0.0, 0.0))
+    cloud_scatterer["density"] *= 1
+    try:
+        lat_2d, lon_2d = _read_lat_lon_from_txt(cloud_scatterer)
+    except Exception:
+        xs = cloud_scatterer.x.data.size
+        ys = cloud_scatterer.y.data.size
+        lat_2d = np.zeros((ys, xs), dtype=np.float32)
+        lon_2d = np.zeros((ys, xs), dtype=np.float32)
+    try:
+        cloud_scatterer = cloud_scatterer.assign(lat=(('y','x'), lat_2d),
+                                                 lon=(('y','x'), lon_2d))
+    except Exception:
+        pass
+    
+    
+    # Build cloud-grid geolocation from CSV grid itself.
+    # Priority: lat/lon read from file; fallback to regular-grid synthesis.
+    cloud_x = np.asarray(cloud_scatterer.x.data, dtype=float)
+    cloud_y = np.asarray(cloud_scatterer.y.data, dtype=float)
+    ny_cloud = cloud_y.size
+    nx_cloud = cloud_x.size
+
+    if lat_2d.shape == (ny_cloud, nx_cloud) and lon_2d.shape == (ny_cloud, nx_cloud):
+        xlats, xlons = lat_2d, lon_2d
+    else:
+        lat0 = 35.0
+        lon0 = -112.0
+        km_per_deg_lat = 111.32
+        km_per_deg_lon = 111.32 * np.cos(np.deg2rad(lat0))
+        lat_1d = lat0 + (cloud_y / km_per_deg_lat)
+        lon_1d = lon0 + (cloud_x / km_per_deg_lon)
+        xlons, xlats = np.meshgrid(lon_1d, lat_1d, indexing='xy')
+    
+    # k = 15  # vertical level
+
+    # LWC_k = cloud_scatterer["density"].isel(z=k).values    # shape (nx, ny)
+    # # lat_k = lat_2d[..., k]     # 保证 shape 相同
+    # # lon_k = lon_2d[..., k]
+    
+    
+    # def fill_nan_nearest(arr):
+    #     arr2 = arr.copy()
+    #     mask = np.isnan(arr2)
+    #     if np.any(mask):
+    #         idx = distance_transform_edt(mask,
+    #                                      return_distances=False,
+    #                                      return_indices=True)
+    #         arr2[mask] = arr2[tuple(idx[i] for i in range(arr2.ndim))][mask]
+    #     return arr2
+    
+    # # lon_k = fill_nan_nearest(lon_k)
+    # # lat_k = fill_nan_nearest(lat_k)
+    # LWC_k = fill_nan_nearest(LWC_k)
+    
+
+    
+    # plt.figure(figsize=(10, 8))
+    # ax = plt.axes(projection=ccrs.PlateCarree())
+    # ax.set_title(f"Cloud field (density) at z={k}", fontsize=15)
+    # ax.coastlines()
+    
+    # # 绘制云场
+    # pcm = ax.pcolormesh(xlons, xlats, LWC_k,
+    #                     cmap="viridis",
+    #                     shading="auto",
+    #                     transform=ccrs.PlateCarree())
+    
+    # plt.colorbar(pcm, ax=ax, label="Cloud Density (kg/m3)")
+    # plt.show()
+
+    atmosphere = xr.open_dataset('../data/ancillary/AFGL_summer_mid_lat.nc')
+    reduced_atmosphere = atmosphere.sel({'z': atmosphere.coords['z'].data[atmosphere.coords['z'].data <= 4.0]})
+    _ = at3d.grid.combine_z_coordinates([reduced_atmosphere, cloud_scatterer])
+    rte_grid = at3d.grid.make_grid(cloud_scatterer.x.diff('x')[0], cloud_scatterer.x.data.size,
+                                   cloud_scatterer.y.diff('y')[0], cloud_scatterer.y.data.size,
+                                   np.append(0, cloud_scatterer.z.data))
+    cloud_scatterer_on_rte_grid = at3d.grid.resample_onto_grid(rte_grid, cloud_scatterer)
+    size_distribution_function = at3d.size_distribution.gamma
+    size_distribution_function = at3d.size_distribution.lognormal
+    # cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.reff.dims,
+    #                                        np.full_like(cloud_scatterer_on_rte_grid.reff.data, fill_value=0.1))
+    sensor_dict = at3d.containers.SensorsDict()
+    center = np.array(scene_cfg.lookat_center_km, dtype=float)
+    position_vectors, up_vectors = calculate_sensor_trajectory(
+        sensor_zenith_list=sen.views_zenith_deg, 
+        sensor_azimuth_list=sen.views_azimuth_deg,
+        look_at_point= center,
+        sensor_altitude=sen.altitude_km)
+    lookat_vectors = [center for _ in sen.views_names]
+    for name, pos, look, up in zip(sen.views_names, position_vectors, lookat_vectors, up_vectors):
+        stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
+        if sen.type == "perspective_projection":
+            sensor = at3d.sensor.perspective_projection(
+                wavelength=wavelength_nm/1000,
+                fov=sen.fov_deg,
+                x_resolution=int(cam_cfg.x_resolution),
+                y_resolution=int(cam_cfg.y_resolution),
+                position_vector=pos,
+                lookat_vector=look,
+                up_vector=up,
+                stokes=stokes
+            )
+        else:
+            raise NotImplementedError(
+                f"sensor.type={sen.type} is not implemented in v5b; "
+                "currently only perspective_projection is supported."
+            )
+        key = f"{name}_{int(wavelength_nm)}nm"
+        sensor_dict.add_sensor(key, sensor)
+    wavelengths = sensor_dict.get_unique_solvers()
+    mie_mono_tables = OrderedDict()
+    for wavelength in wavelengths:
+        # mie_mono_tables[wavelength] = at3d.mie.get_mono_table(
+        #     'Water',(wavelength,wavelength),
+        #     max_integration_radius=65.0,
+        #     minimum_effective_radius=0.1,
+        #     relative_dir='../mie_tables',
+        #     verbose=False
+        # )
+        
+        mie_mono_tables[wavelength] = at3d.mie.get_mono_table(
+            particle_type='Aerosol',                      # ★ 改成 Aerosol 才能用自定义 n,k
+            wavelength_band=(wavelength, wavelength),
+            max_integration_radius=65.0,
+            minimum_effective_radius=0.1,
+            # refractive_index=1.5080 - 0.0035j,               # ★ 自定义 n - ik
+            refractive_index=aerosol_cfg.refractive_index_real - aerosol_cfg.refractive_index_imag*1j,
+            relative_dir='../mie_tables',
+            verbose=False
+        )
+        
+    rho_p_gcm3 = 1.6                 # 你选定的颗粒密度
+    ho_p_kgm3 = rho_p_gcm3 * 1000.0 # kg/m^3    
+    particle_density_gm3 = rho_p_gcm3 * 1e6  # g/cm^3 → g/m^3
+    
+    # === 从 scatterer 中动态获取范围 ===
+    reff_min = float(cloud_scatterer_on_rte_grid.reff.min())
+    reff_max = float(cloud_scatterer_on_rte_grid.reff.max())
+    veff_min = float(cloud_scatterer_on_rte_grid.veff.min())
+    veff_max = float(cloud_scatterer_on_rte_grid.veff.max())
+    
+    # === 留 margin（非常重要）===
+    margin_reff = 0.1   # μm
+    margin_veff = 0.01
+    
+    reff_grid = np.linspace(
+        max(0.05, reff_min - margin_reff),
+        reff_max + margin_reff,
+        40
+    )
+    
+    veff_grid = np.linspace(
+        max(0.01, veff_min - margin_veff),
+        veff_max + margin_veff,
+        10    # ⚠️ 如果 veff 几乎不变，直接用 1
+    )
+
+
+    optical_property_generator = at3d.medium.OpticalPropertyGenerator(
+        'aerosol', 
+        mie_mono_tables,
+        size_distribution_function,
+        reff=reff_grid,
+        veff=veff_grid,
+        density_normalization='density',  # ← 关键,
+        particle_density=aerosol_cfg.particle_density
+    )
+    optical_properties = optical_property_generator(cloud_scatterer_on_rte_grid)
+    
+    rho = cloud_scatterer_on_rte_grid.density.data  # g/m^3
+    z = rte_grid.z.data                              # km (你已经确认)
+    dz_m = np.diff(z) * 1000.0                       # m
+    
+    Mcol_py = (rho[..., :-1] * dz_m).sum(axis=-1)    # g/m^2
+    print("Mcol_py max:", float(Mcol_py.max()))
+    rayleigh_scattering = at3d.rayleigh.to_grid(wavelengths, atmosphere, rte_grid)
+    theta_0 = 180.0 - float(solar_cfg.sza_deg)
+    solarmu = np.cos(np.deg2rad(theta_0))
+    # TODO: 
+    solar_azimuth = float(solar_cfg.saa_deg) - 360.0
+    solvers_dict = at3d.containers.SolversDict()
+    config = at3d.configuration.get_config()
+    # config["x_boundary_condition"]='periodic'
+    # config["y_boundary_condition"]='periodic'
+    
+    # config["ip_flag"] = 3          # ⭐ 关键：Independent Pixel (1D)
+    config["x_boundary_condition"] = solver_cfg.x_boundary_condition
+    config["y_boundary_condition"] = solver_cfg.y_boundary_condition
+    config["num_mu_bins"] = int(solver_cfg.num_mu_bins)
+    config["num_phi_bins"] = int(solver_cfg.num_phi_bins)
+    config["split_accuracy"] = float(solver_cfg.split_accuracy)
+    config["deltam"] = bool(solver_cfg.deltam)
+    
+    
+    w = wavelength_nm/1000
+    medium = {'aerosol': optical_properties[w], 'rayleigh': rayleigh_scattering[w]}
+    
+    AOD = utils.compute_column_aod(medium)
+    # SSA = utils.compute_column_ssa(medium)
+    SSA = {}
+    SSA['aerosol'], tau_cloud = utils.compute_cloud_column_ssa(medium)
+
+
+    utils.plot_field(AOD['aerosol'], 
+                     f"AOD total @ {w*1000} nm", 
+                     os.path.join(out_path, f"AOD_total_{w*1000}nm.png"),
+                     vmin=0,
+                     vmax=4)
+    # utils.plot_field(SSA['total'], f"SSA total @ {w} nm", os.path.join(out_path, f"SSA_total_{w}nm.png"))
+    
+    utils.plot_field(
+        SSA['aerosol'],
+        f"Aerosol SSA @ {w*1000} nm",
+        os.path.join(out_path, f"SSA_aerosol_{w*1000}nm.png"),
+        vmin=0.90,
+        vmax=0.96
+    )
+    
+    # plt.figure(figsize=(4, 3))
+    # im = plt.imshow(
+    #     SSA['aerosol'].T,
+    #     origin="lower",
+    #     cmap="viridis",
+    #     vmin=0.74,
+    #     vmax=1
+    # )
+    # plt.colorbar(im, label=f"Aerosol SSA @ {w} nm")
+    # plt.title(f"Aerosol SSA @ {w} nm")
+    # plt.tight_layout()
+
+    # plt.savefig(os.path.join(out_path, f"SSA_aerosol_{w}nm.png"), dpi=300)
+    # plt.close()
+    
+    # utils.plot_field(AOD['cloud'], f"AOD cloud @ {w} nm", os.path.join(out_path, f"AOD_cloud_{w}nm.png"))
+    # utils.plot_field(AOD['rayleigh'], f"AOD Rayleigh @ {w} nm", os.path.join(out_path, f"AOD_rayleigh_{w}nm.png"))
+    
+    tab = mie_mono_tables[w]
+    print("wavelength_center in table =", tab.attrs["wavelength_center"])
+    print("wavelength_band in table   =", tab.attrs["wavelength_band"])
+    
+    np.savez_compressed(f"medium_{w}nm.npz",
+                        medium=medium)
+    
+    num_stokes = 3 if is_polarized else 1
+    solvers_dict.add_solver(
+        w,
+        at3d.solver.RTE(
+            numerical_params=config,
+            surface=at3d.surface.lambertian(0.0),
+            source=at3d.source.solar(w, solarmu, solar_azimuth),
+            medium=medium,
+            num_stokes=num_stokes
+        )
+    )
+    context = dict(center=center,
+                   position_vectors=position_vectors,
+                   lookat_vectors=lookat_vectors,
+                   up_vectors=up_vectors,
+                   theta_0=theta_0,
+                   solar_azimuth=solar_azimuth,
+                   lat=lat_2d,
+                   lon=lon_2d,
+                   cloud_x=cloud_x,
+                   cloud_y=cloud_y,
+                   cloud_x_range=(float(np.nanmin(cloud_x)), float(np.nanmax(cloud_x))),
+                   cloud_y_range=(float(np.nanmin(cloud_y)), float(np.nanmax(cloud_y))))
+    return sensor_dict, solvers_dict, context, medium, AOD, SSA, xlats, xlons
+
+
+# =============================
+#%% Section 5: Build versions for ONE band (with camera & terrain PNGs + metadata)
+# =============================
+
+def build_versions_single_band(sensor_dict,
+                               xlats, xlons,
+                               wavelength_nm: int,
+                               is_polarized: bool,
+                               sen: SensorConfig,
+                               grd: GroundGridConfig,
+                               dsm: DownsampleConfig,
+                               plot_cfg: PlotConfig,
+                               out_cfg: OutputConfig,
+                               out_subdirs: Dict[str, str],
+                               crop_cfg: GroundCropConfig,
+                               context: Dict):
+    Xg, Yg = make_ground_grid(grd)
+    
+    
+    
+    
+    first_key = list(sensor_dict.keys())[0]
+    first_image = sensor_dict.get_images(first_key)[0]
+    cam_ny, cam_nx = first_image.I.T.shape
+    V = len(sen.views_names)
+    I_orig = np.full((V, cam_ny, cam_nx), np.nan, dtype=np.float32)
+    Q_orig = np.full_like(I_orig, np.nan); U_orig = np.full_like(I_orig, np.nan)
+    DoLP_orig = np.full_like(I_orig, np.nan)
+    I_reg  = np.full((V, grd.ny, grd.nx), np.nan, dtype=np.float32)
+    Q_reg  = np.full_like(I_reg,  np.nan); U_reg  = np.full_like(I_reg,  np.nan)
+    DoLP_reg = np.full_like(I_reg, np.nan)
+    ny_ds = (cam_ny // dsm.factor)
+    nx_ds = (cam_nx // dsm.factor)
+    I_ds = np.full((V, ny_ds, nx_ds), np.nan, dtype=np.float32)
+    Q_ds = np.full_like(I_ds, np.nan); U_ds = np.full_like(I_ds, np.nan)
+    DoLP_ds = np.full_like(I_ds, np.nan)
+    ny_gds = (grd.ny // dsm.factor)
+    nx_gds = (grd.nx // dsm.factor)
+    I_reg_ds = np.full((V, ny_gds, nx_gds), np.nan, dtype=np.float32)
+    Q_reg_ds = np.full_like(I_reg_ds, np.nan); U_reg_ds = np.full_like(I_reg_ds, np.nan)
+    DoLP_reg_ds = np.full_like(I_reg_ds, np.nan)
+    thetav_o = np.zeros((V, cam_ny, cam_nx), dtype=np.float32)
+    theta0_o = np.zeros_like(thetav_o); faipfai0_o = np.zeros_like(thetav_o)
+    thetav_r = np.zeros((V, grd.ny, grd.nx), dtype=np.float32)
+    theta0_r = np.zeros_like(thetav_r); faipfai0_r = np.zeros_like(thetav_r)
+    # Camera lat/lon fill (mean of context field)
+    lat_cam = np.full((cam_ny, cam_nx), np.nan, dtype=np.float32)
+    lon_cam = np.full((cam_ny, cam_nx), np.nan, dtype=np.float32)
+
+    # Downsampled metadata
+    lat_cam_ds = utils.downsample_block(lat_cam, dsm.factor, "mean")
+    lon_cam_ds = utils.downsample_block(lon_cam, dsm.factor, "mean")
+    # lat_grd_ds = downsample_block(lat_grd, dsm.factor, "mean")
+    # lon_grd_ds = downsample_block(lon_grd, dsm.factor, "mean")
+    
+    
+    
+    def _unit(v, eps=1e-12):
+        n = np.linalg.norm(v)
+        return v / max(n, eps)
+
+    def _stokes_rotate_QU(Q, U, chi):
+        """Rotate (Q,U) by angle chi (radians) using standard Stokes rotation."""
+        c2 = np.cos(2.0 * chi)
+        s2 = np.sin(2.0 * chi)
+        Qp = Q * c2 + U * s2
+        Up = -Q * s2 + U * c2
+        return Qp, Up
+    
+    def rotate_to_scattering_plane(Q, U, pos, lookat, up_vec, theta0_deg, solar_azimuth_deg):
+        """
+        Rotate Q/U from the current sensor reference (defined by up_vec)
+        to the scattering-plane reference.
+    
+        Coordinate convention assumed consistent with your code:
+          x: North (+), y: East (+), z: Up (+)
+          azimuth angles measured in x-y plane from +x toward +y (math convention)
+        """
+    
+        # --- outgoing/view direction v (direction of propagation toward sensor) ---
+        # Use from lookat point -> sensor position (same geometry used to build sensor)
+        v = _unit(np.array(pos) - np.array(lookat))
+    
+        # --- incoming solar direction s (direction of propagation from sun -> scene) ---
+        th = np.deg2rad(theta0_deg)
+        ph = np.deg2rad(solar_azimuth_deg)
+        s = _unit(np.array([np.sin(th) * np.cos(ph),
+                            np.sin(th) * np.sin(ph),
+                            -np.cos(th)]))
+    
+        # --- current reference axis e_cam: up projected onto plane ⟂ v ---
+        up = _unit(np.array(up_vec))
+        e_cam = up - np.dot(up, v) * v
+        e_cam = _unit(e_cam)
+    
+        # --- scattering-plane reference axis e_scat: in scattering plane, ⟂ v ---
+        n = np.cross(s, v)
+        n_norm = np.linalg.norm(n)
+        if n_norm < 1e-10:
+            # sun and view are (nearly) colinear: scattering plane ill-defined
+            return Q, U, 0.0
+        n = n / n_norm
+        e_scat = _unit(np.cross(n, v))
+    
+        # --- signed rotation angle chi taking e_cam -> e_scat about axis v ---
+        cos_chi = np.clip(np.dot(e_cam, e_scat), -1.0, 1.0)
+        sin_chi = np.dot(v, np.cross(e_cam, e_scat))
+        chi = np.arctan2(sin_chi, cos_chi)
+    
+        Qs, Us = _stokes_rotate_QU(Q, U, chi)
+        return Qs, Us, chi
+    
+    def _unit_vec(a, eps=1e-12):
+        n = np.linalg.norm(a, axis=-1, keepdims=True)
+        return a / np.maximum(n, eps)
+
+    def rotate_qu_pixelwise_to_scattering_plane(Q, U, v_out_map, up_vec_world, theta0_deg_shdom, solar_azimuth_deg):
+        """
+        Q,U: (ny,nx)
+        v_out_map: (ny,nx,3) scene->sensor unit vectors
+        up_vec_world: (3,) the SAME up_vector used to build the sensor (world coords)
+        theta0_deg_shdom: SHDOM theta relative to +z (e.g., 145 deg), so solar goes downward
+        """
+        ny, nx = Q.shape
+    
+        # solar incoming direction s (sun -> scene), world coords
+        th = np.deg2rad(theta0_deg_shdom)
+        ph = np.deg2rad(solar_azimuth_deg)
+        s = np.array([np.sin(th)*np.cos(ph),
+                      np.sin(th)*np.sin(ph),
+                      -np.cos(th)], dtype=float)
+        s = s / np.linalg.norm(s)
+    
+        v = _unit_vec(v_out_map)
+    
+        # e_cam: project up onto plane ⟂ v  (pixelwise)
+        up = np.array(up_vec_world, dtype=float)
+        up = up / np.linalg.norm(up)
+        dot_up_v = (v[...,0]*up[0] + v[...,1]*up[1] + v[...,2]*up[2])[...,None]
+        e_cam = up[None,None,:] - dot_up_v * v
+        e_cam = _unit_vec(e_cam)
+    
+        # scattering-plane axis e_scat
+        n = np.cross(s[None,None,:], v)          # (ny,nx,3)
+        n_norm = np.linalg.norm(n, axis=-1)
+        valid = n_norm > 1e-10
+        n = _unit_vec(n)
+    
+        e_scat = np.cross(n, v)
+        e_scat = _unit_vec(e_scat)
+    
+        # signed chi: e_cam -> e_scat about axis v
+        cos_chi = np.clip(np.sum(e_cam * e_scat, axis=-1), -1.0, 1.0)
+        sin_chi = np.sum(v * np.cross(e_cam, e_scat), axis=-1)
+        chi = np.arctan2(sin_chi, cos_chi)
+    
+        # rotate
+        c2 = np.cos(2.0*chi)
+        s2 = np.sin(2.0*chi)
+        Qs = Q*c2 + U*s2
+        Us = -Q*s2 + U*c2
+    
+        # where scattering plane ill-defined, keep original
+        Qs = np.where(valid, Qs, Q)
+        Us = np.where(valid, Us, U)
+    
+        return Qs, Us, chi
+    
+    for iv, (name, pos, look, up) in enumerate(zip(
+            sen.views_names, context["position_vectors"], context["lookat_vectors"], context["up_vectors"])):
+        key = f"{name}_{int(wavelength_nm)}nm"
+        sim = sensor_dict.get_images(key)[0]
+        sensor = sensor_dict[key]
+        sensor_ds = sensor['sensor_list'][0]
+        ground = reproject_to_ground(sensor_ds, ground_z=0.0)
+        xg = ground.x_ground.values
+        yg = ground.y_ground.values
+        # Use cloud grid coordinates from CSV/scatterer (km), not hard-coded extents.
+        wrf_x = np.asarray(context.get("cloud_x"), dtype=float)
+        wrf_y = np.asarray(context.get("cloud_y"), dtype=float)
+        lat_img, lon_img = assign_latlon_from_grid(xg, yg, wrf_x, wrf_y, xlats, xlons)
+
+
+        
+        
+        I = sim.I.T
+        Q = sim.Q.T if is_polarized and hasattr(sim, "Q") else np.zeros_like(I)
+        U = sim.U.T if is_polarized and hasattr(sim, "U") else np.zeros_like(I)
+
+        # Keep the image values and geolocation grids in the same orientation.
+        # We mirror the image along x to match display convention, so mirror
+        # x/y ground coordinates (and derived lat/lon) the same way.
+        I = np.fliplr(I)
+        Q = np.fliplr(Q)
+        U = np.fliplr(U)
+        xg = np.fliplr(xg)
+        yg = np.fliplr(yg)
+        lat_img = np.fliplr(lat_img)
+        lon_img = np.fliplr(lon_img)
+        
+        
+        theta0 = context.get("theta_0")
+        phi0   = context.get("solar_azimuth", 0.0)
+        # Q, U, chi = rotate_to_scattering_plane(
+        #     Q, U,
+        #     pos=pos,
+        #     lookat=look,
+        #     up_vec=up,
+        #     theta0_deg=theta0,
+        #     solar_azimuth_deg=phi0
+        # )
+        
+        sensor_ds = sensor['sensor_list'][0]
+        v_out_map = compute_vout_map_from_sensor(sensor_ds)
+        
+        # 你 fliplr 了图像，所以 v_out_map 也要 fliplr（按 x 维）
+        v_out_map = np.fliplr(v_out_map)
+        
+        vz = np.clip(v_out_map[..., 2], -1.0, 1.0) 
+        vza_map = np.degrees(np.arccos(vz)) # 像素级VZA 
+        vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0 # 像素级VAA 
+        saa = (context.get("solar_azimuth", 0.0) + 360.0) % 360.0 # 太阳方位（当前是场景常数） 
+        sza = context.get("theta_0", np.nan) # 太阳天顶（当前是场景常数） 
+        raa_map = ((vaa_map - saa + 180.0) % 360.0) - 180.0 # 像素级relative azimuth
+        mu0 = np.cos(np.radians(sza))          # solar zenith
+        mu  = np.cos(np.radians(vza_map))      # viewing zenith
+        
+        raa = np.radians(raa_map)
+        
+        cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(raa)
+        
+        cos_sca = np.clip(cos_sca, -1.0, 1.0)
+        
+        sca_angle = np.degrees(np.arccos(cos_sca))
+        fig, ax = plt.subplots(2,2, figsize=(8,6))
+
+        im = ax[0,0].imshow(vza_map, origin='lower')
+        plt.colorbar(im, ax=ax[0,0])
+        ax[0,0].set_title("VZA")
+        
+        im = ax[0,1].imshow(vaa_map, origin='lower')
+        plt.colorbar(im, ax=ax[0,1])
+        ax[0,1].set_title("VAA")
+        
+        im = ax[1,0].imshow(raa_map, origin='lower', cmap='RdBu_r')
+        plt.colorbar(im, ax=ax[1,0])
+        ax[1,0].set_title("RAA")
+        
+        im = ax[1,1].imshow(sca_angle, origin='lower')
+        plt.colorbar(im, ax=ax[1,1])
+        ax[1,1].set_title("Scattering Angle")
+        
+        plt.tight_layout()
+        plt.show()
+
+        Q, U, chi = rotate_qu_pixelwise_to_scattering_plane(
+            Q, U,
+            v_out_map=v_out_map,
+            up_vec_world=up,               # 这里用你构造 sensor 时的那个 up_vector
+            theta0_deg_shdom=theta0,
+            solar_azimuth_deg=phi0
+        )
+        
+        DoLP = np.sqrt(Q**2 + U**2) / np.maximum(I, 1e-12)
+        I_orig[iv] = I; Q_orig[iv] = Q; U_orig[iv] = U; DoLP_orig[iv] = DoLP
+        
+        
+        mu0 = np.abs(np.cos(np.deg2rad(theta0)))
+        
+        I_brf = I * np.pi / mu0
+        Q_brf = Q * np.pi / mu0
+        U_brf = U * np.pi / mu0
+        if out_cfg.save_png and (out_cfg.plot_mode != "skip"):
+            cam_png_I = os.path.join(out_subdirs["original"], f"I_{int(wavelength_nm)}nm_{name}_camera.png")
+            cam_png_Q = os.path.join(out_subdirs["original"], f"Q_{int(wavelength_nm)}nm_{name}_camera.png")
+            cam_png_U = os.path.join(out_subdirs["original"], f"U_{int(wavelength_nm)}nm_{name}_camera.png")
+            if out_cfg.plot_mode == "overwrite" or not os.path.exists(cam_png_I):
+
+                plot_image(I_brf, np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2), 
+                           title=f"{name} I {int(wavelength_nm)} nm",
+                           cmap=plot_cfg.colormap, 
+                           save_path=cam_png_I, show=True)
+     
+                        
+                if is_polarized:
+                    plot_image(Q_brf, np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                               title=f"{name} Q {int(wavelength_nm)} nm",
+                               cmap=plot_cfg.colormap, 
+                               save_path=cam_png_Q, show=False)
+                    plot_image(U_brf, np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                               title=f"{name} U {int(wavelength_nm)} nm",
+                               cmap=plot_cfg.colormap, 
+                               save_path=cam_png_U, show=False)
+                
+                
+                # fig, ax = plt.subplots(figsize=(7, 6))
+                # ax.imshow(I, origin='lower', cmap=plot_cfg.colormap)
+                # fig.colorbar(pm, ax=ax, label='value')
+                # ax.set_title(f"{name} {int(wavelength_nm)} nm (Original View)")
+                # plt.tight_layout()
+                # plt.savefig(cam_png, dpi=out_cfg.png_dpi, bbox_inches='tight')
+                # plt.close(fig)
+        # I_g = project_to_ground_lookat(I, pos, look, up, sen.fov_deg, Xg, Yg)
+        # Q_g = project_to_ground_lookat(Q, pos, look, up, sen.fov_deg, Xg, Yg) if is_polarized else np.zeros_like(I_g)
+        # U_g = project_to_ground_lookat(U, pos, look, up, sen.fov_deg, Xg, Yg) if is_polarized else np.zeros_like(I_g)
+        # DoLP_g = np.sqrt(Q_g**2 + U_g**2) / np.maximum(I_g, 1e-12)
+        # I_reg[iv] = I_g; Q_reg[iv] = Q_g; U_reg[iv] = U_g; DoLP_reg[iv] = DoLP_g
+        
+        I_brf_d   = utils.downsample_block(I_brf, dsm.factor, dsm.method)
+        Q_brf_d   = utils.downsample_block(Q_brf, dsm.factor, dsm.method)
+        U_brf_d   = utils.downsample_block(U_brf, dsm.factor, dsm.method)
+        DoLP_brf_d = np.sqrt(Q_brf_d**2 + U_brf_d**2) / np.maximum(I_brf_d, 1e-12)
+        I_ds[iv] = I_brf_d; Q_ds[iv] = Q_brf_d; U_ds[iv] = U_brf_d; DoLP_ds[iv] = DoLP_brf_d
+        
+        
+        # Ground crop window should match original CSV cloud x/y coverage.
+        x_range = tuple(context.get("cloud_x_range", (grd.x_min, grd.x_max)))
+        y_range = tuple(context.get("cloud_y_range", (grd.y_min, grd.y_max)))
+
+        # Intersect with actual projected coordinates to avoid empty windows.
+        x_min, x_max = np.nanmin(xg), np.nanmax(xg)
+        y_min, y_max = np.nanmin(yg), np.nanmax(yg)
+        x_range = (max(min(x_range), x_min), min(max(x_range), x_max))
+        y_range = (max(min(y_range), y_min), min(max(y_range), y_max))
+
+        I_brf_g, xg_g, yg_g, = crop_by_world_box(I_brf, xg, yg, x_range, y_range)
+        
+        Q_brf_g, _, _, = crop_by_world_box(Q_brf, xg, yg, x_range, y_range)
+        U_brf_g, _, _, = crop_by_world_box(U_brf, xg, yg, x_range, y_range)
+        DoLP_brf_g = np.sqrt(Q_brf_g**2 + U_brf_g**2) / np.maximum(I_brf_g, 1e-12)
+        lat_img_g, _, _, = crop_by_world_box(lat_img, xg, yg, x_range, y_range)
+        lon_img_g, _, _, = crop_by_world_box(lon_img, xg, yg, x_range, y_range)
+        
+        
+        
+        if out_cfg.save_png and (out_cfg.plot_mode != "skip"):
+            terr_I_png = os.path.join(out_subdirs["registered"], f"I_{int(wavelength_nm)}nm_{name}_terrain.png")
+            terr_Q_png = os.path.join(out_subdirs["registered"], f"Q_{int(wavelength_nm)}nm_{name}_terrain.png")
+            terr_U_png = os.path.join(out_subdirs["registered"], f"U_{int(wavelength_nm)}nm_{name}_terrain.png")
+            if out_cfg.plot_mode == "overwrite" or not os.path.exists(terr_I_png):
+                try:
+                    I_g_c, Xg_c, Yg_c = crop_by_world_box(I_brf_g, xg_g, yg_g, crop_cfg.x_range, crop_cfg.y_range)
+                except Exception:
+                    I_g_c, Xg_c, Yg_c = I_brf_g, xg_g, yg_g
+                # plot_on_ground(I_g_c, Xg_c, Yg_c, title=f"{name} {int(wavelength_nm)} nm",
+                #                cmap=plot_cfg.colormap, save_path=terr_I_png, show=False)
+                # plot_on_ground(I_brf_g, xg_g, yg_g, title=f"{name} {int(wavelength_nm)} nm",
+                #                cmap=plot_cfg.colormap, save_path=terr_png, show=False)
+                plot_image(I_brf_g , np.arange(1,I_brf_g.shape[1]+2), np.arange(1,I_brf_g.shape[0]+2), 
+                           title=f"{name} I {int(wavelength_nm)} nm",
+                           cmap=plot_cfg.colormap, 
+                           save_path=terr_I_png, show=False)
+                if is_polarized:
+                    plot_image(Q_brf_g , np.arange(1,Q_brf_g.shape[1]+2), np.arange(1,Q_brf_g.shape[0]+2), 
+                               title=f"{name} Q {int(wavelength_nm)} nm",
+                               cmap=plot_cfg.colormap, 
+                               save_path=terr_Q_png, show=False)
+                    plot_image(U_brf_g , np.arange(1,U_brf_g.shape[1]+2), np.arange(1,U_brf_g.shape[0]+2), 
+                               title=f"{name} U {int(wavelength_nm)} nm",
+                               cmap=plot_cfg.colormap, 
+                               save_path=terr_U_png, show=False)
+        
+        I_gd = utils.downsample_block(I_brf_g, dsm.factor, dsm.method)
+        Q_gd = utils.downsample_block(Q_brf_g, dsm.factor, dsm.method)
+        U_gd = utils.downsample_block(U_brf_g, dsm.factor, dsm.method)
+        DoLP_gd = np.sqrt(Q_gd**2 + U_gd**2) / np.maximum(I_gd, 1e-12)
+        lat_img_gd = utils.downsample_block(lat_img_g, dsm.factor, dsm.method)
+        lon_img_gd = utils.downsample_block(lon_img_g, dsm.factor, dsm.method)
+        
+        xg_gd = utils.downsample_block(xg_g, dsm.factor, dsm.method)
+        
+        yg_gd = utils.downsample_block(yg_g, dsm.factor, dsm.method)
+        
+        # Q_gd   = utils.downsample_block(Q_g, dsm.factor, dsm.method)
+        # U_gd   = utils.downsample_block(U_g, dsm.factor, dsm.method)
+        # DoLP_gd = np.sqrt(Q_gd**2 + U_gd**2) / np.maximum(I_gd, 1e-12)
+        # I_reg_ds[iv] = I_gd; Q_reg_ds[iv] = Q_gd; U_reg_ds[iv] = U_gd; DoLP_reg_ds[iv] = DoLP_gd
+        thetav_o[iv][:] = sen.views_zenith_deg[iv]
+        theta0_o[iv][:] = context.get("theta_0", 180 - 35)
+        faipfai0_o[iv][:] = sen.views_azimuth_deg[iv] - (context.get("solar_azimuth", 325.0 - 360))
+        thetav_r[iv][:] = sen.views_zenith_deg[iv]
+        theta0_r[iv][:] = context.get("theta_0", 180 - 35)
+        faipfai0_r[iv][:] = sen.views_azimuth_deg[iv] - (context.get("solar_azimuth", 325.0 - 360))
+        elevation_o = np.full_like(I_brf, 0, dtype=np.float32)
+        Land_water_mask_o = np.full_like(I_brf, 1, dtype=np.float32)
+        elevation_r = np.full_like(I_brf_g, 0, dtype=np.float32)
+        Land_water_mask_r = np.full_like(I_brf_g, 1, dtype=np.float32)
+        elevation_ds = np.full_like(I_brf_d, 0, dtype=np.float32)
+        Land_water_mask_ds = np.full_like(I_brf_d, 1, dtype=np.float32)
+        elevation_gds = np.full_like(I_gd, 0, dtype=np.float32)
+        Land_water_mask_gds = np.full_like(I_gd, 1, dtype=np.float32)
+        prefix = f"{int(wavelength_nm)}nm_{name}"
+        
+        # # === 静态地理网格 (degree per km 简化近似) ===
+        # # 左下角为 (35N, -112E)
+        # # 1°纬度约 111 km；经度按纬度 cos(φ) 缩放
+        # lat0, lon0 = 35.0, -112.0
+        # km_per_deg_lat = 111.0
+        # km_per_deg_lon = 111.0 * np.cos(np.deg2rad(lat0))
+        
+        # # 实际覆盖范围 (x方向 15 km, y方向 6 km)
+        # x_len_km = grd.x_max - grd.x_min
+        # y_len_km = grd.y_max - grd.y_min
+        
+        # dlat = y_len_km / km_per_deg_lat   # ≈ 0.054°
+        # dlon = x_len_km / km_per_deg_lon   # ≈ 0.136°
+        
+        # # 构建地理坐标网格，与 downsampled_registered 图像尺寸相同
+        # lat_grd_ds = np.linspace(lat0, lat0 + dlat, ny_gds).reshape(-1, 1) * np.ones((1, nx_gds))
+        # lon_grd_ds = np.ones((ny_gds, 1)) * np.linspace(lon0, lon0 + dlon, nx_gds)
+        
+        np.savez_compressed(os.path.join(out_subdirs["original"], f"{prefix}.npz"),
+                            sensor_dict=sensor_dict, wavelength_nm=wavelength_nm, is_polarized=is_polarized, sen=sen,
+                            grd=grd, dsm=dsm, plot_cfg=plot_cfg,
+                            out_cfg=out_cfg, out_subdirs=out_subdirs, crop_cfg=crop_cfg,
+                            context=context)
+                  
+        # np.savez_compressed(os.path.join(out_subdirs["original"], f"{prefix}.npz"),
+        #                     I=I, Q=Q, U=U, DoLP=DoLP,
+        #                     theta0=theta0_o[iv], thetav=thetav_o[iv], faipfai0=faipfai0_o[iv],
+        #                     lat=lat_cam, lon=lon_cam, elevation=elevation_o,
+        #                     Height_AirMSPI=20000, Land_water_mask=Land_water_mask_o)
+        # np.savez_compressed(os.path.join(out_subdirs["registered"], f"{prefix}.npz"),
+        #                     I=I_g, Q=Q_g, U=U_g, DoLP=DoLP_g,
+        #                     theta0=theta0_r[iv], thetav=thetav_r[iv], faipfai0=faipfai0_r[iv],
+        #                     lat=lat_grd, lon=lon_grd, elevation=elevation_r,
+        #                     Height_AirMSPI=20000, Land_water_mask=Land_water_mask_r)
+        # np.savez_compressed(os.path.join(out_subdirs["downsampled"], f"{prefix}.npz"),
+        #                     I=I_d, Q=Q_d, U=U_d, DoLP=DoLP_d,
+        #                     theta0=downsample_block(theta0_o[iv], dsm.factor),
+        #                     thetav=downsample_block(thetav_o[iv], dsm.factor),
+        #                     faipfai0=downsample_block(faipfai0_o[iv], dsm.factor),
+        #                     lat=lat_cam_ds, lon=lon_cam_ds, elevation=elevation_ds,
+        #                     Height_AirMSPI=20000, Land_water_mask=Land_water_mask_ds)
+        np.savez_compressed(os.path.join(out_subdirs["downsampled_registered"], f"{prefix}.npz"),
+                            I=I_gd, Q=Q_gd, U=U_gd, DoLP=DoLP_gd,
+                            x=xg_gd,y=yg_gd,
+                            theta0=utils.downsample_block(theta0_r[iv], dsm.factor),
+                            thetav=utils.downsample_block(thetav_r[iv], dsm.factor),
+                            faipfai0=utils.downsample_block(faipfai0_r[iv], dsm.factor),
+                            lat=lat_img_gd, lon=lon_img_gd, elevation=elevation_gds,
+                            Height_AirMSPI=20000, Land_water_mask=Land_water_mask_gds)
+    ds = xr.Dataset(
+        data_vars=dict(
+            I_original=(["view", "y", "x"], I_orig),
+            Q_original=(["view", "y", "x"], Q_orig),
+            U_original=(["view", "y", "x"], U_orig),
+            DoLP_original=(["view", "y", "x"], DoLP_orig),
+            thetav_original=(["view", "y", "x"], thetav_o),
+            theta0_original=(["view", "y", "x"], theta0_o),
+            faipfai0_original=(["view", "y", "x"], faipfai0_o),
+            I_registered=(["view", "y_g", "x_g"], I_reg),
+            Q_registered=(["view", "y_g", "x_g"], Q_reg),
+            U_registered=(["view", "y_g", "x_g"], U_reg),
+            DoLP_registered=(["view", "y_g", "x_g"], DoLP_reg),
+            thetav_registered=(["view", "y_g", "x_g"], thetav_r),
+            theta0_registered=(["view", "y_g", "x_g"], theta0_r),
+            faipfai0_registered=(["view", "y_g", "x_g"], faipfai0_r),
+            I_downsampled=(["view", "y_ds", "x_ds"], I_ds),
+            Q_downsampled=(["view", "y_ds", "x_ds"], Q_ds),
+            U_downsampled=(["view", "y_ds", "x_ds"], U_ds),
+            DoLP_downsampled=(["view", "y_ds", "x_ds"], DoLP_ds),
+            I_downsampled_registered=(["view", "y_gds", "x_gds"], I_reg_ds),
+            Q_downsampled_registered=(["view", "y_gds", "x_gds"], Q_reg_ds),
+            U_downsampled_registered=(["view", "y_gds", "x_gds"], U_reg_ds),
+            DoLP_downsampled_registered=(["view", "y_gds", "x_gds"], DoLP_reg_ds),
+        ),
+        coords=dict(
+            view=("view", np.array(sen.views_names, dtype=str)),
+            y=np.arange(cam_ny), x=np.arange(cam_nx),
+            y_g=np.linspace(grd.y_min, grd.y_max, grd.ny),
+            x_g=np.linspace(grd.x_min, grd.x_max, grd.nx),
+            y_ds=np.arange(ny_ds), x_ds=np.arange(nx_ds),
+            y_gds=np.arange(ny_gds), x_gds=np.arange(nx_gds),
+        ),
+        attrs=dict(description=f"AT3D simulated AirMSPI dataset for {int(wavelength_nm)} nm")
+    )
+    return ds
+
+
+# =============================
+#%% Section 6: Main (per-wavelength)
+# =============================
+
+def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
+         n_jobs: Optional[int] = None, overwrite: bool = False, clean_after_band: bool = True):
+    (cfg, out_cfg, sen_cfg, bnd_cfg, dsm_cfg, svr_cfg, plt_cfg, grd_cfg, comp_cfg, crop_cfg,
+     scene_cfg, cam_cfg, solar_cfg, solver_cfg, aerosol_cfg) = utils.load_config(cfg_path)
+    subdirs = utils.ensure_dirs(out_cfg.root_dir, svr_cfg.versions)
+    if n_jobs is None:
+        n_jobs = comp_cfg.n_jobs or max(1, os.cpu_count() // 2)
+    print(f"💻 Using n_jobs = {n_jobs}")
+    bands = list(zip(bnd_cfg.wavelength_nm, bnd_cfg.is_polarized))
+    if only_band is not None:
+        bands = [(w, pol) for (w, pol) in bands if int(w) == int(only_band)]
+        if not bands:
+            raise ValueError(f"Requested band {only_band} not found in config.")
+            
+    spectral_AOD_all = {}
+    spectral_SSA_all = {}
+    for i, (w, pol) in enumerate(bands, start=1):
+        print(f"\n==============================")
+        print(f"🚀 Processing wavelength {w} nm  ({i}/{len(bands)})")
+        print(f"==============================")
+        start_t = time.time()
+        nc_path = os.path.join(out_cfg.root_dir, f"AirMSPI_{int(w)}nm.nc")
+        if out_cfg.save_nc and os.path.exists(nc_path) and not overwrite:
+            print(f"⏭️  Skip existing {nc_path} (use --overwrite to regenerate)")
+            continue
+        (sensor_dict, solvers_dict, 
+         context, medium, 
+         AOD, SSA, 
+         xlats, xlons) = build_scene_and_sensors_single_band(
+            sen_cfg, w, pol, out_cfg.root_dir, scene_cfg, cam_cfg, solar_cfg, solver_cfg, aerosol_cfg)
+        
+        spectral_AOD_all[w] = AOD     # AOD 是一个 dict: {'cloud': 2-D, 'rayleigh': 2-D, 'total': 2-D}
+        spectral_SSA_all[w] = SSA     # SSA 是一个 dict
+
+        sensor_dict.get_measurements(solvers_dict, n_jobs=n_jobs, verbose=True)
+        ds = build_versions_single_band(sensor_dict, xlats, xlons, w, pol, sen_cfg, grd_cfg, dsm_cfg,
+                                        PlotConfig(True, True, plt_cfg.colormap), out_cfg,
+                                        subdirs, crop_cfg, context)
+        if out_cfg.save_nc:
+            encoding = {v: {"zlib": True, "complevel": 2} for v in ds.data_vars}
+            ds.to_netcdf(nc_path, encoding=encoding)
+            print(f"✅ Saved NetCDF: {nc_path}")
+            
+            
+            
+        if clean_after_band:
+            del sensor_dict, solvers_dict, ds
+        dur = time.time() - start_t
+        print(f"⏱️  {int(w)} nm done in {dur/60:.2f} min")
+    print("\n✅ All requested wavelengths processed.")
+    if out_cfg.save_nc:
+        ds = utils.build_multiband_xarray(spectral_AOD_all, spectral_SSA_all)
+        out_path = os.path.join(out_cfg.root_dir, "spectral_AOD_SSA.nc")
+        ds.to_netcdf(out_path)
+        print(f"📦 Saved spectral AOD/SSA NetCDF to {out_path}")
+
+
+__all__ = [
+    "main",
+    "build_scene_and_sensors_single_band",
+    "build_versions_single_band",
+    "calculate_up_vector",
+    "calculate_sensor_trajectory",
+    "project_to_ground_lookat",
+    "make_ground_grid",
+    "centers_to_edges_2d",
+    "crop_by_world_box",
+    "plot_on_ground",
+]
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Per-wavelength AT3D simulation pipeline (v5b)")
+    parser.add_argument("--config", type=str, default="config_v5b.yaml", help="Path to config file")
+    parser.add_argument("--band", type=int, default=None, help="Run only this wavelength (nm)")
+    parser.add_argument("--n_jobs", type=int, default=None, help="Number of parallel jobs (overrides config)")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing NetCDF files")
+    parser.add_argument("--no_clean", action="store_true", help="Do not cleanup per-band data (debug)")
+    args = parser.parse_args()
+    args.overwrite = True
+    main(cfg_path=args.config, only_band=args.band, n_jobs=args.n_jobs,
+         overwrite=args.overwrite, clean_after_band=not args.no_clean)
