@@ -1,3 +1,26 @@
+# AT3D-AirMSPI
+
+This repository extends the AT3D framework for experiments with
+multi-angle polarimetric aerosol retrieval and AirMSPI simulations.
+
+## Relationship with AT3D
+
+This project is a research extension based on the original AT3D code:
+
+https://github.com/CloudTomography/AT3D
+
+Major additions include:
+
+- AirMSPI viewing geometry simulation
+- Multi-angle polarimetric retrieval experiments
+- Radiative transfer experiments with SHDOM
+
+## Repository Structure
+at3d/
+scripts/
+experiments/
+notebooks/
+
 # Atmospheric Tomography with 3D Radiative Transfer (AT3D)
 
 AT3D performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]].
