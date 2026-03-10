@@ -292,11 +292,19 @@ def reproject_to_ground(sensor, ground_z=0.0):
     cam_z = position[2]
     dir_z = rays_world[2, :]
     t = (ground_z - cam_z) / dir_z  # 每个射线到地面的比例因子
-    t[dir_z == 0] = np.nan  # 平行射线处理
 
-    x_ground = position[0] + t * rays_world[0, :]
-    y_ground = position[1] + t * rays_world[1, :]
-    z_ground = np.full_like(x_ground, ground_z)
+    # 仅保留“向下看且在相机前方”的有效交点：
+    # - dir_z < 0: 射线朝向地面
+    # - t > 0: 交点在相机前方
+    valid = (dir_z < 0) & (t > 0)
+
+    x_ground = np.full_like(t, np.nan, dtype=float)
+    y_ground = np.full_like(t, np.nan, dtype=float)
+    z_ground = np.full_like(t, np.nan, dtype=float)
+
+    x_ground[valid] = position[0] + t[valid] * rays_world[0, valid]
+    y_ground[valid] = position[1] + t[valid] * rays_world[1, valid]
+    z_ground[valid] = ground_z
 
     # ---- 整理为 DataArray ----
     x_ground = x_ground.reshape(ny, nx)
@@ -1200,23 +1208,20 @@ def build_versions_single_band(sensor_dict,
                     I_g_c, Xg_c, Yg_c = crop_by_world_box(I_brf_g, xg_g, yg_g, crop_cfg.x_range, crop_cfg.y_range)
                 except Exception:
                     I_g_c, Xg_c, Yg_c = I_brf_g, xg_g, yg_g
-                # plot_on_ground(I_g_c, Xg_c, Yg_c, title=f"{name} {int(wavelength_nm)} nm",
-                #                cmap=plot_cfg.colormap, save_path=terr_I_png, show=False)
-                # plot_on_ground(I_brf_g, xg_g, yg_g, title=f"{name} {int(wavelength_nm)} nm",
-                #                cmap=plot_cfg.colormap, save_path=terr_png, show=False)
-                plot_image(I_brf_g , np.arange(1,I_brf_g.shape[1]+2), np.arange(1,I_brf_g.shape[0]+2), 
-                           title=f"{name} I {int(wavelength_nm)} nm",
-                           cmap=plot_cfg.colormap, 
-                           save_path=terr_I_png, show=False)
+                plot_on_ground(I_g_c, Xg_c, Yg_c,
+                               title=f"{name} I {int(wavelength_nm)} nm",
+                               cmap=plot_cfg.colormap, save_path=terr_I_png, show=False)
                 if is_polarized:
-                    plot_image(Q_brf_g , np.arange(1,Q_brf_g.shape[1]+2), np.arange(1,Q_brf_g.shape[0]+2), 
-                               title=f"{name} Q {int(wavelength_nm)} nm",
-                               cmap=plot_cfg.colormap, 
-                               save_path=terr_Q_png, show=False)
-                    plot_image(U_brf_g , np.arange(1,U_brf_g.shape[1]+2), np.arange(1,U_brf_g.shape[0]+2), 
-                               title=f"{name} U {int(wavelength_nm)} nm",
-                               cmap=plot_cfg.colormap, 
-                               save_path=terr_U_png, show=False)
+                    Q_g_c, _, _ = crop_by_world_box(Q_brf_g, xg_g, yg_g, crop_cfg.x_range, crop_cfg.y_range)
+                    U_g_c, _, _ = crop_by_world_box(U_brf_g, xg_g, yg_g, crop_cfg.x_range, crop_cfg.y_range)
+                    plot_on_ground(Q_g_c, Xg_c, Yg_c,
+                                   title=f"{name} Q {int(wavelength_nm)} nm",
+                                   cmap=plot_cfg.colormap,
+                                   save_path=terr_Q_png, show=False)
+                    plot_on_ground(U_g_c, Xg_c, Yg_c,
+                                   title=f"{name} U {int(wavelength_nm)} nm",
+                                   cmap=plot_cfg.colormap,
+                                   save_path=terr_U_png, show=False)
         
         I_gd = utils.downsample_block(I_brf_g, dsm.factor, dsm.method)
         Q_gd = utils.downsample_block(Q_brf_g, dsm.factor, dsm.method)
