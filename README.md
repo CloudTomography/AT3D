@@ -23,6 +23,13 @@ AT3D-airmspi
 ├── experiments/ Experiment configurations and results
 └── notebooks/ Analysis and visualization notebooks
 ```
+Key directories:
+
+- **at3d/** – core radiative transfer solver
+- **scripts/** – simulation scripts
+- **experiments/** – experiment setups
+- **notebooks/** – analysis notebooks
+
 # Atmospheric Tomography with 3D Radiative Transfer (AT3D)
 
 AT3D performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]].
