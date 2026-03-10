@@ -129,36 +129,77 @@ def calculate_up_vector(position, look_at_point, world_up=np.array([0, 0, 1])):
 def calculate_sensor_trajectory(sensor_zenith_list,
                                 sensor_azimuth_list,
                                 look_at_point=np.array([0.0, 0.0, 0.0]),
-                                sensor_altitude=20.0):
+                                sensor_altitude=20.0,
+                                trajectory_mode="auto",
+                                fallback_heading_deg=0.0,
+                                manual_flight_azimuth_deg=None):
+    """
+    Build sensor positions and up-vectors.
+
+    trajectory_mode:
+      - "auto": infer flight direction from multi-view positions.
+      - "manual_azimuth": use manual_flight_azimuth_deg (deg, clockwise from +x/east).
+    """
     positions = []
     up_vectors = []
     for zenith, azimuth in zip(sensor_zenith_list, sensor_azimuth_list):
-        zen = np.deg2rad(zenith); azi = np.deg2rad(azimuth)
-        v = np.array([np.sin(zen) * np.cos(azi),
-                      np.sin(zen) * np.sin(azi),
-                      -np.cos(zen)])
+        zen = np.deg2rad(zenith)
+        azi = np.deg2rad(azimuth)
+        v = np.array([
+            np.sin(zen) * np.cos(azi),
+            np.sin(zen) * np.sin(azi),
+            -np.cos(zen)
+        ])
         R = sensor_altitude / np.cos(zen)
         pos = look_at_point - R * v
         pos[2] = sensor_altitude
         positions.append(pos)
     positions = np.array(positions)
-    
-    # 如果只有一个位置，无法计算 trajectory direction
-    if len(positions) < 2:
-        # 默认方向 = 朝向地面或一个固定方向
-        # 可以设置为 0,0,-1 或者 lookat - position
-        traj_dirs = np.array([[1, 0, 0]])
+
+    n_view = len(positions)
+    if n_view == 0:
+        raise ValueError("No sensor views provided.")
+
+    if trajectory_mode not in {"auto", "manual_azimuth"}:
+        raise ValueError(f"Unsupported trajectory_mode: {trajectory_mode}")
+
+    if trajectory_mode == "manual_azimuth":
+        if manual_flight_azimuth_deg is None:
+            raise ValueError(
+                "trajectory_mode='manual_azimuth' requires manual_flight_azimuth_deg in config"
+            )
+        heading = np.deg2rad(float(manual_flight_azimuth_deg))
+        traj_dir_one = np.array([np.cos(heading), np.sin(heading), 0.0], dtype=float)
+        traj_dirs = np.tile(traj_dir_one, (n_view, 1))
+    elif n_view < 2:
+        heading = np.deg2rad(float(fallback_heading_deg))
+        traj_dirs = np.array([[np.cos(heading), np.sin(heading), 0.0]], dtype=float)
     else:
-        # 多视角正常计算轨迹方向
         traj = np.gradient(positions, axis=0)
-        traj_dirs = np.array([d / np.linalg.norm(d) for d in traj])
-    
+        traj_dirs = []
+        for d in traj:
+            d = np.asarray(d, dtype=float)
+            d[2] = 0.0
+            nrm = np.linalg.norm(d)
+            if nrm < 1e-9:
+                heading = np.deg2rad(float(fallback_heading_deg))
+                d = np.array([np.cos(heading), np.sin(heading), 0.0], dtype=float)
+            else:
+                d = d / nrm
+            traj_dirs.append(d)
+        traj_dirs = np.asarray(traj_dirs)
+
     for pos, traj_dir in zip(positions, traj_dirs):
-        look_dir = look_at_point - pos; 
-        look_dir /= np.linalg.norm(look_dir)
-        up_vec = np.cross(traj_dir, look_dir); 
-        up_vec /= np.linalg.norm(up_vec)
+        look_dir = look_at_point - pos
+        look_dir = look_dir / np.linalg.norm(look_dir)
+        up_vec = np.cross(traj_dir, look_dir)
+        up_norm = np.linalg.norm(up_vec)
+        if up_norm < 1e-9:
+            up_vec = calculate_up_vector(pos, look_at_point)
+        else:
+            up_vec = up_vec / up_norm
         up_vectors.append(up_vec)
+
     return positions, up_vectors
 
 def project_to_ground_lookat(img, pos, look_at_point, up_vector, fov_diag_deg, Xg, Yg):
@@ -626,10 +667,14 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     sensor_dict = at3d.containers.SensorsDict()
     center = np.array(scene_cfg.lookat_center_km, dtype=float)
     position_vectors, up_vectors = calculate_sensor_trajectory(
-        sensor_zenith_list=sen.views_zenith_deg, 
+        sensor_zenith_list=sen.views_zenith_deg,
         sensor_azimuth_list=sen.views_azimuth_deg,
-        look_at_point= center,
-        sensor_altitude=sen.altitude_km)
+        look_at_point=center,
+        sensor_altitude=sen.altitude_km,
+        trajectory_mode=sen.trajectory_mode,
+        fallback_heading_deg=sen.fallback_heading_deg,
+        manual_flight_azimuth_deg=sen.manual_flight_azimuth_deg,
+    )
     lookat_vectors = [center for _ in sen.views_names]
     for name, pos, look, up in zip(sen.views_names, position_vectors, lookat_vectors, up_vectors):
         stokes = ['I', 'Q', 'U'] if is_polarized else ['I']

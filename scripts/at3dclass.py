@@ -26,6 +26,9 @@ class SensorConfig:
     views_names: List[str]
     views_zenith_deg: List[float]
     views_azimuth_deg: List[float]
+    trajectory_mode: str = "auto"  # "auto" | "manual_azimuth"
+    fallback_heading_deg: float = 0.0
+    manual_flight_azimuth_deg: Optional[float] = None
 
 @dataclass
 class BandsConfig:
