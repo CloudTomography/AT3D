@@ -14,3 +14,47 @@ venv/
 images/
 src/core.pyf
 src/coremodule.c
+# Python cache
+__pycache__/
+*.pyc
+
+# Notebook
+notebooks/.ipynb_checkpoints/
+
+# Personal scripts
+notebooks/personal/
+scripts/personal/
+
+# Experiments
+experiments/
+
+# Build
+build/
+dist/
+at3d.egg-info/
+
+# Mie lookup tables
+mie_tables/
+
+# Compiled extensions
+at3d/*.so
+
+# Virtual env
+venv/
+
+# Generated figures
+*.png
+*.jpg
+
+# Simulation outputs
+*.nc
+*.npz
+*.log
+
+# IDE
+.idea/
+.vscode/
+
+# f2py generated
+src/core.pyf
+src/coremodule.c
