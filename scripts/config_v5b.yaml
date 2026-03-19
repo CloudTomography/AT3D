@@ -20,9 +20,9 @@ sensor:
     azimuth_deg: [0]
 
   trajectory:
-    mode: "auto"                 # "auto"(多视角推断) | "manual_azimuth"(人工指定)
+    mode: "manual_azimuth"                 # "auto"(多视角推断) | "manual_azimuth"(人工指定)
     fallback_heading_deg: 0.0     # 单视角或几何退化时的默认飞行方向角(度)
-    manual_flight_azimuth_deg: null  # 当 mode="manual_azimuth" 时填写，例如 145.0
+    manual_flight_azimuth_deg: 120  # 当 mode="manual_azimuth" 时填写，例如 145.0 null 
 
 # camera pixel grid for perspective_projection
 camera:
