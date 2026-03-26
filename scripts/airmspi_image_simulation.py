@@ -1098,26 +1098,29 @@ def build_versions_single_band(sensor_dict,
         cos_sca = np.clip(cos_sca, -1.0, 1.0)
         
         sca_angle = np.degrees(np.arccos(cos_sca))
-        fig, ax = plt.subplots(2,2, figsize=(8,6))
 
-        im = ax[0,0].imshow(vza_map, origin='lower')
-        plt.colorbar(im, ax=ax[0,0])
-        ax[0,0].set_title("VZA")
-        
-        im = ax[0,1].imshow(vaa_map, origin='lower')
-        plt.colorbar(im, ax=ax[0,1])
-        ax[0,1].set_title("VAA")
-        
-        im = ax[1,0].imshow(raa_map, origin='lower', cmap='RdBu_r')
-        plt.colorbar(im, ax=ax[1,0])
-        ax[1,0].set_title("RAA")
-        
-        im = ax[1,1].imshow(sca_angle, origin='lower')
-        plt.colorbar(im, ax=ax[1,1])
-        ax[1,1].set_title("Scattering Angle")
-        
-        plt.tight_layout()
-        plt.show()
+        if out_cfg.save_png and (out_cfg.plot_mode != "skip"):
+            angle_products = {
+                "VZA": (vza_map, plot_cfg.colormap),
+                "VAA": (vaa_map, plot_cfg.colormap),
+                "RAA": (raa_map, "RdBu_r"),
+                "Scattering_Angle": (sca_angle, plot_cfg.colormap),
+            }
+            for angle_name, (angle_map, angle_cmap) in angle_products.items():
+                angle_png = os.path.join(
+                    out_subdirs["original"],
+                    f"{angle_name}_{int(wavelength_nm)}nm_{name}_camera.png"
+                )
+                if out_cfg.plot_mode == "overwrite" or not os.path.exists(angle_png):
+                    plot_image(
+                        angle_map,
+                        np.arange(1, angle_map.shape[1] + 2),
+                        np.arange(1, angle_map.shape[0] + 2),
+                        title=f"{name} {angle_name} {int(wavelength_nm)} nm",
+                        cmap=angle_cmap,
+                        save_path=angle_png,
+                        show=False
+                    )
 
         Q, U, chi = rotate_qu_pixelwise_to_scattering_plane(
             Q, U,
@@ -1193,6 +1196,10 @@ def build_versions_single_band(sensor_dict,
         
         Q_brf_g, _, _, = crop_by_world_box(Q_brf, xg, yg, x_range, y_range)
         U_brf_g, _, _, = crop_by_world_box(U_brf, xg, yg, x_range, y_range)
+        vza_g, _, _, = crop_by_world_box(vza_map, xg, yg, x_range, y_range)
+        vaa_g, _, _, = crop_by_world_box(vaa_map, xg, yg, x_range, y_range)
+        raa_g, _, _, = crop_by_world_box(raa_map, xg, yg, x_range, y_range)
+        sca_g, _, _, = crop_by_world_box(sca_angle, xg, yg, x_range, y_range)
         DoLP_brf_g = np.sqrt(Q_brf_g**2 + U_brf_g**2) / np.maximum(I_brf_g, 1e-12)
         lat_img_g, _, _, = crop_by_world_box(lat_img, xg, yg, x_range, y_range)
         lon_img_g, _, _, = crop_by_world_box(lon_img, xg, yg, x_range, y_range)
@@ -1222,6 +1229,31 @@ def build_versions_single_band(sensor_dict,
                                    title=f"{name} U {int(wavelength_nm)} nm",
                                    cmap=plot_cfg.colormap,
                                    save_path=terr_U_png, show=False)
+
+                angle_products_reg = {
+                    "VZA": (vza_g, plot_cfg.colormap),
+                    "VAA": (vaa_g, plot_cfg.colormap),
+                    "RAA": (raa_g, "RdBu_r"),
+                    "Scattering_Angle": (sca_g, plot_cfg.colormap),
+                }
+                for angle_name, (angle_map_reg, angle_cmap_reg) in angle_products_reg.items():
+                    angle_reg_png = os.path.join(
+                        out_subdirs["registered"],
+                        f"{angle_name}_{int(wavelength_nm)}nm_{name}_terrain.png"
+                    )
+                    try:
+                        angle_reg_c, Xg_angle_c, Yg_angle_c = crop_by_world_box(
+                            angle_map_reg, xg_g, yg_g, crop_cfg.x_range, crop_cfg.y_range
+                        )
+                    except Exception:
+                        angle_reg_c, Xg_angle_c, Yg_angle_c = angle_map_reg, xg_g, yg_g
+                    plot_on_ground(
+                        angle_reg_c, Xg_angle_c, Yg_angle_c,
+                        title=f"{name} {angle_name} {int(wavelength_nm)} nm",
+                        cmap=angle_cmap_reg,
+                        save_path=angle_reg_png,
+                        show=False
+                    )
         
         I_gd = utils.downsample_block(I_brf_g, dsm.factor, dsm.method)
         Q_gd = utils.downsample_block(Q_brf_g, dsm.factor, dsm.method)
