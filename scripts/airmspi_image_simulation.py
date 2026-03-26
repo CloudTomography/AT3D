@@ -534,6 +534,115 @@ def plot_image(data, xg, yg,
     else:
         plt.close(fig)
 
+
+def plot_simulation_results(result_path, output_dir=None, option="option1", show=False):
+    """
+    读取 simulation 结果（.npz 或 .nc）并重绘图像。
+
+    option:
+      - "option1": I/Q/U 画在一个图上；VZA/VAA/RAA/Scattering Angle 画在一个图上
+      - "option2": 每个变量单独绘图
+    """
+    option = str(option).lower()
+    if option not in {"option1", "option2"}:
+        raise ValueError("option must be 'option1' or 'option2'")
+
+    if output_dir is None:
+        output_dir = os.path.join(os.path.dirname(result_path), "replot")
+    os.makedirs(output_dir, exist_ok=True)
+
+    ext = os.path.splitext(result_path)[1].lower()
+    if ext == ".npz":
+        arr = np.load(result_path)
+        I = arr["I"]
+        Q = arr["Q"]
+        U = arr["U"]
+        vza = arr["VZA"] if "VZA" in arr else arr["thetav"]
+        vaa = arr["VAA"] if "VAA" in arr else None
+        raa = arr["RAA"] if "RAA" in arr else arr["faipfai0"]
+        sca = arr["Scattering_Angle"] if "Scattering_Angle" in arr else (arr["sca_angle"] if "sca_angle" in arr else None)
+        if sca is None:
+            theta0 = arr["theta0"]
+            mu0 = np.cos(np.radians(theta0))
+            mu = np.cos(np.radians(vza))
+            cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa))
+            sca = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
+        if vaa is None:
+            vaa = np.full_like(vza, np.nan, dtype=np.float32)
+    elif ext == ".nc":
+        ds = xr.open_dataset(result_path)
+        view_idx = 0
+        level = "downsampled_registered"
+        I = ds[f"I_{level}"].isel(view=view_idx).values
+        Q = ds[f"Q_{level}"].isel(view=view_idx).values
+        U = ds[f"U_{level}"].isel(view=view_idx).values
+        vza = ds[f"VZA_{level}"].isel(view=view_idx).values if f"VZA_{level}" in ds else ds[f"thetav_{level}"].isel(view=view_idx).values
+        vaa = ds[f"VAA_{level}"].isel(view=view_idx).values if f"VAA_{level}" in ds else np.full_like(vza, np.nan, dtype=np.float32)
+        raa = ds[f"RAA_{level}"].isel(view=view_idx).values if f"RAA_{level}" in ds else ds[f"faipfai0_{level}"].isel(view=view_idx).values
+        if f"Scattering_Angle_{level}" in ds:
+            sca = ds[f"Scattering_Angle_{level}"].isel(view=view_idx).values
+        else:
+            theta0 = ds[f"theta0_{level}"].isel(view=view_idx).values
+            mu0 = np.cos(np.radians(theta0))
+            mu = np.cos(np.radians(vza))
+            cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa))
+            sca = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
+        ds.close()
+    else:
+        raise ValueError("Unsupported result file. Use .npz or .nc")
+
+    if option == "option1":
+        fig1, ax1 = plt.subplots(1, 3, figsize=(15, 4.5))
+        for ax, data, name, cmap in zip(ax1, [I, Q, U], ["I", "Q", "U"], ["viridis", "viridis", "viridis"]):
+            im = ax.imshow(data, origin="lower", cmap=cmap)
+            ax.set_title(name)
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        plt.tight_layout()
+        out1 = os.path.join(output_dir, "IQU_panel.png")
+        plt.savefig(out1, dpi=300, bbox_inches="tight")
+        if show:
+            plt.show()
+        else:
+            plt.close(fig1)
+
+        fig2, ax2 = plt.subplots(2, 2, figsize=(10, 8))
+        angle_maps = [vza, vaa, raa, sca]
+        angle_titles = ["VZA", "VAA", "RAA", "Scattering Angle"]
+        angle_cmaps = ["viridis", "viridis", "RdBu_r", "viridis"]
+        for ax, data, title, cmap in zip(ax2.flatten(), angle_maps, angle_titles, angle_cmaps):
+            im = ax.imshow(data, origin="lower", cmap=cmap)
+            ax.set_title(title)
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        plt.tight_layout()
+        out2 = os.path.join(output_dir, "Angles_panel.png")
+        plt.savefig(out2, dpi=300, bbox_inches="tight")
+        if show:
+            plt.show()
+        else:
+            plt.close(fig2)
+    else:
+        single_map = {
+            "I": (I, "viridis"),
+            "Q": (Q, "viridis"),
+            "U": (U, "viridis"),
+            "VZA": (vza, "viridis"),
+            "VAA": (vaa, "viridis"),
+            "RAA": (raa, "RdBu_r"),
+            "Scattering_Angle": (sca, "viridis"),
+        }
+        for name, (data, cmap) in single_map.items():
+            fig, ax = plt.subplots(figsize=(6, 5))
+            im = ax.imshow(data, origin="lower", cmap=cmap)
+            ax.set_title(name)
+            plt.colorbar(im, ax=ax)
+            plt.tight_layout()
+            outp = os.path.join(output_dir, f"{name}.png")
+            plt.savefig(outp, dpi=300, bbox_inches="tight")
+            if show:
+                plt.show()
+            else:
+                plt.close(fig)
+
 # =============================
 #%% Section 4: Scene/Sensors (single band) with lat/lon ingestion
 # =============================
@@ -905,6 +1014,10 @@ def build_versions_single_band(sensor_dict,
     I_reg_ds = np.full((V, ny_gds, nx_gds), np.nan, dtype=np.float32)
     Q_reg_ds = np.full_like(I_reg_ds, np.nan); U_reg_ds = np.full_like(I_reg_ds, np.nan)
     DoLP_reg_ds = np.full_like(I_reg_ds, np.nan)
+    VZA_reg_ds = np.full_like(I_reg_ds, np.nan)
+    VAA_reg_ds = np.full_like(I_reg_ds, np.nan)
+    RAA_reg_ds = np.full_like(I_reg_ds, np.nan)
+    SCA_reg_ds = np.full_like(I_reg_ds, np.nan)
     thetav_o = np.zeros((V, cam_ny, cam_nx), dtype=np.float32)
     theta0_o = np.zeros_like(thetav_o); faipfai0_o = np.zeros_like(thetav_o)
     thetav_r = np.zeros((V, grd.ny, grd.nx), dtype=np.float32)
@@ -1261,6 +1374,14 @@ def build_versions_single_band(sensor_dict,
         DoLP_gd = np.sqrt(Q_gd**2 + U_gd**2) / np.maximum(I_gd, 1e-12)
         lat_img_gd = utils.downsample_block(lat_img_g, dsm.factor, dsm.method)
         lon_img_gd = utils.downsample_block(lon_img_g, dsm.factor, dsm.method)
+        vza_gd = utils.downsample_block(vza_g, dsm.factor, dsm.method)
+        vaa_gd = utils.downsample_block(vaa_g, dsm.factor, dsm.method)
+        raa_gd = utils.downsample_block(raa_g, dsm.factor, dsm.method)
+        sca_gd = utils.downsample_block(sca_g, dsm.factor, dsm.method)
+        VZA_reg_ds[iv] = vza_gd
+        VAA_reg_ds[iv] = vaa_gd
+        RAA_reg_ds[iv] = raa_gd
+        SCA_reg_ds[iv] = sca_gd
         
         xg_gd = utils.downsample_block(xg_g, dsm.factor, dsm.method)
         
@@ -1329,6 +1450,7 @@ def build_versions_single_band(sensor_dict,
         #                     Height_AirMSPI=20000, Land_water_mask=Land_water_mask_ds)
         np.savez_compressed(os.path.join(out_subdirs["downsampled_registered"], f"{prefix}.npz"),
                             I=I_gd, Q=Q_gd, U=U_gd, DoLP=DoLP_gd,
+                            VZA=vza_gd, VAA=vaa_gd, RAA=raa_gd, Scattering_Angle=sca_gd,
                             x=xg_gd,y=yg_gd,
                             theta0=utils.downsample_block(theta0_r[iv], dsm.factor),
                             thetav=utils.downsample_block(thetav_r[iv], dsm.factor),
@@ -1359,6 +1481,10 @@ def build_versions_single_band(sensor_dict,
             Q_downsampled_registered=(["view", "y_gds", "x_gds"], Q_reg_ds),
             U_downsampled_registered=(["view", "y_gds", "x_gds"], U_reg_ds),
             DoLP_downsampled_registered=(["view", "y_gds", "x_gds"], DoLP_reg_ds),
+            VZA_downsampled_registered=(["view", "y_gds", "x_gds"], VZA_reg_ds),
+            VAA_downsampled_registered=(["view", "y_gds", "x_gds"], VAA_reg_ds),
+            RAA_downsampled_registered=(["view", "y_gds", "x_gds"], RAA_reg_ds),
+            Scattering_Angle_downsampled_registered=(["view", "y_gds", "x_gds"], SCA_reg_ds),
         ),
         coords=dict(
             view=("view", np.array(sen.views_names, dtype=str)),
@@ -1445,6 +1571,7 @@ __all__ = [
     "centers_to_edges_2d",
     "crop_by_world_box",
     "plot_on_ground",
+    "plot_simulation_results",
 ]
 
 
