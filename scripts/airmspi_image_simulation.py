@@ -816,7 +816,7 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                     view_name = str(sen_cfg.views_names[0])
                 else:
                     view_name = str(selected_key)
-                return I0, Q0, U0, vza0, vaa0, raa0, sca0, view_name
+                return I0, Q0, U0, vza0, vaa0, raa0, sca0, x0, y0, view_name
             except Exception:
                 return None
 
@@ -827,6 +827,8 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                     "I": npz["I"], "Q": npz["Q"], "U": npz["U"],
                     "VZA": npz["VZA"], "VAA": npz["VAA"], "RAA": npz["RAA"],
                     "Scattering_Angle": npz["Scattering_Angle"],
+                    "x": npz["x"] if "x" in files else None,
+                    "y": npz["y"] if "y" in files else None,
                 }
             if {"I", "Q", "U"}.issubset(files):
                 vza = npz["VZA"] if "VZA" in files else npz["thetav"]
@@ -842,7 +844,12 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                     mu = np.cos(np.radians(vza))
                     cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa))
                     sca = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
-                return {"I": npz["I"], "Q": npz["Q"], "U": npz["U"], "VZA": vza, "VAA": vaa, "RAA": raa, "Scattering_Angle": sca}
+                return {
+                    "I": npz["I"], "Q": npz["Q"], "U": npz["U"],
+                    "VZA": vza, "VAA": vaa, "RAA": raa, "Scattering_Angle": sca,
+                    "x": npz["x"] if "x" in files else None,
+                    "y": npz["y"] if "y" in files else None,
+                }
             return None
 
         def _open_npz_with_iqu(npz_path, allow_sensor_fallback=False):
@@ -888,8 +895,10 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                 "Please pass a data NPZ (e.g., downsampled_registered/*.npz)."
             )
 
+        x_plot = None
+        y_plot = None
         if isinstance(arr, tuple):
-            I, Q, U, vza, vaa, raa, sca, _ = arr
+            I, Q, U, vza, vaa, raa, sca, x_plot, y_plot, _ = arr
         else:
             I = arr["I"]
             Q = arr["Q"]
@@ -898,6 +907,8 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
             vaa = arr["VAA"]
             raa = arr["RAA"]
             sca = arr["Scattering_Angle"]
+            x_plot = arr.get("x")
+            y_plot = arr.get("y")
     elif ext == ".nc":
         ds = xr.open_dataset(result_path)
         view_idx = 0
@@ -920,11 +931,26 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
     else:
         raise ValueError("Unsupported result file. Use .npz or .nc")
 
+    def _plot_field(ax, data, title, cmap):
+        use_ground = (
+            isinstance(x_plot, np.ndarray) and isinstance(y_plot, np.ndarray) and
+            x_plot.shape == data.shape and y_plot.shape == data.shape
+        )
+        if use_ground:
+            xv, yv = centers_to_edges_2d(x_plot, y_plot)
+            im = ax.pcolormesh(xv, yv, data, shading="flat", cmap=cmap)
+            ax.set_aspect('equal', adjustable='box')
+            ax.set_xlabel("x_ground [km]")
+            ax.set_ylabel("y_ground [km]")
+        else:
+            im = ax.imshow(data, origin="lower", cmap=cmap)
+        ax.set_title(title)
+        return im
+
     if option == "option1":
         fig1, ax1 = plt.subplots(1, 3, figsize=(15, 4.5))
         for ax, data, name, cmap in zip(ax1, [I, Q, U], ["I", "Q", "U"], ["viridis", "viridis", "viridis"]):
-            im = ax.imshow(data, origin="lower", cmap=cmap)
-            ax.set_title(name)
+            im = _plot_field(ax, data, name, cmap)
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         plt.tight_layout()
         out1 = os.path.join(output_dir, "IQU_panel.png")
@@ -939,8 +965,7 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
         angle_titles = ["VZA", "VAA", "RAA", "Scattering Angle"]
         angle_cmaps = ["viridis", "viridis", "RdBu_r", "viridis"]
         for ax, data, title, cmap in zip(ax2.flatten(), angle_maps, angle_titles, angle_cmaps):
-            im = ax.imshow(data, origin="lower", cmap=cmap)
-            ax.set_title(title)
+            im = _plot_field(ax, data, title, cmap)
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         plt.tight_layout()
         out2 = os.path.join(output_dir, "Angles_panel.png")
@@ -961,8 +986,7 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
         }
         for name, (data, cmap) in single_map.items():
             fig, ax = plt.subplots(figsize=(6, 5))
-            im = ax.imshow(data, origin="lower", cmap=cmap)
-            ax.set_title(name)
+            im = _plot_field(ax, data, name, cmap)
             plt.colorbar(im, ax=ax)
             plt.tight_layout()
             outp = os.path.join(output_dir, f"{name}.png")
