@@ -358,6 +358,18 @@ def compute_vout_map_from_sensor(sensor_ds):
     v_out = -rays_world.T.reshape(ny, nx, 3)
     return v_out
 
+
+def _get_flight_azimuth_offset_deg_from_context(context_cfg: Any) -> float:
+    """
+    Optional yaw-like offset applied to VAA when manual trajectory azimuth is used.
+    """
+    if not isinstance(context_cfg, dict):
+        return 0.0
+    try:
+        return float(context_cfg.get("flight_azimuth_offset_deg", 0.0))
+    except Exception:
+        return 0.0
+
 def assign_latlon_from_grid(xg, yg, wrf_x, wrf_y, xlats, xlons):
     """
     将相机重投影地面坐标 (xg, yg) 映射为对应的 (lat, lon)。
@@ -587,6 +599,7 @@ def _build_level_npz_from_original(target_npz_path: str, overwrite: bool = False
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
+                vaa0 = (vaa0 + _get_flight_azimuth_offset_deg_from_context(context_cfg)) % 360.0
                 saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0 if isinstance(context_cfg, dict) else 0.0
                 sza = context_cfg.get("theta_0", np.nan) if isinstance(context_cfg, dict) else np.nan
                 raa0 = ((vaa0 - saa + 180.0) % 360.0) - 180.0
@@ -803,6 +816,7 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
+                vaa0 = (vaa0 + _get_flight_azimuth_offset_deg_from_context(context_cfg)) % 360.0
 
                 saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0
                 sza = context_cfg.get("theta_0", np.nan)
@@ -1372,6 +1386,15 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    up_vectors=up_vectors,
                    theta_0=theta_0,
                    solar_azimuth=solar_azimuth,
+                   trajectory_mode=sen_cfg.trajectory_mode,
+                   manual_flight_azimuth_deg=sen_cfg.manual_flight_azimuth_deg,
+                   fallback_heading_deg=sen_cfg.fallback_heading_deg,
+                   flight_azimuth_offset_deg=(
+                       float(sen_cfg.manual_flight_azimuth_deg) - float(sen_cfg.fallback_heading_deg)
+                       if str(getattr(sen_cfg, "trajectory_mode", "")).lower() == "manual_azimuth"
+                       and getattr(sen_cfg, "manual_flight_azimuth_deg", None) is not None
+                       else 0.0
+                   ),
                    lat=lat_2d,
                    lon=lon_2d,
                    cloud_x=cloud_x,
@@ -1616,6 +1639,7 @@ def build_versions_single_band(sensor_dict,
         vz = np.clip(v_out_map[..., 2], -1.0, 1.0) 
         vza_map = np.degrees(np.arccos(vz)) # 像素级VZA 
         vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0 # 像素级VAA 
+        vaa_map = (vaa_map + _get_flight_azimuth_offset_deg_from_context(context)) % 360.0
         saa = (context.get("solar_azimuth", 0.0) + 360.0) % 360.0 # 太阳方位（当前是场景常数） 
         sza = context.get("theta_0", np.nan) # 太阳天顶（当前是场景常数） 
         raa_map = ((vaa_map - saa + 180.0) % 360.0) - 180.0 # 像素级relative azimuth
