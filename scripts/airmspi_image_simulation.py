@@ -993,6 +993,10 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
             ax.set_aspect('equal', adjustable='box')
             ax.set_xlabel("x_ground [km]")
             ax.set_ylabel("y_ground [km]")
+            if cloud_box is not None:
+                x_range, y_range = cloud_box
+                ax.set_xlim(*x_range)
+                ax.set_ylim(*y_range)
         else:
             im = ax.imshow(data, origin="lower", cmap=cmap)
         ax.set_title(title)
