@@ -1417,15 +1417,16 @@ def build_versions_single_band(sensor_dict,
     I_ds = np.full((V, ny_ds, nx_ds), np.nan, dtype=np.float32)
     Q_ds = np.full_like(I_ds, np.nan); U_ds = np.full_like(I_ds, np.nan)
     DoLP_ds = np.full_like(I_ds, np.nan)
-    ny_gds = (grd.ny // dsm.factor)
-    nx_gds = (grd.nx // dsm.factor)
-    I_reg_ds = np.full((V, ny_gds, nx_gds), np.nan, dtype=np.float32)
-    Q_reg_ds = np.full_like(I_reg_ds, np.nan); U_reg_ds = np.full_like(I_reg_ds, np.nan)
-    DoLP_reg_ds = np.full_like(I_reg_ds, np.nan)
-    VZA_reg_ds = np.full_like(I_reg_ds, np.nan)
-    VAA_reg_ds = np.full_like(I_reg_ds, np.nan)
-    RAA_reg_ds = np.full_like(I_reg_ds, np.nan)
-    SCA_reg_ds = np.full_like(I_reg_ds, np.nan)
+    ny_gds = None
+    nx_gds = None
+    I_reg_ds = None
+    Q_reg_ds = None
+    U_reg_ds = None
+    DoLP_reg_ds = None
+    VZA_reg_ds = None
+    VAA_reg_ds = None
+    RAA_reg_ds = None
+    SCA_reg_ds = None
     thetav_o = np.zeros((V, cam_ny, cam_nx), dtype=np.float32)
     theta0_o = np.zeros_like(thetav_o); faipfai0_o = np.zeros_like(thetav_o)
     thetav_r = np.zeros((V, grd.ny, grd.nx), dtype=np.float32)
@@ -1445,6 +1446,15 @@ def build_versions_single_band(sensor_dict,
     def _unit(v, eps=1e-12):
         n = np.linalg.norm(v)
         return v / max(n, eps)
+
+    def _fit_to_shape(a: np.ndarray, target_shape: Tuple[int, int], fill_value=np.nan):
+        """Crop/pad 2D array to target_shape (top-left aligned)."""
+        ty, tx = target_shape
+        out = np.full((ty, tx), fill_value, dtype=a.dtype if np.issubdtype(a.dtype, np.floating) else np.float32)
+        sy = min(ty, a.shape[0])
+        sx = min(tx, a.shape[1])
+        out[:sy, :sx] = a[:sy, :sx]
+        return out
 
     def _stokes_rotate_QU(Q, U, chi):
         """Rotate (Q,U) by angle chi (radians) using standard Stokes rotation."""
@@ -1790,6 +1800,24 @@ def build_versions_single_band(sensor_dict,
         vaa_gd = utils.downsample_block(vaa_g, dsm.factor, dsm.method)
         raa_gd = utils.downsample_block(raa_g, dsm.factor, dsm.method)
         sca_gd = utils.downsample_block(sca_g, dsm.factor, dsm.method)
+        if I_reg_ds is None:
+            ny_gds, nx_gds = I_gd.shape
+            I_reg_ds = np.full((V, ny_gds, nx_gds), np.nan, dtype=np.float32)
+            Q_reg_ds = np.full_like(I_reg_ds, np.nan); U_reg_ds = np.full_like(I_reg_ds, np.nan)
+            DoLP_reg_ds = np.full_like(I_reg_ds, np.nan)
+            VZA_reg_ds = np.full_like(I_reg_ds, np.nan)
+            VAA_reg_ds = np.full_like(I_reg_ds, np.nan)
+            RAA_reg_ds = np.full_like(I_reg_ds, np.nan)
+            SCA_reg_ds = np.full_like(I_reg_ds, np.nan)
+        if I_gd.shape != (ny_gds, nx_gds):
+            I_gd = _fit_to_shape(I_gd, (ny_gds, nx_gds))
+            Q_gd = _fit_to_shape(Q_gd, (ny_gds, nx_gds))
+            U_gd = _fit_to_shape(U_gd, (ny_gds, nx_gds))
+            DoLP_gd = _fit_to_shape(DoLP_gd, (ny_gds, nx_gds))
+            vza_gd = _fit_to_shape(vza_gd, (ny_gds, nx_gds))
+            vaa_gd = _fit_to_shape(vaa_gd, (ny_gds, nx_gds))
+            raa_gd = _fit_to_shape(raa_gd, (ny_gds, nx_gds))
+            sca_gd = _fit_to_shape(sca_gd, (ny_gds, nx_gds))
         I_reg_ds[iv] = I_gd
         Q_reg_ds[iv] = Q_gd
         U_reg_ds[iv] = U_gd
@@ -1883,6 +1911,17 @@ def build_versions_single_band(sensor_dict,
                             faipfai0=utils.downsample_block(faipfai0_r[iv], dsm.factor),
                             lat=lat_img_gd, lon=lon_img_gd, elevation=elevation_gds,
                             Height_AirMSPI=20000, Land_water_mask=Land_water_mask_gds)
+    if I_reg_ds is None:
+        ny_gds = max(1, grd.ny // dsm.factor)
+        nx_gds = max(1, grd.nx // dsm.factor)
+        I_reg_ds = np.full((V, ny_gds, nx_gds), np.nan, dtype=np.float32)
+        Q_reg_ds = np.full_like(I_reg_ds, np.nan); U_reg_ds = np.full_like(I_reg_ds, np.nan)
+        DoLP_reg_ds = np.full_like(I_reg_ds, np.nan)
+        VZA_reg_ds = np.full_like(I_reg_ds, np.nan)
+        VAA_reg_ds = np.full_like(I_reg_ds, np.nan)
+        RAA_reg_ds = np.full_like(I_reg_ds, np.nan)
+        SCA_reg_ds = np.full_like(I_reg_ds, np.nan)
+
     ds = xr.Dataset(
         data_vars=dict(
             I_original=(["view", "y", "x"], I_orig),
