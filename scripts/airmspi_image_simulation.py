@@ -21,11 +21,15 @@ import sys
 import time
 import yaml
 import argparse
+import json
+import hashlib
+import subprocess
 import numpy as np
 import xarray as xr
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Optional
+from datetime import datetime
 
 # External libs
 import at3d
@@ -777,8 +781,9 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
     if option not in {"option1", "option2"}:
         raise ValueError("option must be 'option1' or 'option2'")
 
+    requested_level = os.path.basename(os.path.dirname(result_path)).lower()
     if output_dir is None:
-        output_dir = os.path.join(os.path.dirname(result_path), "replot")
+        output_dir = os.path.dirname(result_path)
     os.makedirs(output_dir, exist_ok=True)
 
     ext = os.path.splitext(result_path)[1].lower()
@@ -902,9 +907,12 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
             except Exception:
                 return None
 
-        arr, _ = _open_npz_with_iqu(result_path, allow_sensor_fallback=False)
+        arr, used_path = _open_npz_with_iqu(result_path, allow_sensor_fallback=False)
         cloud_box = _try_load_cloud_box(result_path)
-        if arr is None:
+        if arr is None and requested_level == "original":
+            # 对 original 路径优先尝试其自身 metadata 回退，避免误跳转到 registered 层级。
+            arr, used_path = _open_npz_with_iqu(result_path, allow_sensor_fallback=True)
+        if arr is None and requested_level != "original":
             # 支持传入 original 元数据 npz：自动查找同名前缀的有效结果文件
             base = os.path.basename(result_path)
             cur_dir = os.path.dirname(result_path)
@@ -914,7 +922,7 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                 cand = os.path.join(parent, d, base)
                 if not os.path.exists(cand):
                     continue
-                arr, _ = _open_npz_with_iqu(cand, allow_sensor_fallback=False)
+                arr, used_path = _open_npz_with_iqu(cand, allow_sensor_fallback=False)
                 if cloud_box is None:
                     cloud_box = _try_load_cloud_box(cand)
                 if arr is not None:
@@ -930,7 +938,7 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
         if arr is None:
             # 最后兜底：仍允许直接从 metadata-only NPZ(sensor_dict) 读取，
             # 但这通常是相机投影图，不一定等同于 registered/downsampled_registered。
-            arr, _ = _open_npz_with_iqu(result_path, allow_sensor_fallback=True)
+            arr, used_path = _open_npz_with_iqu(result_path, allow_sensor_fallback=True)
 
         if arr is None:
             arr_dbg = np.load(result_path, allow_pickle=True)
@@ -956,10 +964,14 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
             sca = arr["Scattering_Angle"]
             x_plot = arr.get("x")
             y_plot = arr.get("y")
+        actual_level = os.path.basename(os.path.dirname(used_path or result_path)).lower()
+        force_image_plot = (actual_level == "original")
+
         if (
             cloud_box is not None and
             isinstance(x_plot, np.ndarray) and isinstance(y_plot, np.ndarray) and
-            x_plot.shape == I.shape and y_plot.shape == I.shape
+            x_plot.shape == I.shape and y_plot.shape == I.shape and
+            (not force_image_plot)
         ):
             x_range, y_range = cloud_box
             try:
@@ -1005,7 +1017,8 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
     def _plot_field(ax, data, title, cmap, vmin=None, vmax=None):
         use_ground = (
             isinstance(x_plot, np.ndarray) and isinstance(y_plot, np.ndarray) and
-            x_plot.shape == data.shape and y_plot.shape == data.shape
+            x_plot.shape == data.shape and y_plot.shape == data.shape and
+            (not force_image_plot)
         )
         if use_ground:
             xv, yv = centers_to_edges_2d(x_plot, y_plot)
@@ -2016,6 +2029,60 @@ def build_versions_single_band(sensor_dict,
     return ds
 
 
+def _record_experiment_snapshot(cfg_path: str, cfg: Dict[str, Any], out_root: str) -> None:
+    """
+    Save per-run config snapshot and append a lightweight experiment log entry.
+    """
+    try:
+        os.makedirs(out_root, exist_ok=True)
+        ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+
+        cfg_text = ""
+        if cfg_path and os.path.exists(cfg_path):
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg_text = f.read()
+        else:
+            cfg_text = yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True)
+
+        cfg_hash = hashlib.md5(cfg_text.encode("utf-8")).hexdigest()
+        snapshot_path = os.path.join(out_root, f"config_snapshot_{ts}.yaml")
+        with open(snapshot_path, "w", encoding="utf-8") as f:
+            f.write(cfg_text)
+
+        git_commit = "unknown"
+        try:
+            git_commit = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=os.path.dirname(__file__),
+                text=True
+            ).strip()
+        except Exception:
+            pass
+
+        sensor_cfg = cfg.get("sensor", {}) if isinstance(cfg, dict) else {}
+        traj_cfg = sensor_cfg.get("trajectory", {}) if isinstance(sensor_cfg, dict) else {}
+
+        record = {
+            "timestamp_utc": ts,
+            "root_dir": out_root,
+            "cfg_path": cfg_path,
+            "cfg_hash_md5": cfg_hash,
+            "git_commit": git_commit,
+            "trajectory_mode": traj_cfg.get("mode"),
+            "manual_flight_azimuth_deg": traj_cfg.get("manual_flight_azimuth_deg"),
+            "fallback_heading_deg": traj_cfg.get("fallback_heading_deg"),
+            "views_zenith_deg": sensor_cfg.get("views", {}).get("zenith_deg") if isinstance(sensor_cfg.get("views", {}), dict) else None,
+            "views_azimuth_deg": sensor_cfg.get("views", {}).get("azimuth_deg") if isinstance(sensor_cfg.get("views", {}), dict) else None,
+            "snapshot_file": os.path.basename(snapshot_path),
+        }
+
+        log_path = os.path.join(out_root, "experiment_log.jsonl")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"⚠️ Failed to record experiment snapshot: {e}")
+
+
 # =============================
 #%% Section 6: Main (per-wavelength)
 # =============================
@@ -2024,6 +2091,7 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
          n_jobs: Optional[int] = None, overwrite: bool = False, clean_after_band: bool = True):
     (cfg, out_cfg, sen_cfg, bnd_cfg, dsm_cfg, svr_cfg, plt_cfg, grd_cfg, comp_cfg, crop_cfg,
      scene_cfg, cam_cfg, solar_cfg, solver_cfg, aerosol_cfg) = utils.load_config(cfg_path)
+    _record_experiment_snapshot(cfg_path, cfg, out_cfg.root_dir)
     subdirs = utils.ensure_dirs(out_cfg.root_dir, svr_cfg.versions)
     if n_jobs is None:
         n_jobs = comp_cfg.n_jobs or max(1, os.cpu_count() // 2)
