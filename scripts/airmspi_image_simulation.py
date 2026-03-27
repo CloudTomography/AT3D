@@ -996,14 +996,20 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
     else:
         raise ValueError("Unsupported result file. Use .npz or .nc")
 
-    def _plot_field(ax, data, title, cmap):
+    def _symmetric_limits_about_zero(data):
+        max_abs = np.nanmax(np.abs(data))
+        if (not np.isfinite(max_abs)) or max_abs <= 0:
+            max_abs = 1.0
+        return -float(max_abs), float(max_abs)
+
+    def _plot_field(ax, data, title, cmap, vmin=None, vmax=None):
         use_ground = (
             isinstance(x_plot, np.ndarray) and isinstance(y_plot, np.ndarray) and
             x_plot.shape == data.shape and y_plot.shape == data.shape
         )
         if use_ground:
             xv, yv = centers_to_edges_2d(x_plot, y_plot)
-            im = ax.pcolormesh(xv, yv, data, shading="flat", cmap=cmap)
+            im = ax.pcolormesh(xv, yv, data, shading="flat", cmap=cmap, vmin=vmin, vmax=vmax)
             ax.set_aspect('equal', adjustable='box')
             ax.set_xlabel("x_ground [km]")
             ax.set_ylabel("y_ground [km]")
@@ -1012,14 +1018,18 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                 ax.set_xlim(*x_range)
                 ax.set_ylim(*y_range)
         else:
-            im = ax.imshow(data, origin="lower", cmap=cmap)
+            im = ax.imshow(data, origin="lower", cmap=cmap, vmin=vmin, vmax=vmax)
         ax.set_title(title)
         return im
 
     if option == "option1":
         fig1, ax1 = plt.subplots(1, 3, figsize=(15, 4.5))
-        for ax, data, name, cmap in zip(ax1, [I, Q, U], ["I", "Q", "U"], ["viridis", "viridis", "viridis"]):
-            im = _plot_field(ax, data, name, cmap)
+        for ax, data, name, cmap in zip(ax1, [I, Q, U], ["I", "Q", "U"], ["viridis", "RdBu_r", "RdBu_r"]):
+            if name in {"Q", "U"}:
+                vmin, vmax = _symmetric_limits_about_zero(data)
+            else:
+                vmin = vmax = None
+            im = _plot_field(ax, data, name, cmap, vmin=vmin, vmax=vmax)
             plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         plt.tight_layout()
         out1 = os.path.join(output_dir, "IQU_panel.png")
@@ -1046,8 +1056,8 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
     else:
         single_map = {
             "I": (I, "viridis"),
-            "Q": (Q, "viridis"),
-            "U": (U, "viridis"),
+            "Q": (Q, "RdBu_r"),
+            "U": (U, "RdBu_r"),
             "VZA": (vza, "viridis"),
             "VAA": (vaa, "viridis"),
             "RAA": (raa, "RdBu_r"),
@@ -1055,7 +1065,11 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
         }
         for name, (data, cmap) in single_map.items():
             fig, ax = plt.subplots(figsize=(6, 5))
-            im = _plot_field(ax, data, name, cmap)
+            if name in {"Q", "U"}:
+                vmin, vmax = _symmetric_limits_about_zero(data)
+            else:
+                vmin = vmax = None
+            im = _plot_field(ax, data, name, cmap, vmin=vmin, vmax=vmax)
             plt.colorbar(im, ax=ax)
             plt.tight_layout()
             outp = os.path.join(output_dir, f"{name}.png")
@@ -1707,13 +1721,21 @@ def build_versions_single_band(sensor_dict,
      
                         
                 if is_polarized:
+                    q_lim = np.nanmax(np.abs(Q_brf))
+                    u_lim = np.nanmax(np.abs(U_brf))
+                    if (not np.isfinite(q_lim)) or q_lim <= 0:
+                        q_lim = 1.0
+                    if (not np.isfinite(u_lim)) or u_lim <= 0:
+                        u_lim = 1.0
                     plot_image(Q_brf, np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} Q {int(wavelength_nm)} nm",
-                               cmap=plot_cfg.colormap, 
+                               cmap="RdBu_r",
+                               vmin=-q_lim, vmax=q_lim,
                                save_path=cam_png_Q, show=False)
                     plot_image(U_brf, np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} U {int(wavelength_nm)} nm",
-                               cmap=plot_cfg.colormap, 
+                               cmap="RdBu_r",
+                               vmin=-u_lim, vmax=u_lim,
                                save_path=cam_png_U, show=False)
                 
                 
@@ -1780,13 +1802,19 @@ def build_versions_single_band(sensor_dict,
                 if is_polarized:
                     Q_g_c, _, _ = crop_by_world_box(Q_brf_g, xg_g, yg_g, crop_cfg.x_range, crop_cfg.y_range)
                     U_g_c, _, _ = crop_by_world_box(U_brf_g, xg_g, yg_g, crop_cfg.x_range, crop_cfg.y_range)
+                    qg_lim = np.nanmax(np.abs(Q_g_c))
+                    ug_lim = np.nanmax(np.abs(U_g_c))
+                    if (not np.isfinite(qg_lim)) or qg_lim <= 0:
+                        qg_lim = 1.0
+                    if (not np.isfinite(ug_lim)) or ug_lim <= 0:
+                        ug_lim = 1.0
                     plot_on_ground(Q_g_c, Xg_c, Yg_c,
                                    title=f"{name} Q {int(wavelength_nm)} nm",
-                                   cmap=plot_cfg.colormap,
+                                   cmap="RdBu_r", vmin=-qg_lim, vmax=qg_lim,
                                    save_path=terr_Q_png, show=False)
                     plot_on_ground(U_g_c, Xg_c, Yg_c,
                                    title=f"{name} U {int(wavelength_nm)} nm",
-                                   cmap=plot_cfg.colormap,
+                                   cmap="RdBu_r", vmin=-ug_lim, vmax=ug_lim,
                                    save_path=terr_U_png, show=False)
 
                 angle_products_reg = {
