@@ -3,7 +3,7 @@
 # =============================
 
 output:
-  root_dir: "output/airmspi_sim_5_2"
+  root_dir: "output/airmspi_sim_5_5"
   save_png: true
   save_nc: true
   plot_mode: "overwrite"   # "skip" | "if_missing" | "overwrite"
@@ -16,13 +16,13 @@ sensor:
   resolution_km: 0.025
   views:
     names: ["nadir"]
-    zenith_deg: [0]
-    azimuth_deg: [0]
+    zenith_deg: [0]      # 先调这个：控制VZA整体大小（越大，边缘VZA越大）
+    azimuth_deg: [0]     # 先调这个：控制视线主方向（会影响VAA/RAA的整体朝向）
 
   trajectory:
     mode: "manual_azimuth"                 # "auto"(多视角推断) | "manual_azimuth"(人工指定)
     fallback_heading_deg: 0.0     # 单视角或几何退化时的默认飞行方向角(度)
-    manual_flight_azimuth_deg: 120  # 当 mode="manual_azimuth" 时填写，例如 145.0 null 
+    manual_flight_azimuth_deg: 300  # 关键参数：让VAA与目标区域边界平行时，通常先调这个角度
 
 # camera pixel grid for perspective_projection
 camera:
@@ -32,12 +32,12 @@ camera:
 # scene source and camera look-at point (km)
 scene:
   input_path: "../data/synthetic_cloud_fields/jpl_les/firex_case21_test143_multiview-single-layer_coarse_remove_singlepixeledge.txt"
-  lookat_center_km: [6.0, 1.0, 0.0]
+  lookat_center_km: [6.0, -1.0, 0.0]  # 关键参数：平移VZA“最低点”在图上的位置（不必在区域几何中心）
 
 # solar geometry in geophysical convention
 solar:
-  sza_deg: 35.0
-  saa_deg: 325.0
+  sza_deg: 35.0    # 主要影响散射角绝对值范围（与VZA共同决定）
+  saa_deg: 325.0   # 主要影响RAA和散射角的方向梯度
 
 # radiative transfer solver parameters
 solver:

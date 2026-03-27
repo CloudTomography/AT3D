@@ -58,3 +58,6 @@ venv/
 # f2py generated
 src/core.pyf
 src/coremodule.c
+
+# Data
+*.hdf
