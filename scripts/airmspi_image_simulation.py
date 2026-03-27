@@ -769,6 +769,7 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
     os.makedirs(output_dir, exist_ok=True)
 
     ext = os.path.splitext(result_path)[1].lower()
+    cloud_box = None  # (x_range, y_range) from input txt/cloud grid if available
     if ext == ".npz":
         if rebuild_if_missing and (overwrite_npz or (not os.path.exists(result_path))):
             _build_level_npz_from_original(result_path, overwrite=overwrite_npz)
@@ -866,7 +867,29 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
             npz.close()
             return None, None
 
+        def _try_load_cloud_box(npz_path):
+            """Load cloud_x/y ranges (input txt box) from context if present."""
+            try:
+                npz = np.load(npz_path, allow_pickle=True)
+                files = set(npz.files)
+                if "context" not in files:
+                    npz.close()
+                    return None
+                ctx = npz["context"].item()
+                npz.close()
+                if not isinstance(ctx, dict):
+                    return None
+                xr = ctx.get("cloud_x_range")
+                yr = ctx.get("cloud_y_range")
+                if xr is None or yr is None or len(xr) != 2 or len(yr) != 2:
+                    return None
+                return (tuple(sorted((float(xr[0]), float(xr[1])))),
+                        tuple(sorted((float(yr[0]), float(yr[1])))))
+            except Exception:
+                return None
+
         arr, _ = _open_npz_with_iqu(result_path, allow_sensor_fallback=False)
+        cloud_box = _try_load_cloud_box(result_path)
         if arr is None:
             # 支持传入 original 元数据 npz：自动查找同名前缀的有效结果文件
             base = os.path.basename(result_path)
@@ -878,8 +901,18 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                 if not os.path.exists(cand):
                     continue
                 arr, _ = _open_npz_with_iqu(cand, allow_sensor_fallback=False)
+                if cloud_box is None:
+                    cloud_box = _try_load_cloud_box(cand)
                 if arr is not None:
                     break
+        if cloud_box is None:
+            # 从 sibling original 获取 context（多数派生层级不含 context）
+            base = os.path.basename(result_path)
+            cur_dir = os.path.dirname(result_path)
+            parent = os.path.dirname(cur_dir)
+            original_cand = os.path.join(parent, "original", base)
+            if os.path.exists(original_cand):
+                cloud_box = _try_load_cloud_box(original_cand)
         if arr is None:
             # 最后兜底：仍允许直接从 metadata-only NPZ(sensor_dict) 读取，
             # 但这通常是相机投影图，不一定等同于 registered/downsampled_registered。
@@ -909,6 +942,24 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
             sca = arr["Scattering_Angle"]
             x_plot = arr.get("x")
             y_plot = arr.get("y")
+        if (
+            cloud_box is not None and
+            isinstance(x_plot, np.ndarray) and isinstance(y_plot, np.ndarray) and
+            x_plot.shape == I.shape and y_plot.shape == I.shape
+        ):
+            x_range, y_range = cloud_box
+            try:
+                x_base = x_plot
+                y_base = y_plot
+                I, x_plot, y_plot = crop_by_world_box(I, x_base, y_base, x_range, y_range)
+                Q, _, _ = crop_by_world_box(Q, x_base, y_base, x_range, y_range)
+                U, _, _ = crop_by_world_box(U, x_base, y_base, x_range, y_range)
+                vza, _, _ = crop_by_world_box(vza, x_base, y_base, x_range, y_range)
+                vaa, _, _ = crop_by_world_box(vaa, x_base, y_base, x_range, y_range)
+                raa, _, _ = crop_by_world_box(raa, x_base, y_base, x_range, y_range)
+                sca, _, _ = crop_by_world_box(sca, x_base, y_base, x_range, y_range)
+            except Exception:
+                pass
     elif ext == ".nc":
         ds = xr.open_dataset(result_path)
         view_idx = 0
