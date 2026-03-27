@@ -1386,13 +1386,13 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    up_vectors=up_vectors,
                    theta_0=theta_0,
                    solar_azimuth=solar_azimuth,
-                   trajectory_mode=sen_cfg.trajectory_mode,
-                   manual_flight_azimuth_deg=sen_cfg.manual_flight_azimuth_deg,
-                   fallback_heading_deg=sen_cfg.fallback_heading_deg,
+                   trajectory_mode=sen.trajectory_mode,
+                   manual_flight_azimuth_deg=sen.manual_flight_azimuth_deg,
+                   fallback_heading_deg=sen.fallback_heading_deg,
                    flight_azimuth_offset_deg=(
-                       float(sen_cfg.manual_flight_azimuth_deg) - float(sen_cfg.fallback_heading_deg)
-                       if str(getattr(sen_cfg, "trajectory_mode", "")).lower() == "manual_azimuth"
-                       and getattr(sen_cfg, "manual_flight_azimuth_deg", None) is not None
+                       float(sen.manual_flight_azimuth_deg) - float(sen.fallback_heading_deg)
+                       if str(getattr(sen, "trajectory_mode", "")).lower() == "manual_azimuth"
+                       and getattr(sen, "manual_flight_azimuth_deg", None) is not None
                        else 0.0
                    ),
                    lat=lat_2d,
