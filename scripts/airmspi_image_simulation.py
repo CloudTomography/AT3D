@@ -845,20 +845,21 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                 return {"I": npz["I"], "Q": npz["Q"], "U": npz["U"], "VZA": vza, "VAA": vaa, "RAA": raa, "Scattering_Angle": sca}
             return None
 
-        def _open_npz_with_iqu(npz_path):
+        def _open_npz_with_iqu(npz_path, allow_sensor_fallback=False):
             npz = np.load(npz_path, allow_pickle=True)
             payload = _extract_plot_fields(npz)
             if payload is not None:
                 npz.close()
                 return payload, npz_path
-            fallback = _try_load_from_sensor_dict(npz, view_hint=_infer_view_hint_from_filename(npz_path))
-            if fallback is not None:
-                npz.close()
-                return fallback, npz_path
+            if allow_sensor_fallback:
+                fallback = _try_load_from_sensor_dict(npz, view_hint=_infer_view_hint_from_filename(npz_path))
+                if fallback is not None:
+                    npz.close()
+                    return fallback, npz_path
             npz.close()
             return None, None
 
-        arr, _ = _open_npz_with_iqu(result_path)
+        arr, _ = _open_npz_with_iqu(result_path, allow_sensor_fallback=False)
         if arr is None:
             # 支持传入 original 元数据 npz：自动查找同名前缀的有效结果文件
             base = os.path.basename(result_path)
@@ -869,9 +870,13 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                 cand = os.path.join(parent, d, base)
                 if not os.path.exists(cand):
                     continue
-                arr, _ = _open_npz_with_iqu(cand)
+                arr, _ = _open_npz_with_iqu(cand, allow_sensor_fallback=False)
                 if arr is not None:
                     break
+        if arr is None:
+            # 最后兜底：仍允许直接从 metadata-only NPZ(sensor_dict) 读取，
+            # 但这通常是相机投影图，不一定等同于 registered/downsampled_registered。
+            arr, _ = _open_npz_with_iqu(result_path, allow_sensor_fallback=True)
 
         if arr is None:
             arr_dbg = np.load(result_path, allow_pickle=True)
