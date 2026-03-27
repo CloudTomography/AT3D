@@ -25,7 +25,7 @@ import numpy as np
 import xarray as xr
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 
 # External libs
 import at3d
@@ -513,7 +513,7 @@ def plot_on_ground(data, xg, yg, title='', cmap='viridis', vmin=None, vmax=None,
     else:
         plt.close(fig)
         
-def plot_image(data, xg, yg, 
+def plot_image(data, xg, yg,
                cmap='viridis', vmin=None, vmax=None, 
                title='', xlabel = '',ylable = '',
                save_path=None, show=False):
@@ -535,7 +535,161 @@ def plot_image(data, xg, yg,
         plt.close(fig)
 
 
-def plot_simulation_results(result_path, output_dir=None, option="option1", show=False):
+PLOT_REQUIRED_KEYS = ("I", "Q", "U", "VZA", "VAA", "RAA", "Scattering_Angle")
+
+
+def _build_level_npz_from_original(target_npz_path: str, overwrite: bool = False) -> Optional[str]:
+    """
+    若目标层级 NPZ 缺失（或指定覆盖），则自动从 sibling original/*.npz 重建。
+    支持层级: registered / downsampled / downsampled_registered。
+    """
+    if os.path.exists(target_npz_path) and not overwrite:
+        return target_npz_path
+
+    target_level = os.path.basename(os.path.dirname(target_npz_path))
+    if target_level not in {"registered", "downsampled", "downsampled_registered"}:
+        return None
+
+    out_root = os.path.dirname(os.path.dirname(target_npz_path))
+    base = os.path.basename(target_npz_path)
+    original_npz = os.path.join(out_root, "original", base)
+    if not os.path.exists(original_npz):
+        return None
+
+    arr = np.load(original_npz, allow_pickle=True)
+    try:
+        files = set(arr.files)
+        required = {"I", "Q", "U", "VZA", "VAA", "RAA", "Scattering_Angle", "x", "y"}
+        if not required.issubset(files):
+            return None
+
+        I = arr["I"]; Q = arr["Q"]; U = arr["U"]
+        VZA = arr["VZA"]; VAA = arr["VAA"]; RAA = arr["RAA"]; SCA = arr["Scattering_Angle"]
+        xg = arr["x"]; yg = arr["y"]
+        theta0 = arr["theta0"] if "theta0" in files else np.full_like(I, np.nan, dtype=np.float32)
+        thetav = arr["thetav"] if "thetav" in files else VZA
+        faipfai0 = arr["faipfai0"] if "faipfai0" in files else RAA
+        lat = arr["lat"] if "lat" in files else np.full_like(I, np.nan, dtype=np.float32)
+        lon = arr["lon"] if "lon" in files else np.full_like(I, np.nan, dtype=np.float32)
+        elevation = arr["elevation"] if "elevation" in files else np.zeros_like(I, dtype=np.float32)
+        land_water_mask = arr["Land_water_mask"] if "Land_water_mask" in files else np.ones_like(I, dtype=np.float32)
+        h_airmspi = arr["Height_AirMSPI"] if "Height_AirMSPI" in files else 20000
+
+        factor = 2
+        method = "mean"
+        if "dsm" in files:
+            try:
+                dsm_cfg = arr["dsm"].item()
+                factor = int(getattr(dsm_cfg, "factor", factor))
+                method = str(getattr(dsm_cfg, "method", method))
+            except Exception:
+                pass
+
+        x_range = (float(np.nanmin(xg)), float(np.nanmax(xg)))
+        y_range = (float(np.nanmin(yg)), float(np.nanmax(yg)))
+        if "context" in files:
+            try:
+                ctx = arr["context"].item()
+                if isinstance(ctx, dict):
+                    xr = ctx.get("cloud_x_range")
+                    yr = ctx.get("cloud_y_range")
+                    if xr is not None and len(xr) == 2:
+                        x_range = (max(float(min(xr)), x_range[0]), min(float(max(xr)), x_range[1]))
+                    if yr is not None and len(yr) == 2:
+                        y_range = (max(float(min(yr)), y_range[0]), min(float(max(yr)), y_range[1]))
+            except Exception:
+                pass
+
+        def _crop_all():
+            out = {}
+            out["I"], out["x"], out["y"] = crop_by_world_box(I, xg, yg, x_range, y_range)
+            out["Q"], _, _ = crop_by_world_box(Q, xg, yg, x_range, y_range)
+            out["U"], _, _ = crop_by_world_box(U, xg, yg, x_range, y_range)
+            out["VZA"], _, _ = crop_by_world_box(VZA, xg, yg, x_range, y_range)
+            out["VAA"], _, _ = crop_by_world_box(VAA, xg, yg, x_range, y_range)
+            out["RAA"], _, _ = crop_by_world_box(RAA, xg, yg, x_range, y_range)
+            out["Scattering_Angle"], _, _ = crop_by_world_box(SCA, xg, yg, x_range, y_range)
+            out["theta0"], _, _ = crop_by_world_box(theta0, xg, yg, x_range, y_range)
+            out["thetav"], _, _ = crop_by_world_box(thetav, xg, yg, x_range, y_range)
+            out["faipfai0"], _, _ = crop_by_world_box(faipfai0, xg, yg, x_range, y_range)
+            out["lat"], _, _ = crop_by_world_box(lat, xg, yg, x_range, y_range)
+            out["lon"], _, _ = crop_by_world_box(lon, xg, yg, x_range, y_range)
+            out["elevation"], _, _ = crop_by_world_box(elevation, xg, yg, x_range, y_range)
+            out["Land_water_mask"], _, _ = crop_by_world_box(land_water_mask, xg, yg, x_range, y_range)
+            out["DoLP"] = np.sqrt(out["Q"] ** 2 + out["U"] ** 2) / np.maximum(out["I"], 1e-12)
+            return out
+
+        def _downsample_all(d):
+            out = {}
+            for k, v in d.items():
+                if k == "Height_AirMSPI":
+                    out[k] = v
+                else:
+                    out[k] = utils.downsample_block(v, factor, method)
+            out["DoLP"] = np.sqrt(out["Q"] ** 2 + out["U"] ** 2) / np.maximum(out["I"], 1e-12)
+            return out
+
+        base_payload = dict(
+            I=I, Q=Q, U=U,
+            VZA=VZA, VAA=VAA, RAA=RAA, Scattering_Angle=SCA,
+            x=xg, y=yg,
+            theta0=theta0, thetav=thetav, faipfai0=faipfai0,
+            lat=lat, lon=lon, elevation=elevation, Land_water_mask=land_water_mask,
+            Height_AirMSPI=h_airmspi,
+            DoLP=np.sqrt(Q ** 2 + U ** 2) / np.maximum(I, 1e-12),
+        )
+
+        if target_level == "registered":
+            payload = _crop_all()
+            payload["Height_AirMSPI"] = h_airmspi
+        elif target_level == "downsampled":
+            payload = _downsample_all(base_payload)
+            payload["Height_AirMSPI"] = h_airmspi
+        else:
+            payload = _downsample_all(_crop_all())
+            payload["Height_AirMSPI"] = h_airmspi
+
+        os.makedirs(os.path.dirname(target_npz_path), exist_ok=True)
+        np.savez_compressed(target_npz_path, **payload)
+        return target_npz_path
+    finally:
+        arr.close()
+
+
+def _infer_view_hint_from_filename(path: str) -> Optional[str]:
+    stem = os.path.splitext(os.path.basename(path))[0]
+    parts = stem.split("_", 1)
+    if len(parts) == 2 and parts[1].strip():
+        return parts[1].strip()
+    return None
+
+
+def inspect_simulation_npz(npz_path: str) -> Dict[str, Any]:
+    arr = np.load(npz_path, allow_pickle=True)
+    try:
+        keys = set(arr.files)
+        required = set(PLOT_REQUIRED_KEYS)
+        info = {
+            "path": npz_path,
+            "keys": sorted(keys),
+            "is_plot_ready": required.issubset(keys),
+            "missing_plot_keys": sorted(required - keys),
+            "has_sensor_dict": "sensor_dict" in keys,
+            "replot_source": "direct_fields" if required.issubset(keys) else ("sensor_dict" if "sensor_dict" in keys else "insufficient"),
+        }
+        if "sensor_dict" in keys:
+            try:
+                sdict = arr["sensor_dict"].item()
+                info["sensor_views"] = [str(k) for k in sdict.keys()]
+            except Exception:
+                info["sensor_views"] = []
+        return info
+    finally:
+        arr.close()
+
+
+def plot_simulation_results(result_path, output_dir=None, option="option1", show=False,
+                            rebuild_if_missing=True, overwrite_npz=False):
     """
     读取 simulation 结果（.npz 或 .nc）并重绘图像。
 
@@ -553,8 +707,11 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
 
     ext = os.path.splitext(result_path)[1].lower()
     if ext == ".npz":
-        def _try_load_from_sensor_dict(npz):
-            """Fallback: recover first-view I/Q/U + geometry from metadata npz(sensor_dict)."""
+        if rebuild_if_missing and (overwrite_npz or (not os.path.exists(result_path))):
+            _build_level_npz_from_original(result_path, overwrite=overwrite_npz)
+
+        def _try_load_from_sensor_dict(npz, view_hint=None):
+            """Fallback: recover selected-view I/Q/U + geometry from metadata npz(sensor_dict)."""
             if "sensor_dict" not in npz.files:
                 return None
             try:
@@ -562,13 +719,22 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                 sen_cfg = npz["sen"].item() if "sen" in npz.files else None
                 context_cfg = npz["context"].item() if "context" in npz.files else {}
 
-                first_key = list(sensor_dict_obj.keys())[0]
-                sim = sensor_dict_obj.get_images(first_key)[0]
+                sensor_keys = list(sensor_dict_obj.keys())
+                if len(sensor_keys) == 0:
+                    return None
+                selected_key = sensor_keys[0]
+                if view_hint:
+                    for k in sensor_keys:
+                        if str(k).lower() == str(view_hint).lower():
+                            selected_key = k
+                            break
+
+                sim = sensor_dict_obj.get_images(selected_key)[0]
                 I0 = np.fliplr(sim.I.T)
                 Q0 = np.fliplr(sim.Q.T) if hasattr(sim, "Q") else np.zeros_like(I0)
                 U0 = np.fliplr(sim.U.T) if hasattr(sim, "U") else np.zeros_like(I0)
 
-                sensor_ds = sensor_dict_obj[first_key]["sensor_list"][0]
+                sensor_ds = sensor_dict_obj[selected_key]["sensor_list"][0]
                 v_out_map = np.fliplr(compute_vout_map_from_sensor(sensor_ds))
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
@@ -586,16 +752,43 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                 if sen_cfg is not None and hasattr(sen_cfg, "views_names") and len(sen_cfg.views_names) > 0:
                     view_name = str(sen_cfg.views_names[0])
                 else:
-                    view_name = str(first_key)
+                    view_name = str(selected_key)
                 return I0, Q0, U0, vza0, vaa0, raa0, sca0, view_name
             except Exception:
                 return None
 
+        def _extract_plot_fields(npz):
+            files = set(npz.files)
+            if set(PLOT_REQUIRED_KEYS).issubset(files):
+                return {
+                    "I": npz["I"], "Q": npz["Q"], "U": npz["U"],
+                    "VZA": npz["VZA"], "VAA": npz["VAA"], "RAA": npz["RAA"],
+                    "Scattering_Angle": npz["Scattering_Angle"],
+                }
+            if {"I", "Q", "U"}.issubset(files):
+                vza = npz["VZA"] if "VZA" in files else npz["thetav"]
+                vaa = npz["VAA"] if "VAA" in files else np.full_like(vza, np.nan, dtype=np.float32)
+                raa = npz["RAA"] if "RAA" in files else npz["faipfai0"]
+                if "Scattering_Angle" in files:
+                    sca = npz["Scattering_Angle"]
+                elif "sca_angle" in files:
+                    sca = npz["sca_angle"]
+                else:
+                    theta0 = npz["theta0"]
+                    mu0 = np.cos(np.radians(theta0))
+                    mu = np.cos(np.radians(vza))
+                    cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa))
+                    sca = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
+                return {"I": npz["I"], "Q": npz["Q"], "U": npz["U"], "VZA": vza, "VAA": vaa, "RAA": raa, "Scattering_Angle": sca}
+            return None
+
         def _open_npz_with_iqu(npz_path):
             npz = np.load(npz_path, allow_pickle=True)
-            if {"I", "Q", "U"}.issubset(set(npz.files)):
-                return npz, npz_path
-            fallback = _try_load_from_sensor_dict(npz)
+            payload = _extract_plot_fields(npz)
+            if payload is not None:
+                npz.close()
+                return payload, npz_path
+            fallback = _try_load_from_sensor_dict(npz, view_hint=_infer_view_hint_from_filename(npz_path))
             if fallback is not None:
                 npz.close()
                 return fallback, npz_path
@@ -633,19 +826,10 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
             I = arr["I"]
             Q = arr["Q"]
             U = arr["U"]
-            vza = arr["VZA"] if "VZA" in arr else arr["thetav"]
-            vaa = arr["VAA"] if "VAA" in arr else None
-            raa = arr["RAA"] if "RAA" in arr else arr["faipfai0"]
-            sca = arr["Scattering_Angle"] if "Scattering_Angle" in arr else (arr["sca_angle"] if "sca_angle" in arr else None)
-            if sca is None:
-                theta0 = arr["theta0"]
-                mu0 = np.cos(np.radians(theta0))
-                mu = np.cos(np.radians(vza))
-                cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa))
-                sca = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
-            if vaa is None:
-                vaa = np.full_like(vza, np.nan, dtype=np.float32)
-            arr.close()
+            vza = arr["VZA"]
+            vaa = arr["VAA"]
+            raa = arr["RAA"]
+            sca = arr["Scattering_Angle"]
     elif ext == ".nc":
         ds = xr.open_dataset(result_path)
         view_idx = 0
@@ -1666,6 +1850,7 @@ __all__ = [
     "centers_to_edges_2d",
     "crop_by_world_box",
     "plot_on_ground",
+    "inspect_simulation_npz",
     "plot_simulation_results",
 ]
 
