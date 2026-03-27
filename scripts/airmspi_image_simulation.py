@@ -553,22 +553,99 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
 
     ext = os.path.splitext(result_path)[1].lower()
     if ext == ".npz":
-        arr = np.load(result_path)
-        I = arr["I"]
-        Q = arr["Q"]
-        U = arr["U"]
-        vza = arr["VZA"] if "VZA" in arr else arr["thetav"]
-        vaa = arr["VAA"] if "VAA" in arr else None
-        raa = arr["RAA"] if "RAA" in arr else arr["faipfai0"]
-        sca = arr["Scattering_Angle"] if "Scattering_Angle" in arr else (arr["sca_angle"] if "sca_angle" in arr else None)
-        if sca is None:
-            theta0 = arr["theta0"]
-            mu0 = np.cos(np.radians(theta0))
-            mu = np.cos(np.radians(vza))
-            cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa))
-            sca = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
-        if vaa is None:
-            vaa = np.full_like(vza, np.nan, dtype=np.float32)
+        def _try_load_from_sensor_dict(npz):
+            """Fallback: recover first-view I/Q/U + geometry from metadata npz(sensor_dict)."""
+            if "sensor_dict" not in npz.files:
+                return None
+            try:
+                sensor_dict_obj = npz["sensor_dict"].item()
+                sen_cfg = npz["sen"].item() if "sen" in npz.files else None
+                context_cfg = npz["context"].item() if "context" in npz.files else {}
+
+                first_key = list(sensor_dict_obj.keys())[0]
+                sim = sensor_dict_obj.get_images(first_key)[0]
+                I0 = np.fliplr(sim.I.T)
+                Q0 = np.fliplr(sim.Q.T) if hasattr(sim, "Q") else np.zeros_like(I0)
+                U0 = np.fliplr(sim.U.T) if hasattr(sim, "U") else np.zeros_like(I0)
+
+                sensor_ds = sensor_dict_obj[first_key]["sensor_list"][0]
+                v_out_map = np.fliplr(compute_vout_map_from_sensor(sensor_ds))
+                vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
+                vza0 = np.degrees(np.arccos(vz))
+                vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
+
+                saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0
+                sza = context_cfg.get("theta_0", np.nan)
+                raa0 = ((vaa0 - saa + 180.0) % 360.0) - 180.0
+
+                mu0 = np.cos(np.radians(sza))
+                mu = np.cos(np.radians(vza0))
+                cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa0))
+                sca0 = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
+
+                if sen_cfg is not None and hasattr(sen_cfg, "views_names") and len(sen_cfg.views_names) > 0:
+                    view_name = str(sen_cfg.views_names[0])
+                else:
+                    view_name = str(first_key)
+                return I0, Q0, U0, vza0, vaa0, raa0, sca0, view_name
+            except Exception:
+                return None
+
+        def _open_npz_with_iqu(npz_path):
+            npz = np.load(npz_path, allow_pickle=True)
+            if {"I", "Q", "U"}.issubset(set(npz.files)):
+                return npz, npz_path
+            fallback = _try_load_from_sensor_dict(npz)
+            if fallback is not None:
+                npz.close()
+                return fallback, npz_path
+            npz.close()
+            return None, None
+
+        arr, _ = _open_npz_with_iqu(result_path)
+        if arr is None:
+            # 支持传入 original 元数据 npz：自动查找同名前缀的有效结果文件
+            base = os.path.basename(result_path)
+            cur_dir = os.path.dirname(result_path)
+            parent = os.path.dirname(cur_dir)
+            search_dirs = ["downsampled_registered", "registered", "downsampled", "original"]
+            for d in search_dirs:
+                cand = os.path.join(parent, d, base)
+                if not os.path.exists(cand):
+                    continue
+                arr, _ = _open_npz_with_iqu(cand)
+                if arr is not None:
+                    break
+
+        if arr is None:
+            arr_dbg = np.load(result_path, allow_pickle=True)
+            keys = list(arr_dbg.files)
+            arr_dbg.close()
+            raise ValueError(
+                "NPZ does not contain I/Q/U arrays. "
+                f"Current keys: {keys}. "
+                "Please pass a data NPZ (e.g., downsampled_registered/*.npz)."
+            )
+
+        if isinstance(arr, tuple):
+            I, Q, U, vza, vaa, raa, sca, _ = arr
+        else:
+            I = arr["I"]
+            Q = arr["Q"]
+            U = arr["U"]
+            vza = arr["VZA"] if "VZA" in arr else arr["thetav"]
+            vaa = arr["VAA"] if "VAA" in arr else None
+            raa = arr["RAA"] if "RAA" in arr else arr["faipfai0"]
+            sca = arr["Scattering_Angle"] if "Scattering_Angle" in arr else (arr["sca_angle"] if "sca_angle" in arr else None)
+            if sca is None:
+                theta0 = arr["theta0"]
+                mu0 = np.cos(np.radians(theta0))
+                mu = np.cos(np.radians(vza))
+                cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa))
+                sca = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
+            if vaa is None:
+                vaa = np.full_like(vza, np.nan, dtype=np.float32)
+            arr.close()
     elif ext == ".nc":
         ds = xr.open_dataset(result_path)
         view_idx = 0
@@ -1261,7 +1338,7 @@ def build_versions_single_band(sensor_dict,
                 plot_image(I_brf, np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2), 
                            title=f"{name} I {int(wavelength_nm)} nm",
                            cmap=plot_cfg.colormap, 
-                           save_path=cam_png_I, show=True)
+                           save_path=cam_png_I, show=False)
      
                         
                 if is_polarized:
@@ -1291,6 +1368,10 @@ def build_versions_single_band(sensor_dict,
         I_brf_d   = utils.downsample_block(I_brf, dsm.factor, dsm.method)
         Q_brf_d   = utils.downsample_block(Q_brf, dsm.factor, dsm.method)
         U_brf_d   = utils.downsample_block(U_brf, dsm.factor, dsm.method)
+        vza_d     = utils.downsample_block(vza_map, dsm.factor, dsm.method)
+        vaa_d     = utils.downsample_block(vaa_map, dsm.factor, dsm.method)
+        raa_d     = utils.downsample_block(raa_map, dsm.factor, dsm.method)
+        sca_d     = utils.downsample_block(sca_angle, dsm.factor, dsm.method)
         DoLP_brf_d = np.sqrt(Q_brf_d**2 + U_brf_d**2) / np.maximum(I_brf_d, 1e-12)
         I_ds[iv] = I_brf_d; Q_ds[iv] = Q_brf_d; U_ds[iv] = U_brf_d; DoLP_ds[iv] = DoLP_brf_d
         
@@ -1378,6 +1459,10 @@ def build_versions_single_band(sensor_dict,
         vaa_gd = utils.downsample_block(vaa_g, dsm.factor, dsm.method)
         raa_gd = utils.downsample_block(raa_g, dsm.factor, dsm.method)
         sca_gd = utils.downsample_block(sca_g, dsm.factor, dsm.method)
+        I_reg_ds[iv] = I_gd
+        Q_reg_ds[iv] = Q_gd
+        U_reg_ds[iv] = U_gd
+        DoLP_reg_ds[iv] = DoLP_gd
         VZA_reg_ds[iv] = vza_gd
         VAA_reg_ds[iv] = vaa_gd
         RAA_reg_ds[iv] = raa_gd
@@ -1425,29 +1510,39 @@ def build_versions_single_band(sensor_dict,
         # lat_grd_ds = np.linspace(lat0, lat0 + dlat, ny_gds).reshape(-1, 1) * np.ones((1, nx_gds))
         # lon_grd_ds = np.ones((ny_gds, 1)) * np.linspace(lon0, lon0 + dlon, nx_gds)
         
-        np.savez_compressed(os.path.join(out_subdirs["original"], f"{prefix}.npz"),
-                            sensor_dict=sensor_dict, wavelength_nm=wavelength_nm, is_polarized=is_polarized, sen=sen,
-                            grd=grd, dsm=dsm, plot_cfg=plot_cfg,
-                            out_cfg=out_cfg, out_subdirs=out_subdirs, crop_cfg=crop_cfg,
-                            context=context)
-                  
-        # np.savez_compressed(os.path.join(out_subdirs["original"], f"{prefix}.npz"),
-        #                     I=I, Q=Q, U=U, DoLP=DoLP,
-        #                     theta0=theta0_o[iv], thetav=thetav_o[iv], faipfai0=faipfai0_o[iv],
-        #                     lat=lat_cam, lon=lon_cam, elevation=elevation_o,
-        #                     Height_AirMSPI=20000, Land_water_mask=Land_water_mask_o)
-        # np.savez_compressed(os.path.join(out_subdirs["registered"], f"{prefix}.npz"),
-        #                     I=I_g, Q=Q_g, U=U_g, DoLP=DoLP_g,
-        #                     theta0=theta0_r[iv], thetav=thetav_r[iv], faipfai0=faipfai0_r[iv],
-        #                     lat=lat_grd, lon=lon_grd, elevation=elevation_r,
-        #                     Height_AirMSPI=20000, Land_water_mask=Land_water_mask_r)
-        # np.savez_compressed(os.path.join(out_subdirs["downsampled"], f"{prefix}.npz"),
-        #                     I=I_d, Q=Q_d, U=U_d, DoLP=DoLP_d,
-        #                     theta0=downsample_block(theta0_o[iv], dsm.factor),
-        #                     thetav=downsample_block(thetav_o[iv], dsm.factor),
-        #                     faipfai0=downsample_block(faipfai0_o[iv], dsm.factor),
-        #                     lat=lat_cam_ds, lon=lon_cam_ds, elevation=elevation_ds,
-        #                     Height_AirMSPI=20000, Land_water_mask=Land_water_mask_ds)
+        np.savez_compressed(
+            os.path.join(out_subdirs["original"], f"{prefix}.npz"),
+            I=I_brf, Q=Q_brf, U=U_brf, DoLP=DoLP,
+            VZA=vza_map, VAA=vaa_map, RAA=raa_map, Scattering_Angle=sca_angle,
+            x=xg, y=yg,
+            theta0=theta0_o[iv], thetav=thetav_o[iv], faipfai0=faipfai0_o[iv],
+            lat=lat_img, lon=lon_img, elevation=elevation_o,
+            Height_AirMSPI=20000, Land_water_mask=Land_water_mask_o,
+            sensor_dict=sensor_dict, wavelength_nm=wavelength_nm, is_polarized=is_polarized, sen=sen,
+            grd=grd, dsm=dsm, plot_cfg=plot_cfg, out_cfg=out_cfg, out_subdirs=out_subdirs,
+            crop_cfg=crop_cfg, context=context
+        )
+        np.savez_compressed(
+            os.path.join(out_subdirs["registered"], f"{prefix}.npz"),
+            I=I_brf_g, Q=Q_brf_g, U=U_brf_g, DoLP=DoLP_brf_g,
+            VZA=vza_g, VAA=vaa_g, RAA=raa_g, Scattering_Angle=sca_g,
+            x=xg_g, y=yg_g,
+            theta0=theta0_r[iv][:I_brf_g.shape[0], :I_brf_g.shape[1]],
+            thetav=thetav_r[iv][:I_brf_g.shape[0], :I_brf_g.shape[1]],
+            faipfai0=faipfai0_r[iv][:I_brf_g.shape[0], :I_brf_g.shape[1]],
+            lat=lat_img_g, lon=lon_img_g, elevation=elevation_r[:I_brf_g.shape[0], :I_brf_g.shape[1]],
+            Height_AirMSPI=20000, Land_water_mask=Land_water_mask_r[:I_brf_g.shape[0], :I_brf_g.shape[1]]
+        )
+        np.savez_compressed(
+            os.path.join(out_subdirs["downsampled"], f"{prefix}.npz"),
+            I=I_brf_d, Q=Q_brf_d, U=U_brf_d, DoLP=DoLP_brf_d,
+            VZA=vza_d, VAA=vaa_d, RAA=raa_d, Scattering_Angle=sca_d,
+            theta0=utils.downsample_block(theta0_o[iv], dsm.factor),
+            thetav=utils.downsample_block(thetav_o[iv], dsm.factor),
+            faipfai0=utils.downsample_block(faipfai0_o[iv], dsm.factor),
+            lat=lat_cam_ds, lon=lon_cam_ds, elevation=elevation_ds,
+            Height_AirMSPI=20000, Land_water_mask=Land_water_mask_ds
+        )
         np.savez_compressed(os.path.join(out_subdirs["downsampled_registered"], f"{prefix}.npz"),
                             I=I_gd, Q=Q_gd, U=U_gd, DoLP=DoLP_gd,
                             VZA=vza_gd, VAA=vaa_gd, RAA=raa_gd, Scattering_Angle=sca_gd,
