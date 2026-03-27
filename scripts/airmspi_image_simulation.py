@@ -560,20 +560,83 @@ def _build_level_npz_from_original(target_npz_path: str, overwrite: bool = False
     try:
         files = set(arr.files)
         required = {"I", "Q", "U", "VZA", "VAA", "RAA", "Scattering_Angle", "x", "y"}
-        if not required.issubset(files):
-            return None
 
-        I = arr["I"]; Q = arr["Q"]; U = arr["U"]
-        VZA = arr["VZA"]; VAA = arr["VAA"]; RAA = arr["RAA"]; SCA = arr["Scattering_Angle"]
-        xg = arr["x"]; yg = arr["y"]
-        theta0 = arr["theta0"] if "theta0" in files else np.full_like(I, np.nan, dtype=np.float32)
-        thetav = arr["thetav"] if "thetav" in files else VZA
-        faipfai0 = arr["faipfai0"] if "faipfai0" in files else RAA
-        lat = arr["lat"] if "lat" in files else np.full_like(I, np.nan, dtype=np.float32)
-        lon = arr["lon"] if "lon" in files else np.full_like(I, np.nan, dtype=np.float32)
-        elevation = arr["elevation"] if "elevation" in files else np.zeros_like(I, dtype=np.float32)
-        land_water_mask = arr["Land_water_mask"] if "Land_water_mask" in files else np.ones_like(I, dtype=np.float32)
-        h_airmspi = arr["Height_AirMSPI"] if "Height_AirMSPI" in files else 20000
+        def _from_sensor_dict_payload():
+            if "sensor_dict" not in files:
+                return None
+            try:
+                sensor_dict_obj = arr["sensor_dict"].item()
+                context_cfg = arr["context"].item() if "context" in files else {}
+                sensor_keys = list(sensor_dict_obj.keys())
+                if len(sensor_keys) == 0:
+                    return None
+                view_hint = _infer_view_hint_from_filename(target_npz_path)
+                selected_key = sensor_keys[0]
+                if view_hint:
+                    for k in sensor_keys:
+                        if str(k).lower().startswith(str(view_hint).lower()):
+                            selected_key = k
+                            break
+
+                sim = sensor_dict_obj.get_images(selected_key)[0]
+                I0 = np.fliplr(sim.I.T)
+                Q0 = np.fliplr(sim.Q.T) if hasattr(sim, "Q") else np.zeros_like(I0)
+                U0 = np.fliplr(sim.U.T) if hasattr(sim, "U") else np.zeros_like(I0)
+                sensor_ds = sensor_dict_obj[selected_key]["sensor_list"][0]
+                v_out_map = np.fliplr(compute_vout_map_from_sensor(sensor_ds))
+                vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
+                vza0 = np.degrees(np.arccos(vz))
+                vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
+                saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0 if isinstance(context_cfg, dict) else 0.0
+                sza = context_cfg.get("theta_0", np.nan) if isinstance(context_cfg, dict) else np.nan
+                raa0 = ((vaa0 - saa + 180.0) % 360.0) - 180.0
+                mu0 = np.cos(np.radians(sza))
+                mu = np.cos(np.radians(vza0))
+                cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa0))
+                sca0 = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
+
+                ground = reproject_to_ground(sensor_ds, ground_z=0.0)
+                x0 = np.fliplr(ground.x_ground.values)
+                y0 = np.fliplr(ground.y_ground.values)
+
+                return dict(
+                    I=I0, Q=Q0, U=U0,
+                    VZA=vza0, VAA=vaa0, RAA=raa0, Scattering_Angle=sca0,
+                    x=x0, y=y0,
+                    theta0=np.full_like(I0, sza, dtype=np.float32),
+                    thetav=vza0,
+                    faipfai0=raa0,
+                    lat=np.full_like(I0, np.nan, dtype=np.float32),
+                    lon=np.full_like(I0, np.nan, dtype=np.float32),
+                    elevation=np.zeros_like(I0, dtype=np.float32),
+                    Land_water_mask=np.ones_like(I0, dtype=np.float32),
+                    Height_AirMSPI=20000,
+                )
+            except Exception:
+                return None
+
+        if required.issubset(files):
+            I = arr["I"]; Q = arr["Q"]; U = arr["U"]
+            VZA = arr["VZA"]; VAA = arr["VAA"]; RAA = arr["RAA"]; SCA = arr["Scattering_Angle"]
+            xg = arr["x"]; yg = arr["y"]
+            theta0 = arr["theta0"] if "theta0" in files else np.full_like(I, np.nan, dtype=np.float32)
+            thetav = arr["thetav"] if "thetav" in files else VZA
+            faipfai0 = arr["faipfai0"] if "faipfai0" in files else RAA
+            lat = arr["lat"] if "lat" in files else np.full_like(I, np.nan, dtype=np.float32)
+            lon = arr["lon"] if "lon" in files else np.full_like(I, np.nan, dtype=np.float32)
+            elevation = arr["elevation"] if "elevation" in files else np.zeros_like(I, dtype=np.float32)
+            land_water_mask = arr["Land_water_mask"] if "Land_water_mask" in files else np.ones_like(I, dtype=np.float32)
+            h_airmspi = arr["Height_AirMSPI"] if "Height_AirMSPI" in files else 20000
+        else:
+            payload0 = _from_sensor_dict_payload()
+            if payload0 is None:
+                return None
+            I = payload0["I"]; Q = payload0["Q"]; U = payload0["U"]
+            VZA = payload0["VZA"]; VAA = payload0["VAA"]; RAA = payload0["RAA"]; SCA = payload0["Scattering_Angle"]
+            xg = payload0["x"]; yg = payload0["y"]
+            theta0 = payload0["theta0"]; thetav = payload0["thetav"]; faipfai0 = payload0["faipfai0"]
+            lat = payload0["lat"]; lon = payload0["lon"]; elevation = payload0["elevation"]
+            land_water_mask = payload0["Land_water_mask"]; h_airmspi = payload0["Height_AirMSPI"]
 
         factor = 2
         method = "mean"
