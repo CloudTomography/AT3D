@@ -1374,7 +1374,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     theta_0 = 180.0 - float(solar_cfg.sza_deg)
     solarmu = np.cos(np.deg2rad(theta_0))
     # TODO: 
-    solar_azimuth = float(solar_cfg.saa_deg) - 360.0
+    solar_azimuth = float(solar_cfg.saa_deg)
     solvers_dict = at3d.containers.SolversDict()
     config = at3d.configuration.get_config()
     # config["x_boundary_condition"]='periodic'
