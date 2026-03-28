@@ -1116,25 +1116,67 @@ def _read_lat_lon_from_txt(cloud_scatterer: xr.Dataset):
         if f not in cloud_scatterer:
             raise ValueError(f"cloud_scatterer 缺少必要字段 '{f}'，无法提取 lat/lon。")
 
-    # 取出坐标与字段
-    x_col = np.array(cloud_scatterer["x"])
-    y_col = np.array(cloud_scatterer["y"])
-    lat_col = np.array(cloud_scatterer["lat"])
-    lon_col = np.array(cloud_scatterer["lon"])
+    lat_da = cloud_scatterer["lat"]
+    lon_da = cloud_scatterer["lon"]
 
-    # 若数据为 1D 向量，尝试 reshape 成 2D 网格
-    if lat_col.ndim == 1 or lon_col.ndim == 1:
-        xs, ys = np.unique(x_col), np.unique(y_col)
-        nx, ny = len(xs), len(ys)
-        order = np.lexsort((x_col, y_col))  # 按 y, 再按 x 排序
-        lat_sorted = lat_col[order]
-        lon_sorted = lon_col[order]
-        lat_2d = lat_sorted[:ny * nx].reshape(ny, nx)
-        lon_2d = lon_sorted[:ny * nx].reshape(ny, nx)
+    # 优先处理 xarray 维度信息：若 lat/lon 含 x,y 以及额外维度(如 z)，
+    # 则沿额外维度取首层，再转成 (y, x)。
+    if {"x", "y"}.issubset(set(lat_da.dims)) and {"x", "y"}.issubset(set(lon_da.dims)):
+        for d in list(lat_da.dims):
+            if d not in {"x", "y"}:
+                lat_da = lat_da.isel({d: 0})
+        for d in list(lon_da.dims):
+            if d not in {"x", "y"}:
+                lon_da = lon_da.isel({d: 0})
+        lat_2d = lat_da.transpose("y", "x").values
+        lon_2d = lon_da.transpose("y", "x").values
+        return np.asarray(lat_2d), np.asarray(lon_2d)
+
+    # 回退：按平铺点表重建 2D（支持 lat/lon 是 1D 或更高维 flatten 的情况）
+    x_coord = np.asarray(cloud_scatterer["x"]).ravel()
+    y_coord = np.asarray(cloud_scatterer["y"]).ravel()
+    lat_col = np.asarray(lat_da).ravel()
+    lon_col = np.asarray(lon_da).ravel()
+
+    # 若 lat/lon 是 x-y-z 展平，x/y 可能是坐标轴长度而非同长度点表；
+    # 这里广播出同长度的点坐标。
+    if lat_col.size != x_coord.size or lon_col.size != y_coord.size:
+        X, Y = np.meshgrid(np.asarray(cloud_scatterer["x"]).ravel(),
+                           np.asarray(cloud_scatterer["y"]).ravel(),
+                           indexing="xy")
+        x_pts = X.ravel()
+        y_pts = Y.ravel()
+        rep = max(1, int(lat_col.size // max(1, x_pts.size)))
+        x_col = np.tile(x_pts, rep)[:lat_col.size]
+        y_col = np.tile(y_pts, rep)[:lat_col.size]
     else:
-        # 如果已经是 2D，直接返回
-        lat_2d = lat_col
-        lon_2d = lon_col
+        x_col = x_coord
+        y_col = y_coord
+
+    xs = np.unique(x_col)
+    ys = np.unique(y_col)
+    nx, ny = len(xs), len(ys)
+    lat_2d = np.full((ny, nx), np.nan, dtype=np.float32)
+    lon_2d = np.full((ny, nx), np.nan, dtype=np.float32)
+
+    # 对每个 (x,y) 仅取首个有效点（常见于存在 z 层时）。
+    order = np.lexsort((x_col, y_col))
+    x_sorted = x_col[order]
+    y_sorted = y_col[order]
+    lat_sorted = lat_col[order]
+    lon_sorted = lon_col[order]
+
+    seen = set()
+    for xx, yy, la, lo in zip(x_sorted, y_sorted, lat_sorted, lon_sorted):
+        key = (float(xx), float(yy))
+        if key in seen:
+            continue
+        seen.add(key)
+        ix = np.searchsorted(xs, xx)
+        iy = np.searchsorted(ys, yy)
+        if 0 <= ix < nx and 0 <= iy < ny:
+            lat_2d[iy, ix] = la
+            lon_2d[iy, ix] = lo
 
     return lat_2d, lon_2d
 
