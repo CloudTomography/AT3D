@@ -1192,9 +1192,11 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     input_path = scene_cfg.input_path
     cloud_scatterer = at3d.util.load_from_csv(input_path, density='cv', origin=(0.0, 0.0))
     cloud_scatterer["density"] *= 1
+    latlon_source = "text"
     try:
         lat_2d, lon_2d = _read_lat_lon_from_txt(cloud_scatterer)
     except Exception:
+        latlon_source = "zeros_fallback_after_read_error"
         xs = cloud_scatterer.x.data.size
         ys = cloud_scatterer.y.data.size
         lat_2d = np.zeros((ys, xs), dtype=np.float32)
@@ -1216,6 +1218,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     if lat_2d.shape == (ny_cloud, nx_cloud) and lon_2d.shape == (ny_cloud, nx_cloud):
         xlats, xlons = lat_2d, lon_2d
     else:
+        latlon_source = "synthetic_regular_grid_fallback"
         lat0 = 35.0
         lon0 = -112.0
         km_per_deg_lat = 111.32
@@ -1223,6 +1226,11 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         lat_1d = lat0 + (cloud_y / km_per_deg_lat)
         lon_1d = lon0 + (cloud_x / km_per_deg_lon)
         xlons, xlats = np.meshgrid(lon_1d, lat_1d, indexing='xy')
+    print(
+        f"🧭 lat/lon source: {latlon_source}; "
+        f"lat range=({np.nanmin(xlats):.6f}, {np.nanmax(xlats):.6f}), "
+        f"lon range=({np.nanmin(xlons):.6f}, {np.nanmax(xlons):.6f})"
+    )
     
     # k = 15  # vertical level
 
@@ -1466,6 +1474,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    ),
                    lat=lat_2d,
                    lon=lon_2d,
+                   latlon_source=latlon_source,
                    cloud_x=cloud_x,
                    cloud_y=cloud_y,
                    cloud_x_range=(float(np.nanmin(cloud_x)), float(np.nanmax(cloud_x))),
