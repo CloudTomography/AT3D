@@ -150,7 +150,8 @@ def calculate_sensor_trajectory(sensor_zenith_list,
                                 trajectory_mode="auto",
                                 fallback_heading_deg=0.0,
                                 manual_flight_azimuth_deg=None,
-                                camera_relative_roll_deg=0.0):
+                                camera_relative_roll_deg=0.0,
+                                camera_align_with_flight_heading=False):
     """
     Build sensor positions and up-vectors.
 
@@ -210,12 +211,16 @@ def calculate_sensor_trajectory(sensor_zenith_list,
     for pos, traj_dir in zip(positions, traj_dirs):
         look_dir = look_at_point - pos
         look_dir = look_dir / np.linalg.norm(look_dir)
-        up_vec = np.cross(traj_dir, look_dir)
-        up_norm = np.linalg.norm(up_vec)
-        if up_norm < 1e-9:
-            up_vec = calculate_up_vector(pos, look_at_point)
+        if camera_align_with_flight_heading:
+            up_vec = np.cross(traj_dir, look_dir)
+            up_norm = np.linalg.norm(up_vec)
+            if up_norm < 1e-9:
+                up_vec = calculate_up_vector(pos, look_at_point)
+            else:
+                up_vec = up_vec / up_norm
         else:
-            up_vec = up_vec / up_norm
+            # World-aligned camera frame: ensures no implicit heading-driven image rotation.
+            up_vec = calculate_up_vector(pos, look_at_point)
         # Camera-vs-aircraft relative angle (roll around look direction).
         if abs(float(camera_relative_roll_deg)) > 1e-12:
             up_vec = _rotate_vector_about_axis(up_vec, look_dir, camera_relative_roll_deg)
@@ -1332,6 +1337,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         fallback_heading_deg=sen.fallback_heading_deg,
         manual_flight_azimuth_deg=sen.manual_flight_azimuth_deg,
         camera_relative_roll_deg=sen.camera_relative_roll_deg,
+        camera_align_with_flight_heading=sen.camera_align_with_flight_heading,
     )
     lookat_vectors = [center for _ in sen.views_names]
     for name, pos, look, up in zip(sen.views_names, position_vectors, lookat_vectors, up_vectors):
@@ -1509,6 +1515,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    manual_flight_azimuth_deg=sen.manual_flight_azimuth_deg,
                    fallback_heading_deg=sen.fallback_heading_deg,
                    camera_relative_roll_deg=sen.camera_relative_roll_deg,
+                   camera_align_with_flight_heading=sen.camera_align_with_flight_heading,
                    camera_image_transpose=sen.camera_image_transpose,
                    camera_image_flip_lr=sen.camera_image_flip_lr,
                    flight_azimuth_offset_deg=(
