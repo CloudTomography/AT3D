@@ -415,6 +415,16 @@ def _apply_image_orientation(arr: np.ndarray, transpose: bool, flip_lr: bool) ->
         out = np.fliplr(out)
     return out
 
+
+def _ensure_2d_shape(arr: np.ndarray, target_shape: Tuple[int, int]) -> np.ndarray:
+    """Ensure 2D array matches target shape; allow implicit transpose if needed."""
+    out = np.asarray(arr)
+    if out.shape == target_shape:
+        return out
+    if out.ndim == 2 and out.T.shape == target_shape:
+        return out.T
+    raise ValueError(f"Shape mismatch: got {out.shape}, expected {target_shape}")
+
 def assign_latlon_from_grid(xg, yg, wrf_x, wrf_y, xlats, xlons):
     """
     将相机重投影地面坐标 (xg, yg) 映射为对应的 (lat, lon)。
@@ -656,10 +666,14 @@ def _build_level_npz_from_original(target_npz_path: str, overwrite: bool = False
                 mu = np.cos(np.radians(vza0))
                 cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa0))
                 sca0 = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
-
-                ground = reproject_to_ground(sensor_ds, ground_z=0.0)
-                x0 = _apply_image_orientation(ground.x_ground.values, transpose, flip_lr)
-                y0 = _apply_image_orientation(ground.y_ground.values, transpose, flip_lr)
+                target_shape = x0.shape
+                I0 = _ensure_2d_shape(I0, target_shape)
+                Q0 = _ensure_2d_shape(Q0, target_shape)
+                U0 = _ensure_2d_shape(U0, target_shape)
+                vza0 = _ensure_2d_shape(vza0, target_shape)
+                vaa0 = _ensure_2d_shape(vaa0, target_shape)
+                raa0 = _ensure_2d_shape(raa0, target_shape)
+                sca0 = _ensure_2d_shape(sca0, target_shape)
 
                 return dict(
                     I=I0, Q=Q0, U=U0,
@@ -877,6 +891,17 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                 mu = np.cos(np.radians(vza0))
                 cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa0))
                 sca0 = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
+                ground = reproject_to_ground(sensor_ds, ground_z=0.0)
+                x0 = _apply_image_orientation(ground.x_ground.values, transpose, flip_lr)
+                y0 = _apply_image_orientation(ground.y_ground.values, transpose, flip_lr)
+                target_shape = x0.shape
+                I0 = _ensure_2d_shape(I0, target_shape)
+                Q0 = _ensure_2d_shape(Q0, target_shape)
+                U0 = _ensure_2d_shape(U0, target_shape)
+                vza0 = _ensure_2d_shape(vza0, target_shape)
+                vaa0 = _ensure_2d_shape(vaa0, target_shape)
+                raa0 = _ensure_2d_shape(raa0, target_shape)
+                sca0 = _ensure_2d_shape(sca0, target_shape)
 
                 if sen_cfg is not None and hasattr(sen_cfg, "views_names") and len(sen_cfg.views_names) > 0:
                     view_name = str(sen_cfg.views_names[0])
@@ -1758,6 +1783,14 @@ def build_versions_single_band(sensor_dict,
         v_out_map = compute_vout_map_from_sensor(sensor_ds)
         
         v_out_map = _apply_image_orientation(v_out_map, transpose, flip_lr)
+        target_shape = v_out_map.shape[:2]
+        I = _ensure_2d_shape(I, target_shape)
+        Q = _ensure_2d_shape(Q, target_shape)
+        U = _ensure_2d_shape(U, target_shape)
+        xg = _ensure_2d_shape(xg, target_shape)
+        yg = _ensure_2d_shape(yg, target_shape)
+        lat_img = _ensure_2d_shape(lat_img, target_shape)
+        lon_img = _ensure_2d_shape(lon_img, target_shape)
         
         vz = np.clip(v_out_map[..., 2], -1.0, 1.0) 
         vza_map = np.degrees(np.arccos(vz)) # 像素级VZA 
