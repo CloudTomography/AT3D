@@ -48,6 +48,9 @@ def load_config(cfg_path: str):
             if trajectory_cfg.get("manual_flight_azimuth_deg", None) is None
             else float(trajectory_cfg.get("manual_flight_azimuth_deg"))
         ),
+        camera_relative_roll_deg=float(trajectory_cfg.get("camera_relative_roll_deg", 0.0)),
+        camera_image_transpose=bool(trajectory_cfg.get("camera_image_transpose", False)),
+        camera_image_flip_lr=bool(trajectory_cfg.get("camera_image_flip_lr", False)),
     )
     bnd = BandsConfig(
         wavelength_nm=[int(w) for w in cfg["bands"]["wavelength_nm"]],

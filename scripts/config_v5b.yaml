@@ -23,6 +23,9 @@ sensor:
     mode: "manual_azimuth"                 # "auto"(多视角推断) | "manual_azimuth"(人工指定)
     fallback_heading_deg: 0.0     # 单视角或几何退化时的默认飞行方向角(度)
     manual_flight_azimuth_deg: 300  # 关键参数：让VAA与目标区域边界平行时，通常先调这个角度
+    camera_relative_roll_deg: 0.0   # 相机相对飞机的滚转角(度)，默认0表示相机x/y轴与飞机参考方向对齐
+    camera_image_transpose: false   # 是否对模拟图像做转置（仅用于对齐历史AirMSPI观测像元方向）
+    camera_image_flip_lr: false     # 是否做左右翻转（仅用于复现实测图像方向）
 
 # camera pixel grid for perspective_projection
 camera:

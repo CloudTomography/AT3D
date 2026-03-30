@@ -130,13 +130,27 @@ def calculate_up_vector(position, look_at_point, world_up=np.array([0, 0, 1])):
         up_vec = np.cross(right_vec, forward_vec)
     return up_vec
 
+def _rotate_vector_about_axis(v: np.ndarray, axis: np.ndarray, angle_deg: float) -> np.ndarray:
+    """Rodrigues rotation."""
+    ang = np.deg2rad(float(angle_deg))
+    k = np.asarray(axis, dtype=float)
+    kn = np.linalg.norm(k)
+    if kn < 1e-12 or abs(ang) < 1e-12:
+        return np.asarray(v, dtype=float)
+    k = k / kn
+    vv = np.asarray(v, dtype=float)
+    return (vv * np.cos(ang) +
+            np.cross(k, vv) * np.sin(ang) +
+            k * np.dot(k, vv) * (1.0 - np.cos(ang)))
+
 def calculate_sensor_trajectory(sensor_zenith_list,
                                 sensor_azimuth_list,
                                 look_at_point=np.array([0.0, 0.0, 0.0]),
                                 sensor_altitude=20.0,
                                 trajectory_mode="auto",
                                 fallback_heading_deg=0.0,
-                                manual_flight_azimuth_deg=None):
+                                manual_flight_azimuth_deg=None,
+                                camera_relative_roll_deg=0.0):
     """
     Build sensor positions and up-vectors.
 
@@ -202,6 +216,10 @@ def calculate_sensor_trajectory(sensor_zenith_list,
             up_vec = calculate_up_vector(pos, look_at_point)
         else:
             up_vec = up_vec / up_norm
+        # Camera-vs-aircraft relative angle (roll around look direction).
+        if abs(float(camera_relative_roll_deg)) > 1e-12:
+            up_vec = _rotate_vector_about_axis(up_vec, look_dir, camera_relative_roll_deg)
+            up_vec = up_vec / max(np.linalg.norm(up_vec), 1e-12)
         up_vectors.append(up_vec)
 
     return positions, up_vectors
@@ -373,6 +391,24 @@ def _get_flight_azimuth_offset_deg_from_context(context_cfg: Any) -> float:
         return float(context_cfg.get("flight_azimuth_offset_deg", 0.0))
     except Exception:
         return 0.0
+
+
+def _get_image_orientation_from_sensor_cfg(sen_cfg: Any) -> Tuple[bool, bool]:
+    transpose = bool(getattr(sen_cfg, "camera_image_transpose", False))
+    flip_lr = bool(getattr(sen_cfg, "camera_image_flip_lr", False))
+    return transpose, flip_lr
+
+
+def _apply_image_orientation(arr: np.ndarray, transpose: bool, flip_lr: bool) -> np.ndarray:
+    out = np.asarray(arr)
+    if transpose:
+        if out.ndim == 2:
+            out = out.T
+        elif out.ndim == 3:
+            out = np.transpose(out, (1, 0, 2))
+    if flip_lr:
+        out = np.fliplr(out)
+    return out
 
 def assign_latlon_from_grid(xg, yg, wrf_x, wrf_y, xlats, xlons):
     """
@@ -594,12 +630,16 @@ def _build_level_npz_from_original(target_npz_path: str, overwrite: bool = False
                             selected_key = k
                             break
 
+                transpose, flip_lr = _get_image_orientation_from_sensor_cfg(sen_cfg)
                 sim = sensor_dict_obj.get_images(selected_key)[0]
-                I0 = np.fliplr(sim.I.T)
-                Q0 = np.fliplr(sim.Q.T) if hasattr(sim, "Q") else np.zeros_like(I0)
-                U0 = np.fliplr(sim.U.T) if hasattr(sim, "U") else np.zeros_like(I0)
+                I0 = _apply_image_orientation(sim.I, transpose, flip_lr)
+                Q0 = _apply_image_orientation(sim.Q, transpose, flip_lr) if hasattr(sim, "Q") else np.zeros_like(I0)
+                U0 = _apply_image_orientation(sim.U, transpose, flip_lr) if hasattr(sim, "U") else np.zeros_like(I0)
                 sensor_ds = sensor_dict_obj[selected_key]["sensor_list"][0]
-                v_out_map = np.fliplr(compute_vout_map_from_sensor(sensor_ds))
+                v_out_map = _apply_image_orientation(compute_vout_map_from_sensor(sensor_ds), transpose, flip_lr)
+                ground = reproject_to_ground(sensor_ds, ground_z=0.0)
+                x0 = _apply_image_orientation(ground.x_ground.values, transpose, flip_lr)
+                y0 = _apply_image_orientation(ground.y_ground.values, transpose, flip_lr)
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
@@ -613,8 +653,8 @@ def _build_level_npz_from_original(target_npz_path: str, overwrite: bool = False
                 sca0 = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
 
                 ground = reproject_to_ground(sensor_ds, ground_z=0.0)
-                x0 = np.fliplr(ground.x_ground.values)
-                y0 = np.fliplr(ground.y_ground.values)
+                x0 = _apply_image_orientation(ground.x_ground.values, transpose, flip_lr)
+                y0 = _apply_image_orientation(ground.y_ground.values, transpose, flip_lr)
 
                 return dict(
                     I=I0, Q=Q0, U=U0,
@@ -811,13 +851,14 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                             selected_key = k
                             break
 
+                transpose, flip_lr = _get_image_orientation_from_sensor_cfg(sen_cfg)
                 sim = sensor_dict_obj.get_images(selected_key)[0]
-                I0 = np.fliplr(sim.I.T)
-                Q0 = np.fliplr(sim.Q.T) if hasattr(sim, "Q") else np.zeros_like(I0)
-                U0 = np.fliplr(sim.U.T) if hasattr(sim, "U") else np.zeros_like(I0)
+                I0 = _apply_image_orientation(sim.I, transpose, flip_lr)
+                Q0 = _apply_image_orientation(sim.Q, transpose, flip_lr) if hasattr(sim, "Q") else np.zeros_like(I0)
+                U0 = _apply_image_orientation(sim.U, transpose, flip_lr) if hasattr(sim, "U") else np.zeros_like(I0)
 
                 sensor_ds = sensor_dict_obj[selected_key]["sensor_list"][0]
-                v_out_map = np.fliplr(compute_vout_map_from_sensor(sensor_ds))
+                v_out_map = _apply_image_orientation(compute_vout_map_from_sensor(sensor_ds), transpose, flip_lr)
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
@@ -1290,6 +1331,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         trajectory_mode=sen.trajectory_mode,
         fallback_heading_deg=sen.fallback_heading_deg,
         manual_flight_azimuth_deg=sen.manual_flight_azimuth_deg,
+        camera_relative_roll_deg=sen.camera_relative_roll_deg,
     )
     lookat_vectors = [center for _ in sen.views_names]
     for name, pos, look, up in zip(sen.views_names, position_vectors, lookat_vectors, up_vectors):
@@ -1466,6 +1508,9 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    trajectory_mode=sen.trajectory_mode,
                    manual_flight_azimuth_deg=sen.manual_flight_azimuth_deg,
                    fallback_heading_deg=sen.fallback_heading_deg,
+                   camera_relative_roll_deg=sen.camera_relative_roll_deg,
+                   camera_image_transpose=sen.camera_image_transpose,
+                   camera_image_flip_lr=sen.camera_image_flip_lr,
                    flight_azimuth_offset_deg=(
                        float(sen.manual_flight_azimuth_deg) - float(sen.fallback_heading_deg)
                        if str(getattr(sen, "trajectory_mode", "")).lower() == "manual_azimuth"
@@ -1681,20 +1726,14 @@ def build_versions_single_band(sensor_dict,
 
         
         
-        I = sim.I.T
-        Q = sim.Q.T if is_polarized and hasattr(sim, "Q") else np.zeros_like(I)
-        U = sim.U.T if is_polarized and hasattr(sim, "U") else np.zeros_like(I)
-
-        # Keep the image values and geolocation grids in the same orientation.
-        # We mirror the image along x to match display convention, so mirror
-        # x/y ground coordinates (and derived lat/lon) the same way.
-        I = np.fliplr(I)
-        Q = np.fliplr(Q)
-        U = np.fliplr(U)
-        xg = np.fliplr(xg)
-        yg = np.fliplr(yg)
-        lat_img = np.fliplr(lat_img)
-        lon_img = np.fliplr(lon_img)
+        transpose, flip_lr = _get_image_orientation_from_sensor_cfg(sen)
+        I = _apply_image_orientation(sim.I, transpose, flip_lr)
+        Q = _apply_image_orientation(sim.Q, transpose, flip_lr) if is_polarized and hasattr(sim, "Q") else np.zeros_like(I)
+        U = _apply_image_orientation(sim.U, transpose, flip_lr) if is_polarized and hasattr(sim, "U") else np.zeros_like(I)
+        xg = _apply_image_orientation(xg, transpose, flip_lr)
+        yg = _apply_image_orientation(yg, transpose, flip_lr)
+        lat_img = _apply_image_orientation(lat_img, transpose, flip_lr)
+        lon_img = _apply_image_orientation(lon_img, transpose, flip_lr)
         
         
         theta0 = context.get("theta_0")
@@ -1711,8 +1750,7 @@ def build_versions_single_band(sensor_dict,
         sensor_ds = sensor['sensor_list'][0]
         v_out_map = compute_vout_map_from_sensor(sensor_ds)
         
-        # 你 fliplr 了图像，所以 v_out_map 也要 fliplr（按 x 维）
-        v_out_map = np.fliplr(v_out_map)
+        v_out_map = _apply_image_orientation(v_out_map, transpose, flip_lr)
         
         vz = np.clip(v_out_map[..., 2], -1.0, 1.0) 
         vza_map = np.degrees(np.arccos(vz)) # 像素级VZA 
