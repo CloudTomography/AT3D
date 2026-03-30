@@ -45,6 +45,8 @@ from at3dclass import (
 import cartopy.crs as ccrs
 from scipy.ndimage import distance_transform_edt
 from scipy.interpolate import RegularGridInterpolator
+
+_MIE_TABLE_CACHE: Dict[Tuple[float, float, float], Any] = {}
 # =============================
 #%% Section 1: Config dataclasses
 # =============================
@@ -391,6 +393,8 @@ def _get_flight_azimuth_offset_deg_from_context(context_cfg: Any) -> float:
     Optional yaw-like offset applied to VAA when manual trajectory azimuth is used.
     """
     if not isinstance(context_cfg, dict):
+        return 0.0
+    if not bool(context_cfg.get("apply_flight_azimuth_offset_to_vaa", False)):
         return 0.0
     try:
         return float(context_cfg.get("flight_azimuth_offset_deg", 0.0))
@@ -1260,9 +1264,13 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                                         solar_cfg: SolarConfig,
                                         solver_cfg: SolverConfig,
                                         aerosol_cfg: AerosolConfig):
+    t_stage = {}
+    t0_all = time.perf_counter()
     input_path = scene_cfg.input_path
+    t0 = time.perf_counter()
     cloud_scatterer = at3d.util.load_from_csv(input_path, density='cv', origin=(0.0, 0.0))
     cloud_scatterer["density"] *= 1
+    t_stage["load_cloud_csv"] = time.perf_counter() - t0
     latlon_source = "text"
     try:
         lat_2d, lon_2d = _read_lat_lon_from_txt(cloud_scatterer)
@@ -1353,6 +1361,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     #                                        np.full_like(cloud_scatterer_on_rte_grid.reff.data, fill_value=0.1))
     sensor_dict = at3d.containers.SensorsDict()
     center = np.array(scene_cfg.lookat_center_km, dtype=float)
+    t0 = time.perf_counter()
     position_vectors, up_vectors = calculate_sensor_trajectory(
         sensor_zenith_list=sen.views_zenith_deg,
         sensor_azimuth_list=sen.views_azimuth_deg,
@@ -1385,27 +1394,30 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             )
         key = f"{name}_{int(wavelength_nm)}nm"
         sensor_dict.add_sensor(key, sensor)
+    t_stage["build_sensors"] = time.perf_counter() - t0
     wavelengths = sensor_dict.get_unique_solvers()
     mie_mono_tables = OrderedDict()
+    t0 = time.perf_counter()
     for wavelength in wavelengths:
-        # mie_mono_tables[wavelength] = at3d.mie.get_mono_table(
-        #     'Water',(wavelength,wavelength),
-        #     max_integration_radius=65.0,
-        #     minimum_effective_radius=0.1,
-        #     relative_dir='../mie_tables',
-        #     verbose=False
-        # )
-        
-        mie_mono_tables[wavelength] = at3d.mie.get_mono_table(
-            particle_type='Aerosol',                      # ★ 改成 Aerosol 才能用自定义 n,k
-            wavelength_band=(wavelength, wavelength),
-            max_integration_radius=65.0,
-            minimum_effective_radius=0.1,
-            # refractive_index=1.5080 - 0.0035j,               # ★ 自定义 n - ik
-            refractive_index=aerosol_cfg.refractive_index_real - aerosol_cfg.refractive_index_imag*1j,
-            relative_dir='../mie_tables',
-            verbose=False
+        cache_key = (
+            float(wavelength),
+            float(aerosol_cfg.refractive_index_real),
+            float(aerosol_cfg.refractive_index_imag),
         )
+        if cache_key in _MIE_TABLE_CACHE:
+            mie_mono_tables[wavelength] = _MIE_TABLE_CACHE[cache_key]
+        else:
+            mie_mono_tables[wavelength] = at3d.mie.get_mono_table(
+                particle_type='Aerosol',
+                wavelength_band=(wavelength, wavelength),
+                max_integration_radius=65.0,
+                minimum_effective_radius=0.1,
+                refractive_index=aerosol_cfg.refractive_index_real - aerosol_cfg.refractive_index_imag*1j,
+                relative_dir='../mie_tables',
+                verbose=False
+            )
+            _MIE_TABLE_CACHE[cache_key] = mie_mono_tables[wavelength]
+    t_stage["mie_table"] = time.perf_counter() - t0
         
     rho_p_gcm3 = 1.6                 # 你选定的颗粒密度
     ho_p_kgm3 = rho_p_gcm3 * 1000.0 # kg/m^3    
@@ -1443,7 +1455,9 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         density_normalization='density',  # ← 关键,
         particle_density=aerosol_cfg.particle_density
     )
+    t0 = time.perf_counter()
     optical_properties = optical_property_generator(cloud_scatterer_on_rte_grid)
+    t_stage["optical_property_generator"] = time.perf_counter() - t0
     
     rho = cloud_scatterer_on_rte_grid.density.data  # g/m^3
     z = rte_grid.z.data                              # km (你已经确认)
@@ -1520,6 +1534,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                         medium=medium)
     
     num_stokes = 3 if is_polarized else 1
+    t0 = time.perf_counter()
     solvers_dict.add_solver(
         w,
         at3d.solver.RTE(
@@ -1530,6 +1545,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             num_stokes=num_stokes
         )
     )
+    t_stage["build_rte_solver"] = time.perf_counter() - t0
     context = dict(center=center,
                    position_vectors=position_vectors,
                    lookat_vectors=lookat_vectors,
@@ -1541,6 +1557,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    fallback_heading_deg=sen.fallback_heading_deg,
                    camera_relative_roll_deg=sen.camera_relative_roll_deg,
                    camera_align_with_flight_heading=sen.camera_align_with_flight_heading,
+                   apply_flight_azimuth_offset_to_vaa=sen.apply_flight_azimuth_offset_to_vaa,
                    camera_image_transpose=sen.camera_image_transpose,
                    camera_image_flip_lr=sen.camera_image_flip_lr,
                    flight_azimuth_offset_deg=(
@@ -1556,6 +1573,8 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    cloud_y=cloud_y,
                    cloud_x_range=(float(np.nanmin(cloud_x)), float(np.nanmax(cloud_x))),
                    cloud_y_range=(float(np.nanmin(cloud_y)), float(np.nanmax(cloud_y))))
+    t_stage["total_scene_build"] = time.perf_counter() - t0_all
+    print("⏱️ Scene build timing (s): " + ", ".join([f"{k}={v:.2f}" for k, v in t_stage.items()]))
     return sensor_dict, solvers_dict, context, medium, AOD, SSA, xlats, xlons
 
 

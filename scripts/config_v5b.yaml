@@ -25,6 +25,7 @@ sensor:
     manual_flight_azimuth_deg: 160  # 飞机航向角（世界坐标系）
     camera_relative_roll_deg: 0.0   # 相机相对飞机的滚转角(度)，默认0表示相机x/y轴与飞机参考方向对齐
     camera_align_with_flight_heading: false  # false: 相机坐标与世界上方向对齐(默认，分界线更稳定竖直/水平)
+    apply_flight_azimuth_offset_to_vaa: false  # 默认关闭：VAA直接来自几何；若需额外航向偏置再开启
     camera_image_transpose: false   # 是否对模拟图像做转置（仅用于对齐历史AirMSPI观测像元方向）
     camera_image_flip_lr: false     # 是否做左右翻转（仅用于复现实测图像方向）
 

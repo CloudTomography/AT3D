@@ -31,6 +31,7 @@ class SensorConfig:
     manual_flight_azimuth_deg: Optional[float] = None
     camera_relative_roll_deg: float = 0.0
     camera_align_with_flight_heading: bool = False
+    apply_flight_azimuth_offset_to_vaa: bool = False
     camera_image_transpose: bool = False
     camera_image_flip_lr: bool = False
 
