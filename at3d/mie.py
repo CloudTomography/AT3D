@@ -424,18 +424,30 @@ def get_poly_table(size_distribution, mie_mono_table):
             scatter1=mie_mono_table['scatter'],
             legcoef1=mie_mono_table['legendre'])
 
+    # Use the actual dimensions of number_density (excluding 'radius') to define
+    # the microphysics grid. This correctly handles both:
+    # - size distributions with explicit dims like ('radius', 'reff', 'veff')
+    # - size distributions with a flat 'table_index' dim from medium.py
+    nd_dims = [d for d in size_distribution['number_density'].dims if d != 'radius']
+    grid_shape = tuple(size_distribution.sizes[d] for d in nd_dims)
 
-    # all coords except radius
-    coords = {name:coord for name, coord in size_distribution.coords.items()
-              if name not in ('radius', 'stokes_index')}
-    microphysics_names = list(coords.keys())
-    coord_lengths = [np.arange(coord.size) for name, coord in coords.items()]
-    legen_index = np.meshgrid(*coord_lengths, indexing='ij')
+    microphysics_names = list(nd_dims)
 
-    table_index = np.ravel_multi_index(legen_index, dims=[coord.size for coord in coord_lengths])
-    coords['table_index'] = (microphysics_names, table_index)
+    # For inputs with a flat 'table_index' dim (from medium.py), keep the output
+    # flat with a plain integer table_index so downstream can freely overwrite it.
+    if len(nd_dims) == 1 and nd_dims[0] == 'table_index':
+        coords = {'table_index': np.arange(grid_shape[0])}
+    else:
+        coords = {}
+        for name in nd_dims:
+            if name in size_distribution.coords:
+                coords[name] = size_distribution.coords[name]
+        coord_lengths = [np.arange(s) for s in grid_shape]
+        legen_index = np.meshgrid(*coord_lengths, indexing='ij')
+        table_index = np.ravel_multi_index(legen_index, dims=grid_shape)
+        coords['table_index'] = (microphysics_names, table_index)
+
     coords['stokes_index'] = mie_mono_table.coords['stokes_index']
-    grid_shape = tuple(coord.size for coord in coords.values())
 
     poly_table = xr.Dataset(
         data_vars={
