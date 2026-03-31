@@ -149,7 +149,7 @@ def calculate_sensor_trajectory(sensor_zenith_list,
                                 sensor_azimuth_list,
                                 look_at_point=np.array([0.0, 0.0, 0.0]),
                                 sensor_altitude=20.0,
-                                trajectory_mode="auto",
+                                trajectory_mode="adjacent_views",
                                 fallback_heading_deg=0.0,
                                 manual_flight_azimuth_deg=None,
                                 camera_relative_roll_deg=0.0,
@@ -158,8 +158,8 @@ def calculate_sensor_trajectory(sensor_zenith_list,
     Build sensor positions and up-vectors.
 
     trajectory_mode:
-      - "auto": infer flight direction from multi-view positions.
-      - "manual_azimuth": use manual_flight_azimuth_deg (deg, clockwise from +x/east).
+      - "adjacent_views": infer heading from neighboring view positions.
+      - "sensor_azimuth": use sensor_azimuth_list as per-view heading.
     """
     positions = []
     up_vectors = []
@@ -181,21 +181,16 @@ def calculate_sensor_trajectory(sensor_zenith_list,
     if n_view == 0:
         raise ValueError("No sensor views provided.")
 
-    if trajectory_mode not in {"auto", "manual_azimuth"}:
-        raise ValueError(f"Unsupported trajectory_mode: {trajectory_mode}")
+    mode = str(trajectory_mode).lower()
+    if mode == "manual_azimuth":
+        # backward-compatible alias
+        mode = "sensor_azimuth"
 
-    if trajectory_mode == "manual_azimuth":
-        if manual_flight_azimuth_deg is None:
-            raise ValueError(
-                "trajectory_mode='manual_azimuth' requires manual_flight_azimuth_deg in config"
-            )
-        heading = np.deg2rad(float(manual_flight_azimuth_deg))
-        traj_dir_one = np.array([np.cos(heading), np.sin(heading), 0.0], dtype=float)
-        traj_dirs = np.tile(traj_dir_one, (n_view, 1))
-    elif n_view < 2:
-        heading = np.deg2rad(float(fallback_heading_deg))
+    if n_view < 2:
+        # 单视角：直接使用该视角 azimuth（用户要求）
+        heading = np.deg2rad(float(sensor_azimuth_list[0] if len(sensor_azimuth_list) > 0 else fallback_heading_deg))
         traj_dirs = np.array([[np.cos(heading), np.sin(heading), 0.0]], dtype=float)
-    else:
+    elif mode in {"adjacent_views", "auto", "neighbor_views"}:
         traj = np.gradient(positions, axis=0)
         traj_dirs = []
         for d in traj:
@@ -209,6 +204,14 @@ def calculate_sensor_trajectory(sensor_zenith_list,
                 d = d / nrm
             traj_dirs.append(d)
         traj_dirs = np.asarray(traj_dirs)
+    elif mode in {"sensor_azimuth", "sensor_azimuth_list"}:
+        traj_dirs = []
+        for az in sensor_azimuth_list:
+            heading = np.deg2rad(float(az))
+            traj_dirs.append(np.array([np.cos(heading), np.sin(heading), 0.0], dtype=float))
+        traj_dirs = np.asarray(traj_dirs)
+    else:
+        raise ValueError("Unsupported trajectory_mode. Use 'adjacent_views' or 'sensor_azimuth'.")
 
     for pos, traj_dir in zip(positions, traj_dirs):
         look_dir = look_at_point - pos

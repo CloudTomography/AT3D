@@ -54,8 +54,11 @@ flowchart LR
 
 位于 `sensor.trajectory`：
 
+- `trajectory.mode`
+  - `adjacent_views`: 用相邻视角位置差分推断 heading。
+  - `sensor_azimuth`: 直接用 `views.azimuth_deg` 作为 heading。
 - `manual_flight_azimuth_deg`
-  - 飞机航向角（世界坐标系角度）。
+  - 旧字段兼容保留，不再推荐作为主 heading 控制项。
 - `camera_align_with_flight_heading`
   - `false`（默认）：相机上方向与世界上方向对齐，避免隐式随航向旋转。
   - `true`：相机上方向跟随飞机航向。
@@ -71,8 +74,7 @@ flowchart LR
 ```yaml
 sensor:
   trajectory:
-    mode: "manual_azimuth"
-    manual_flight_azimuth_deg: 160
+    mode: "sensor_azimuth"
     camera_align_with_flight_heading: false
     camera_relative_roll_deg: 0.0
     camera_image_transpose: false
@@ -92,4 +94,3 @@ sensor:
 1. 观测产品像元排布与模型像平面定义不同（历史兼容常需转置/翻转）。
 2. 相机上方向跟随飞机航向，导致图像坐标轴相对世界旋转。
 3. 绘图时从 Camera Pixel 切换到 Ground（registered）后，坐标语义改变。
-
