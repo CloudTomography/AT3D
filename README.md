@@ -67,38 +67,60 @@ To contribute to the development effort, contact us! see `Contact` section above
 &nbsp;
 
 ## Installation
-Compilation of this package requires Fortran & C compilers (e.g. GCC 9.3.0_1) to be available and correctly linked. Installation has been tested on Mac and Linux using using [anaconda](https://www.anaconda.com/) package management. 
 
-The treatment of legacy Fortran code has changed from GCC 9.X to 10.X+ so currently there is a flag in the setup.py script which needs to be commented if trying to install using GCC 9.X or earlier versions. The flag is `extra_f77_compile_args=["-fallow-argument-mismatch"]`. There is additional discussion of this point written as comments in setup.py but please feel raise an issue or discussion if you run into issues with the compiler version. The default version of the package should compile with GCC v11.3.
+### Prerequisites
+Compilation of this package requires **Fortran & C compilers** to be available and correctly linked.
 
-Clone the repository into your local machine
+  * **Linux:** `sudo apt install gcc gfortran` (Debian/Ubuntu) or `sudo dnf install gcc gcc-gfortran` (Fedora/RHEL)
+  * **macOS:** `brew install gcc` (provides both `gcc` and `gfortran`)
+
+GCC 10+ is recommended. The build system automatically detects the compiler version and applies the necessary `-fallow-argument-mismatch` flag for GCC 10+.
+
+Installation has been tested on Linux and macOS using [anaconda](https://www.anaconda.com/) package management.
+
+### Install with pip (recommended)
+
+Clone the repository:
 ```
 git clone https://github.com/CloudTomography/AT3D.git
 cd AT3D
 ```
 
-Start a clean virtual environment and setup environment variables
+Create and activate a virtual environment (Python >= 3.10):
 ```
-conda create -n at3d python=3.10.4
+conda create -n at3d python=3.10
 conda activate at3d
 ```
 
-Install required packages
-```
-pip install -r requirements.txt
-```
-
-Install AT3D distribution. This should be run from within the folder containing setup.py. For development mode add the flag `-e`.
+Install AT3D (this compiles the Fortran extensions automatically):
 ```
 pip install .
 ```
 
+For development mode (install build dependencies first):
+```
+pip install meson-python meson ninja numpy
+pip install -e . --no-build-isolation
+```
+
+### Install with conda-build
+
+If you prefer building a conda package:
+```
+conda install conda-build
+conda build recipe/
+conda install --use-local at3d
+```
+
+Note: conda-forge submission requires a separate feedstock PR.
+
 &nbsp;
 
 ## Running Tests
-After successful installation, run the tests using Python's [nosetests](https://nose.readthedocs.io/en/latest/index.html) package
+After successful installation, run the tests using Python's [nose2](https://docs.nose2.io/) package
 and make sure they all succeed:
 ```
+pip install at3d[test]
 cd tests
 nose2 -v
 ```

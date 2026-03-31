@@ -424,7 +424,6 @@ def get_poly_table(size_distribution, mie_mono_table):
             scatter1=mie_mono_table['scatter'],
             legcoef1=mie_mono_table['legendre'])
 
-    grid_shape = size_distribution['number_density'].shape[1:]
 
     # all coords except radius
     coords = {name:coord for name, coord in size_distribution.coords.items()
@@ -436,6 +435,7 @@ def get_poly_table(size_distribution, mie_mono_table):
     table_index = np.ravel_multi_index(legen_index, dims=[coord.size for coord in coord_lengths])
     coords['table_index'] = (microphysics_names, table_index)
     coords['stokes_index'] = mie_mono_table.coords['stokes_index']
+    grid_shape = tuple(coord.size for coord in coords.values())
 
     poly_table = xr.Dataset(
         data_vars={
