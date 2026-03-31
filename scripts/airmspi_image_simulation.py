@@ -834,18 +834,20 @@ def inspect_simulation_npz(npz_path: str) -> Dict[str, Any]:
         arr.close()
 
 
-def plot_simulation_results(result_path, output_dir=None, option="option1", show=False,
+def plot_simulation_results(result_path, output_dir=None, option="panel", show=False,
                             rebuild_if_missing=True, overwrite_npz=False):
     """
     读取 simulation 结果（.npz 或 .nc）并重绘图像。
 
     option:
-      - "option1": I/Q/U 画在一个图上；VZA/VAA/RAA/Scattering Angle 画在一个图上
-      - "option2": 每个变量单独绘图
+      - "panel" (or "option1"): I/Q/U 一张图；角度一张图
+      - "separate" (or "option2"): 每个变量单独绘图
     """
     option = str(option).lower()
-    if option not in {"option1", "option2"}:
-        raise ValueError("option must be 'option1' or 'option2'")
+    alias = {"option1": "panel", "option2": "separate"}
+    option = alias.get(option, option)
+    if option not in {"panel", "separate"}:
+        raise ValueError("option must be 'panel'/'option1' or 'separate'/'option2'")
 
     requested_level = os.path.basename(os.path.dirname(result_path)).lower()
     if output_dir is None:
@@ -1113,7 +1115,7 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
         ax.set_title(title)
         return im
 
-    if option == "option1":
+    if option == "panel":
         fig1, ax1 = plt.subplots(1, 3, figsize=(15, 4.5))
         for ax, data, name, cmap in zip(ax1, [I, Q, U], ["I", "Q", "U"], ["viridis", "RdBu_r", "RdBu_r"]):
             if name in {"Q", "U"}:
@@ -1169,6 +1171,24 @@ def plot_simulation_results(result_path, output_dir=None, option="option1", show
                 plt.show()
             else:
                 plt.close(fig)
+
+
+def replot_simulation_results_with_config(result_path: str, cfg_path: str = "config_v5b.yaml",
+                                          output_dir: Optional[str] = None, show: bool = False,
+                                          rebuild_if_missing: bool = True, overwrite_npz: bool = False):
+    """
+    Read plotting layout from config.plot.replot_layout and call plot_simulation_results.
+    """
+    (cfg, out_cfg, sen_cfg, bnd_cfg, dsm_cfg, svr_cfg, plt_cfg, grd_cfg, comp_cfg, crop_cfg,
+     scene_cfg, cam_cfg, solar_cfg, solver_cfg, aerosol_cfg) = utils.load_config(cfg_path)
+    return plot_simulation_results(
+        result_path=result_path,
+        output_dir=output_dir,
+        option=getattr(plt_cfg, "replot_layout", "panel"),
+        show=show,
+        rebuild_if_missing=rebuild_if_missing,
+        overwrite_npz=overwrite_npz,
+    )
 
 # =============================
 #%% Section 4: Scene/Sensors (single band) with lat/lon ingestion
@@ -2309,6 +2329,7 @@ __all__ = [
     "plot_on_ground",
     "inspect_simulation_npz",
     "plot_simulation_results",
+    "replot_simulation_results_with_config",
 ]
 
 

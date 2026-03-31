@@ -54,6 +54,7 @@ class PlotConfig:
     enable_3d_geometry: bool
     enable_ground_image: bool
     colormap: str
+    replot_layout: str = "panel"
 
 @dataclass
 class GroundGridConfig:
