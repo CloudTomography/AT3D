@@ -22,7 +22,7 @@ def parse_shdom_output(filename, comment='*'):
     with open(filename) as file:
         data = file.readlines()
         for line in data:
-            if not comment in line:
+            if comment not in line:
                 output.append(np.fromstring(line, sep=' '))
     return np.array(output)
 

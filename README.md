@@ -1,5 +1,7 @@
 # Atmospheric Tomography with 3D Radiative Transfer (AT3D)
 
+![CI](https://github.com/CloudTomography/AT3D/actions/workflows/ci.yml/badge.svg)
+
 AT3D performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]].
 The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[4],[5]].
 

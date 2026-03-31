@@ -1,9 +1,9 @@
 """
 Defines the high level abstract objects for handling solving
-the inverse problem. 
+the inverse problem.
 
 This includes a generic `ObjectiveFunction` object
-which specifies the data misfit with a specific case that uses the 
+which specifies the data misfit with a specific case that uses the
 Levis Approximation to compute the gradient of the data misfit.
 
 The `Optimizer` is a wrapper around scipy.optimize.minimize that

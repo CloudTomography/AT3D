@@ -7,7 +7,6 @@ containers.py contains a `SolversDict` object which stores multiple solver.RTE
 objects and can be used for parallelization of solving the RTE etc.
 """
 
-import sys
 import warnings
 import copy
 import typing
@@ -333,7 +332,7 @@ class RTE:
         self._shterms = None
 
         self._sfcgridrad = np.zeros((self._nang//2 + 1,
-                                       self._maxnbc), 
+                                       self._maxnbc),
                                       dtype=np.float32,
                                       order='F')
 
@@ -362,7 +361,7 @@ class RTE:
 
         # for imu in range(self._nmu):
         #     x,y,z = self._gridpos[:,:self._npts]
-            
+
         #     x = (x[None,:]*np.ones(self._nphi0max)[:,None]).ravel()
         #     y = (y[None,:]*np.ones(self._nphi0max)[:,None]).ravel()
         #     z = (z[None,:]*np.ones(self._nphi0max)[:,None]).ravel()
@@ -407,10 +406,10 @@ class RTE:
         #             wsave=self._wphisave,
         #             indata=rad_grid,
         #             outdata=vol_source_sh
-        #         )        
+        #         )
         # if self._nstokes == 1:
         #    vol_source_sh = vol_source_sh[None,:]
-            
+
         # valid_sh = np.where(np.abs(vol_source_sh) > max(self._shacc, 1e-6))[0]
 
         # vol_source_gridptr = np.zeros((2,self._npts), dtype=np.int32)
@@ -1433,7 +1432,7 @@ class RTE:
                     {'legendre_index':
                     (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])
                     }, constant_values=0.0
-                ) 
+                )
             self._dnumphase = legendre_table.sizes['table_index']
             dleg = legendre_table.data
 
@@ -1955,7 +1954,7 @@ class RTE:
                 raise TypeError(
                     "`surface_source` should inherit from `at3d.surface.SurfaceSource."
                 )
-        
+
         return surface
 
     def _setup_numerical_params(self, numerical_params):
@@ -2611,7 +2610,7 @@ class RTE:
         phi_all = np.array(phi_all)
         weight_all = np.array(weight_all)
 
-        x, y = np.meshgrid(np.append(self._xgrid, self._xgrid[0]), 
+        x, y = np.meshgrid(np.append(self._xgrid, self._xgrid[0]),
                            np.append(self._ygrid, self._ygrid[0]), indexing='ij')
 
         x = x.ravel()[:,None]*np.ones(mu_all.shape)[None,:]
@@ -2873,7 +2872,7 @@ class RTE:
 
     def _get_radiance_exiting_boundary(self, top=True):
         """
-        Calculates the spatially averaged radiance at the 
+        Calculates the spatially averaged radiance at the
         discrete ordinate directions at the domain top or bottom.
 
         Parameters
@@ -2902,7 +2901,7 @@ class RTE:
             )
 
         out_data = np.zeros((self._nstokes, self._nmu//2, self._nphi0max, self._npts))
-        
+
         for i in range(self._nmu//2):
             if top:
                 imu= i+1
@@ -2916,7 +2915,7 @@ class RTE:
             else:
                 transformer = at3d.core.sh_to_do
                 radiance_in = self._radiance
-            
+
             temp = transformer(
                 indata=radiance_in,
                 npts=self._npts,
@@ -2934,7 +2933,7 @@ class RTE:
                 fftflag=self._fftflag
             )
             out_data[:,i] = temp
-        
+
         # spatially averaged radiance exiting the boundary.
         if top:
             skyrad = out_data[:,:,:,self._bcptr[:self._ntoppts,0]-1].mean(axis=-1)
@@ -2946,7 +2945,7 @@ class RTE:
         # what is sampled.
         skyrad[np.where(skyrad < 0.0)] = 0.0
         return skyrad
-    
+
     @property
     def num_iterations(self):
         return self._iters

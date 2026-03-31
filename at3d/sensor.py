@@ -412,7 +412,8 @@ def perspective_projection(wavelength, fov, x_resolution, y_resolution,
         and the sensor's observables.
 
     """
-    norm = lambda x: x / np.linalg.norm(x, axis=0)
+    def norm(x):
+        return x / np.linalg.norm(x, axis=0)
 
     #assert samples>=1, "Sample per pixel is an integer >= 1"
     #assert int(samples) == samples, "Sample per pixel is an integer >= 1"
@@ -691,7 +692,7 @@ class BandModel:
 
     def weight(self, wavelength):
         return self.weights[wavelength]
-    
+
     @property
     def wavelengths(self):
         return np.array(list(self.weights.keys()))
@@ -699,12 +700,12 @@ class BandModel:
     @property
     def id(self):
         return self._identifier
-        
+
 class Monochromatic(BandModel):
 
     def __init__(self, wavelength):
         BandModel.__init__(self, wavelength, wavelength, 1.0)
-        
+
 class Satellite(BandModel):
 
     def __init__(self, instrument, band, parameterization='reptran'):
@@ -713,8 +714,8 @@ class Satellite(BandModel):
             raise ValueError(
                 "Only the `reptran` satellite band model is currently supported"
             )
-            
-        if not instrument in ('terra-modis', 'aqua-modis'):
+
+        if instrument not in ('terra-modis', 'aqua-modis'):
             raise ValueError(
                 "Currently only supports Terra and Aqua MODIS not other instruments."
             )

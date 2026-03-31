@@ -122,7 +122,7 @@ def compute_table(wavelengths):
                      dims=['stokes_index', 'legendre_index', 'wavelength'],
                      coords={'stokes_index': (['stokes_index'], ['P11','P22','P33','P44','P12','P34']),
                              'wavelength': np.array([wavelength])})
-        for legcoef, wavelength in zip(legcoefs, wavelengths) 
+        for legcoef, wavelength in zip(legcoefs, wavelengths)
     ]
     table = xr.concat(data_arrays, dim='wavelength')
     table.attrs = {'table_type': 'vector',

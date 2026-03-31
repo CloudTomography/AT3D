@@ -240,7 +240,7 @@ class VolumeSource:
             raise ValueError(
                 "Non-finite values in output of volume source model"
             )
-    
+
     def __call__(self, x, y,z, mu, phi):
         self._check_inputs(x,y,z,mu,phi)
         rad_out = self._rad_func(x,y,z,mu,phi)

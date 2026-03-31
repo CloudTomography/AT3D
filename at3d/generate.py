@@ -10,7 +10,7 @@ import copy
 import scipy.ndimage as ndi
 import xarray as xr
 import scipy.spatial as ss
-import at3d.grid 
+import at3d.grid
 
 class SurrogateGenerator:
     """
@@ -481,7 +481,7 @@ def generate_cloud(nx,ny, dx, dy, dz, zmin, zmax, beta, beta_ext, cf, ext_rel_st
                   thickness_mean=0.35, tau_power=5.0/3.0, veff=0.07, N0=200.0, cbase=0.45, filter_sigma=0.5):
     """
     A stochastic cloud generator for single-layered clouds with flat bases and bumpy tops.
-    Microphysical assumptions and vertical variability follow quasi-adiabatic principles. 
+    Microphysical assumptions and vertical variability follow quasi-adiabatic principles.
     Fourier spectrum techniques are used so the field follows an assumption of horizontal periodicitiy.
 
     Parameters
@@ -495,10 +495,10 @@ def generate_cloud(nx,ny, dx, dy, dz, zmin, zmax, beta, beta_ext, cf, ext_rel_st
     zmax : float
         The maximum altitude of the domain. Must be large enough to accomodate clouds.
     beta : float
-        The exponent of the isotropic powerlaw governing the 2Dpower spectrum of the horizontal variance of 
+        The exponent of the isotropic powerlaw governing the 2Dpower spectrum of the horizontal variance of
         the cloud top height field. Try -2
-    beta_ext : float 
-        The exponent of the isotropic powerlaw governing the 3D power spectrum of 
+    beta_ext : float
+        The exponent of the isotropic powerlaw governing the 3D power spectrum of
         variability in the volume extinction field that is independent of cloud geometric thickness.
         Try -5.0/3.
     cf : float
@@ -523,10 +523,10 @@ def generate_cloud(nx,ny, dx, dy, dz, zmin, zmax, beta, beta_ext, cf, ext_rel_st
     cbase : float
         The altitude of cloud base in kilometers.
     filter_sigma : float
-        The width of a smoothing kernel that smoothes the cloud-edge volume extinction coefficient 
-        and droplet number concentraiton, while preserving the droplet effective radius. 
+        The width of a smoothing kernel that smoothes the cloud-edge volume extinction coefficient
+        and droplet number concentraiton, while preserving the droplet effective radius.
         Pass a value of `None` to turn off this smoothing.
-    
+
     Returns
     -------
     cloud : xr.Dataset

@@ -40,7 +40,7 @@ def test_stereo_applicability(sensors, instrument):
 
     for sensor in sensors[instrument]['sensor_list']:
 
-        if not sensor.attrs['projection'] in ('Orthographic', 'DomainTop'):
+        if sensor.attrs['projection'] not in ('Orthographic', 'DomainTop'):
             raise ValueError(
             "All sensor projections should be Orthographic or DomainTop"
             )

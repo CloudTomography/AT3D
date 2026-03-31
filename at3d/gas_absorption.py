@@ -181,7 +181,7 @@ class Reptran:
                     "The MODIS instrument name (`terra` or `aqua`) must be specified "
                     "for the MODIS band parameterization."
                 )
-            
+
             if not isinstance(band, int):
                 raise TypeError(
                     "`band` should be an integer."
@@ -315,7 +315,7 @@ class Reptran:
 def calc_microwave_gas_absorption(atmosphere, frequency):
     """
     Calculates gas absorption due to gases in the microwave.
-    
+
     Gas absorption is calculated based on the method of Liebe (1985).
     Absorption calculations depend on only pressure, temperature and humidity,
     (e.g. H2O and O2) are included. The model is valid only for frequencies
@@ -328,7 +328,7 @@ def calc_microwave_gas_absorption(atmosphere, frequency):
     Parameters
     ----------
         atmosphere : str, xr.Dataset
-            Standard atmosphere options include: 'midlatitude_summer', 'midlatitude_winter', 'tropical', 'subarctic_summer', 'subarctic_winter'. 
+            Standard atmosphere options include: 'midlatitude_summer', 'midlatitude_winter', 'tropical', 'subarctic_summer', 'subarctic_winter'.
             Otherwise, the `atmosphere` Dataset should follow the conventions of `gas_absorption.load_standard_atmosphere`.
             It is not necessary for all gases to be present.
         frequency : float, array_like
@@ -370,4 +370,4 @@ def calc_microwave_gas_absorption(atmosphere, frequency):
 
     gas_absorption = xr.merge(gas_abses)
 
-    return gas_absorption 
+    return gas_absorption

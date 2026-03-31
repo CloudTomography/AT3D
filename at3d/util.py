@@ -14,8 +14,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import subprocess
-import os
-import warnings
 from IPython.display import display
 from ipywidgets import fixed, interactive
 from pathlib import Path
@@ -69,7 +67,7 @@ def slider_select_file(dir, filetype=None):
 
     filetype = '*' if filetype is None else '*.' + filetype
     paths = [str(path) for path in Path(dir).rglob('{}'.format(filetype))]
-    file = interactive(select_path, i=(0, len(paths)-1), paths=fixed(paths));
+    file = interactive(select_path, i=(0, len(paths)-1), paths=fixed(paths))
     display(file)
     return file
 
@@ -561,7 +559,7 @@ def load_forward_model(file_name, load_solver=True):
 
             default_config = at3d.configuration.get_config()
             for name in default_config:
-                if not name in numerical_params:
+                if name not in numerical_params:
                     numerical_params[name] = default_config[name]
 
             #numerical_params['transcut'] = 1e-5
@@ -649,7 +647,7 @@ def save_forward_model(file_name, sensors, solvers):
         numerical_params = solver.numerical_params
         numerical_params['num_stokes'] = solver._nstokes
         solver.numerical_params.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'numerical_parameters')
-        
+
         # pickle `Objects`.
         surface = pickle_objects(solver.surface)
         surface.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'surface')

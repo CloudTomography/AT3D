@@ -92,7 +92,7 @@ def lambertian(albedo, ground_temperature=298.15, delx=None, dely=None, surface_
             raise TypeError(
                 "`surface_source` should inherit from `at3d.surface.SurfaceSource."
             )
-        dataset['surface_source'] = surface_source        
+        dataset['surface_source'] = surface_source
     elif ground_temperature.size == 1:
         ground_temperature = np.full_like(albedo, fill_value=ground_temperature[0, 0])
         if dely is None or delx is None:
@@ -699,7 +699,7 @@ class SurfaceSource:
             raise ValueError(
                 "Non-finite values in output of surface source model"
             )
-    
+
     def __call__(self, x, y, mu, phi):
         self._check_inputs(x,y,mu,phi)
         rad_out = self._rad_func(x,y,mu,phi)

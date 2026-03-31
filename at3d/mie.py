@@ -31,14 +31,14 @@ def get_mie_band_model(band_model, particle_type,minimum_effective_radius=4.0,
     mie_mono_tables = OrderedDict()
     for wavelength in band_model.wavelengths:
         mie_mono_tables[wavelength] = get_mono_table(
-            particle_type, 
-            (wavelength,wavelength), 
+            particle_type,
+            (wavelength,wavelength),
             minimum_effective_radius=minimum_effective_radius,
-            max_integration_radius=max_integration_radius, 
+            max_integration_radius=max_integration_radius,
             wavelength_averaging=False,
-            wavelength_resolution=wavelength_resolution, 
+            wavelength_resolution=wavelength_resolution,
             refractive_index=refractive_index,
-            relative_dir=relative_dir, 
+            relative_dir=relative_dir,
             verbose=verbose
         )
     return mie_mono_tables

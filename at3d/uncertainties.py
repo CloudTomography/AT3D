@@ -11,14 +11,11 @@ New uncertainty objects should have `_process_uncertainties` and `_process_noise
 methods which are called and inherit from the base class `Uncertainty`. If new cost functions are
 implemented they should be added as valid cases to `Uncertainty`.
 """
-import warnings
 import numpy as np
 import at3d.checks
 
 import scipy.interpolate as si
 import scipy.optimize as so
-import numpy as np
-import at3d.checks
 
 class Uncertainty:
     """
@@ -38,7 +35,7 @@ class Uncertainty:
     def __init__(self, cost_function):
 
         self._valid_cost_functions = ('L2', 'LL')
-        if not cost_function in self._valid_cost_functions:
+        if cost_function not in self._valid_cost_functions:
             raise NotImplementedError("`cost_function` '{}' is not supported for "
                 "this Uncertainty type. Valid values are '{}'".format(
                 cost_function, self._valid_cost_functions)
@@ -91,7 +88,7 @@ class Uncertainty:
         at3d.checks.check_sensor(sensor)
         for i, has_stokes in enumerate(sensor.stokes.data):
             if has_stokes:
-                if (not sensor.stokes_index.data[i] in sensor.data_vars):
+                if (sensor.stokes_index.data[i] not in sensor.data_vars):
                     raise KeyError(
                         "Stokes component '{}' is not found in sensor even though it is an "
                         "observable. Noise perturbations for this observable cannot be generated.".format(
@@ -190,7 +187,7 @@ class RadiometricUncertainty(Uncertainty):
         self._camera_to_camera_calibration_uncertainty = camera_to_camera_calibration_uncertainty
 
         self._absolute_calibration_uncertainty = absolute_calibration_uncertainty
-        if not seed is None:
+        if seed is not None:
             np.random.seed(seed)
         self._absolute_calibration_perturbation = np.random.normal(
             loc=0.0, scale=absolute_calibration_uncertainty

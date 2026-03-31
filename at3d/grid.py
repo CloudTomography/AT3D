@@ -324,7 +324,6 @@ class _GridAccessor(object):
                 "`grid` and `mask` must be of consistent shape."
             )
 
-        from scipy.spatial import cKDTree
         xs = grid.x.data
         ys = grid.y.data
         zs = grid.z.data

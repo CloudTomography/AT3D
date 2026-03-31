@@ -31,7 +31,6 @@ import datetime
 import subprocess
 import sys
 import shutil
-import warnings
 
 import numpy as np
 import xarray as xr
@@ -133,7 +132,7 @@ class StereoMatcher:
 
         # do some checks that mgm is there.
         joined_path = os.path.join(mgm_directory, 'mgm')
-        if (not 'mgm' in os.listdir(mgm_directory)) or  \
+        if ('mgm' not in os.listdir(mgm_directory)) or  \
             (shutil.which(joined_path) != joined_path):
             raise OSError(
             "The mgm executable was not found in the directory '{}'".format(mgm_directory)

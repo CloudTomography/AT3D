@@ -35,7 +35,7 @@ def aerosol_atmosphere(atmosphere=None, search_directory=None, atmosphere_name='
     """
     Prepares gas concentrations for aerosol calculations.
 
-    Data is reversed in increasing `z` and relative humidity is returned along with 
+    Data is reversed in increasing `z` and relative humidity is returned along with
     temperature and pressure.
 
     Parameters
@@ -59,17 +59,17 @@ def aerosol_atmosphere(atmosphere=None, search_directory=None, atmosphere_name='
     """
     if atmosphere is None:
         atmosphere = at3d.gas_absorption.load_standard_atmosphere(search_directory=search_directory, atmosphere_name=atmosphere_name)
-    
+
     R = 8.31447215
     avogadro = 6.022e23
     T = atmosphere.temperature.values
     P = atmosphere.pressure.values
-    
+
     es = 6.112*np.exp(17.67*(T-273.15)/(243.5 + (T-273.15)))
     air_density = 100*P/(R*T)
     RH = atmosphere.H2O.values*P/(es*air_density*avogadro*1e-6)
     z = atmosphere.z.values
-    
+
     atmosphere = xr.Dataset(
         data_vars={
             'humidity': ('z',RH[::-1]),
@@ -276,7 +276,7 @@ class OPACMixture:
     def __init__(self, directory=None):#'../data/OPAC/aerosol/'):
 
         if directory is None:
-            directory = os.path.join(importlib.resources.files('at3d'),'data/OPAC/aerosol/')            
+            directory = os.path.join(importlib.resources.files('at3d'),'data/OPAC/aerosol/')
         self._directory = directory
 
         self._expected_types = (

@@ -8,12 +8,10 @@ import at3d
 import xarray as xr
 import numpy as np
 import os
-import glob
 
-import os
 os.environ['at3d_DIR'] = '/Users/jesserl2/Documents/Code/pyshdom'
 git_commit = at3d.util.github_version()
-from datetime import datetime
+from datetime import datetime  # noqa: E402
 date = datetime.now().date().strftime("%Y%m%d")
 
 component_names={

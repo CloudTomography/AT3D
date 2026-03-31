@@ -638,7 +638,7 @@ class StateToGrid2D(StateToGridMask):
                 " have not yet been implemented."
             )
         return state_bounds
-    
+
 
 class StateToGridUniform(StateToGridMask):
     """

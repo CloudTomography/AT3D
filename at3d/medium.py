@@ -1366,7 +1366,7 @@ class MicrophysicsGridToOpticalProperties(GridToOpticalProperties):
 
     def __init__(self, rte_grid, optical_property_generator, fixed_dataset=None,
                  *fixed_data_arrays, **variable_data_bounds):
-        
+
         self._optical_property_generator = optical_property_generator
         GridToOpticalProperties.__init__(
             self,
@@ -1748,7 +1748,7 @@ class StateGenerator:
                         at3d.checks.check_optical_properties(opt_scat)
             elif name == 'num_stokes':
                 for value in variable.values():
-                    if not value in (1, 3, 4):
+                    if value not in (1, 3, 4):
                         raise ValueError(
                             "`num_stokes` should be an integer from (1, 3, 4) "
                             "not {}".format(variable)
