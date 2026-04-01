@@ -36,5 +36,15 @@ incdir_f2py = run_command(py,
 inc_np = include_directories(incdir_numpy, incdir_f2py)
 fortranobject_c = incdir_f2py / 'fortranobject.c'
 
+# --- MPI detection ---
+mpi_opt = get_option('mpi')
+mpi_dep = dependency('mpi', language: 'fortran', required: mpi_opt)
+have_mpi = mpi_dep.found()
+if have_mpi
+  message('MPI found – building with shdom_mpi.f90')
+else
+  message('MPI not found – building with shdom_nompi.f (stubs)')
+endif
+
 # --- Build the at3d package ---
 subdir('at3d')

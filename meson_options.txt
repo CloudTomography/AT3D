@@ -1,0 +1,2 @@
+option('mpi', type: 'feature', value: 'auto',
+       description: 'Build with MPI support (requires MPI Fortran compiler)')

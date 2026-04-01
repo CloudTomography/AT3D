@@ -47,6 +47,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mpi = ["mpi4py>=3.1"]
 test = ["pytest>=7.0", "pytest-cov>=4.0"]
 notebooks = ["jupyter>=1.0"]
 docs = [

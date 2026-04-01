@@ -182,8 +182,15 @@ class RTE:
 
         # Setup a name for the solver
         self._name = '{} {:1.3f} micron'.format(self._type, self.wavelength) if name is None else name
-        #Start mpi (if available). This is a dummy routine. MPI is not currently supported.
-        self._masterproc = at3d.core.start_mpi()
+        # Start MPI. When mpi4py is available, pass the Fortran communicator
+        # handle; otherwise pass 0 (ignored by the nompi stub).
+        try:
+            from mpi4py import MPI
+            comm_handle = MPI.COMM_WORLD.py2f()
+        except ImportError:
+            comm_handle = 0
+        # start_mpi returns (masterproc, comm) because COMM is intent(in,out)
+        self._masterproc, _ = at3d.core.start_mpi(comm_handle)
 
         # Link to the properties array module.
         self._pa = ShdomPropertyArrays()

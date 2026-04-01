@@ -186,7 +186,7 @@ class SensorsDict(OrderedDict):
 
         if mpi_comm is not None:
             out = []
-            keys = []
+            solved_keys = []
             for i in range(0, len(to_solve), mpi_comm.Get_size()):
                 index = i + mpi_comm.Get_rank()
                 if index < len(to_solve):
@@ -195,7 +195,7 @@ class SensorsDict(OrderedDict):
                         maxiter=maxiter, verbose=verbose, init_solution=init_solution,
                         setup_grid=setup_grid)
                     out.append(solvers[key].integrate_to_sensor(rte_sensors[key]))
-                    keys.append(key)
+                    solved_keys.append(key)
                     if destructive:
                         # memory management. After rendering, the large arrays are
                         # released to ensure that the largest
@@ -203,10 +203,10 @@ class SensorsDict(OrderedDict):
                         solvers[key]._release_big_arrays()
 
             out = mpi_comm.gather(out, root=0)
-            keys = mpi_comm.gather(keys, root=0)
+            solved_keys = mpi_comm.gather(solved_keys, root=0)
             if mpi_comm.Get_rank() == 0:
                 out_flat = [item for sublist in out for item in sublist]
-                keys_flat = [item for sublist in keys for item in sublist]
+                keys_flat = [item for sublist in solved_keys for item in sublist]
                 organized_out = [out_flat[keys_flat.index(key)] for key in solvers]
                 self.add_measurements_forward(sensor_mappings, organized_out, list(solvers))
 

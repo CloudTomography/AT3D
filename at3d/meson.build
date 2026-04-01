@@ -40,7 +40,6 @@ fortran_sources = files(
   # Base files
   '../src/fftpack.f',
   '../src/ocean_brdf.f',
-  '../src/shdom_nompi.f',
   '../src/shdomsub5.f',
   '../src/surface.f',
   '../src/util.f90',
@@ -57,25 +56,46 @@ fortran_sources = files(
   '../src/polarized/indexwatice.f',
 )
 
+# MPI vs no-MPI source selection
+if have_mpi
+  fortran_sources += files('../src/shdom_mpi.f90')
+  core_deps = [py_dep, mpi_dep]
+else
+  fortran_sources += files('../src/shdom_nompi.f')
+  core_deps = [py_dep]
+endif
+
 # --- f2py wrapper generation ---
 # Step A: Generate the .pyf signature file from Fortran sources.
 # tools/generate_pyf.py is the single source of truth for the API list.
+generate_pyf_cmd = [
+  py, meson.project_source_root() / 'tools' / 'generate_pyf.py',
+  '--project-root', meson.project_source_root(),
+  '--output-dir', '@OUTDIR@',
+]
+if have_mpi
+  generate_pyf_cmd += ['--mpi']
+endif
+
 generate_pyf = custom_target(
   'core.pyf',
   input: fortran_sources,
   output: 'core.pyf',
-  command: [
-    py, meson.project_source_root() / 'tools' / 'generate_pyf.py',
-    '--project-root', meson.project_source_root(),
-    '--output-dir', '@OUTDIR@',
-  ],
+  command: generate_pyf_cmd,
 )
 
 # Step B: Generate C wrapper and Fortran wrappers from the .pyf file.
+# f2py emits core-f2pywrappers2.f90 when Fortran 90 modules are present
+# (e.g. SHDOM_MPI_DATA); it must be compiled to provide the init symbols.
+core_wrapper_outputs = ['coremodule.c', 'core-f2pywrappers.f']
+if have_mpi
+  core_wrapper_outputs += ['core-f2pywrappers2.f90']
+endif
+
 core_wrappers = custom_target(
   'coremodule.c',
   input: generate_pyf,
-  output: ['coremodule.c', 'core-f2pywrappers.f'],
+  output: core_wrapper_outputs,
   command: [py, '-m', 'numpy.f2py', '@INPUT@', '--build-dir', '@OUTDIR@'],
 )
 
@@ -84,7 +104,7 @@ py.extension_module(
   'core',
   [core_wrappers, fortran_sources, fortranobject_c],
   include_directories: inc_np,
-  dependencies: py_dep,
+  dependencies: core_deps,
   subdir: 'at3d',
   install: true,
 )

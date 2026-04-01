@@ -8,10 +8,12 @@ C     Jesse Loveridge, University of Illinois at Urbana-Champaign, 2020-2021.
 C     Subroutines only have f2py directives added.
 C Dummy routines to allow parallel SHDOM to compile without MPI.
 
-      SUBROUTINE START_MPI (MASTERPROC)
+      SUBROUTINE START_MPI (MASTERPROC, COMM)
       IMPLICIT NONE
       LOGICAL MASTERPROC
+      INTEGER COMM
 Cf2py intent(out) MASTERPROC
+Cf2py intent(in,out) :: COMM
       MASTERPROC = .TRUE.
       RETURN
       END

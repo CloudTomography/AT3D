@@ -21,14 +21,14 @@ import sys
 # ---------------------------------------------------------------------------
 # Fortran source files (relative to the project root ``src/`` directory).
 # Only the polarized SHDOM branch is compiled (unpolarized is unsupported).
+# The MPI source file is swapped in when --mpi is passed.
 # ---------------------------------------------------------------------------
 F2PY_SRC_DIR = "src"
 
-F2PY_SHDOM_FILES = [
+F2PY_SHDOM_FILES_COMMON = [
     # Base files
     "fftpack.f",
     "ocean_brdf.f",
-    "shdom_nompi.f",
     "shdomsub5.f",
     "surface.f",
     "util.f90",
@@ -44,6 +44,9 @@ F2PY_SHDOM_FILES = [
     "polarized/miewig.f",
     "polarized/indexwatice.f",
 ]
+
+F2PY_NOMPI_FILE = "shdom_nompi.f"
+F2PY_MPI_FILE = "shdom_mpi.f90"
 
 # ---------------------------------------------------------------------------
 # Public API – Fortran subroutines/functions exposed to Python via f2py.
@@ -151,11 +154,15 @@ F2PY_CORE_API = [
 MODULE_NAME = "core"
 
 
-def generate_pyf(project_root, output_dir):
+def generate_pyf(project_root, output_dir, use_mpi=False):
     """Run f2py to generate the .pyf signature file."""
     src_dir = os.path.join(project_root, F2PY_SRC_DIR)
+
+    mpi_file = F2PY_MPI_FILE if use_mpi else F2PY_NOMPI_FILE
+    shdom_files = F2PY_SHDOM_FILES_COMMON + [mpi_file]
+
     fortran_files = [
-        os.path.join(src_dir, f) for f in F2PY_SHDOM_FILES
+        os.path.join(src_dir, f) for f in shdom_files
     ]
     pyf_path = os.path.join(output_dir, f"{MODULE_NAME}.pyf")
 
@@ -185,6 +192,12 @@ def main():
         default=None,
         help="Project root directory (default: auto-detect from script location)",
     )
+    parser.add_argument(
+        "--mpi",
+        action="store_true",
+        default=False,
+        help="Use shdom_mpi.f90 instead of shdom_nompi.f for MPI-enabled builds",
+    )
     args = parser.parse_args()
 
     # Auto-detect project root: this script lives in <root>/tools/
@@ -199,7 +212,7 @@ def main():
         output_dir = os.path.join(project_root, F2PY_SRC_DIR)
 
     os.makedirs(output_dir, exist_ok=True)
-    generate_pyf(project_root, output_dir)
+    generate_pyf(project_root, output_dir, use_mpi=args.mpi)
 
 
 if __name__ == "__main__":
