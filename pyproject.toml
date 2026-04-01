@@ -47,7 +47,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["nose2>=0.12"]
+test = ["pytest>=7.0", "pytest-cov>=4.0"]
 notebooks = ["jupyter>=1.0"]
 dev = ["ruff>=0.4", "pre-commit>=3.0"]
 
@@ -64,3 +64,26 @@ ignore = ["E501", "E741", "F841", "E101", "W191"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.coverage.run]
+source_pkgs = ["at3d"]
+omit = ["*/data/*"]
+
+[tool.coverage.paths]
+source = [
+    "at3d/",
+    "*/site-packages/at3d/",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.coverage.html]
+directory = "htmlcov"
