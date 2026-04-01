@@ -276,7 +276,7 @@ class OPACMixture:
     def __init__(self, directory=None):#'../data/OPAC/aerosol/'):
 
         if directory is None:
-            directory = os.path.join(importlib.resources.files('at3d'),'data/OPAC/aerosol/')
+            directory = str(importlib.resources.files('at3d').joinpath('data/OPAC/aerosol/'))
         self._directory = directory
 
         self._expected_types = (
