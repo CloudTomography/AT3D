@@ -84,9 +84,9 @@ class SpaceCarver:
         self._pa = at3d.solver.ShdomPropertyArrays()
 
         # Set shdom property array
-        self._pa.npx = grid.dims['x']
-        self._pa.npy = grid.dims['y']
-        self._pa.npz = grid.dims['z']
+        self._pa.npx = grid.sizes['x']
+        self._pa.npy = grid.sizes['y']
+        self._pa.npz = grid.sizes['z']
         self._pa.xstart = grid.x[0]
         self._pa.ystart = grid.y[0]
 
@@ -98,8 +98,8 @@ class SpaceCarver:
         self._nx = self._pa.npx
         self._ny = self._pa.npy
         self._nz = self._pa.npz
-        self._maxpg = grid.dims['x'] * grid.dims['y'] * grid.dims['z']
-        self._maxnz = grid.dims['z']
+        self._maxpg = grid.sizes['x'] * grid.sizes['y'] * grid.sizes['z']
+        self._maxnz = grid.sizes['z']
 
         # Set the full domain grid sizes (variables end in t)
         self._nxt, self._nyt, self._npxt, self._npyt = self._nx, self._ny, self._pa.npx, self._pa.npy
@@ -134,6 +134,8 @@ class SpaceCarver:
             delyp=self._pa.dely,
             zlevels=self._pa.zlevels
         )
+        self._xgrid = self._xgrid[:self._nx1]
+        self._ygrid = self._ygrid[:self._ny1]
 
         self._npts, self._ncells, self._gridpos, self._gridptr, self._neighptr, \
         self._treeptr, self._cellflags = at3d.core.init_cell_structure(

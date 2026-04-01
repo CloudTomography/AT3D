@@ -43,9 +43,9 @@ test:
     - at3d
     - at3d.core
   requires:
-    - nose2 >=0.12
+    - pytest >=7.0
   commands:
-    - cd tests && nose2 -v
+    - pytest tests/ -v
   source_files:
     - tests/
 

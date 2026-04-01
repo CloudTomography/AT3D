@@ -412,7 +412,7 @@ def load_2parameter_lwc_file(file_name, density='lwc'):
     )
 
     dset.attrs['density_name'] = density
-    dset.attrs['file_name'] = file_name
+    dset.attrs['file_name'] = str(file_name)
 
     return dset
 
@@ -487,7 +487,7 @@ def load_from_csv(path, density=None, origin=(0.0,0.0)):
         dset = dset.rename_vars({density: 'density'})
         dset.attrs['density_name'] = density
 
-    dset.attrs['file_name'] = path
+    dset.attrs['file_name'] = str(path)
 
     return dset
 
@@ -504,9 +504,165 @@ def load_from_netcdf(path, density=None):
         dset = dset.rename_vars({density: 'density'})
         dset.attrs['density_name'] = density
 
-    dset.attrs['file_name'] = path
+    dset.attrs['file_name'] = str(path)
 
     return dset
+
+
+def load_sensors(file_name):
+    """
+    Load sensors from a netCDF file.
+
+    Parameters
+    ----------
+    file_name : str
+        Path to the netCDF file containing saved sensors.
+
+    Returns
+    -------
+    sensor_dict : at3d.containers.SensorsDict
+    """
+    dataset = nc.Dataset(file_name)
+    sensors = dataset.groups['sensors'].groups
+    sensor_dict = at3d.containers.SensorsDict()
+
+    for key, sensor in sensors.items():
+        for i, image in sensor.groups.items():
+            sensor_dataset = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
+                'sensors/'+str(key)+'/'+str(i)]))
+            sensor_dataset['stokes'] = (['stokes_index'], sensor_dataset['stokes'].data.astype(bool))
+            sensor_dataset['use_subpixel_rays'] = sensor_dataset['use_subpixel_rays'].data.astype(bool)
+            sensor_dict.add_sensor(key, sensor_dataset)
+
+    return sensor_dict
+
+
+def save_sensors(file_name, sensors):
+    """
+    Save sensors to a netCDF file.
+
+    The file is created if it does not exist, otherwise sensors are
+    appended to the existing file.
+
+    Parameters
+    ----------
+    file_name : str
+        Path to the netCDF file.
+    sensors : at3d.containers.SensorsDict
+        The container with all of the sensors information.
+    """
+    if not isinstance(sensors, at3d.containers.SensorsDict):
+        raise TypeError(
+            "`sensors` should be an instance of '{}'".format(at3d.containers.SensorsDict)
+        )
+    if not os.path.exists(file_name):
+        nc.Dataset(file_name, 'w').close()
+
+    for key, sensor in sensors.items():
+        for j, image in enumerate(sensor['sensor_list']):
+            image.to_netcdf(file_name, 'a', group='sensors/'+str(key)+'/'+str(j))
+
+
+def load_solvers(file_name):
+    """
+    Load solvers from a netCDF file.
+
+    Parameters
+    ----------
+    file_name : str
+        Path to the netCDF file containing saved solvers.
+
+    Returns
+    -------
+    solver_dict : at3d.containers.SolversDict
+    rte_grid : xr.Dataset
+    """
+    dataset = nc.Dataset(file_name)
+    solvers = dataset.groups['solvers'].groups
+    solver_dict = at3d.containers.SolversDict()
+
+    for key, solver in solvers.items():
+        numerical_params = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
+                        'solvers/'+str(key)+'/numerical_parameters']))
+        numerical_params['deltam'] = numerical_params.deltam.data.astype(bool)
+        numerical_params['high_order_radiance'] = numerical_params.high_order_radiance.data.astype(bool)
+        num_stokes = numerical_params.num_stokes.data
+        surface = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/surface']))
+        source = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/source']))
+
+        surface = unpickle_objects(surface)
+        source = unpickle_objects(source)
+
+        mediums = OrderedDict()
+        for name, med in solver['medium'].groups.items():
+            mediums[name] = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
+                        'solvers/'+str(key)+'/medium/'+str(name)]))
+
+        if 'atmosphere' in solver.groups:
+            atmosphere = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
+                'solvers/'+str(key)+'/atmosphere']))
+        else:
+            atmosphere = None
+
+        default_config = at3d.configuration.get_config()
+        for name in default_config:
+            if name not in numerical_params:
+                numerical_params[name] = default_config[name]
+
+        solver_dict.add_solver(float(key), at3d.solver.RTE(
+            numerical_params=numerical_params,
+            medium=mediums,
+            source=source,
+            surface=surface,
+            num_stokes=num_stokes,
+            name=None,
+            atmosphere=atmosphere
+        ))
+
+    key = list(solvers.keys())[0]
+    rte_grid = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/grid']))
+
+    return solver_dict, rte_grid
+
+
+def save_solvers(file_name, solvers):
+    """
+    Save solvers to a netCDF file.
+
+    The file is created if it does not exist, otherwise solvers are
+    appended to the existing file.
+
+    Parameters
+    ----------
+    file_name : str
+        Path to the netCDF file.
+    solvers : at3d.containers.SolversDict
+        The container with all of the solver.RTE objects.
+    """
+    if not isinstance(solvers, at3d.containers.SolversDict):
+        raise TypeError(
+            "`solvers` should be an instance of '{}'".format(at3d.containers.SolversDict)
+        )
+    if not os.path.exists(file_name):
+        nc.Dataset(file_name, 'w').close()
+
+    # Save mediums first in their own loop (netCDF4 quirk).
+    for key, solver in solvers.items():
+        for name, med in solver.medium.items():
+            med.to_netcdf(file_name, 'a', group='solvers/'+str(key)+'/'+'medium/'+str(name))
+
+    for key, solver in solvers.items():
+        numerical_params = solver.numerical_params
+        numerical_params['num_stokes'] = solver._nstokes
+        solver.numerical_params.to_netcdf(file_name, 'a', group='solvers/'+str(key)+'/'+'numerical_parameters')
+
+        surface = pickle_objects(solver.surface)
+        surface.to_netcdf(file_name, 'a', group='solvers/'+str(key)+'/'+'surface')
+        source = pickle_objects(solver.source)
+        source.to_netcdf(file_name, 'a', group='solvers/'+str(key)+'/'+'source')
+        solver._grid.to_netcdf(file_name, 'a', group='solvers/'+str(key)+'/'+'grid')
+        if solver.atmosphere is not None:
+            solver.atmosphere.to_netcdf(file_name, 'a', group='solvers/'+str(key)+'/'+'atmosphere')
 
 
 def load_forward_model(file_name, load_solver=True):
@@ -514,70 +670,19 @@ def load_forward_model(file_name, load_solver=True):
     Load from netCDF the solvers and sensors that were saved using
     `save_forward_model` below.
     """
-    dataset = nc.Dataset(file_name)
+    sensor_dict = load_sensors(file_name)
 
-    groups = dataset.groups
-    sensors = groups['sensors'].groups
-    solvers = groups['solvers'].groups
-    sensor_dict = at3d.containers.SensorsDict()
-    solver_dict = at3d.containers.SolversDict()
-
-    for key,sensor in sensors.items():
-        sensor_list = []
-        for i, image in sensor.groups.items():
-            sensor_dataset = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
-                'sensors/'+str(key)+'/'+str(i)]))
-            sensor_dataset['stokes'] = (['stokes_index'],sensor_dataset['stokes'].data.astype(bool))
-            sensor_dataset['use_subpixel_rays'] = sensor_dataset['use_subpixel_rays'].data.astype(bool)
-            sensor_dict.add_sensor(key, sensor_dataset)
-        #     sensor_list.append(xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
-        #         'sensors/'+str(key)+'/'+str(i)])))
-        # sensor_dict[key] = {'sensor_list':sensor_list}
     if load_solver:
-        for key, solver in solvers.items():
-            numerical_params = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
-                            'solvers/'+str(key)+'/numerical_parameters']))
-            numerical_params['deltam'] = numerical_params.deltam.data.astype(bool)
-            numerical_params['high_order_radiance'] = numerical_params.high_order_radiance.data.astype(bool)
-            num_stokes = numerical_params.num_stokes.data
-            surface = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/surface']))
-            source = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/source']))
-
-            surface = unpickle_objects(surface)
-            source = unpickle_objects(source)
-
-            mediums = OrderedDict()
-            for name, med in solver['medium'].groups.items():
-                mediums[name] = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
-                            'solvers/'+str(key)+'/medium/'+str(name)]))
-
-            if 'atmosphere' in solver.groups:
-                atmosphere = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset[
-                    'solvers/'+str(key)+'/atmosphere']))
-            else:
-                atmosphere=None
-
-            default_config = at3d.configuration.get_config()
-            for name in default_config:
-                if name not in numerical_params:
-                    numerical_params[name] = default_config[name]
-
-            #numerical_params['transcut'] = 1e-5
-            #numerical_params['angle_set'] = 2
-
-            solver_dict.add_solver(float(key), at3d.solver.RTE(numerical_params=numerical_params,
-                                                medium=mediums,
-                                               source=source,
-                                               surface=surface,
-                                                num_stokes=num_stokes,
-                                                name=None,
-                                                atmosphere=atmosphere
-                                               )
-                                               )
-    key = list(solvers.keys())[0]
-    rte_grid = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/grid']))
+        solver_dict, rte_grid = load_solvers(file_name)
+    else:
+        solver_dict = at3d.containers.SolversDict()
+        dataset = nc.Dataset(file_name)
+        solvers = dataset.groups['solvers'].groups
+        key = list(solvers.keys())[0]
+        rte_grid = xr.open_dataset(xr.backends.NetCDF4DataStore(dataset['solvers/'+str(key)+'/grid']))
 
     return sensor_dict, solver_dict, rte_grid
+
 
 def save_forward_model(file_name, sensors, solvers):
     """
@@ -598,16 +703,6 @@ def save_forward_model(file_name, sensors, solvers):
     solvers : at3d.containers.SolversDict
         The container with all of the solver.RTE objects.
     """
-
-    if not isinstance(sensors, at3d.containers.SensorsDict):
-        raise TypeError(
-            "`sensors` should be an instance of '{}'".format(at3d.containers.SensorsDict)
-        )
-    if not isinstance(solvers, at3d.containers.SolversDict):
-        raise TypeError(
-            "`sensors` should be an instance of '{}'".format(at3d.containers.SolversDict)
-        )
-
     # make a safe file name. We always want one that works
     # as we might have spent a lot of time to make the input data.
     counter = 1
@@ -620,42 +715,15 @@ def save_forward_model(file_name, sensors, solvers):
         counter += 1
 
     if counter > 1:
-
         warnings.warn("file_name '{}' already exists, your file is now at '{}'".format(
-            initial_file_name,file_name), category=RuntimeWarning
-             )
+            initial_file_name, file_name), category=RuntimeWarning
+        )
 
-    # intialize the save file.
-    save_file = nc.Dataset(file_name, 'w')
-    save_file.close()
+    # Initialize the save file.
+    nc.Dataset(file_name, 'w').close()
+    save_solvers(file_name, solvers)
+    save_sensors(file_name, sensors)
 
-    # do the mediums first in their own loop because otherwise the whole thing crashes?!?
-    for key, solver in solvers.items():
-        for name, med in solver.medium.items():
-            med.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'medium/'+str(name))
-
-    for i, (key,sensor) in enumerate(sensors.items()):
-        for j, image in enumerate(sensor['sensor_list']):
-            if (i==0) & (j==0):
-                image.to_netcdf(file_name, 'a', group = 'sensors/'+str(key)+'/'+str(j))
-
-            else:
-                image.to_netcdf(file_name, 'a', group = 'sensors/'+str(key)+'/'+str(j))
-
-
-    for i, (key, solver) in enumerate(solvers.items()):
-        numerical_params = solver.numerical_params
-        numerical_params['num_stokes'] = solver._nstokes
-        solver.numerical_params.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'numerical_parameters')
-
-        # pickle `Objects`.
-        surface = pickle_objects(solver.surface)
-        surface.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'surface')
-        source = pickle_objects(solver.source)
-        source.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'source')
-        solver._grid.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'grid')
-        if solver.atmosphere is not None:
-            solver.atmosphere.to_netcdf(file_name,'a', group='solvers/'+str(key)+'/'+'atmosphere')
 
 def adjoint_linear_interpolation(reference_coords, data_array):
     """

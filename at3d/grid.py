@@ -70,6 +70,11 @@ def make_grid(delx: float, npx: int, dely: float, npy: int, z: np.ndarray,
        (np.unique(z).size != z.size) or (z.ndim != 1) or (z.size < 2):
         raise ValueError('z must be >= 0, strictly increasing, 1-D and contain at least 2 points.')
 
+    if isinstance(delx, xr.DataArray) and (delx.size == 1):
+        delx = float(delx)
+    if isinstance(dely, xr.DataArray) and (dely.size == 1):
+        dely = float(dely)
+
     grid = xr.Dataset(
         coords={
             'x': np.linspace(0.0, delx*(npx-1), npx),

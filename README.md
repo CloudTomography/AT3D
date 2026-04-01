@@ -1,11 +1,12 @@
 # Atmospheric Tomography with 3D Radiative Transfer (AT3D)
 
 ![CI](https://github.com/CloudTomography/AT3D/actions/workflows/ci.yml/badge.svg)
+[![Documentation](https://readthedocs.org/projects/at3d/badge/?version=latest)](https://at3d.readthedocs.io/en/latest/)
 
 AT3D performs 3D reconstruction of cloud/aerosol microphysical properties from multi-angle, multi-spectral solar reflected radiation using a non-linear optimization procedure [[1],[2],[3]].
 The core radiative transfer routines are sourced from the Fortran SHDOM (Spherical Harmonic Discrete Ordinate Method for 3D Atmospheric Radiative Transfer) code by Frank K. Evans [[4],[5]].
 
-The python package was created by [Aviad Levis](https://www.aviadlevis.info), Amit Aides (Technion - Israel Institute of Technology) and [Jesse Loveridge](https://cloud-radiation.atmos.colostate.edu/jesse-loveridge/) (University of Illinois). Code contributions have been made so far by Linda Forster and Vadim Holodovsky.
+The python package was created by [Aviad Levis](https://www.aviadlevis.info), Amit Aides (Technion - Israel Institute of Technology) and [Jesse Loveridge](https://scholar.google.com/citations?user=ekCg43cAAAAJ&hl=en) (University of Illinois). Code contributions have been made so far by Linda Forster and Vadim Holodovsky.
 
 ## Usage
 
@@ -20,7 +21,7 @@ Any publications using the synthetic les clouds in the ./data/synthetic_cloud_fi
 
 ## Contact
 
-If you find this package useful and/or would like to contribute code please let us know: aviad.levis@gmail.com; Jesse.Loveridge@colostate.edu. 
+If you find this package useful and/or would like to contribute code please let us know: aviad.levis@gmail.com; Jesse.Loveridge@metservice.com
 
 [1]: http://openaccess.thecvf.com/content_iccv_2015/html/Levis_Airborne_Three-Dimensional_Cloud_ICCV_2015_paper.html
 [2]: http://openaccess.thecvf.com/content_cvpr_2017/html/Levis_Multiple-Scattering_Microphysics_Tomography_CVPR_2017_paper.html
@@ -119,17 +120,16 @@ Note: conda-forge submission requires a separate feedstock PR.
 &nbsp;
 
 ## Running Tests
-After successful installation, run the tests using Python's [nose2](https://docs.nose2.io/) package
-and make sure they all succeed:
+After successful installation, run the tests using [pytest](https://docs.pytest.org/) and
+make sure they all succeed:
 ```
 pip install at3d[test]
-cd tests
-nose2 -v
+pytest tests/ -v
 ```
 This command will execute all files starting with *test_\*.py*.
-To execute only one specific test file, `test.py` use
+To execute only one specific test file use:
 ```
-nose2 -v test
+pytest tests/test_derivatives.py -v
 ```
 
 &nbsp;

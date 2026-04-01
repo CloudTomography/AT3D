@@ -49,6 +49,13 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=7.0", "pytest-cov>=4.0"]
 notebooks = ["jupyter>=1.0"]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-rtd-theme>=2.0",
+    "nbsphinx>=0.9",
+    "pandoc",
+    "ipykernel",
+]
 dev = ["ruff>=0.4", "pre-commit>=3.0"]
 
 [project.urls]

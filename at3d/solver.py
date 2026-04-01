@@ -2054,9 +2054,9 @@ class RTE:
             return 0
 
         # Set shdom property array
-        self._pa.npx = grid.dims['x']
-        self._pa.npy = grid.dims['y']
-        self._pa.npz = grid.dims['z']
+        self._pa.npx = grid.sizes['x']
+        self._pa.npy = grid.sizes['y']
+        self._pa.npz = grid.sizes['z']
         #All grids start from 0.0, xstart should be used only
         #for MPI as each worker will have different starting positions.
         assert np.allclose(grid.x[0], 0.0), 'X-dimension of property grid should start from 0.0'
@@ -2096,8 +2096,8 @@ class RTE:
                 " npz={}".format(self._ny, self._pa.npy)
                 )
 
-        self._maxpg = grid.dims['x'] * grid.dims['y'] * grid.dims['z']
-        self._maxnz = grid.dims['z']
+        self._maxpg = grid.sizes['x'] * grid.sizes['y'] * grid.sizes['z']
+        self._maxnz = grid.sizes['z']
 
         # Set the full domain grid sizes (variables end in t)
         self._nxt, self._nyt, self._npxt, self._npyt = \

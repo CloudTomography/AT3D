@@ -126,7 +126,6 @@ F2PY_CORE_API = [
     "prepare_deriv_interps",
     "planck_function",
     "planck_derivative",
-    "compute_gradient_oneproppoint",
     "compute_direct_beam_deriv",
     "extinction_derivative_point",
     "interpolate_point",
