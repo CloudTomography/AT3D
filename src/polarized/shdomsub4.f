@@ -1624,6 +1624,14 @@ C     This is unapproximated (apart from practicalities of discretization).
       INTEGER Q
       REAL TIME1, TIME2, TIME3, TIME4
 
+C     Locals for inlined COMPUTE_GRADIENT_ONEPROPPOINT
+      REAL DLEGP(NSTLEG, 0:NLEG), UNSCALED_LEGEN(NSTLEG, 0:NLEG)
+      REAL DLEGT(NSTLEG, 0:NLEG), LEGENP(NSTLEG, 0:NLEG)
+      REAL DSINGSCATP(NSTOKES), DSOURCE(NSTOKES)
+      REAL SINGSCATP(NSTOKES), DPLANCK, PLANCK, FTEMP
+      REAL LEG_DIFF(NSTLEG, 0:NLEG)
+      INTEGER LAST_IPA
+
       SECMU0 = 1.0D0/ABS(SOLARMU)
 
 C         Loop over the grid points, computing the source function
@@ -1777,138 +1785,236 @@ C          CALL CPU_TIME(TIME2)
 C          TIME_SOURCE(1) = TIME_SOURCE(1) + TIME2 - TIME1
 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 C         BEGIN gradient calculations.
+C         Restructured: group by species, hoist invariants,
+C         inline COMPUTE_GRADIENT_ONEPROPPOINT.
 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
-C          CALL CPU_TIME(TIME1)
 
-C             Compute the radiance/phase convolutions for each derivative
-C             species and adaptive point which is used for the extinction
-C             and albedo derivatives. This doesn't need to be redone
-C             for each base grid point as well.
+C         Precompute PLANCK/DPLANCK once per RTE grid point (thermal).
+          IF (SRCTYPE .EQ. 'T' .OR. SRCTYPE .EQ. 'B') THEN
+            CALL PLANCK_DERIVATIVE(TEMP(IP), UNITS, WAVENO,
+     .                             WAVELEN, DPLANCK)
+            CALL PLANCK_FUNCTION(TEMP(IP), UNITS, WAVENO,
+     .                           WAVELEN, PLANCK)
+            IF (PLANCK .LT. 1e-7) DPLANCK = 0.0
+          ENDIF
 
+          LAST_IPA = -1
           DO IDR = 1, NUMDER
             IPA = PARTDER(IDR)
 
-C           Compute values at radiative transfer grid points used in the
-C           gradient computation at each property grid point.
-            SCATTERJ = 0.0
-            SINGSCATJ = 0.0
-            IF (DELTAM) THEN
-              DO NB=1,8
-                IB = INTERPPTR(NB,IP)
-                XI = OPTINTERPWT(NB,IP)
-                SPATIAL_WEIGHT = XI*ALBEDOP(IB,IPA)*EXTINCTP(IB,IPA)
-                SCATTERJ = SCATTERJ + SPATIAL_WEIGHT
-                IF (SPATIAL_WEIGHT .LE. 1e-6) CYCLE
-                DO Q=1,MAXNMICRO
-                  IF (PHASEWTP(Q,IB,IPA) .LE. 1e-6) CYCLE
+C           === Per-species setup (skip if same IPA as previous IDR) ===
+            IF (IPA .NE. LAST_IPA) THEN
+              LAST_IPA = IPA
+
+C             Compute SCATTERJ and SINGSCATJ on RTE grid for this species.
+              SCATTERJ = 0.0
+              SINGSCATJ = 0.0
+              IF (DELTAM) THEN
+                DO NB=1,8
+                  IB = INTERPPTR(NB,IP)
+                  XI = OPTINTERPWT(NB,IP)
+                  SPATIAL_WEIGHT = XI*ALBEDOP(IB,IPA)*EXTINCTP(IB,IPA)
+                  SCATTERJ = SCATTERJ + SPATIAL_WEIGHT
+                  IF (SPATIAL_WEIGHT .LE. 1e-6) CYCLE
+                  DO Q=1,MAXNMICRO
+                    IF (PHASEWTP(Q,IB,IPA) .LE. 1e-6) CYCLE
                     SINGSCATJ = SINGSCATJ + SPATIAL_WEIGHT*
-     .               PHASEWTP(Q,IB,IPA)*
-     .               SINGSCAT(:,IPHASEP(Q,IB,IPA))
+     .                PHASEWTP(Q,IB,IPA)*
+     .                SINGSCAT(:,IPHASEP(Q,IB,IPA))
+                  ENDDO
                 ENDDO
-              ENDDO
-              IF (SCATTERJ .GT. SCATMIN) THEN
-                SINGSCATJ = SINGSCATJ/SCATTERJ
-              ELSE
-                SINGSCATJ = SINGSCATJ/SCATMIN
+                IF (SCATTERJ .GT. SCATMIN) THEN
+                  SINGSCATJ = SINGSCATJ/SCATTERJ
+                ELSE
+                  SINGSCATJ = SINGSCATJ/SCATMIN
+                ENDIF
               ENDIF
-            ENDIF
-C
-            IF (NPART .EQ. 1) THEN
-C             If there is only one species we can make use of the source
-C             function already calculated. Otherwise we have to
-C             evaluate the portion of the source function corresponding
-C             to each phase function.
-              IF (ALBEDO(IP,IPA) .GT. 1e-8) THEN
-                SOURCET = SRCEXT8(:,N)/ALBEDO(IP,IPA)
+
+C             Compute SOURCET and LEGENT for this species on RTE grid.
+              IF (NPART .EQ. 1) THEN
+                IF (ALBEDO(IP,IPA) .GT. 1e-8) THEN
+                  SOURCET = SRCEXT8(:,N)/ALBEDO(IP,IPA)
+                ELSE
+                  SOURCET = 0.0
+                ENDIF
               ELSE
                 SOURCET = 0.0
-              ENDIF
-            ELSE
-              SOURCET = 0.0
-              LEGENT = 0.0
-              F=0.0
-C           Compute values at radiative transfer grid points used in the
-C           gradient computation at each property grid point.
-              DO NB=1,8
-                IB = INTERPPTR(NB,IP)
-                XI = OPTINTERPWT(NB,IP)
-                SPATIAL_WEIGHT = XI*ALBEDOP(IB,IPA)*EXTINCTP(IB,IPA)
-                IF (SPATIAL_WEIGHT .LE. 1e-6) CYCLE
-
-                DO Q=1,MAXNMICRO
-                  IF (PHASEWTP(Q,IB,IPA) .LE. 1e-6) CYCLE
-                  LEGENT = LEGENT +
-     .              SPATIAL_WEIGHT*PHASEWTP(Q,IB,IPA)*
-     .              LEGEN(:,:,IPHASEP(Q,IB,IPA))
+                LEGENT = 0.0
+                F = 0.0
+                DO NB=1,8
+                  IB = INTERPPTR(NB,IP)
+                  XI = OPTINTERPWT(NB,IP)
+                  SPATIAL_WEIGHT = XI*ALBEDOP(IB,IPA)*EXTINCTP(IB,IPA)
+                  IF (SPATIAL_WEIGHT .LE. 1e-6) CYCLE
+                  DO Q=1,MAXNMICRO
+                    IF (PHASEWTP(Q,IB,IPA) .LE. 1e-6) CYCLE
+                    LEGENT = LEGENT +
+     .                SPATIAL_WEIGHT*PHASEWTP(Q,IB,IPA)*
+     .                LEGEN(:,:,IPHASEP(Q,IB,IPA))
+                  ENDDO
                 ENDDO
-              ENDDO
-
-              IF (SCATTERJ .GT. SCATMIN) THEN
-                LEGENT = LEGENT/SCATTERJ
-              ELSE
-                LEGENT = LEGENT/SCATMIN
+                IF (SCATTERJ .GT. SCATMIN) THEN
+                  LEGENT = LEGENT/SCATTERJ
+                ELSE
+                  LEGENT = LEGENT/SCATMIN
+                ENDIF
+                IF (DELTAM) THEN
+                  F = LEGENT(1,ML+1)
+                  IF (INTERPMETHOD(2:2) .EQ. 'N') THEN
+                    LEGENT(:,0:ML) = LEGENT(:,0:ML)/(1-F)
+                  ENDIF
+                ENDIF
+                IF (SCATTERJ .GT. SCATMIN) THEN
+                  CALL COMPUTE_SOURCE_DIRECTION(LEGENT, SOURCET,
+     .              NLM, LOFJ, RIS, RNS, NSTOKES, RADIANCE, YLMDIR,
+     .              NSTLEG, DELTAM, SRCTYPE, ML, MM, NS, YLMSUN,
+     .              DIRFLUX(IP), SECMU0, NLEG)
+                  IF (DELTAM .AND. (SRCTYPE .EQ. 'S' .OR.
+     .                SRCTYPE .EQ. 'B')) THEN
+                    SOURCET = SOURCET +
+     .                DIRFLUX(IP)*SINGSCATJ*SECMU0/(1-F)
+                  ENDIF
+                ENDIF
               ENDIF
+              SOURCET(1) = MAX(0.0, SOURCET(1))
 
-C           Do delta-M scaling.
+C             Undo delta-M scaling to get unscaled Legendre coefficients.
               IF (DELTAM) THEN
-                F = LEGENT(1,ML+1)
-                IF (INTERPMETHOD(2:2) .EQ. 'N') THEN
-                  LEGENT(:,0:ML) = LEGENT(:,0:ML)/(1-F)
-                ENDIF
-              ENDIF
-C           Calculate the phase/radiance component of source function.
-C           for extinction/albedo gradients.
-C           (this is just for one SPECIES so we don't reuse it.
-C           This would be a wasted calculation in the special case of one
-C           SPECIES (NPART=1) so that SOURCE already contains what we need.)
-
-C             don't bother with the computation if the scatter coefficient is
-C             gonna be zero anyway.
-              IF (SCATTERJ .GT. SCATMIN) THEN
-                CALL COMPUTE_SOURCE_DIRECTION(LEGENT, SOURCET,
-     .            NLM, LOFJ, RIS, RNS, NSTOKES, RADIANCE, YLMDIR,
-     .            NSTLEG, DELTAM, SRCTYPE, ML, MM, NS, YLMSUN,
-     .            DIRFLUX(IP), SECMU0, NLEG)
-                IF (DELTAM .AND. (SRCTYPE .EQ. 'S' .OR.
-     .              SRCTYPE .EQ. 'B')) THEN
-                  SOURCET = SOURCET + DIRFLUX(IP)*SINGSCATJ*SECMU0/(1-F)
+                LEGENT(:,0:ML) = LEGENT(:,0:ML)*(1-F)
+                LEGENT(1,0:ML) = LEGENT(1,0:ML) + F
+                IF (NSTLEG .GT. 1) THEN
+                  LEGENT(2:4,0:ML) = LEGENT(2:4,0:ML) + F
                 ENDIF
               ENDIF
             ENDIF
+C           === End per-species setup ===
 
-            SOURCET(1) = MAX(0.0, SOURCET(1))
-C           Undo delta-M scaling so we have the unscaled legendre/wigner coefficients
-C           on the RTE grid for phase function gradients.
-            IF (DELTAM) THEN
-              LEGENT(:,0:ML) = LEGENT(:,0:ML)*(1-F)
-              LEGENT(1,0:ML) = LEGENT(1,0:ML) + F
-              IF (NSTLEG .GT. 1) THEN
-                LEGENT(2:4,0:ML) = LEGENT(2:4,0:ML) + F
-              ENDIF
-            ENDIF
-
-C           Loop again through each property grid point, this time calculating the
-C           derivatives using what we prepared. Gradient is updated in GRAD8
-C           for the specified property grid point and species.
-            DO NB = 1,8
+C           Loop over property grid points. For each NB, compute
+C           LEGENP and SINGSCATP (invariant across IDRs for same IPA),
+C           then compute per-IDR gradient (DLEGP, DLEGT, DSOURCE).
+            DO NB = 1, 8
               IB = INTERPPTR(NB,IP)
               XI = OPTINTERPWT(NB,IP)
               IF (XI .LT. 1e-7) CYCLE
-C              CALL CPU_TIME(TIME3)
-              CALL COMPUTE_GRADIENT_ONEPROPPOINT(XI, ALBEDOP(IB,IPA),
-     .          EXTINCTP(IB,IPA), DEXT(IB,IDR), DALB(IB,IDR), MAXNMICRO,
-     .          DLEG, DIPHASEP(:,IB,IDR), PHASEWTP(:,IB,IPA),
-     .          IPHASEP(:,IB,IPA), DPHASEWTP(:,IB,IDR), ALBEDO(IP,IPA),
-     .          EXTINCT(IP,IPA), LEGEN, NUMPHASE, DNUMPHASE, NLEG,
-     .          NSTLEG, RADIANCE, NSTOKES, DELTAM, DOEXACT(IDR),
-     .          NLM, LOFJ, RIS,
-     .          RNS, ML, MM, NS, YLMSUN, DIRFLUX(IP), SECMU0, YLMDIR,
-     .          SRCTYPE, SINGSCAT, DSINGSCAT, DTEMP(IB,IDR),
-     .          TEMP(IP), INTERPMETHOD, GRAD8(:,NB,N,IDR), SINGSCATJ,
-     .          SOURCET, LEGENT, UNITS, WAVELEN, WAVENO, DEXTM(IB,IDR),
-     .          DALBM(NB,IP,IDR), DFJ(NB,IP,IDR), DERIV_MAXNMICRO)
-C              CALL CPU_TIME(TIME4)
-C              TIME_SOURCE(3) = TIME_SOURCE(3) + TIME4 - TIME3
+
+C             --- Build LEGENP at this property grid point ---
+              LEGENP = 0.0
+              IF (DELTAM) THEN
+                DO Q = 1, MAXNMICRO
+                  UNSCALED_LEGEN = LEGEN(:,:,IPHASEP(Q,IB,IPA))
+                  FTEMP = UNSCALED_LEGEN(1,ML+1)
+                  IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+                    UNSCALED_LEGEN(1,0:ML) =
+     .                UNSCALED_LEGEN(1,0:ML)*(1-FTEMP)
+                  ENDIF
+                  UNSCALED_LEGEN(1,0:ML) =
+     .              UNSCALED_LEGEN(1,0:ML) + FTEMP
+                  IF (NSTLEG .GT. 1) THEN
+                    UNSCALED_LEGEN(2:4,0:ML) =
+     .                UNSCALED_LEGEN(2:4,0:ML) + FTEMP
+                  ENDIF
+                  LEGENP = LEGENP +
+     .              PHASEWTP(Q,IB,IPA)*UNSCALED_LEGEN
+                ENDDO
+              ELSE
+                DO Q = 1, MAXNMICRO
+                  LEGENP = LEGENP +
+     .              PHASEWTP(Q,IB,IPA)*LEGEN(:,:,IPHASEP(Q,IB,IPA))
+                ENDDO
+              ENDIF
+
+C             Precompute LEG_DIFF = LEGENP - LEGENT (reused across IDRs).
+              LEG_DIFF = LEGENP - LEGENT
+
+C             --- Build SINGSCATP at this property point (solar+deltam) ---
+              IF ((SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B')
+     .            .AND. DELTAM) THEN
+                SINGSCATP = 0.0
+                DO Q = 1, MAXNMICRO
+                  SINGSCATP(:) = SINGSCATP(:)
+     .              + PHASEWTP(Q,IB,IPA)*
+     .                SINGSCAT(:,IPHASEP(Q,IB,IPA))
+                ENDDO
+              ENDIF
+
+C             --- Per-IDR gradient computation (inlined) ---
+C             Build DLEGP and DSINGSCATP (IDR-specific).
+              DLEGP = 0.0
+              DSINGSCATP = 0.0
+              DO Q = 1, DERIV_MAXNMICRO
+                IF (DOEXACT(IDR) .EQ. 1) THEN
+                  IF (DELTAM) THEN
+                    DSINGSCATP = DSINGSCATP +
+     .                PHASEWTP(Q,IB,IPA)*
+     .                DSINGSCAT(:,DIPHASEP(Q,IB,IDR))
+                  ENDIF
+                  DLEGP = DLEGP +
+     .              PHASEWTP(Q,IB,IPA)*
+     .              DLEG(:,:,DIPHASEP(Q,IB,IDR))
+                ELSE IF (DOEXACT(IDR) .EQ. 0) THEN
+                  UNSCALED_LEGEN = LEGEN(:,:,IPHASEP(Q,IB,IPA))
+                  IF (DELTAM) THEN
+                    DSINGSCATP = DSINGSCATP +
+     .                DPHASEWTP(Q,IB,IDR)*
+     .                SINGSCAT(:,IPHASEP(Q,IB,IPA))
+                    FTEMP = UNSCALED_LEGEN(1,ML+1)
+                    IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
+                      UNSCALED_LEGEN(1,0:ML) =
+     .                  UNSCALED_LEGEN(1,0:ML)*(1-FTEMP)
+                    ENDIF
+                    UNSCALED_LEGEN(1,0:ML) =
+     .                UNSCALED_LEGEN(1,0:ML) + FTEMP
+                    IF (NSTLEG .GT. 1) THEN
+                      UNSCALED_LEGEN(2:4,0:ML) =
+     .                  UNSCALED_LEGEN(2:4,0:ML) + FTEMP
+                    ENDIF
+                  ENDIF
+                  DLEGP = DLEGP +
+     .              DPHASEWTP(Q,IB,IDR)*UNSCALED_LEGEN
+                ENDIF
+              ENDDO
+
+C             Compute DLEGT = phase derivative * extinction/albedo.
+              DLEGT = DEXT(IB,IDR)*LEG_DIFF*ALBEDOP(IB,IPA) +
+     .          DALB(IB,IDR)*LEG_DIFF*EXTINCTP(IB,IPA) +
+     .          DLEGP*EXTINCTP(IB,IPA)*ALBEDOP(IB,IPA) +
+     .          (LEGENT-1)*DFJ(NB,IP,IDR)
+
+C             Convolve DLEGT with radiance harmonics.
+              DSOURCE = 0.0
+              CALL COMPUTE_SOURCE_DIRECTION(DLEGT, DSOURCE,
+     .          NLM, LOFJ, RIS, RNS, NSTOKES, RADIANCE, YLMDIR,
+     .          NSTLEG, DELTAM, SRCTYPE, ML, MM, NS, YLMSUN,
+     .          DIRFLUX(IP), SECMU0, NLEG)
+
+C             Add extinction/albedo/phase gradients.
+              GRAD8(:,NB,N,IDR) = GRAD8(:,NB,N,IDR) +
+     .          XI*(SOURCET(:)*(ALBEDO(IP,IPA)*DEXTM(IB,IDR)
+     .            + DALBM(NB,IP,IDR)) + DSOURCE(:))
+
+C             Solar single scatter component (delta-M only).
+              IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
+                IF (DELTAM) THEN
+                  GRAD8(:,NB,N,IDR) = GRAD8(:,NB,N,IDR) +
+     .              DIRFLUX(IP)*SECMU0*XI*(
+     .                SINGSCATJ*DFJ(NB,IP,IDR)
+     .              + DSINGSCATP*EXTINCTP(IB,IPA)*ALBEDOP(IB,IPA)
+     .              + DALB(IB,IDR)*(SINGSCATP-SINGSCATJ)*
+     .                EXTINCTP(IB,IPA)
+     .              + DEXT(IB,IDR)*(SINGSCATP-SINGSCATJ)*
+     .                ALBEDOP(IB,IPA))
+                ENDIF
+              ENDIF
+
+C             Thermal component.
+              IF (SRCTYPE .EQ. 'T' .OR. SRCTYPE .EQ. 'B') THEN
+                GRAD8(1,NB,N,IDR) = GRAD8(1,NB,N,IDR) +
+     .            XI*(EXTINCT(IP,IPA)*(1.0-ALBEDO(IP,IPA))*
+     .              DPLANCK*DTEMP(IB,IDR)
+     .            - PLANCK*DALBM(NB,IP,IDR)
+     .            + PLANCK*(1.0-ALBEDO(IP,IPA))*DEXTM(IB,IDR))
+              ENDIF
+
             ENDDO
           ENDDO
 C          CALL CPU_TIME(TIME2)
@@ -2478,279 +2584,6 @@ C           If doing polarization, sum the second Wigner function series
       RETURN
       END
 
-
-      SUBROUTINE COMPUTE_GRADIENT_ONEPROPPOINT(XI, ALBEDOP, EXTINCTP,
-     .  DEXT, DALB, MAXNMICRO, DLEG, DIPHASEP, PHASEWTP,
-     .  IPHASEP, DPHASEWTP, ALBEDO, EXTINCT,
-     .  LEGEN, NUMPHASE, DNUMPHASE, NLEG, NSTLEG, RADIANCE,
-     .  NSTOKES, DELTAM, DOEXACT, NLM, LOFJ, RIS, RNS,
-     .  ML, MM, NS, YLMSUN, DIRFLUX, SECMU0, YLMDIR,
-     .  SRCTYPE, SINGSCAT, DSINGSCAT, DTEMP, TEMP,
-     . INTERPMETHOD, GRADTEMP, SINGSCATJ,
-     . SOURCET, LEGENT, UNITS, WAVELEN, WAVENO, EXTINCT_GRAD,
-     . ALBEDO_GRAD, DFJ, DERIV_MAXNMICRO)
-C      Calculates the gradient of the source/extinction product at a given RTE grid point
-C      for a given species with respect to unknowns on a given property grid point
-C      using partial derivatives of optical properties on property grid with
-C      respect to unknowns (DEXT, DALB, DLEG, DIPHASEP, DPHASEWTP, DSINGSCAT)
-C      in combination with optical properties on property grid
-C      (ALBEDOP, EXTINCTP, IPAHSEP, PHASEWTP, LEGEN, TEMPP).
-C      XI is the interpolation weight between the property grid point and the
-C      RTE grid point.
-C      (SOURCET, LEGENT, SINGSCATJ, ALBEDOJ, F, PLANCK, DIVIDE) are RTE grid point values.
-C      ALBEDO and EXTINCT are delta-M scaled RTE grid point values.
-C      The gradient contribution is updated in GRADTEMP so GRADTEMP needs to be
-C      initialized outside of this subroutine.
-C      The complexity of the gradient calculations comes from the fact that
-C      delta-M scaling is done on the RTE grid, which is distinct from the property grid.
-C      Note that at zero albedo, the derivative with respect to albedo is not
-C      currently well defined.
-C      This is because the phase function (and delta-M scaling) are undefined as well
-C      and both change simultaneously when albedo becomes non-zero.
-C      The gradient works fine for very very small albedo (e.g. 1e-7).
-C      but care should be taken when transitioning between exactly non-scattering
-C      and partially non-scattering.
-      IMPLICIT NONE
-
-      INTEGER MAXNMICRO, NUMPHASE, DNUMPHASE, NLEG, NSTLEG
-Cf2py intent(in) :: MAXNMICRO, NUMPHASE, DNUMPHASE, NLEG, NSTLEG
-      INTEGER ML, MM, NS, NLM, DOEXACT, NSTOKES
-Cf2py intent(in) :: ML, MM, NS, NLM, DOEXACT, NSTOKES
-      LOGICAL DELTAM
-Cf2py intent(in) :: DELTAM
-      REAL DIRFLUX, SECMU0, YLMDIR(NSTLEG, NLM), YLMSUN(NSTLEG, NLM)
-Cf2py intent(in) :: DIRFLUX, SECMU0, YLMDIR, YLMSUN
-      REAL XI, ALBEDOP, EXTINCTP, DEXT, DALB, DTEMP, TEMP
-Cf2py intent(in) :: XI, ALBEDOP, EXTINCTP, DEXT, DALB, DTEMP, TEMP
-      REAL ALBEDO, EXTINCT
-Cf2py intent(in) :: ALBEDO, EXTINCT
-      INTEGER DIPHASEP(DERIV_MAXNMICRO), IPHASEP(MAXNMICRO)
-Cf2py intent(in) :: DIPHASEP, IPHASEP
-      REAL PHASEWTP(MAXNMICRO), DPHASEWTP(DERIV_MAXNMICRO)
-Cf2py intent(in) :: PHASEWTP, DPHASEWTP
-      REAL SINGSCAT(NSTOKES, NUMPHASE), DSINGSCAT(NSTOKES, DNUMPHASE)
-Cf2py intent(in) :: SINGSCAT, DSINGSCAT
-      REAL RADIANCE(NSTOKES, *)
-Cf2py intent(in) :: RADIANCE
-      INTEGER RIS, RNS, LOFJ(NLM), DERIV_MAXNMICRO
-Cf2py intent(in) :: RIS, RNS, LOFJ, DERIV_MAXNMICRO
-      CHARACTER SRCTYPE*1, INTERPMETHOD*2, UNITS*1
-Cf2py intent(in) :: SRCTYPE, INTERPMETHOD, UNITS
-      REAL LEGEN(NSTLEG,0:NLEG, NUMPHASE)
-Cf2py intent(in) :: LEGEN
-      REAL DLEG(NSTLEG,0:NLEG, DNUMPHASE)
-Cf2py intent(in) :: DLEG
-      REAL LEGENT(NSTLEG, 0:NLEG), SOURCET(NSTOKES)
-Cf2py intent(in) :: LEGENT, SOURCET
-      REAL SINGSCATJ(NSTOKES), F, ALBEDOJ, DIVIDE
-Cf2py intent(in) :: SINGSCATJ, F, ALBEDOJ, DIVIDE
-      REAL WAVELEN, WAVENO(2)
-Cf2py intent(in) :: WAVELEN, WAVENO
-      REAL GRADTEMP(NSTOKES)
-Cf2py intent(in,out) :: GRADTEMP
-      REAL EXTINCT_GRAD, ALBEDO_GRAD, DFJ
-Cf2py intent(in) ::EXTINCT_GRAD, ALBEDO_GRAD
-
-      INTEGER Q
-      REAL DSINGSCATP(NSTOKES), FP, DSOURCE(NSTOKES)
-      REAL SINGSCATP(NSTOKES), DPLANCK, PLANCK
-      REAL FTEMP
-      REAL, ALLOCATABLE :: DLEGP(:,:), UNSCALED_LEGEN(:,:), DLEGT(:,:)
-      REAL, ALLOCATABLE :: LEGENP(:,:)
-      ALLOCATE(DLEGP(NSTLEG, 0:NLEG), UNSCALED_LEGEN(NSTLEG,0:NLEG))
-      ALLOCATE(DLEGT(NSTLEG, 0:NLEG), LEGENP(NSTLEG, 0:NLEG))
-
-C     Prepare phase function derivative on property grid (DLEGP),
-C     derivative of deltam scaling on property grid (FA)
-C     deltam scaling on property grid (FP)
-C     and single scatter derivative on property grid (if DELTAM) (DSINGSCATP)
-      DLEGP = 0.0
-      LEGENP = 0.0
-      FP = 0.0
-      DSINGSCATP = 0.0
-C     Loop over each of the phase functions whose weighted sum form the
-C     phase function at the property grid.
-C       gradient of phase function at this point due to
-C       individual gradients in phase functions. This is either
-C       one sum over all appropriate phase function gradients (DLEG)
-C       if a single exact phase function is supplied for each property
-C       grid point for this variable.
-C       Otherwise the phase function at this point is represented by
-C       linear interpolation for this variable. In this case we calculate
-C       derivative using a weighted sum over phase functions with the
-C       weights held in DPHASEWTP.
-      IF (DELTAM) THEN
-        DO Q=1,MAXNMICRO
-          UNSCALED_LEGEN = LEGEN(:,:,IPHASEP(Q))
-          FTEMP = UNSCALED_LEGEN(1,ML+1)
-          IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
-            UNSCALED_LEGEN(1,0:ML) =
-     .        UNSCALED_LEGEN(1,0:ML)*(1-FTEMP)
-          ENDIF
-          UNSCALED_LEGEN(1,0:ML) =
-     .      UNSCALED_LEGEN(1,0:ML) + FTEMP
-          IF (NSTLEG .GT. 1) THEN
-            UNSCALED_LEGEN(2:4,0:ML) =
-     .        UNSCALED_LEGEN(2:4,0:ML) + FTEMP
-          ENDIF
-          LEGENP = LEGENP +
-     .    PHASEWTP(Q)*UNSCALED_LEGEN          
-        ENDDO
-      ELSE
-        DO Q=1,MAXNMICRO
-          LEGENP = LEGENP + PHASEWTP(Q)*LEGEN(:,:,IPHASEP(Q))
-        ENDDO
-      ENDIF
-
-      DO Q=1,DERIV_MAXNMICRO        
-
-        IF (DOEXACT .EQ. 1) THEN
-          IF (DELTAM) THEN
-            DSINGSCATP = DSINGSCATP + PHASEWTP(Q)*
-     .          DSINGSCAT(:,DIPHASEP(Q))
-          ENDIF
-          DLEGP = DLEGP + PHASEWTP(Q)*
-     .        DLEG(:,:,DIPHASEP(Q))
-        ELSE IF (DOEXACT .EQ. 0) THEN
-          UNSCALED_LEGEN = LEGEN(:,:,IPHASEP(Q))
-          IF (DELTAM) THEN
-            DSINGSCATP = DSINGSCATP +
-     .        DPHASEWTP(Q)*SINGSCAT(:,IPHASEP(Q))
-
-            FTEMP = UNSCALED_LEGEN(1,ML+1)
-            IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
-              UNSCALED_LEGEN(1,0:ML) =
-     .        UNSCALED_LEGEN(1,0:ML)*(1-FTEMP)
-            ENDIF
-            UNSCALED_LEGEN(1,0:ML) =
-     .      UNSCALED_LEGEN(1,0:ML) + FTEMP
-            IF (NSTLEG .GT. 1) THEN
-              UNSCALED_LEGEN(2:4,0:ML) =
-     .        UNSCALED_LEGEN(2:4,0:ML) + FTEMP
-            ENDIF
-          ENDIF
-          DLEGP = DLEGP +
-     .        DPHASEWTP(Q)*UNSCALED_LEGEN
-        ENDIF
-      ENDDO          
-! 
-!       DO Q=1,MAXNMICRO
-!         IF (DOEXACT .EQ. 1) THEN
-!           IF (DELTAM) THEN
-!             DSINGSCATP = DSINGSCATP + PHASEWTP(Q)*
-!      .         DSINGSCAT(:,DIPHASEP(Q))
-!           ENDIF
-!           DLEGP = DLEGP + PHASEWTP(Q)*
-!      .        DLEG(:,:,DIPHASEP(Q))
-!         ENDIF
-
-! C       Prepare the unscaled LEGEN for this property grid point.
-!         UNSCALED_LEGEN = LEGEN(:,:,IPHASEP(Q))
-!         IF (DELTAM) THEN
-!           FTEMP = UNSCALED_LEGEN(1,ML+1)
-!           IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
-!             UNSCALED_LEGEN(1,0:ML) =
-!      .        UNSCALED_LEGEN(1,0:ML)*(1-FTEMP)
-!           ENDIF
-!           UNSCALED_LEGEN(1,0:ML) =
-!      .      UNSCALED_LEGEN(1,0:ML) + FTEMP
-!           IF (NSTLEG .GT. 1) THEN
-!             UNSCALED_LEGEN(2:4,0:ML) =
-!      .        UNSCALED_LEGEN(2:4,0:ML) + FTEMP
-!           ENDIF
-!         ENDIF
-!         LEGENP = LEGENP +
-!      .    PHASEWTP(Q)*UNSCALED_LEGEN
-!         IF (DOEXACT .EQ. 0) THEN
-!           DLEGP = DLEGP +
-!      .        DPHASEWTP(Q)*UNSCALED_LEGEN
-
-!           IF (DELTAM) THEN
-!             DSINGSCATP = DSINGSCATP +
-!      .        DPHASEWTP(Q)*SINGSCAT(:,IPHASEP(Q))
-!           ENDIF
-!         ENDIF
-!       ENDDO
-
-C     Calculate some components of extinct / albedo / phase
-C     gradients that will be used again.
-
-
-C     Initialize the phase part of the gradient.
-      DSOURCE = 0.0
-
-C     DLEGT is the phase derivative MULTIPLIED BY THE DELTAM SCALED
-C     EXTINCTION/ALBEDO product.
-      DLEGT = DEXT*(LEGENP-LEGENT)*ALBEDOP +
-     .            DALB*(LEGENP-LEGENT)*EXTINCTP+
-     .            DLEGP*EXTINCTP*ALBEDOP +
-     .            (LEGENT-1)*DFJ
-
-C     Weight each phase legendre/Wigner coefficient derivative
-C     by the corresponding radiance harmonics.
-C     Note that this may be slightly inconsistent as we use
-C     all of the radiance harmonics in the derivative calculation,
-C     which is typically only a few more terms than
-C     in the SOURCE function but may be much more if the
-C     source function truncation is active while HIGHORDERRAD is True.
-C     (HIGHORDERRAD keeps the full set of NLM radiance harmonics.)
-C     On the other hand, the pseudo-solar source
-C     uses the exact same number of terms as SOURCE.
-      CALL COMPUTE_SOURCE_DIRECTION(DLEGT, DSOURCE,
-     .   NLM, LOFJ, RIS, RNS, NSTOKES, RADIANCE, YLMDIR,
-     .   NSTLEG, DELTAM, SRCTYPE, ML, MM, NS, YLMSUN,
-     .   DIRFLUX, SECMU0, NLEG)
-
-C
-C      Add the extinction/albedo/phase gradients.
-      GRADTEMP(:) = GRADTEMP(:) +
-     .  XI*(SOURCET(:)*(ALBEDO*EXTINCT_GRAD + ALBEDO_GRAD)
-     .      + DSOURCE(:))
-
-C     Now calculate the solar single scatter component of the gradient.
-C     The non delta-M case is covered inside DSOURCE, see
-C     CALCULATE_SOURCE_DIRECTION. Like DLEGT, this is already multiplied
-C     by the deltam scaled albedo/extinct product.
-      IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
-        IF (DELTAM) THEN
-          SINGSCATP = 0.0
-          DO Q=1,MAXNMICRO
-            SINGSCATP(:) = SINGSCATP(:)
-     .        + PHASEWTP(Q)*SINGSCAT(:,IPHASEP(Q))
-          ENDDO
-          GRADTEMP(:) = GRADTEMP(:) +
-     .      DIRFLUX*SECMU0*XI*(SINGSCATJ*DFJ +
-     .          DSINGSCATP*EXTINCTP*ALBEDOP
-     .        + DALB*(SINGSCATP - SINGSCATJ)*EXTINCTP
-     .        + DEXT*(SINGSCATP - SINGSCATJ)*ALBEDOP)
-        ENDIF
-      ENDIF
-
-C      Calculate thermal component of the gradient.
-      IF (SRCTYPE .EQ. 'T' .OR. SRCTYPE .EQ. 'B') THEN
-C        DPLANCK COULD BE PREPROCESSED.
-         CALL PLANCK_DERIVATIVE(TEMP, UNITS, WAVENO,
-     .                          WAVELEN, DPLANCK)
-C        To capture the case when ALBEDO ~ 1, but we still
-C        want a derivative we just recalculate PLANCK
-C        without the (1-ALBEDO) factor, rather than
-C        trying to divide, as it is otherwise undefined.
-         CALL PLANCK_FUNCTION(TEMP, UNITS, WAVENO,
-     .                          WAVELEN, PLANCK)
-C       Catch NaNs that occur when PLANCK is very small.
-         IF (PLANCK .LT. 1e-7) THEN
-           DPLANCK = 0.0
-         ENDIF
-          GRADTEMP(1) = GRADTEMP(1) +
-     .      XI*(EXTINCT*(1.0 - ALBEDO)*DPLANCK*DTEMP
-     .          - PLANCK*ALBEDO_GRAD
-     .         + PLANCK*(1.0-ALBEDO)*EXTINCT_GRAD)
-
-      ENDIF
-
-      DEALLOCATE(DLEGP, UNSCALED_LEGEN, DLEGT, LEGENP)
-      RETURN
-      END
 
       SUBROUTINE COMPUTE_RADIANCE_DERIVATIVE(NUMDER,
      .  PASSEDDELS, PASSEDPOINTS, PASSEDINTERP0, PASSEDINTERP1,
