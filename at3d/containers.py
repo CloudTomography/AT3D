@@ -183,24 +183,26 @@ class SensorsDict(OrderedDict):
 
         rte_sensors, sensor_mappings = self.sort_sensors(solvers)
         keys, to_solve = solvers.to_solve(overwrite_solver)
+        keys = list(keys)
+        to_solve = list(to_solve)
 
         if mpi_comm is not None:
+            solver_comm, my_indices = at3d.parallel.split_comm_for_solvers(
+                len(to_solve), mpi_comm)
             out = []
             solved_keys = []
-            for i in range(0, len(to_solve), mpi_comm.Get_size()):
-                index = i + mpi_comm.Get_rank()
-                if index < len(to_solve):
-                    key = keys[index]
-                    to_solve[index].solve(
-                        maxiter=maxiter, verbose=verbose, init_solution=init_solution,
-                        setup_grid=setup_grid)
-                    out.append(solvers[key].integrate_to_sensor(rte_sensors[key]))
-                    solved_keys.append(key)
-                    if destructive:
-                        # memory management. After rendering, the large arrays are
-                        # released to ensure that the largest
-                        # max_total_mb is not exceeded.
-                        solvers[key]._release_big_arrays()
+            for idx in my_indices:
+                key = keys[idx]
+                at3d.core.start_mpi(solver_comm.py2f())
+                to_solve[idx].solve(
+                    maxiter=maxiter, verbose=verbose, init_solution=init_solution,
+                    setup_grid=setup_grid)
+                out.append(solvers[key].integrate_to_sensor(rte_sensors[key]))
+                solved_keys.append(key)
+                if destructive:
+                    solvers[key]._release_big_arrays()
+            if solver_comm != at3d.parallel._MPI_COMM_NULL():
+                solver_comm.Free()
 
             out = mpi_comm.gather(out, root=0)
             solved_keys = mpi_comm.gather(solved_keys, root=0)
@@ -725,13 +727,20 @@ class SolversDict(OrderedDict):
             True will output solution iteration information into stdout.
         """
         key_list, to_solve = self.to_solve(overwrite_solver)
+        key_list = list(key_list)
+        to_solve = list(to_solve)
         if mpi_comm is not None:
-            for i in range(0, len(to_solve), mpi_comm.Get_size()):
-                index = i + mpi_comm.Get_rank()
-                if index < len(to_solve):
-                    to_solve[index].solve(
-                        maxiter=maxiter, verbose=verbose, init_solution=init_solution,
-                        setup_grid=setup_grid)
+            solver_comm, my_indices = at3d.parallel.split_comm_for_solvers(
+                len(to_solve), mpi_comm)
+            for idx in my_indices:
+                # Reset Fortran MPI module state to the sub-communicator
+                # so that numproc/myproc reflect this rank's group.
+                at3d.core.start_mpi(solver_comm.py2f())
+                to_solve[idx].solve(
+                    maxiter=maxiter, verbose=verbose, init_solution=init_solution,
+                    setup_grid=setup_grid)
+            if solver_comm != at3d.parallel._MPI_COMM_NULL():
+                solver_comm.Free()
         else:
             if n_jobs == 1:
                 for solver in to_solve:

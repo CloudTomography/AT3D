@@ -187,8 +187,10 @@ class RTE:
         try:
             from mpi4py import MPI
             comm_handle = MPI.COMM_WORLD.py2f()
+            self._mpi_comm = MPI.COMM_WORLD
         except ImportError:
             comm_handle = 0
+            self._mpi_comm = None
         # start_mpi returns (masterproc, comm) because COMM is intent(in,out)
         self._masterproc, _ = at3d.core.start_mpi(comm_handle)
 

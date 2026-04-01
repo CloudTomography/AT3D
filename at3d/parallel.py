@@ -10,6 +10,75 @@ from collections import OrderedDict
 from joblib import Parallel, delayed
 import numpy as np
 
+import at3d.core
+
+
+def assign_solvers_to_ranks(n_solvers, comm):
+    """Determine which solver indices this MPI rank should process.
+
+    When the communicator size is >= *n_solvers*, each solver is assigned
+    to exactly one rank and the remaining ranks are idle (empty list).
+    When there are more solvers than ranks, solvers are distributed
+    round-robin so each rank processes roughly the same number.
+
+    Parameters
+    ----------
+    n_solvers : int
+        Total number of solvers to distribute.
+    comm : mpi4py.MPI.Intracomm
+        The MPI communicator over which to distribute.
+
+    Returns
+    -------
+    my_solver_indices : list of int
+        The solver indices (0-based) that this rank should process.
+    """
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+    return [i for i in range(rank, n_solvers, size)]
+
+
+def split_comm_for_solvers(n_solvers, comm):
+    """Split *comm* into per-solver sub-communicators.
+
+    Each rank is assigned a *color* equal to its first solver index so
+    that ranks working on the same solver share a sub-communicator.
+    When ``n_solvers <= comm.Get_size()``, each sub-communicator has
+    exactly one rank (no domain decomposition yet).  Ranks with no
+    work receive ``MPI.COMM_NULL``.
+
+    Parameters
+    ----------
+    n_solvers : int
+        Total number of solvers to distribute.
+    comm : mpi4py.MPI.Intracomm
+        The parent MPI communicator.
+
+    Returns
+    -------
+    solver_comm : mpi4py.MPI.Intracomm or MPI.COMM_NULL
+        The sub-communicator for this rank's first solver, or
+        ``MPI.COMM_NULL`` if this rank has no work.
+    my_solver_indices : list of int
+        Solver indices assigned to this rank (same as
+        :func:`assign_solvers_to_ranks`).
+    """
+    from mpi4py import MPI
+    my_indices = assign_solvers_to_ranks(n_solvers, comm)
+    if my_indices:
+        color = my_indices[0]
+    else:
+        color = MPI.UNDEFINED
+    solver_comm = comm.Split(color, comm.Get_rank())
+    return solver_comm, my_indices
+
+
+def _MPI_COMM_NULL():
+    """Return ``MPI.COMM_NULL`` without a module-level mpi4py import."""
+    from mpi4py import MPI
+    return MPI.COMM_NULL
+
+
 def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gradient_fun,
                       mpi_comm=None, n_jobs=1, **kwargs):
     """
@@ -72,7 +141,44 @@ def parallel_gradient(solvers, rte_sensors, sensor_mappings, forward_sensors, gr
                             "'{}'".format(name, gradient_fun.__name__))
 
     if mpi_comm is not None:
-        raise NotImplementedError
+        all_keys = list(solvers.keys())
+        solver_comm, my_indices = split_comm_for_solvers(len(all_keys), mpi_comm)
+
+        out = []
+        keys = []
+        for idx in my_indices:
+            key = all_keys[idx]
+            at3d.core.start_mpi(solver_comm.py2f())
+            out.append(gradient_fun(solvers[key], rte_sensors[key], **grad_kwargs))
+            keys.append(key)
+        if solver_comm != _MPI_COMM_NULL():
+            solver_comm.Free()
+
+        # Gather results to rank 0.
+        out = mpi_comm.gather(out, root=0)
+        keys = mpi_comm.gather(keys, root=0)
+
+        if mpi_comm.Get_rank() == 0:
+            out_flat = [item for sublist in out for item in sublist]
+            keys_flat = [item for sublist in keys for item in sublist]
+            # Reorder to match original solver ordering.
+            reordered = [out_flat[keys_flat.index(k)] for k in all_keys]
+            out = reordered
+            keys = all_keys
+        else:
+            # Non-root ranks return empty arrays; caller should check rank.
+            return np.array([]), np.array([]), []
+
+        gradient = np.stack([i[0] for i in out], axis=-1)
+        loss = np.array([i[1] for i in out])
+        forward_model_output = [i[2] for i in out]
+
+        other_output = []
+        for i in range(3, len(out[0])):
+            if out[0][i] is not None:
+                other_output.append([entry[i] for entry in out])
+
+        forward_sensors.add_measurements_inverse(sensor_mappings, forward_model_output, keys)
 
     else:
         if n_jobs == 1 or n_jobs >= forward_sensors.npixels:
