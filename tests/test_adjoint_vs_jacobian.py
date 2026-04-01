@@ -29,7 +29,7 @@ def _get_mie(wavelength_range, cache_name, cache_file):
     if cache_name not in _mie_cache:
         table_path = os.path.join(os.path.dirname(__file__), "data", cache_file)
         if os.path.exists(table_path):
-            _mie_cache[cache_name] = xr.open_dataset(table_path)
+            _mie_cache[cache_name] = xr.load_dataset(table_path)
         else:
             _mie_cache[cache_name] = at3d.mie.get_mono_table(
                 "Water", wavelength_range,
