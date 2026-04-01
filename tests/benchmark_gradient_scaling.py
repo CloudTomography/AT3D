@@ -37,6 +37,7 @@ CSV_PATH = os.path.join(os.path.dirname(__file__), "benchmark_results.csv")
 CSV_COLUMNS = [
     "commit",
     "timestamp",
+    "method",
     "resolution",
     "base_grid_pts",
     "actual_npts",
@@ -97,7 +98,7 @@ def _get_mie_table():
 # ---------------------------------------------------------------------------
 # Benchmark core
 # ---------------------------------------------------------------------------
-def run_benchmark(resolution, n_jobs):
+def run_benchmark(resolution, n_jobs, method="jacobian"):
     mie_mono_table = _get_mie_table()
 
     # ---- Setup (untimed): build solvers, sensors, solve RTE, get measurements ----
@@ -137,6 +138,13 @@ def run_benchmark(resolution, n_jobs):
     )
 
     # Build gradient object (needed for its levis_approximation_grad method)
+    grad_kwargs = {
+        "exact_single_scatter": True,
+        "cost_function": "L2",
+    }
+    if method == "jacobian":
+        grad_kwargs["indices_for_jacobian"] = indices_for_jacobian
+
     gradient_obj = at3d.gradient.LevisApproxGradientUncorrelated(
         Sensordict,
         solvers,
@@ -149,11 +157,7 @@ def run_benchmark(resolution, n_jobs):
             "verbose": False,
             "init_solution": False,
         },
-        gradient_kwargs={
-            "exact_single_scatter": True,
-            "cost_function": "L2",
-            "indices_for_jacobian": indices_for_jacobian,
-        },
+        gradient_kwargs=grad_kwargs,
         uncertainty_kwargs={"add_noise": False},
     )
 
@@ -175,6 +179,12 @@ def run_benchmark(resolution, n_jobs):
     solvers.calculate_microphysical_partial_derivatives(unknown_scatterers)
     solvers.calculate_direct_beam_derivative()
     rte_sensors, sensor_mapping = forward_sensors.sort_sensors(solvers, Sensordict)
+    par_grad_kwargs = {
+        "exact_single_scatter": True,
+        "cost_function": "L2",
+    }
+    if method == "jacobian":
+        par_grad_kwargs["indices_for_jacobian"] = indices_for_jacobian
     at3d.parallel.parallel_gradient(
         solvers,
         rte_sensors,
@@ -182,13 +192,12 @@ def run_benchmark(resolution, n_jobs):
         forward_sensors,
         gradient_fun=gradient_obj.levis_approximation_grad,
         n_jobs=n_jobs,
-        exact_single_scatter=True,
-        cost_function="L2",
-        indices_for_jacobian=indices_for_jacobian,
+        **par_grad_kwargs,
     )
     gradient_time = time.perf_counter() - t0
 
     return {
+        "method": method,
         "resolution": resolution,
         "base_grid_pts": base_grid_pts,
         "actual_npts": actual_npts,
@@ -203,24 +212,30 @@ def run_benchmark(resolution, n_jobs):
 # ---------------------------------------------------------------------------
 @pytest.mark.benchmark
 @pytest.mark.parametrize(
-    "resolution,n_jobs",
+    "resolution,n_jobs,method",
     [
-        (1, 1),
-        (1, 4),
-        (2, 1),
-        (2, 4),
-        (4, 1),
-        (4, 4),
+        (1, 1, "jacobian"),
+        (1, 4, "jacobian"),
+        (2, 1, "jacobian"),
+        (2, 4, "jacobian"),
+        (4, 1, "jacobian"),
+        (4, 4, "jacobian"),
+        (1, 1, "adjoint"),
+        (1, 4, "adjoint"),
+        (2, 1, "adjoint"),
+        (2, 4, "adjoint"),
+        (4, 1, "adjoint"),
+        (4, 4, "adjoint"),
     ],
     ids=lambda val: str(val),
 )
-def test_gradient_scaling(resolution, n_jobs):
-    result = run_benchmark(resolution, n_jobs)
+def test_gradient_scaling(resolution, n_jobs, method):
+    result = run_benchmark(resolution, n_jobs, method=method)
     result["commit"] = _git_commit_hash()
     result["timestamp"] = datetime.datetime.now().isoformat()
     append_to_csv(result)
     print(
-        f"\n  resolution={resolution}  n_jobs={n_jobs}  "
+        f"\n  method={method}  resolution={resolution}  n_jobs={n_jobs}  "
         f"base_pts={result['base_grid_pts']}  actual_npts={result['actual_npts']}  "
         f"solve={result['solve_time_s']}s  gradient={result['gradient_time_s']}s"
     )
