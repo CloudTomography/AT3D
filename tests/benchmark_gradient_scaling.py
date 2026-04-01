@@ -98,7 +98,7 @@ def _get_mie_table():
 # ---------------------------------------------------------------------------
 # Benchmark core
 # ---------------------------------------------------------------------------
-def run_benchmark(resolution, n_jobs, method="jacobian"):
+def run_benchmark(resolution, n_jobs, method="single_sweep"):
     mie_mono_table = _get_mie_table()
 
     # ---- Setup (untimed): build solvers, sensors, solve RTE, get measurements ----
@@ -142,7 +142,7 @@ def run_benchmark(resolution, n_jobs, method="jacobian"):
         "exact_single_scatter": True,
         "cost_function": "L2",
     }
-    if method == "jacobian":
+    if method == "single_sweep":
         grad_kwargs["indices_for_jacobian"] = indices_for_jacobian
 
     gradient_obj = at3d.gradient.LevisApproxGradientUncorrelated(
@@ -183,7 +183,7 @@ def run_benchmark(resolution, n_jobs, method="jacobian"):
         "exact_single_scatter": True,
         "cost_function": "L2",
     }
-    if method == "jacobian":
+    if method == "single_sweep":
         par_grad_kwargs["indices_for_jacobian"] = indices_for_jacobian
     at3d.parallel.parallel_gradient(
         solvers,
@@ -214,18 +214,18 @@ def run_benchmark(resolution, n_jobs, method="jacobian"):
 @pytest.mark.parametrize(
     "resolution,n_jobs,method",
     [
-        (1, 1, "jacobian"),
-        (1, 4, "jacobian"),
-        (2, 1, "jacobian"),
-        (2, 4, "jacobian"),
-        (4, 1, "jacobian"),
-        (4, 4, "jacobian"),
-        (1, 1, "adjoint"),
-        (1, 4, "adjoint"),
-        (2, 1, "adjoint"),
-        (2, 4, "adjoint"),
-        (4, 1, "adjoint"),
-        (4, 4, "adjoint"),
+        (1, 1, "single_sweep"),
+        (1, 4, "single_sweep"),
+        (2, 1, "single_sweep"),
+        (2, 4, "single_sweep"),
+        (4, 1, "single_sweep"),
+        (4, 4, "single_sweep"),
+        (1, 1, "double_sweep"),
+        (1, 4, "double_sweep"),
+        (2, 1, "double_sweep"),
+        (2, 4, "double_sweep"),
+        (4, 1, "double_sweep"),
+        (4, 4, "double_sweep"),
     ],
     ids=lambda val: str(val),
 )
