@@ -17,7 +17,6 @@ but an interface is not yet implemented.
 import numpy as np
 import xarray as xr
 import os
-import importlib
 from datetime import datetime
 import at3d.aerosol
 import at3d.util
@@ -59,7 +58,8 @@ def load_standard_atmosphere(search_directory=None, atmosphere_name='tropical'):
         raise KeyError("Invalid name for standard atmosphere. `atmosphere_name` should be one of {}".format(tuple(file_name_dict.keys())))
 
     if search_directory is None:
-        search_directory = str(importlib.resources.files('at3d').joinpath('data/ancillary/'))
+        import at3d.data
+        search_directory = str(at3d.data.DATA_DIR / 'ancillary')
 
     main_path = os.path.join(search_directory, file_name)
 
@@ -107,7 +107,8 @@ class Reptran:
     def __init__(self, parameterization_name='solar_modis', search_directory=None):
 
         if search_directory is None:
-            search_directory = str(importlib.resources.files('at3d').joinpath('data/reptran/'))
+            import at3d.data
+            search_directory = str(at3d.data.DATA_DIR / 'reptran')
 
         self.search_directory = search_directory
 

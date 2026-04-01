@@ -22,7 +22,6 @@ See data/OPAC/aerosol/README.md for more info.
 """
 import glob
 import os
-import importlib
 
 import numpy as np
 import xarray as xr
@@ -276,7 +275,8 @@ class OPACMixture:
     def __init__(self, directory=None):#'../data/OPAC/aerosol/'):
 
         if directory is None:
-            directory = str(importlib.resources.files('at3d').joinpath('data/OPAC/aerosol/'))
+            import at3d.data
+            directory = str(at3d.data.DATA_DIR / 'OPAC' / 'aerosol')
         self._directory = directory
 
         self._expected_types = (
