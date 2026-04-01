@@ -68,9 +68,10 @@ jobs:
         if: matrix.fortran-coverage
         run: |
           lcov --capture --directory . --output-file fortran_coverage.info \
-               --ignore-errors source --no-external
+               --ignore-errors source,negative \
+               --rc geninfo_unexecuted_blocks=1 --no-external
           genhtml fortran_coverage.info --output-directory fortran_htmlcov \
-                  --ignore-errors source
+                  --ignore-errors source,negative
 
       - name: Upload Python coverage artifact
         if: always()
