@@ -22,7 +22,7 @@ def parse_shdom_output(filename, comment='*'):
     with open(filename) as file:
         data = file.readlines()
         for line in data:
-            if not comment in line:
+            if comment not in line:
                 output.append(np.fromstring(line, sep=' '))
     return np.array(output)
 
@@ -261,8 +261,6 @@ class Verify_Solver(TestCase):
         cls.radiances = parse_shdom_output('data/rico32x36x26w672ar.out', comment='!')
 
     def test_solver(self):
-        print('NPTS REFERENCE {}'.format(self.truth.shape[1]))
-        print('NPTS SIMULATED {}'.format(self.testing.shape[1]))
         print(np.max(np.abs(self.testing-self.truth)))
         print(np.argmax(np.abs(self.testing-self.truth)))
         print(np.sqrt(np.mean((self.testing-self.truth)**2))/np.mean(self.truth))
@@ -1207,8 +1205,11 @@ class VerifyRadianceIntegration(TestCase):
                     phasemax=solver_grid._phasemax,
                     nlegp=solver_grid._pa.nlegp,
                     maxnmicro=solver_grid._pa.max_num_micro,
-                    phasewtp=solver_grid._pa.phasewtp
-
+                    phasewtp=solver_grid._pa.phasewtp,
+                    nvolsrc=1,
+                    volsrc=np.zeros((solver_grid._nstokes, 1),dtype=np.float32,order='F'),
+                    volsrcgridptr=np.zeros((2,solver_grid._npts),dtype=np.int32,order='F'),
+                    volsrcshptr=np.zeros(2, dtype=np.int32),
                 )
                 solver_grid.solve(100,init_solution=False,verbose=False)
 

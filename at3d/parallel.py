@@ -139,7 +139,7 @@ def subdivide_raytrace_jobs(rte_sensors, n_jobs, job_factor=1):
         ray_count += merged_sensor.sizes['nrays']
         render_jobs[key] = merged_sensor.sizes['nrays']
     for key, render_job in render_jobs.items():
-        render_jobs[key] = max(np.ceil(render_job/ray_count * n_jobs * job_factor).astype(np.int), 1)
+        render_jobs[key] = max(np.ceil(render_job/ray_count * n_jobs * job_factor).astype(int), 1)
     #find the ray indices to split each sensor at.
     keys = []
     pixel_start_end = []
@@ -161,7 +161,7 @@ def subdivide_raytrace_jobs(rte_sensors, n_jobs, job_factor=1):
         ray_start_end.extend(updated_start_end)
 
         pixel_inds = np.cumsum(np.concatenate(
-            [np.array([0]), merged_sensor.rays_per_pixel.data])).astype(np.int)
+            [np.array([0]), merged_sensor.rays_per_pixel.data])).astype(int)
         for i, (start, end) in enumerate(updated_start_end):
             final_start = np.where(pixel_inds == start)[0][0]
             final_end = np.where(pixel_inds == end)[0][0]

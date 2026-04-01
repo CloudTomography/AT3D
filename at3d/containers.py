@@ -29,7 +29,6 @@ from joblib import Parallel, delayed
 import numpy as np
 import xarray as xr
 import warnings
-import typing
 
 import at3d.core
 import at3d.gradient
@@ -58,7 +57,7 @@ class SensorsDict(OrderedDict):
         sensor : xr.Dataset
             A valid sensor.
         """
-        if not instrument in self:
+        if instrument not in self:
             self._add_instrument(instrument)
         at3d.checks.check_sensor(sensor)
         self[instrument]['sensor_list'].append(sensor)
@@ -78,7 +77,7 @@ class SensorsDict(OrderedDict):
             The model that will be called on an xr.Dataset to calculate
             the error-covariance matrix from the Stokes Vector.
         """
-        if not instrument in self:
+        if instrument not in self:
             self._add_instrument(instrument)
         self[instrument]['uncertainty_model'] = uncertainty_model
 
@@ -119,7 +118,7 @@ class SensorsDict(OrderedDict):
         if instrument_list is None:
             instrument_list = self
         for key in instrument_list:
-            if not key in self:
+            if key not in self:
                 raise KeyError("Instrument '{}' is not in SensorsDict")
             instrument = self[key]
         # for key, instrument in self.items():
@@ -522,7 +521,7 @@ class SensorsDict(OrderedDict):
 
             pixel_inds = np.cumsum(np.concatenate([np.array([0]),
                                                    merged_measurements.rays_per_pixel.data
-                                                   ])).astype(np.int)
+                                                   ])).astype(int)
             pixels_per_image = [np.where(pixel_inds == ray_image)[0][0]
                                 for ray_image in merged_measurements.rays_per_image.data]
 

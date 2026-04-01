@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check at3d/ tests/ tools/
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12", "3.13"]
+        include:
+          - python-version: "3.12"
+            fortran-coverage: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install compilers and lcov
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran gcc
+          if [[ "${{ matrix.fortran-coverage }}" == "true" ]]; then
+            sudo apt-get install -y lcov
+          fi
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: pip-${{ matrix.python-version }}-
+
+      - name: Install build dependencies
+        run: pip install meson-python meson ninja numpy
+
+      - name: Install AT3D with test dependencies
+        run: pip install ".[test]" --no-build-isolation -v
+
+      - name: Install AT3D with Fortran coverage instrumentation
+        if: matrix.fortran-coverage
+        run: |
+          pip install -e ".[test]" --no-build-isolation \
+            -Csetup-args=-Db_coverage=true -v
+
+      - name: Run tests with Python coverage
+        run: pytest --cov=at3d --cov-report=term --cov-report=html -v
+        timeout-minutes: 30
+
+      - name: Collect Fortran coverage
+        if: matrix.fortran-coverage
+        run: |
+          lcov --capture --directory . --output-file fortran_coverage.info \
+               --ignore-errors source --no-external
+          genhtml fortran_coverage.info --output-directory fortran_htmlcov \
+                  --ignore-errors source
+
+      - name: Upload Python coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage-${{ matrix.python-version }}
+          path: htmlcov/
+
+      - name: Upload Fortran coverage artifact
+        if: matrix.fortran-coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortran-coverage
+          path: fortran_htmlcov/
+
+  build-sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build --sdist

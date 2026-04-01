@@ -1,0 +1,89 @@
+[build-system]
+requires = [
+    "meson-python>=0.16.0",
+    "meson>=1.2.0",
+    "ninja",
+    "numpy>=2.0.0",
+]
+build-backend = "mesonpy"
+
+[project]
+name = "at3d"
+version = "4.1.3"
+description = "3D Radiative Transfer Inversion using the SHDOM forward algorithm"
+readme = "README.md"
+license = {text = "GPL-3.0-or-later"}
+requires-python = ">=3.10"
+maintainers = [
+    {name = "Aviad Levis", email = "aviad.levis@gmail.com"},
+    {name = "Jesse Loveridge", email = "Jesse.Loveridge@colostate.edu"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python",
+    "Programming Language :: Fortran",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+]
+dependencies = [
+    "numpy>=1.25",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "dill>=0.3.1",
+    "joblib>=1.2",
+    "tensorboardX>=2.0",
+    "pillow>=9.0",
+    "numdifftools>=0.9.39",
+    "pandas>=1.5",
+    "xarray>=2023.1",
+    "netcdf4>=1.6",
+    "bottleneck>=1.3.5",
+    "ipython>=7.0",
+    "ipywidgets>=7.0",
+    "psutil>=5.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0", "pytest-cov>=4.0"]
+notebooks = ["jupyter>=1.0"]
+dev = ["ruff>=0.4", "pre-commit>=3.0"]
+
+[project.urls]
+Homepage = "https://github.com/CloudTomography/AT3D"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501", "E741", "F841", "E101", "W191"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.coverage.run]
+source_pkgs = ["at3d"]
+omit = ["*/data/*"]
+
+[tool.coverage.paths]
+source = [
+    "at3d/",
+    "*/site-packages/at3d/",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.coverage.html]
+directory = "htmlcov"

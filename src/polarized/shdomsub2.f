@@ -341,7 +341,7 @@ C     the property grid to each internal grid point.
       REAL PHASEWTP(MAXNMICRO,MAXPG,NPART)
       INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
       INTEGER NZCKD
-      REAL ZCKD(*), GASABS(*)
+      REAL ZCKD(*), GASABS(*), KG
       DOUBLE PRECISION EXTMIN, SCATMIN
 
 C         Initialize: transfer the tabulated phase functions
@@ -356,7 +356,7 @@ C     below.
      .                      ALBEDOP, LEGENP, IPHASEP, NZCKD,
      .                      ZCKD, GASABS, EXTMIN, SCATMIN,
      .                      INTERPMETHOD, IERR,ERRMSG,PHASEINTERPWT,
-     .                      NLEGP, MAXNMICRO, PHASEWTP)
+     .                      NLEGP, MAXNMICRO, PHASEWTP,KG)
       IF (IERR .NE. 0) RETURN
 
 C         Trilinearly interpolate from the property grid to the adaptive grid
@@ -374,9 +374,12 @@ C         Trilinearly interpolate from the property grid to the adaptive grid
      .            NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
      .            INTERPMETHOD, IERR, ERRMSG,
      .            PHASEINTERPWT(:,IP,IPA),
-     .            NLEGP, MAXNMICRO, PHASEWTP(:,:,IPA))
+     .            NLEGP, MAXNMICRO, PHASEWTP(:,:,IPA), KG)
             IF (IERR .NE. 0) RETURN
-	           TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
+            IF (IPA .EQ. 1) THEN
+              TOTAL_EXT(IP) = TOTAL_EXT(IP) + KG
+            ENDIF
+	          TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
 	       ENDDO
       ENDDO
 
@@ -539,10 +542,19 @@ C                LEGEN(6,L,IPH) = LEGEN(6,L,IPH)
         ENDIF
       ENDIF
 
-      IF (DELTAM) TOTAL_EXT(:NPTS) = 0.0
-      DO IPA = 1, NPART
-        DO I = 1, NPTS
-          IF (DELTAM) THEN
+C      IF (DELTAM) TOTAL_EXT(:NPTS) = 0.0
+C     Subtract everything but gas absorption.
+      IF (DELTAM) THEN
+        TOTAL_EXT(:NPTS) = TOTAL_EXT(:NPTS) - 
+     .                     SUM(EXTINCT(:NPTS,:),dim=2)
+C     Double check for rounding that makes small negative errors.
+        WHERE (TOTAL_EXT(:NPTS) < 0.0)
+          TOTAL_EXT(:NPTS) = 0.0
+        ELSEWHERE
+          TOTAL_EXT(:NPTS) = TOTAL_EXT
+        END WHERE
+        DO IPA = 1, NPART
+          DO I = 1, NPTS
             IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
               F = LEGEN(1,ML+1,IPHASE(1,I,IPA))
             ELSE
@@ -556,14 +568,41 @@ C                LEGEN(6,L,IPH) = LEGEN(6,L,IPH)
             ALBEDO(I,IPA) = (1.0-F)*ALBEDO(I,IPA)/
      .			   (1.0-ALBEDO(I,IPA)*F)
             TOTAL_EXT(I) = TOTAL_EXT(I) + EXTINCT(I,IPA)
-          ENDIF
-	        ALBMAX = MAX(ALBMAX, ALBEDO(I,IPA))
-	        IF (SRCTYPE .NE. 'S') THEN
-	           CALL PLANCK_FUNCTION (TEMP(I), UNITS,WAVENO,WAVELEN,BB)
-	            PLANCK(I,IPA) = (1.0-ALBEDO(I,IPA))*BB
-          ENDIF
-	      ENDDO
-      ENDDO
+          ENDDO
+        ENDDO            
+      ENDIF
+      IF (SRCTYPE .NE. 'S') THEN
+        DO IPA = 1, NPART
+          DO I = 1, NPTS
+            CALL PLANCK_FUNCTION (TEMP(I), UNITS,WAVENO,WAVELEN,BB)
+            PLANCK(I,IPA) = (1.0-ALBEDO(I,IPA))*BB
+          ENDDO
+        ENDDO
+      ENDIF
+      ALBMAX = MAX(ALBMAX, MAXVAL(ALBEDO(:NPTS,:)))
+
+    !       IF (DELTAM) THEN
+    !         IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
+    !           F = LEGEN(1,ML+1,IPHASE(1,I,IPA))
+    !         ELSE
+    !           F = 0.0
+    !           DO Q=1,8*MAXNMICRO
+    !             F = F + LEGEN(1,ML+1,IPHASE(Q,I,IPA))*
+    !  .            PHASEINTERPWT(Q,I,IPA)
+    !           ENDDO
+    !         ENDIF
+    !         EXTINCT(I,IPA) = (1.0-ALBEDO(I,IPA)*F)*EXTINCT(I,IPA)
+    !         ALBEDO(I,IPA) = (1.0-F)*ALBEDO(I,IPA)/
+    !  .			   (1.0-ALBEDO(I,IPA)*F)
+    !         TOTAL_EXT(I) = TOTAL_EXT(I) + EXTINCT(I,IPA)
+    !       ENDIF
+	  !       ALBMAX = MAX(ALBMAX, ALBEDO(I,IPA))
+	  !       IF (SRCTYPE .NE. 'S') THEN
+	  !          CALL PLANCK_FUNCTION (TEMP(I), UNITS,WAVENO,WAVELEN,BB)
+	  !           PLANCK(I,IPA) = (1.0-ALBEDO(I,IPA))*BB
+    !       ENDIF
+	  !     ENDDO
+    !   ENDDO
 
       RETURN
       END
@@ -578,7 +617,7 @@ C                LEGEN(6,L,IPH) = LEGEN(6,L,IPH)
      .             SRCTYPE, SOLARFLUX, SOLARMU, GNDALBEDO, GNDTEMP,
      .             SKYRAD, UNITS, WAVENO, WAVELEN,  RADIANCE, NPART,
      .		       TOTAL_EXT, PHASEINTERPWT, DELTAM, ML, PHASEMAX,
-     .           INTERPMETHOD, MAXNMICRO)
+     .           INTERPMETHOD, MAXNMICRO, SURFACE_FLUX)
 C       Initializes radiance field by solving plane-parallel two-stream.
 C     Solves the L=1 M=0 SH system by transforming the pentadiagonal
 C     system to tridiagonal and calling solver.
@@ -594,7 +633,7 @@ C     Only the I Stokes parameter is initialized, the rest are zeroed.
       REAL    EXTINCT(NZ,NXY,NPART), ALBEDO(NZ,NXY,NPART)
       REAL    LEGEN(NSTLEG,0:NLEG,*)
       REAL    TEMP(NZ,NXY)
-      REAL    RADIANCE(NSTOKES,*), PHASEMAX
+      REAL    RADIANCE(NSTOKES,*), PHASEMAX, SURFACE_FLUX
       CHARACTER SRCTYPE*1, UNITS*1, INTERPMETHOD*2
       INTEGER MAXNMICRO
 
@@ -678,7 +717,7 @@ C           Make layer properties for the Eddington routine
               ELSE
                 F1 = 0.0
                 DO Q=1,8*MAXNMICRO
-                  F1 = F1 + LEGEN(1,1,IPHASE(Q,IZ+1,I,:))*
+                  F1 = F1 + LEGEN(1,ML+1,IPHASE(Q,IZ+1,I,:))*
      .            PHASEINTERPWT(Q,IZ+1,I,:)
                 ENDDO
               ENDIF
@@ -702,7 +741,7 @@ C           Call the Eddington flux routine
         CALL EDDRTF (NLAYER, OPTDEPTHS, ALBEDOS, ASYMMETRIES,
      .              TEMPS, .FALSE., SRCTYPE, SOLARFLUX, SOLARMU,
      .              GNDTEMP, GNDEMIS, SKYRAD, UNITS, WAVENO,WAVELEN,
-     .              FLUXES)
+     .              FLUXES, SURFACE_FLUX)
 C           Convert fluxes to first two moments of spherical harmonics
         DO IZ = 1, NZ
           L = NZ+1-IZ
@@ -726,7 +765,7 @@ C           Convert fluxes to first two moments of spherical harmonics
       SUBROUTINE EDDRTF (NLAYER, OPTDEPTHS, ALBEDOS, ASYMMETRIES,
      .              TEMPS, DELTAM, SRCTYPE, SOLARFLUX, SOLARMU,
      .              GNDTEMP, GNDEMIS, SKYRAD, UNITS, WAVENO,WAVELEN,
-     .              FLUXES)
+     .              FLUXES, SURFACE_FLUX)
 C
 C       EDDRTF computes the layer interface fluxes for a plane-parallel
 C     atmosphere with either solar or thermal source of radiation using
@@ -787,8 +826,8 @@ Cf2py intent(in) :: TEMPS
 Cf2py intent(in) :: OPTDEPTHS, ALBEDOS, ASYMMETRIES
       REAL      GNDTEMP, GNDEMIS, SKYRAD, SOLARFLUX, SOLARMU
 Cf2py intent(in) :: GNDTEMP, GNDEMIS, SKYRAD, SOLARFLUX, SOLARMU
-      REAL      WAVENO(2), WAVELEN
-Cf2py intent(in) ::WAVENO, WAVELEN
+      REAL      WAVENO(2), WAVELEN, SURFACE_FLUX
+Cf2py intent(in) ::WAVENO, WAVELEN, SURFACE_FLUX
       CHARACTER*1 SRCTYPE, UNITS
 Cf2py intent(in) :: SRCTYPE, UNITS
       REAL      FLUXES(3,NLAYER+1)
@@ -926,6 +965,7 @@ C           Set up boundary radiances
         CALL PLANCK_FUNCTION (SKYRAD,UNITS,WAVENO,WAVELEN,BBRAD)
         SKYFLUX = PI*BBRAD
       ENDIF
+      GNDFLUX = GNDFLUX + SURFACE_FLUX
 C           Setup for and call the tri-diagonal matrix solver
       RHS(1) = SKYFLUX
       DIAG(1) = 0.0
@@ -1032,9 +1072,15 @@ C     angles are the downwelling (mu<0) angles.  Also output are the
 C     maximum number of azimuthal angles (NPHI0MAX), the flags for doing
 C     an azimuthal FFT for each mu and the total number of angles.
       IMPLICIT NONE
-      INTEGER NMU, NPHI, ITYPE,  NPHI0MAX, NPHI0(NMU), NANG
+      INTEGER NMU, NPHI, ITYPE,  NPHI0MAX
+Cf2py intent(in) :: NMU, NPHI, ITYPE, NPHI0MAX
+      INTEGER NPHI0(NMU), NANG
+Cf2py intent(out) :: NPHI0, NANG
       LOGICAL FFTFLAG(NMU)
-      REAL    MU(NMU), PHI(NMU,*), WTMU(NMU), WTDO(NMU,*)
+Cf2py intent(out) :: FFTFLAG
+      REAL    MU(NMU), PHI(NMU,NPHI0MAX), WTMU(NMU)
+      REAL    WTDO(NMU,NPHI0MAX)
+Cf2py intent(out) :: MU, PHI, WTMU, WTDO
       INTEGER MAXNPHI, J, K, MM
       REAL    DELPHI
       PARAMETER (MAXNPHI=256)
@@ -1114,11 +1160,15 @@ C     The FFTPACK phase coefficients for the FFT in azimuth are also
 C     output in WPHISAVE.
       IMPLICIT NONE
       INTEGER NSTLEG, ML, MM, NLM, NMU, NPHI0(NMU), NPHI0MAX
+Cf2py intent(in) :: NSTLEG, ML, MM, NLM, NMU, NPHI0, NPHI0MAX
       LOGICAL FFTFLAG(NMU)
+Cf2py intent(in) :: FFTFLAG
       REAL    MU(NMU), PHI(NMU,*), WTMU(NMU), WTDO(NMU,*)
+Cf2py intent(in) :: MU, PHI, WTMU, WTDO
       REAL    CMU1(NSTLEG,NLM,NMU), CMU2(NSTLEG,NMU,NLM)
       REAL    CPHI1(-16:16,32,NMU), CPHI2(32,-16:16,NMU)
       REAL    WPHISAVE(3*NPHI0MAX+15,NMU)
+Cf2py intent(out) :: CMU1, CMU2, CPHI1, CPHI2, WPHISAVE
       INTEGER I, J, K, M, Q
       REAL    X, W
       REAL, ALLOCATABLE :: PRC(:,:)
@@ -1169,12 +1219,9 @@ C             Precompute the phase factors for the FFTs
       RETURN
       END
 
-
-
-
-
       SUBROUTINE SURFACE_BRDF (SFCTYPE, REFPARMS, WAVELEN,
-     .                         MU2, PHI2, MU1, PHI1, NSTOKES, REFLECT)
+     .                         MU2, PHI2, MU1, PHI1, NSTOKES, 
+     .                         REFLECT)
 C       Returns the reflection matrix for the general bidirectional
 C     reflection distribution function of the specified type (SFCTYPE).
 C     The incident direction is (MU1,PHI1), and the outgoing direction
@@ -1196,8 +1243,12 @@ C       R  RPV-original  rho0, k, Theta
       INTEGER NSTOKES
       REAL    REFPARMS(*), WAVELEN, MU1, PHI1, MU2, PHI2, REFLECT(4,4)
       CHARACTER  SFCTYPE*1
+!f2py intent(in) :: NSTOKES, WAVELEN, MU1, PHI1, MU2, PHI2, SFCTYPE
+!f2py intent(in) :: REFPARMS
+!f2py intent(out) :: REFLECT
+
       INTEGER K1, K2
-      REAL   PI
+      REAL   PI, KGEO, KVOL
       REAL   RPV_REFLECTION
 
       PI = ACOS(-1.0)
@@ -1232,6 +1283,16 @@ C         O: Ocean BRDF from 6S modified by Norm Loeb
         ENDIF
         CALL ocean_brdf_sw (REFPARMS(1), -1., REFPARMS(2), WAVELEN,
      .                      -MU1, MU2, PHI1-PHI2, PHI1, REFLECT(1,1))
+      ELSE IF (SFCTYPE .EQ. 'M') THEN
+C         M: RossLiThick-Sparse surface brdf used by MODIS.
+          IF (NSTOKES .GT. 1) THEN
+            PRINT *, 'RossLiThick-Sparse is only for unpolarized case'
+            STOP
+          ENDIF
+          CALL ROSS_THICK_LI_SPARSE(REFPARMS(1), REFPARMS(2), 
+     .                              REFPARMS(3), 2.0,
+     .                              1.0, -MU1,MU2,PHI1-PHI2,
+     .                              REFLECT(1,1), KGEO,KVOL)
       ELSE
         STOP 'SURFACE_BRDF: Unknown BRDF type'
       ENDIF
@@ -1239,9 +1300,60 @@ C         O: Ocean BRDF from 6S modified by Norm Loeb
       RETURN
       END
 
+      SUBROUTINE ROSS_THICK_LI_SPARSE(FISO, FGEO, FVOL,
+     .                              HB, BR,
+     .                              MUDOWN,MUUP,RELAZ,
+     .                              REFLECT,KGEO,KVOL)
+      IMPLICIT NONE
+      REAL :: FISO, FGEO, FVOL, MUDOWN, MUUP, RELAZ,REFLECT
+      REAL :: HB, BR, KGEO,KVOL
+Cf2py intent(in) :: FISO,FGEO,FVOl, MUDOWN, MUUP, RELAZ
+Cf2py intent(in) :: HB, BR
+Cf2py intent(out) :: REFLECT, KGEO,KVOL
 
+C     Do kernel calculations in double precision.
+      INTEGER, parameter :: r=kind(1.0d0)
+      REAL(kind=r) PI, COSETA, DSQ, COST
+      REAL(kind=r) MU_D, MU_U, SEC_D, SEC_U, O, THETA_D, THETA_U
+      REAL(kind=r) TAN_D, TAN_U
+      PI = ACOS(-1.0D0)
+      
+C     Volume Scattering Kernel.
+      COSETA = MUDOWN*MUUP + SQRT(1.0 - MUDOWN**2)*
+     .                  SQRT(1.0 - MUUP**2)*COS(RELAZ)
+      KVOL = (((PI/2.0 - ACOS(COSETA))*COSETA + SQRT(1.0-COSETA**2))/
+     .                    (MUDOWN + MUUP)) - PI/4.0
+C     Geometric Kernel.
+      THETA_D = ABS(ATAN(BR*SQRT(1.0D0 - MUDOWN**2)/MUDOWN))
+      THETA_U = ABS(ATAN(BR*SQRT(1.0D0 - MUUP**2)/MUUP))
+      MU_D = COS(THETA_D)
+      MU_U = COS(THETA_U)
+      COSETA = MU_D*MU_U + SQRT(1.0D0 - MU_D**2)*
+     .              SQRT(1.0D0 - MU_U**2)*COS(RELAZ)
+      SEC_D = 1.0D0/MU_D
+      SEC_U = 1.0D0/MU_U
 
+      TAN_D = SQRT(1.0D0 - MU_D**2)/MU_D
+      TAN_U = SQRT(1.0D0 - MU_U**2)/MU_U
+      
+      DSQ = TAN_D**2 + TAN_U**2 - 2*TAN_U*TAN_D*COS(RELAZ)
+      COST = HB*SQRT(DSQ + (TAN_D*TAN_U*SIN(RELAZ))**2)/
+     .        (SEC_D + SEC_U)
+      
+      IF (COST .GE. 1.0D0) COST = 1.0D0
+      IF (COST .LE. -1.0D0) COST = -1.0D0
 
+      O = (ACOS(COST) - COST*SQRT(1.0D0 - COST**2))*(SEC_D + SEC_U)/PI
+      KGEO = O - SEC_D - SEC_U + 0.5D0*(1.0D0+COSETA)*SEC_U*SEC_D
+
+C     Sum Kernels.
+      REFLECT = FISO + FVOL*KVOL + FGEO*KGEO
+      REFLECT = MAX(REFLECT, 0.0)
+      ! PRINT *, MU_D, MU_U, RELAZ, SEC_D, SEC_U, TAN_D, TAN_U
+      ! PRINT *, DSQ, COST, O
+      ! PRINT *, KVOL, KGEO
+
+      END
 
       SUBROUTINE WAVE_FRESNEL_REFLECTION (MRE, MIM, WINDSPEED,
      .                         MUI, MUR, PHII, PHIR, NSTOKES, REFLECT)
@@ -2143,7 +2255,57 @@ C      ENDIF
 C      RETURN
 C      END
 
+! SUBROUTINE NADAL_BREON_BPDF(ALPHA, BETA, MR,
+!   .            MI,
+!   .            MUDOWN, MUUP,RELAZ,P21,P31)
+!    IMPLICIT NONE
+!    REAL ALPHA, BETA, MR,MI, MUDOWN,MUUP,RELAZ,P21,P31
 
+!    INTEGER, parameter :: r=kind(1.0d0)
+!    REAL(kind=r) FP,COSETA,THETAR, MUR, THETAT, MUT
+!    REAL(kind=r) PI, RP, COSN, SINN
+!    COMPLEX(kind=r) M
+
+!    M = COMPLEX(MR,MI)
+   
+!    PI = ACOS(-1.0D0)
+
+!    COSETA = MUDOWN*MUUP + SQRT(1.0 - MUDOWN**2)*
+!   .                  SQRT(1.0 - MUUP**2)*COS(RELAZ)
+!    THETAR = (PI - ACOS(COSETA))/2.0D0
+!    MUR = COS(THETAR)
+!    THETAT = ASIN(M*SQRT(1.0-MUR**2))
+!    MUT = COS(THETAT)
+
+!    FP = 0.5D0*(((M*MUT - MUR)/(M*MUT+MUR))**2 - 
+!   .            ((M*MUR - MUT)/(M*MUR+MUT))**2)
+!    RP = ALPHA*(1.0D0 - EXP(-BETA*(FP)/(MUDOWN + MUUP)))
+
+!    COSN = -(MUDOWN + MUUP*COSETA)/(SIN(RELAZ)*SQRT(1.0-COSETA**2))
+!    SINN = SQRT(1.0-MUDOWN**2)*SQRT(1.0-MUUP**2)/(SQRT(1.0-COSETA**2))
+!    P21 = -RP*(1.0D0 - 2.0D0*SINN*SINN)
+!    P31 = RP*(2*COSN*SINN)
+!    END
+
+!    SUBROUTINE ROSSLITHICK_W_BPDF(FISO,FGEO,FVOL,HB,BR,
+!   .            ALPHA,BETA,MR,MI,MUDOWN,MUUP,RELAZ,REFLECT)
+!    IMPLICIT NONE
+!    REAL :: FISO, FGEO, FVOL, MUDOWN, MUUP, RELAZ
+!    REAL :: HB, BR, ALPHA, BETA, MR,MI
+!    REAL :: REFLECT(4,4), P21, P31
+
+!    REFLECT(:,:) = 0.0
+!    CALL ROSS_LI_THICK_SPARSE(FISO, FGEO, FVOL,
+!   .                              HB, BR,
+!   .                              MUDOWN,MUUP,RELAZ,
+!   .                              REFLECT(1,1))
+
+!    CALL NADAL_BREON_BPDF(ALPHA,BETA,MR,MI,
+!   .                              MUDOWN,MUUP,RELAZ,
+!   .                              P21,P31)
+!    REFLECT(2,1) = P21
+!    REFLECT(3,1) = P31
+!    END
 
 
       SUBROUTINE INTEGRATE_1RAY (BCFLAG, IPFLAG, NSTOKES, NSTLEG,
@@ -2163,7 +2325,9 @@ C      END
      .			              VALIDRAD, TOTAL_EXT, NPART, IERR, ERRMSG,
      .                    INTERPMETHOD, PHASEINTERPWT, PHASEMAX,
      .                    MAXNMICRO, TAUTOL, TIME_SOURCE,
-     .                    CORRECTINTERPOLATE, TRANSCUT, SINGLESCATTER)
+     .                    CORRECTINTERPOLATE, TRANSCUT, SINGLESCATTER,
+     .                     NOSURFACE, SFCGRIDRAD, NANG, SKYRAD,
+     .                     UNITS, WAVENO)
 C       Integrates the source function through the extinction field
 C     (EXTINCT) backward from the outgoing direction (MU2,PHI2) to find the
 C     radiance (RADIANCE) at the point X0,Y0,Z0.
@@ -2184,7 +2348,7 @@ C     5=-Z,6=+Z).
       REAL    PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART), PHASEMAX
       CHARACTER INTERPMETHOD*2
       INTEGER BCPTR(MAXNBC,2)
-      LOGICAL DELTAM, VALIDRAD, SINGLESCATTER
+      LOGICAL DELTAM, VALIDRAD, SINGLESCATTER, NOSURFACE
       REAL    WTDO(NMU,NPHI0MAX), MU(NMU), PHI(NMU,NPHI0MAX)
       REAL    WAVELEN, SOLARMU, SOLARAZ
       REAL    SFCGRIDPARMS(NSFCPAR,NBOTPTS), BCRAD(*)
@@ -2196,7 +2360,10 @@ C     5=-Z,6=+Z).
       REAL    PHASETAB(NSTPHASE,NUMPHASE,NSCATANGLE)
       DOUBLE PRECISION MU2, PHI2, X0,Y0,Z0, XE,YE,ZE
       DOUBLE PRECISION TRANSMIT, RADIANCE(NSTOKES)
-      CHARACTER SRCTYPE*1, SFCTYPE*2
+      CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
+      INTEGER NANG
+      REAL    SFCGRIDRAD(NANG/2 + 1, *), WAVENO(2)
+      REAL    SKYRAD(NSTOKES,NMU/2,NPHI0MAX)
 
       INTEGER BITX, BITY, BITZ, IOCT, ICELL, INEXTCELL, IFACE
       INTEGER IOPP, NTAU, IT, I, IPT1, IPT2, J, L
@@ -2549,8 +2716,11 @@ C.OR. NGRID.GT.MAXCELLSCROSS
      .                      NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .                      SRCTYPE, WAVELEN, SOLARMU,SOLARAZ, DIRFLUX,
      .                      SFCTYPE, NSFCPAR, SFCGRIDPARMS,
-     .                      RADBND)
-          RADIANCE(:) = RADIANCE(:) + TRANSMIT*RADBND(:)
+     .                      RADBND, SFCGRIDRAD, NANG,
+     .                      UNITS, WAVENO)
+          IF (.NOT. NOSURFACE) THEN
+            RADIANCE(:) = RADIANCE(:) + TRANSMIT*RADBND(:)
+          ENDIF
         ELSE
           ICELL = INEXTCELL
         ENDIF
@@ -2581,7 +2751,8 @@ C.OR. NGRID.GT.MAXCELLSCROSS
      .                      NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO,
      .                      SRCTYPE, WAVELEN, SOLARMU,SOLARAZ, DIRFLUX,
      .                      SFCTYPE, NSFCPAR, SFCGRIDPARMS,
-     .                      RADBND)
+     .                      RADBND, SFCGRIDRAD, NANG,
+     .                      UNITS, WAVENO)
 C       Returns the interpolated Stokes radiance at the boundary (RADBND).
 C     Inputs are the boundary location (XB,YB), ray direction away from
 C     boundary (MU2,PHI2), cell number (ICELL) and face (KFACE) at
@@ -2589,16 +2760,18 @@ C     the boundary point.
       IMPLICIT NONE
       INTEGER NSTOKES, ICELL, KFACE, MAXNBC, NTOPPTS, NBOTPTS
       INTEGER GRIDPTR(8,*), BCPTR(MAXNBC,2)
-      INTEGER NMU, NPHI0MAX, NPHI0(*), NSFCPAR
+      INTEGER NMU, NPHI0MAX, NPHI0(*), NSFCPAR, NANG
       REAL    MU2, PHI2, RADBND(NSTOKES)
       DOUBLE PRECISION XB, YB
       REAL    GRIDPOS(3,*)
       REAL    WTDO(NMU,*), MU(NMU), PHI(NMU,*)
       REAL    WAVELEN, SOLARMU, SOLARAZ, DIRFLUX(*)
       REAL    SFCGRIDPARMS(NSFCPAR,*), BCRAD(NSTOKES,*)
-      CHARACTER SRCTYPE*1, SFCTYPE*2
+      REAL    SFCGRIDRAD(NANG/2 + 1, *), WAVENO(2)
+      CHARACTER SRCTYPE*1, SFCTYPE*2, UNITS*1
 
-      INTEGER IL, IM, IU, IP, IBC, J
+      REAL    SFCRAD_TEMP(NSTOKES,NMU/2,NPHI0MAX)
+      INTEGER IL, IM, IU, IP, IBC, J,I, IANG,JA
       LOGICAL LAMBERTIAN
       REAL    X(4), Y(4), RAD(NSTOKES,4), U, V
       INTEGER GRIDFACE(4,6)
@@ -2656,7 +2829,22 @@ C           Do a binary search to locate the bottom boundary point
      .             SFCTYPE, NSFCPAR, SFCGRIDPARMS, NSTOKES,
      .             BCRAD(:,1+NTOPPTS))
           ENDIF
-          RAD(:,J) = BCRAD(:,NTOPPTS+IBC)
+C         Hack to use COMPUTE_TOP_RADIANCES to compute the surface
+C         emission.
+          IANG = 1
+          SFCRAD_TEMP = 0.0
+          DO I = 1, NMU/2
+            DO JA = 1, NPHI0(I)
+              SFCRAD_TEMP(1,I,JA) = SFCGRIDRAD(IANG+1,IBC)
+              IANG = IANG + 1
+            ENDDO
+          ENDDO
+          CALL COMPUTE_TOP_RADIANCES(SRCTYPE,SFCRAD_TEMP,WAVENO,
+     .                  WAVELEN,
+     .                  UNITS,1, NSTOKES, RAD(:,J), NPHI0MAX,
+     .                  NMU,-1,-1,MU2,PHI2,MU,PHI,NPHI0,2)
+          RAD(:,J) = RAD(:,J) + BCRAD(:,NTOPPTS+IBC)
+
         ENDIF
       ENDDO
       IF (X(2)-X(1) .GT. 0.0) THEN

@@ -28,6 +28,58 @@ import xarray as xr
 
 import at3d.medium
 import at3d.checks
+import at3d.gas_absorption
+
+def aerosol_atmosphere(atmosphere=None, search_directory=None, atmosphere_name='tropical'):
+    """
+    Prepares gas concentrations for aerosol calculations.
+
+    Data is reversed in increasing `z` and relative humidity is returned along with
+    temperature and pressure.
+
+    Parameters
+    ----------
+    atmosphere : xr.Dataset
+        Contains the gas concentrations following the convention of at3d.gas_absorption.load_standard_atmosphere.
+        If `None` then a standard atmosphere is loaded and converted.
+    search_directory : str
+        The directory where the atmosphere files are.
+    atmosphere_name : str
+        The name of the standard atmosphere to use.
+        Options include: 'midlatitude_summer', 'midlatitude_winter', 'tropical',
+        'subarctic_summer', 'subarctic_winter'
+
+    Returns
+    -------
+    atmosphere : xr.Dataset
+        Contains the gas concentrations in units of cm^-3 as well as
+        temperature in Kelvin, pressure in millibars and altitude ('z')
+        in kilometers.
+    """
+    if atmosphere is None:
+        atmosphere = at3d.gas_absorption.load_standard_atmosphere(search_directory=search_directory, atmosphere_name=atmosphere_name)
+
+    R = 8.31447215
+    avogadro = 6.022e23
+    T = atmosphere.temperature.values
+    P = atmosphere.pressure.values
+
+    es = 6.112*np.exp(17.67*(T-273.15)/(243.5 + (T-273.15)))
+    air_density = 100*P/(R*T)
+    RH = atmosphere.H2O.values*P/(es*air_density*avogadro*1e-6)
+    z = atmosphere.z.values
+
+    atmosphere = xr.Dataset(
+        data_vars={
+            'humidity': ('z',RH[::-1]),
+            'temperature': ('z',T[::-1]),
+            'pressure': ('z',P[::-1])
+        },
+        coords={
+            'z': z[::-1]
+        }
+    )
+    return atmosphere
 
 class MassToNumberConverter:
     """
@@ -220,8 +272,11 @@ class OPACMixture:
         The default assumes the code is called from the same directory
         as this file.
     """
-    def __init__(self, directory='../data/OPAC/aerosol/'):
+    def __init__(self, directory=None):#'../data/OPAC/aerosol/'):
 
+        if directory is None:
+            import at3d.data
+            directory = str(at3d.data.DATA_DIR / 'OPAC' / 'aerosol')
         self._directory = directory
 
         self._expected_types = (
@@ -296,6 +351,7 @@ class OPACMixture:
             The aerosol optical properties on the grid of `atmosphere` with wavelengths
             as keys.
         """
+        wavelengths = np.atleast_1d(wavelengths)
         if any(wavelengths < 0.25) or any(wavelengths > 40.0):
             raise ValueError(
                 "`wavelengths` are outside the expected range of 0.25 to 40 micrometers. Check units of input."
@@ -334,7 +390,7 @@ class OPACMixture:
 
             for aerosol_type in humidified_profile:
 
-                aerosol['density'] = aerosol[aerosol_type]
+                aerosol['density'] = aerosol[aerosol_type].fillna(0.0)
                 aerosol['humidity'] = atmosphere.humidity*100.0
 
                 table = tables[aerosol_type].sel(

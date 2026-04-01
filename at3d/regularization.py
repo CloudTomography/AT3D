@@ -33,11 +33,11 @@ class Regularization:
     def __init__(self, state_generator, scatterer_name, variable_name,
                  regularization_strength, relaxation_parameter=1.0):
 
-        if (not isinstance(regularization_strength, np.float)) or (regularization_strength < 0.0):
+        if (not isinstance(regularization_strength, float)) or (regularization_strength < 0.0):
             raise ValueError("`regularization_strength` should be a positive float.")
         self._regularization_strength = regularization_strength
 
-        if (not isinstance(relaxation_parameter, np.float)) or (relaxation_parameter < 0.0):
+        if (not isinstance(relaxation_parameter, float)) or (relaxation_parameter < 0.0):
             raise ValueError("`relaxation_parameter` should be a positive float.")
         self._relaxation_parameter = relaxation_parameter
 

@@ -185,7 +185,8 @@ def legacy_perspective_projection(wavelength, fov, x_resolution, y_resolution,
         and the sensor's observables.
 
     """
-    norm = lambda x: x / np.linalg.norm(x, axis=0)
+    def norm(x):
+        return x / np.linalg.norm(x, axis=0)
 
     #assert samples>=1, "Sample per pixel is an integer >= 1"
     #assert int(samples) == samples, "Sample per pixel is an integer >= 1"
@@ -423,7 +424,7 @@ def cloud(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb,ground_temperatu
             solver.load_solution(load_solution)
         solvers.add_solver(wavelength,solver)
 
-    Sensordict.get_measurements(solvers, maxiter=200, n_jobs=1, verbose=False)
+    Sensordict.get_measurements(solvers, maxiter=200, n_jobs=4, verbose=False)
     return solvers, Sensordict, cloud_poly_tables, step, rte_grid
 
 class ThermalJacobianNoSurface(TestCase):
@@ -609,9 +610,9 @@ def cloud_solar(mie_mono_table,ext,veff,reff,ssalb,solarmu,surfacealb, ground_te
     np.random.seed(1)
     rte_grid = at3d.grid.make_grid(0.05/resolution, 9*resolution, 0.05/resolution, 9*resolution,
                                       np.arange(0.1, 0.65, 0.05/resolution))
+    grid_shape = (rte_grid.x.size, rte_grid.y.size, rte_grid.z.size)
     if random_reff:
         reff = np.random.uniform(0.1, 11.0, size=grid_shape)
-    grid_shape = (rte_grid.x.size, rte_grid.y.size, rte_grid.z.size)
     rte_grid['density'] = (['x','y','z'], np.ones(grid_shape))
     rte_grid['reff'] = (['x','y','z'], np.zeros(grid_shape) + reff)
     rte_grid['veff'] = (['x','y','z'] ,np.zeros(grid_shape) + veff)
@@ -863,7 +864,7 @@ class SolarJacobianThinNoSurfaceAlbedo(TestCase):
         #     out.append((rte_sensor_high[0.86].measurement_data[0].data - rte_sensor_ref.measurement_data[0].data)/step)
         # finite_jacobian = np.stack(out, axis=0)
         # np.save('./data/thin_reference_ssalb_0.0_-0.001_sfcalbedo_jacobian.npy'.format(surfacealb, step), finite_jacobian)
-        cls.jacobian_reference = np.load('./data/thin_reference_ssalb_0.0_-0.001_sfcalbedo_jacobian.npy'.format(surfacealb, step))
+        cls.jacobian_reference = np.load('./data/thin_reference_ssalb_0.0_-0.001_sfcalbedo_jacobian.npy')
 
         deriv_gen = at3d.medium.GridToOpticalProperties(rte_grid, 'cloud', 0.86)
         unknown_scatterers = at3d.containers.UnknownScatterers(

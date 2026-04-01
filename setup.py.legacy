@@ -15,14 +15,14 @@ LONG_DESCRIPTION ="""at3d performs 3D reconstruction of cloud/aerosol microphysi
 """
 
 MAINTAINER = "Aviad Levis; Jesse Loveridge"
-MAINTAINER_EMAIL = "aviad.levis@gmail.com; jesserl2@illinois.edu"
+MAINTAINER_EMAIL = "aviad.levis@gmail.com; Jesse.Loveridge@colostate.edu"
 URL = "https://github.com/CloudTomography/at3d"
-LICENSE = "MIT"
-VERSION = "4.1.0"
+LICENSE = "GPL"
+VERSION = "4.1.3"
 
 classifiers =  ['Development Status :: 4 - Beta',
                 'Programming Language :: Python',
-                'License :: OSI Approved :: MIT License',
+                'License :: OSI Approved :: GPL License',
                 'Intended Audience :: Science/Research',
                 'Topic :: Scientific/Engineering',
                 'Topic :: Scientific/Engineering :: Mathematics',
@@ -44,7 +44,8 @@ F2PY_MODULE_NAME = 'core'
 F2PY_SRC_PATH = 'src'
 F2PY_SIGN_FILE = '{path}/core.pyf'.format(path=F2PY_SRC_PATH)
 
-F2PY_SHDOM_FILES = ['fftpack.f', 'ocean_brdf.f', 'shdom_nompi.f', 'shdomsub5.f', 'surface.f', 'util.f90']
+F2PY_SHDOM_FILES = ['fftpack.f', 'ocean_brdf.f', 'shdom_nompi.f', 'shdomsub5.f', 'surface.f', 'util.f90',
+                    'microwave_gases.f90','ckdfu.f']
 
 if POLARIZED_SHDOM:
     F2PY_SHDOM_FILES.extend(['polarized/shdom90.f90',
@@ -147,7 +148,21 @@ F2PY_CORE_API = [
     'ylmall',
     'transmission_integral',
     'test_source',
-    'wigner_transform'
+    'wigner_transform',
+    'sh_to_do_unpol',
+    'surface_brdf',
+    'sh_to_do',
+    'make_angle_set',
+    'surface_parm_interp',
+    'do_to_sh',
+    'do_to_sh_unpol',
+    'make_sh_do_coef',
+    'ross_li_thick_sparse',
+    'calc_mw_gas_absorption',
+    'integrate_thermal_source',
+    'ckdfu',
+    #'particle_flow',
+    #'particle_flow_empirical'
 ]
 
 def _run_command(cmd):
@@ -228,6 +243,9 @@ if __name__ == "__main__":
         configuration=configuration,
         packages=setuptools.find_packages(),
         include_package_data=True,
+        package_data={'': ['data/reptran/*.cdf', 'data/ancillary/*', 'data/OPAC/aerosol/optical_properties/*.nc',
+                           'data/OPAC/aerosol/standard_aerosol_files/*.dat','data/OPAC/aerosol/*.cfg',
+                           'data/synthetic_cloud_fields/shdom/*.txt','data/synthetic_cloud_fields/jpl_les/*.txt']},
         platforms=["any"],
         requires=["numpy", "scipy"],
         tests_require=['nose2',],

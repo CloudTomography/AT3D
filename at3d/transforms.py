@@ -638,3 +638,93 @@ class StateToGrid2D(StateToGridMask):
                 " have not yet been implemented."
             )
         return state_bounds
+
+
+class StateToGridUniform(StateToGridMask):
+    """
+    Maps gridded data to and from a 1D vector based on 3D averaging
+    conditioned on a 3D mask.
+
+    This transform gives one unknown per domain.
+    """
+    def __call__(self, state):
+        """
+        Map from 1D state vector to gridded data using a volumetric mask.
+
+        Parameters
+        ----------
+        state : np.ndarray, ndim=1
+            The 1D state vector.
+
+        Returns
+        -------
+        gridded_state : np.ndarray, ndim=3
+            The gridded data of which a subset are unknowns that form the state vector.
+        """
+        gridded_state = np.zeros(self._grid_shape)*np.nan
+        gridded_state[np.where(self._mask)] = state
+        return gridded_state
+
+    def inverse_transform(self, gridded_data):
+        """
+        Map from gridded data to 1D state vector using a volumetric mask.
+
+        Parameters
+        ----------
+        gridded_state : np.ndarray, ndim=3
+            The gridded data of which a subset are unknowns that form the state vector.
+
+        Returns
+        -------
+        state : np.ndarray, ndim=1
+            The 1D state vector.
+        """
+        gridded_state = np.zeros(self._grid_shape)*np.nan
+        gridded_state[np.where(self._mask)] = gridded_data[np.where(self._mask)]
+        state = np.nanmean(gridded_state).ravel()
+        return state
+
+    def gradient_transform(self, gridded_gradient):
+        """
+        Projects gradients of gridded quantities onto the 1D state vector.
+
+        Parameters
+        ----------
+        gridded_gradient : np.ndarray, ndim=3
+            The gridded gradient values of which a subset correspond to entries
+            in the state vector.
+
+        Returns
+        -------
+        gradient_for_state : np.ndarray, ndim=1
+            The gradient vector corresponding to the 1D state vector.
+        """
+        gradient_for_state = self.inverse_transform(gridded_gradient)
+        return gradient_for_state
+
+    def inverse_bounds_transform(self, gridded_bounds):
+        """
+        Projects bounds of gridded quantities onto the 1D state vector.
+
+        Parameters
+        ----------
+        gridded_bounds : np.ndarray, ndim=3
+            The gridded gradient values of which a subset correspond to entries
+            in the state vector. May be either upper or lower bounds.
+
+        Returns
+        -------
+        state_bounds : np.ndarray, ndim=1
+            The 1D vector of bounds corresponding to the 1D state vector.
+        """
+        # strictly this isn't true if the bounds are non-uniform
+        # in space. But in the simplest case that that is true
+        # then this will work.
+        if np.size(np.unique(gridded_bounds)) == 1:
+            state_bounds = self.inverse_transform(gridded_bounds)
+        else:
+            raise NotImplementedError(
+                "Inverse Transform for non-uniform bounds for single variable"
+                " have not yet been implemented."
+            )
+        return state_bounds

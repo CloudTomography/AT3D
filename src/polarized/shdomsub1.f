@@ -135,7 +135,9 @@ C       Get the maximum single scattering albedo over all processors
      .             INRADFLAG,NDELSOURCE, IERR, ERRMSG, MAXPG,
      .             WORK2_SIZE, PHASEINTERPWT, PHASEMAX,
      .             INTERPMETHOD, NLEGP, ADJFLAG, MAXNMICRO,
-     .             PHASEWTP, ORDINATESET, NEWMETHOD, LONGEST_PATH_PTS)
+     .             PHASEWTP, ORDINATESET, NEWMETHOD, LONGEST_PATH_PTS,
+     .             SURFACE_FLUX, SURFACE_RAD, VOLSRC, VOLSRCGRIDPTR,
+     .             VOLSRCSHPTR, NVOLSRC)
 Cf2py threadsafe
 C       Initialize the SHDOM solution procedure.
       IMPLICIT NONE
@@ -165,12 +167,16 @@ Cf2py intent(in) :: INTERPMETHOD
 Cf2py intent(in) :: PHASEINTERPWT, PHASEMAX
       LOGICAL DELTAM, ACCELFLAG, INRADFLAG
 Cf2py intent(in) :: DELTAM, ACCELFLAG, INRADFLAG
-      REAL    SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD, SHACC
+      REAL    SOLARFLUX, SOLARMU, SOLARAZ 
+      REAL    SKYRAD(NSTOKES,NMU/2,NPHI0MAX)
+      REAL    SHACC
 Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD, SHACC
       REAL    GNDTEMP, GNDALBEDO
 Cf2py intent(in) :: GNDTEMP, GNDALBEDO
       REAL    DELXSFC, DELYSFC, SFCPARMS(*)
 Cf2py intent(in) :: DELXSFC, DELYSFC, SFCPARMS
+      REAL    SURFACE_FLUX, SURFACE_RAD(*)
+Cf2py intent(in) :: SURFACE_FLUX, SURFACE_RAD
       REAL    WAVENO(2), WAVELEN
 Cf2py intent(in) :: WAVENO, WAVELEN
       REAL    TEMP(*), PLANCK(MAXIG,NPART)
@@ -264,7 +270,15 @@ Cf2py intent(out) :: IERR, ERRMSG
 Cf2py intent(in) :: NEWMETHOD
       INTEGER LONGEST_PATH_PTS
 Cf2py intent(out) :: LONGEST_PATH_PTS
+      INTEGER VOLSRCGRIDPTR(2,*), NVOLSRC
+Cf2py intent(in) :: VOLSRCGRIDPTR, NVOLSRC
+      INTEGER VOLSRCSHPTR(NVOLSRC+1)
+Cf2py intent(in) :: VOLSRCSHPTR
+      REAL    VOLSRC(NSTOKES,*)
+Cf2py intent(in) :: VOLSRC
 
+      REAL SKYRADALB
+      INTEGER IMU,IPHI
       INTEGER I, J, SIDE
       DOUBLE PRECISION XE, YE,ZE, TRANSMIT, PI
       IERR = 0
@@ -326,7 +340,7 @@ C        Precompute Ylm's for solar direction
       IF (SRCTYPE .NE. 'T') THEN
         CALL YLMALL (.TRUE., SOLARMU, SOLARAZ, ML, MM, NSTLEG, YLMSUN)
       ENDIF
-
+C    TODO NOW CALLED FROM PYTHON SO THIS IS A DUPLICATED CALCULATION.
 C        Make the discrete ordinates (angles)
 C       (set 2 is reduced gaussian, 3 is reduced double gauss)
       CALL MAKE_ANGLE_SET (NMU, NPHI, ORDINATESET, NPHI0MAX,
@@ -340,13 +354,21 @@ C           Make the Ylm transform coefficients
 C        Initialize the radiance on the base grid using Eddington
 C        two-stream plane-parallel
       IF (INRADFLAG) THEN
+        SKYRADALB = 0.0
+        DO IMU=1,NMU/2
+          DO IPHI=1,NPHI0(IMU)
+            SKYRADALB = SKYRADALB + ABS(MU(IMU))*WTDO(IMU,IPHI)*
+     .                SKYRAD(1,IMU,IPHI)
+          ENDDO 
+        ENDDO
+
         CALL INIT_RADIANCE(NSTOKES, NX1*NY1, NZ, NSTLEG, NLEG,
      .    RSHPTR, ZGRID, EXTINCT(:NBPTS,:), ALBEDO(:NBPTS,:), LEGEN,
      .    TEMP, NUMPHASE, IPHASE(:,:NBPTS,:), SRCTYPE, SOLARFLUX,
-     .    SOLARMU,
-     .    GNDALBEDO, GNDTEMP, SKYRAD, UNITS, WAVENO, WAVELEN, RADIANCE,
+     .    SOLARMU, GNDALBEDO, GNDTEMP, SKYRADALB, UNITS, WAVENO,
+     .    WAVELEN, RADIANCE,
      .    NPART, TOTAL_EXT(:NBPTS), PHASEINTERPWT(:,:NBPTS,:), DELTAM,
-     .    ML, PHASEMAX, INTERPMETHOD, MAXNMICRO)
+     .    ML, PHASEMAX, INTERPMETHOD, MAXNMICRO, SURFACE_FLUX)
 
 C        Interpolate the radiance on the non-base grid points from the
 C          base grid points
@@ -362,7 +384,8 @@ C           Initialize the source function from the radiance field
      .         .TRUE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .          NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR,
      .         ERRMSG, PHASEINTERPWT(:,:NPTS,:), DELTAM,
-     .         INTERPMETHOD, PHASEMAX, MAXNMICRO, NEWMETHOD)
+     .         INTERPMETHOD, PHASEMAX, MAXNMICRO, NEWMETHOD,
+     .         VOLSRC, VOLSRCSHPTR, VOLSRCGRIDPTR(:,:NPTS), NVOLSRC)
           IF (IERR .NE. 0) RETURN
       ENDIF
       IF (ACCELFLAG) THEN
@@ -385,6 +408,7 @@ C            bottom grid points.
      .             SFCGRIDPARMS)
         CALL CHECK_UNIFORM_SFC (NXSFC, NYSFC, NSFCPAR, SFCPARMS,
      .                          UNIFORM_SFC_BRDF)
+
         IF (UNIFORM_SFC_BRDF) THEN
           IF (NSTOKES*(NMU/2)*NPHI0MAX .GT.
      .         SQRT(1.0*HUGE(NMU)/KIND(NMU))) THEN
@@ -446,7 +470,8 @@ C           inequality holds.
      .               ITERFIXSH, INTERPMETHOD, IERR, ERRMSG, MAXPG,
      .               PHASEINTERPWT, PHASEMAX, NLEGP,
      .               MAXNMICRO, PHASEWTP, SOLVE, COMPTIME, NEWMETHOD,
-     .               TRANSMIN)
+     .               TRANSMIN, SPLITCRIT, SURFACE_RAD, SFCGRIDRAD, 
+     .               VOLSRC, VOLSRCGRIDPTR,VOLSRCSHPTR, NVOLSRC)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -466,7 +491,8 @@ Cf2py intent(in) :: MAXIV, MAXIC, MAXIG, MAXIDO, NLEGP, MAXNMICRO
 Cf2py intent(in) :: MAXBCRAD, MAXNBC
       LOGICAL DELTAM, ACCELFLAG, HIGHORDERRAD
 Cf2py intent(in) :: DELTAM, ACCELFLAG, HIGHORDERRAD
-      REAL    SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD
+      REAL    SOLARFLUX, SOLARMU, SOLARAZ
+      REAL    SKYRAD(NSTOKES,NMU/2,NPHI0MAX)
 Cf2py intent(in) :: SOLARFLUX, SOLARMU, SOLARAZ, SKYRAD
       REAL    GNDTEMP, GNDALBEDO
 Cf2py intent(in) :: GNDTEMP, GNDALBEDO
@@ -569,6 +595,10 @@ Cf2py intent(in, out) :: ITER
       LOGICAL UNIFORM_SFC_BRDF
       REAL    SFC_BRDF_DO(NSTOKES,NMU/2,NPHI0MAX,NSTOKES,NMU/2,NPHI0MAX)
 Cf2py intent(in) :: UNIFORM_SFC_BRDF, SFC_BRDF_DO
+      REAL    SURFACE_RAD(*)
+Cf2py intent(in) :: SURFACE_RAD
+      REAL    SFCGRIDRAD(*)
+Cf2py intent(in,out) :: SFCGRIDRAD
       INTEGER IERR
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
@@ -578,6 +608,15 @@ Cf2py intent(in) :: SOLVE, NEWMETHOD
 Cf2py intent(out) :: COMPTIME
       REAL TRANSMIN
 Cf2py intent(in) :: TRANSMIN
+      REAL SPLITCRIT
+Cf2py intent(out) :: SPLITCRIT
+
+      INTEGER VOLSRCGRIDPTR(2,*), NVOLSRC
+Cf2py intent(in) :: VOLSRCGRIDPTR, NVOLSRC
+      INTEGER VOLSRCSHPTR(NVOLSRC+1)
+Cf2py intent(in) :: VOLSRCSHPTR
+      REAL    VOLSRC(NSTOKES,*)
+Cf2py intent(in) :: VOLSRC
 
       REAL A
       INTEGER SP, STACK(50)
@@ -587,7 +626,7 @@ Cf2py intent(in) :: TRANSMIN
       INTEGER MAXNANGBND, NANGBND(4,2), IPA
       LOGICAL FIXSH, SPLITTESTING, DOSPLIT, OUTOFMEM
 
-      REAL    STARTADAPTSOL, ENDADAPTSOL, ADAPTRANGE, SPLITCRIT
+      REAL    STARTADAPTSOL, ENDADAPTSOL, ADAPTRANGE
       REAL    STARTSPLITACC, CURSPLITACC, AVGSOLCRIT, BETA, ACCELPAR
 
       REAL TIME1, TIME2
@@ -671,7 +710,8 @@ C           Make sure all processors are going to split cells if any want to
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
      .             MAXPG, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG,
      .             PHASEINTERPWT,PHASEMAX, NLEGP, MAXNMICRO,
-     .             PHASEWTP)
+     .             PHASEWTP,NVOLSRC, VOLSRCGRIDPTR, VOLSRCSHPTR,
+     .             VOLSRC)
             IF (IERR .NE. 0) RETURN
             IF (SOLCRIT .GT. STARTADAPTSOL)  STARTSPLITACC = SPLITCRIT
           ENDIF
@@ -709,7 +749,8 @@ C             discrete ordinates.
      .           SHPTR, SOURCE, RSHPTR, RADIANCE,
      .           WORK, WORK1, WORK2, OLDNPTS, SP, STACK, IX, IY,
      .           IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ,
-     .           TRANSMIN)
+     .           TRANSMIN, SURFACE_RAD, NX1, NY1, DELX, DELY,
+     .           SFCGRIDRAD)
 
 C            Compute the source function from the radiance field,
 C              do the adaptive spherical harmonics truncation, compute
@@ -726,7 +767,8 @@ C        CALL CPU_TIME(TIME3)
      .         .FALSE.,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .         NPART, EXTINCT(:NPTS,:), TOTAL_EXT(:NPTS), IERR, ERRMSG,
      .         PHASEINTERPWT(:,:NPTS,:), DELTAM,INTERPMETHOD, PHASEMAX,
-     .         MAXNMICRO, NEWMETHOD)
+     .         MAXNMICRO, NEWMETHOD, VOLSRC, VOLSRCSHPTR, 
+     .         VOLSRCGRIDPTR(:,:NPTS), NVOLSRC)
 C        CALL CPU_TIME(TIME4)
 C        COMPTIME2 = COMPTIME2 + TIME4 - TIME3
         IF (IERR .NE. 0) RETURN
@@ -781,21 +823,26 @@ C      PRINT *, "COMPUTE_SOURCE", COMPTIME2, 100*COMPTIME2/COMPTIME, '%'
       SUBROUTINE CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG, LOFJ,
      .                            SRCTYPE, FLUX0, YLMSUN, PLANCK,
      .                            ALBEDO, IPH, LEGEN, NR, RADIANCE,
-     .                            SOURCET)
+     .                            SOURCET, VOLSRC, VOLSRCSHPTR, 
+     .                            NV)
 C      Calculates the polarized source function in real generalized
 C      spherical harmonics at one grid point from the radiance in
 C      real generalized spherical harmonics and thermal and/or solar
 C      source information.
       IMPLICIT NONE
-      INTEGER NSTOKES, NSTLEG, NLEG, NLM, LOFJ(NLM), IPH, NR
-!f2py intent(in) :: NSTOKES, NSTLEG, NLEG, NLM, LOFJ(NLM)
-!f2py intent(in) :: IPH, NR
+      INTEGER NSTOKES, NSTLEG, NLEG, NLM, LOFJ(NLM), IPH, NR,NV
+!f2py intent(in) :: NSTOKES, NSTLEG, NLEG, NLM, LOFJ
+!f2py intent(in) :: IPH, NR, NV
       CHARACTER SRCTYPE*1
 !f2py intent(in) :: SRCTYPE
       REAL    FLUX0, YLMSUN(NSTLEG,NLM), PLANCK, ALBEDO
 !f2py intent(in) :: FLUX0, YLMSUN, PLANCK, ALBEDO
       REAL    LEGEN(NSTLEG,0:NLEG,*)
 !f2py intent(in) :: LEGEN
+      REAL    VOLSRC(NSTOKES, NV)
+!f2py intent(in) :: VOLSRC
+      INTEGER VOLSRCSHPTR(NV)
+!f2py intent(in) :: VOLSRCSHPTR
       REAL    RADIANCE(NSTOKES,NR)
 !f2py intent(in) :: RADIANCE
       REAL    SOURCET(NSTOKES,NLM)
@@ -850,6 +897,14 @@ C       Add in the isotropic unpolarized thermal emission
         SOURCET(1,1) = SOURCET(1,1) + C*PLANCK
       ENDIF
 
+      IF (NV .GT. 1) THEN
+        PRINT *, 'UNIMPLEMENTED VOLUMETRIC SOURCE', NV
+        DO J = 1, NV
+        SOURCET(:,VOLSRCSHPTR(J)) = SOURCET(:,VOLSRCSHPTR(J)) +
+     .        VOLSRC(:,VOLSRCSHPTR(J))
+        ENDDO
+      ENDIF
+
       RETURN
       END
 
@@ -858,17 +913,20 @@ C       Add in the isotropic unpolarized thermal emission
       SUBROUTINE CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .                            SRCTYPE, FLUX0, YLMSUN, PLANCK,
      .                            ALBEDO, IPH, LEGEN, NR, RADIANCE,
-     .                            SOURCET)
+     .                            SOURCET, VOLSRC, VOLSRCSHPTR, 
+     .                            NV)
 C      Calculates the scalar source function in spherical harmonics at
 C      one grid point from the radiance in spherical harmonics and
 C      thermal and/or solar source information.
       IMPLICIT NONE
-      INTEGER NLEG, NLM, LOFJ(NLM), IPH, NR
+      INTEGER NLEG, NLM, LOFJ(NLM), IPH, NR, NV
       CHARACTER SRCTYPE*1
       REAL    FLUX0, YLMSUN(NLM), PLANCK, ALBEDO
       REAL    LEGEN(0:NLEG,*)
       REAL    RADIANCE(NR)
       REAL    SOURCET(NLM)
+      REAL    VOLSRC(NV)
+      INTEGER VOLSRCSHPTR(NV)
       REAL    C
       PARAMETER (C=3.544907703)
       INTEGER J
@@ -891,6 +949,15 @@ C       from the radiance vector in genSH.
       DO J = 1, NR
         SOURCET(J) = SOURCET(J) + ALBEDO*LEGEN(LOFJ(J),IPH)*RADIANCE(J)
       ENDDO
+
+      IF (NV .GT. 1) THEN
+        PRINT *, 'UNIMPLEMENTED VOLUMETRIC SOURCE', NV
+        DO J = 1, NV
+          SOURCET(VOLSRCSHPTR(J)) = SOURCET(VOLSRCSHPTR(J)) +
+     .        VOLSRC(VOLSRCSHPTR(J))
+        ENDDO
+      ENDIF
+
       RETURN
       END
 
@@ -905,7 +972,8 @@ C       from the radiance vector in genSH.
      .             FIRST,ACCELFLAG, DELJDOT, DELJOLD, DELJNEW, JNORM,
      .             NPART, EXTINCT, TOTAL_EXT, IERR, ERRMSG,
      .             PHASEINTERPWT, DELTAM, INTERPMETHOD, PHASEMAX,
-     .             MAXNMICRO, NEWMETHOD)
+     .             MAXNMICRO, NEWMETHOD, VOLSRC, VOLSRCSHPTR,
+     .             VOLSRCGRIDPTR,NVOLSRC)
 C       Computes the source function (SOURCE) in spherical harmonic space
 C     for all the grid points.  The thermal source and/or solar
 C     pseudo-source (in PLANCK or DIRFLUX) is added to the scattering source
@@ -938,6 +1006,12 @@ Cf2py intent(in) :: NUMPHASE, NPART, MAXNMICRO
       INTEGER RSHPTR(*), SHPTR(*), OSHPTR(*)
 Cf2py intent(in) :: RSHPTR
 Cf2py intent(in, out) :: SHPTR, OSHPTR
+      INTEGER NVOLSRC
+
+      INTEGER VOLSRCGRIDPTR(2,*)
+      INTEGER VOLSRCSHPTR(*)
+      REAL    VOLSRC(NSTOKES,*)
+
       INTEGER IPHASE(8*MAXNMICRO,NPTS,NPART)
       REAL    PHASEINTERPWT(8*MAXNMICRO,NPTS,NPART)
       CHARACTER INTERPMETHOD*2
@@ -964,7 +1038,7 @@ Cf2py intent(in) :: SRCTYPE
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
       INTEGER IS, ISO, IR, I, IPH, J, JS, K, L, LS, M, MS, ME, NS, NR
-      INTEGER IPA, Q
+      INTEGER IPA, Q, IV, NV
       INTEGER, ALLOCATABLE :: LOFJ(:)
       REAL, ALLOCATABLE :: SOURCET(:,:),  SOURCET1(:,:)
       REAL    SRCMIN, C, SECMU0, D, EXT, W, F, TOTAL_PLANCK
@@ -1001,6 +1075,17 @@ C             Compute the temporary source function for this point
 	       EXT = TOTAL_EXT(I)
          IR = RSHPTR(I)
          NR = RSHPTR(I+1)-IR
+
+         IV = VOLSRCGRIDPTR(1,I)
+         NV = VOLSRCGRIDPTR(2,I) - IV
+
+         IF (IV .NE. 0) THEN
+          NV = VOLSRCGRIDPTR(2,I) - IV
+         ELSE
+          NV = 0
+          IV = 1
+         ENDIF
+
          IF (NEWMETHOD) THEN
          ALB = 0.0D0
          LEGENT = 0.0
@@ -1059,12 +1144,16 @@ C
            CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .        SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
-     .        NR, RADIANCE(1,IR+1),   SOURCET)
+     .        NR, RADIANCE(1,IR+1), SOURCET,
+     .        VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .        NV)
          ELSE
            CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
      .        LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
-     .        NR, RADIANCE(1,IR+1), SOURCET)
+     .        NR, RADIANCE(1,IR+1), SOURCET,
+     .        VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .        NV)
          ENDIF
        ELSE
 
@@ -1081,12 +1170,16 @@ C
                 CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
-     .            NR, RADIANCE(1,IR+1),   SOURCET1)
+     .            NR, RADIANCE(1,IR+1), SOURCET1,
+     .            VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .            NV)
               ELSE
                 CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
      .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
-     .            NR, RADIANCE(1,IR+1), SOURCET1)
+     .            NR, RADIANCE(1,IR+1), SOURCET1,
+     .            VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .            NV)
               ENDIF
             ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
               IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
@@ -1109,12 +1202,16 @@ C
                 CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
-     .            NR, RADIANCE(1,IR+1),   SOURCET1)
+     .            NR, RADIANCE(1,IR+1),   SOURCET1,
+     .            VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .            NV)
               ELSE
                 CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
      .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
-     .            NR, RADIANCE(1,IR+1), SOURCET1)
+     .            NR, RADIANCE(1,IR+1), SOURCET1,
+     .            VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .            NV)
               ENDIF
             ENDIF
             SOURCET = SOURCET + W * SOURCET1
@@ -1159,6 +1256,16 @@ C             Compute the temporary source function for this point
     	    EXT = TOTAL_EXT(I)
           IR = RSHPTR(I)
           NR = RSHPTR(I+1)-IR
+
+          IV = VOLSRCGRIDPTR(1,I)
+          NV = VOLSRCGRIDPTR(2,I) - IV
+ 
+          IF (IV .NE. 0) THEN
+           NV = VOLSRCGRIDPTR(2,I) - IV
+          ELSE
+           NV = 0
+          ENDIF
+
           IF (NEWMETHOD) THEN
           ALB = 0.0D0
           LEGENT = 0.0
@@ -1217,12 +1324,16 @@ C
             CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .        SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
-     .        NR, RADIANCE(1,IR+1),   SOURCET)
+     .        NR, RADIANCE(1,IR+1),   SOURCET,
+     .        VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .        NV)
           ELSE
             CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
      .        LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
-     .        NR, RADIANCE(1,IR+1), SOURCET)
+     .        NR, RADIANCE(1,IR+1), SOURCET,
+     .        VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .        NV)
           ENDIF
         ELSE
 	        SOURCET = 0.0
@@ -1238,12 +1349,16 @@ C
                 CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
-     .            NR, RADIANCE(1,IR+1),   SOURCET1)
+     .            NR, RADIANCE(1,IR+1),   SOURCET1,
+     .            VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .            NV)
               ELSE
                 CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
      .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
-     .            NR, RADIANCE(1,IR+1), SOURCET1)
+     .            NR, RADIANCE(1,IR+1), SOURCET1,
+     .            VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .            NV)
               ENDIF
             ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
               IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
@@ -1266,12 +1381,16 @@ C
                 CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
-     .            NR, RADIANCE(1,IR+1),   SOURCET1)
+     .            NR, RADIANCE(1,IR+1),   SOURCET1,
+     .            VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .            NV)
               ELSE
                 CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
      .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
-     .            NR, RADIANCE(1,IR+1), SOURCET1)
+     .            NR, RADIANCE(1,IR+1), SOURCET1,
+     .            VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .            NV)
               ENDIF
             ENDIF
             SOURCET = SOURCET + W * SOURCET1
@@ -1297,6 +1416,16 @@ C         Compute the source function in the temporary array.
         SOURCET = 0.0
         IR = RSHPTR(I)
         NR = RSHPTR(I+1)-IR
+
+        IV = VOLSRCGRIDPTR(1,I)
+        NV = VOLSRCGRIDPTR(2,I) - IV
+
+        IF (IV .NE. 0) THEN
+         NV = VOLSRCGRIDPTR(2,I) - IV
+        ELSE
+         NV = 0
+        ENDIF
+
         IF (NR .GT. NLM) THEN
           WRITE (6,*) 'COMPUTE_SOURCE: NR>NLM 3',I,IR,RSHPTR(I+1)
           STOP
@@ -1359,12 +1488,16 @@ C
           CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .        SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
-     .        NR, RADIANCE(1,IR+1),   SOURCET)
+     .        NR, RADIANCE(1,IR+1),   SOURCET,
+     .        VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .        NV)
         ELSE
           CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
      .        LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
-     .        NR, RADIANCE(1,IR+1), SOURCET)
+     .        NR, RADIANCE(1,IR+1), SOURCET,
+     .        VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .        NV)
         ENDIF
       ELSE
         DO IPA = 1, NPART
@@ -1379,12 +1512,16 @@ C
               CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
-     .            NR, RADIANCE(1,IR+1),   SOURCET1)
+     .            NR, RADIANCE(1,IR+1),   SOURCET1,
+     .            VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .            NV)
             ELSE
               CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
      .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), IPH, LEGEN,
-     .            NR, RADIANCE(1,IR+1), SOURCET1)
+     .            NR, RADIANCE(1,IR+1), SOURCET1,
+     .            VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .            NV)
             ENDIF
           ELSEIF (INTERPMETHOD(2:2) .EQ. 'N') THEN
             IF (PHASEINTERPWT(1,I,IPA) .GE. PHASEMAX) THEN
@@ -1407,12 +1544,16 @@ C
               CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .            SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
-     .            NR, RADIANCE(1,IR+1),   SOURCET1)
+     .            NR, RADIANCE(1,IR+1),   SOURCET1,
+     .            VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .            NV)
             ELSE
               CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
      .            LOFJ, SRCTYPE, DIRFLUX(I)*SECMU0, YLMSUN,
      .            PLANCK(I,IPA), ALBEDO(I,IPA), 1, LEGENT,
-     .            NR, RADIANCE(1,IR+1), SOURCET1)
+     .            NR, RADIANCE(1,IR+1), SOURCET1,
+     .            VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .            NV)
             ENDIF
           ENDIF
           SOURCET = SOURCET + W * SOURCET1
@@ -1708,7 +1849,7 @@ C     input acceleration parameter (ACCELPAR).
      .             SHPTR, SOURCE, RSHPTR, RADIANCE,
      .             WORK, SWEEPORD, GRIDRAD, OLDNPTS, SP, STACK,
      .        IX, IY, IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ,
-     .        TRANSMIN)
+     .        TRANSMIN, SURFACE_RAD, NX1, NY1, DELX, DELY, SFCGRIDRAD)
 C       Performs the path integrations through the medium specified by
 C     the extinction (EXTINCT) and source function (SOURCE) in
 C     spherical harmonic space.  The source function is transformed to
@@ -1754,7 +1895,7 @@ Cf2py intent(in,out) :: CELLFLAGS
 Cf2py intent(in) :: SWEEPORD
       LOGICAL FFTFLAG(*), UNIFORM_SFC_BRDF
 Cf2py intent(in) :: FFTFLAG, UNIFORM_SFC_BRDF
-      REAL    SOLARMU, SOLARAZ, SKYRAD
+      REAL    SOLARMU, SOLARAZ, SKYRAD(NSTOKES,NMU/2,NPHI0MAX)
 Cf2py intent(in) :: SOLARMU, SOLARAZ, SKYRAD
       REAL    GNDTEMP, GNDALBEDO
 Cf2py intent(in) :: GNDTEMP, GNDALBEDO
@@ -1789,6 +1930,15 @@ Cf2py intent(in) :: SRCTYPE, UNITS, SFCTYPE
 Cf2py intent(in) :: OLDNPTS
       REAL TRANSMIN
 Cf2py intent(in) :: TRANSMIN
+      REAL SURFACE_RAD(NANG/2 + 1, *)
+Cf2py intent(in) :: SURFACE_RAD
+      REAL SFCGRIDRAD(NANG/2 + 1,MAXNBC) 
+Cf2py intent(in,out) :: SFCGRIDRAD
+      INTEGER NX1, NY1
+Cf2py intent(in) :: NX1, NY1
+      REAL DELX, DELY
+Cf2py intent(in) :: DELX, DELY
+
       INTEGER I, I1, K, NR, IPHI, IMU, IBC, IANG, IUPDOWN
       integer joct, ipt, ip, iorder, ipcell, icorner
       LOGICAL LAMBERTIAN, BTEST, theflag
@@ -1825,12 +1975,16 @@ C               bottom grid points.
           CALL SURFACE_PARM_INTERP (NBOTPTS, BCPTR(1,2), GRIDPOS,
      .             SRCTYPE, WAVENO, WAVELEN, UNITS,
      .             NXSFC, NYSFC, DELXSFC, DELYSFC, NSFCPAR, SFCPARMS,
-     .             SFCGRIDPARMS)
+     .             SFCGRIDPARMS) 
         ENDIF
+        CALL SURFACE_PARM_INTERP (NBOTPTS, BCPTR(1,2), GRIDPOS,
+     .             SRCTYPE, WAVENO, WAVELEN, UNITS,
+     .             NX1, NY1, DELX, DELY, NANG/2+1, SURFACE_RAD,
+     .             SFCGRIDRAD)    
       ENDIF
 C         Make the isotropic radiances for the top boundary
-      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
-     .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
+C      CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD, WAVENO, WAVELEN,
+C     .                            UNITS, NTOPPTS, NSTOKES, BCRAD(1,1))
 
 C         Zero the flux arrays and set temporary radiance to -1 for not valid
       DO I = 1, NPTS
@@ -1887,6 +2041,14 @@ C           Loop over the azimuthal angles
 
           IF (MU(IMU) .LT. 0.0) THEN
 C               For downward ordinates, initialize the top boundary radiances
+C            !PRINT *, "BEGIN COMPUTE_TOP_RADIANCES"
+            CALL COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD,WAVENO,WAVELEN,
+     .                              UNITS, NTOPPTS, NSTOKES, BCRAD,
+     .                              NPHI0MAX, NMU, IMU, IPHI,
+     .                              -2.0, -2.0, MU, PHI, NPHI0,
+     .                              -1)
+C           !PRINT *, BCRAD(1,:NTOPPTS)
+
             IUPDOWN = 1
             DO IBC = 1, NTOPPTS
               I = BCPTR(IBC,1)
@@ -1918,8 +2080,9 @@ C                 BRDF matrix to do the integration.
             ENDIF
             DO IBC = 1, NBOTPTS
               I = BCPTR(IBC,2)
-              GRIDRAD(:,I) = BCRAD(:,IBC+NTOPPTS)
-            ENDDO
+              GRIDRAD(:,I) = BCRAD(:,IBC+NTOPPTS) + 
+     .                  SFCGRIDRAD(IANG-NANG/2 + 1,IBC) 
+            ENDDO 
           ENDIF
 
 C             Do backward path integration from each grid point not done yet
@@ -2071,11 +2234,17 @@ C     points are in SFCGRIDPARMS.  The first parameter is input as
 C     temperature, but converted to Planck function for output.
       IMPLICIT NONE
       INTEGER NBOTPTS, BCPTR(*),  NXSFC, NYSFC, NSFCPAR
+Cf2py intent(in) :: NBOTPTRS, BCPTR, NXSFC, NYSFC, NSFCPAR
       REAL    WAVENO(2), WAVELEN
+Cf2py intent(in) ::WAVENO, WAVELEN
       REAL    DELXSFC, DELYSFC
+Cf2py intent(in) :: DELXSFC, DELYSFC
       REAL    GRIDPOS(3,*), SFCPARMS(NSFCPAR,NXSFC+1,NYSFC+1)
+Cf2py intent(in) :: GRIDPOS, SFCPARMS
       REAL    SFCGRIDPARMS(NSFCPAR,NBOTPTS)
+Cf2py intent(out) :: SFCGRIDPARMS
       CHARACTER  SRCTYPE*1, UNITS*1
+Cf2py intent(in) :: SRCTYPE, UNITS
       INTEGER I, IBC, IX, IY, J
       REAL    RX, RY, U, V, TEMP, PLANCK
 
@@ -2133,33 +2302,132 @@ C     not be uniform.
 
 
 
+C      SUBROUTINE COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD,WAVENO,WAVELEN,
+C     .                                  UNITS, NTOPPTS, NSTOKES, BCRAD)
+CC       Returns the beginning of the BCRAD array with the downwelling
+CC     radiance for the NTOPPTS top boundary points.  Currently all
+CC     points have the same unpolarized isotropic radiance.
+C      IMPLICIT NONE
+C      INTEGER NTOPPTS, NSTOKES
+CCf2py intent(in) :: NTOPPTS, NSTOKES
+C      REAL    SKYRAD, WAVENO(2), WAVELEN
+CCf2py intent(in) :: SKYRAD, WAVENO, WAVELEN
+C      REAL    BCRAD(NSTOKES, *)
+CCf2py intent(in, out) :: BCRAD
+C      CHARACTER  SRCTYPE*1, UNITS*1
+CCf2py intent(in) :: SRCTYPE, UNITS
+C      INTEGER IBC, K
+C      REAL    SKYRAD2
+C
+CC           At top, boundary radiance is any isotropic sky radiation
+C      IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
+C        SKYRAD2 = SKYRAD
+C      ELSE
+C        CALL PLANCK_FUNCTION (SKYRAD, UNITS, WAVENO, WAVELEN, SKYRAD2)
+C      ENDIF
+CC         Loop over all points assigning the uniform radiance
+C      DO IBC = 1, NTOPPTS
+C        BCRAD(1,IBC) = SKYRAD2
+C        BCRAD(2:,IBC) = 0.0
+C      ENDDO
+C      RETURN
+C      END
+
       SUBROUTINE COMPUTE_TOP_RADIANCES (SRCTYPE, SKYRAD,WAVENO,WAVELEN,
-     .                                  UNITS, NTOPPTS, NSTOKES, BCRAD)
+     .                                  UNITS, NTOPPTS, NSTOKES, BCRAD,
+     .                                  NPHI0MAX, NMU, IMU, IPHI,
+     .                                  MU, PHI, MUS, PHIS, NPHI0,
+     .                                  INTERPOLATE_FLAG)
 C       Returns the beginning of the BCRAD array with the downwelling
 C     radiance for the NTOPPTS top boundary points.  Currently all
 C     points have the same unpolarized isotropic radiance.
       IMPLICIT NONE
       INTEGER NTOPPTS, NSTOKES
 Cf2py intent(in) :: NTOPPTS, NSTOKES
-      REAL    SKYRAD, WAVENO(2), WAVELEN
+      INTEGER NMU, IMU, NPHI0MAX, IPHI
+Cf2py intent(in) :: NMI, IMU, NPHI0MAX, IPHI
+      REAL MU, PHI, MUS(NMU), PHIS(NMU, NPHI0MAX)
+Cf2py intent(in) :: MU, PHI, MUS, PHIS
+      INTEGER NPHI0(NMU)
+Cf2py intent(in) :: NPHI0
+      INTEGER INTERPOLATE_FLAG
+Cf2py intent(in) :: INTERPOLATE_FLAG
+      REAL    SKYRAD(NSTOKES,NMU/2,NPHI0MAX), WAVENO(2), WAVELEN
 Cf2py intent(in) :: SKYRAD, WAVENO, WAVELEN
       REAL    BCRAD(NSTOKES, *)
 Cf2py intent(in, out) :: BCRAD
       CHARACTER  SRCTYPE*1, UNITS*1
 Cf2py intent(in) :: SRCTYPE, UNITS
-      INTEGER IBC, K
-      REAL    SKYRAD2
 
-C           At top, boundary radiance is any isotropic sky radiation
-      IF (SRCTYPE .EQ. 'S' .OR. SRCTYPE .EQ. 'B') THEN
-        SKYRAD2 = SKYRAD
+      INTEGER IBC, K
+      REAL    SKYRAD2(NSTOKES), SKYRAD3(NSTOKES)
+
+      INTEGER I,J, IANG
+      DOUBLE PRECISION POWER, DISTANCE, WEIGHTEDSUM(NSTOKES)
+      DOUBLE PRECISION WEIGHTSUM, WEIGHT
+
+C           At top, boundary radiance either directly evaluated
+C       at discrete ordinate points or interpolated to a specific
+C       MU, PHI. The latter is only done when evaluating a radiance
+C       (not during the solution iterations) and only affects
+C       upward looking (ground based) instruments.
+      SKYRAD3(:) = 0.0
+      IF (INTERPOLATE_FLAG .EQ. 1) THEN
+C     Inverse distance weighting interpolation (Cubic).
+C     Distance is based on the scattering angle between the two angles.
+        POWER = 3.0D0
+        WEIGHTEDSUM = 0.0D0
+        WEIGHTSUM = 0.0D0
+        DO I = 1, NMU/2
+          DO J=1, NPHI0(I)
+            DISTANCE = ACOS(MU*MUS(I) +
+     .          SQRT((1.0-MU**2)*(1.0-MUS(I)**2))*
+     .          COS(PHI-PHIS(I,J)))
+            IF (ABS(DISTANCE) .LT. 1E-6) THEN
+              WEIGHT = 1.0D8
+            ELSE
+              WEIGHT = 1.0D0/(DISTANCE**POWER)
+            ENDIF
+            WEIGHTEDSUM(:) = WEIGHTEDSUM(:) + SKYRAD(:,I,J)*WEIGHT
+            WEIGHTSUM = WEIGHTSUM + WEIGHT
+          ENDDO
+        ENDDO
+        SKYRAD3(1:1) = WEIGHTEDSUM/WEIGHTSUM
+      ELSE IF (INTERPOLATE_FLAG .EQ. 2) THEN
+C       For surface.
+        POWER = 3.0D0
+        WEIGHTEDSUM = 0.0D0
+        WEIGHTSUM = 0.0D0
+        DO I = NMU/2 + 1, NMU
+          DO J=1, NPHI0(I)
+            DISTANCE = ACOS(MU*MUS(I) +
+     .          SQRT((1.0-MU**2)*(1.0-MUS(I)**2))*
+     .          COS(PHI-PHIS(I,J)))
+            IF (ABS(DISTANCE) .LT. 1E-6) THEN
+              WEIGHT = 1.0D8
+            ELSE
+              WEIGHT = 1.0D0/(DISTANCE**POWER)
+            ENDIF
+            WEIGHTEDSUM(:) = WEIGHTEDSUM(:) + 
+     .              SKYRAD(:,I - NMU/2,J)*WEIGHT
+            WEIGHTSUM = WEIGHTSUM + WEIGHT
+          ENDDO
+        ENDDO
+        SKYRAD3(1:1) = WEIGHTEDSUM/WEIGHTSUM
       ELSE
-        CALL PLANCK_FUNCTION (SKYRAD, UNITS, WAVENO, WAVELEN, SKYRAD2)
+        SKYRAD3 = SKYRAD(:,IMU,IPHI)
       ENDIF
+      IF (SRCTYPE .EQ. 'T') THEN
+        SKYRAD2(1:) = 0.0
+          CALL PLANCK_FUNCTION (SKYRAD3(1), UNITS,
+     .                        WAVENO, WAVELEN, SKYRAD2(1))
+      ELSE
+        SKYRAD2 = SKYRAD3
+      ENDIF
+
 C         Loop over all points assigning the uniform radiance
       DO IBC = 1, NTOPPTS
-        BCRAD(1,IBC) = SKYRAD2
-        BCRAD(2:,IBC) = 0.0
+        BCRAD(:,IBC) = SKYRAD2(:)
       ENDDO
       RETURN
       END
@@ -2260,7 +2528,70 @@ C         Loop over all bottom points
       RETURN
       END
 
+      SUBROUTINE COMBINED_VARIABLE_BRDF_SURFACE(NBOTPTS, IBEG, IEND, 
+     .    BCPTR,
+     .    NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, MU2, PHI2,
+     .    SRCTYPE, WAVELEN, SOLARMU, SOLARAZ, DIRFLUX,
+     .    SFCTYPE, NSFCPAR, SFCGRIDPARMS, NSTOKES, BCRAD)
+      IMPLICIT NONE
+      INTEGER NBOTPTS, IBEG, IEND, BCPTR(NBOTPTS)
+      INTEGER NMU, NPHI0MAX, NPHI0(NMU), NSFCPAR, NSTOKES
+      REAL    WTDO(NMU,NPHI0MAX), MU(NMU), PHI(NMU,NPHI0MAX)
+      REAL    MU2, PHI2, WAVELEN, SOLARMU, SOLARAZ, DIRFLUX(*)
+      REAL    SFCGRIDPARMS(NSFCPAR,NBOTPTS), BCRAD(NSTOKES,NBOTPTS,*)
+      CHARACTER*2 SFCTYPEGRID(4,NBOTPTS)
+      REAL    SFCTYPEWT(4,NBOTPTS)
+      CHARACTER SRCTYPE*1, SFCTYPE*2
 
+      CHARACTER*2 SFCTYPEI 
+      INTEGER Q, ISFCPARM, IBC
+      INTEGER NSFCPARI
+      REAL    BCRADTEMP(NSTOKES), WT
+
+      IF (SFCTYPE(2:2) .EQ. 'C') THEN
+C       Handle multiple surface types present, including
+C       weighted mixtures.
+        DO IBC = IBEG, IEND
+          BCRADTEMP(:) = 0.0
+          ISFCPARM = 1
+          DO Q=1,4
+            WT = SFCTYPEWT(Q,IBC)
+            SFCTYPEI = SFCTYPEGRID(Q,IBC)
+C           Find how many surface parameters are used by each type.
+C           Using conditionals instead of more efficient dictionaries.
+            IF (SFCTYPEI(2:2) .EQ. 'L') THEN
+              NSFCPARI = 2
+            ELSEIF (SFCTYPEI(2:2) .EQ. 'W') THEN
+              NSFCPARI = 4
+            ELSEIF (SFCTYPEI(2:2) .EQ. 'O') THEN
+              NSFCPARI = 3
+            ELSEIF (SFCTYPEI(2:2) .EQ. 'R') THEN
+              NSFCPARI = 4
+            ELSEIF (SFCTYPEI(2:2) .EQ. 'D') THEN
+              NSFCPARI = 6
+            ENDIF
+            CALL VARIABLE_BRDF_SURFACE(NBOTPTS, IBC, IBC, BCPTR,
+     .               NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, MU2, PHI2,
+     .               SRCTYPE, WAVELEN, SOLARMU, SOLARAZ, DIRFLUX,
+     .               SFCTYPEI, NSFCPARI, SFCGRIDPARMS(ISFCPARM,:), 
+     .               NSTOKES,BCRAD)
+            BCRADTEMP(:) = BCRADTEMP(:) + WT*BCRAD(:,IBC,1)
+            ISFCPARM = ISFCPARM + NSFCPARI
+          ENDDO
+          BCRAD(:,IBC,1) = BCRADTEMP
+        ENDDO
+      ELSE
+C       
+        CALL VARIABLE_BRDF_SURFACE(NBOTPTS, IBEG,IEND, BCPTR,
+     .               NMU, NPHI0MAX, NPHI0, MU, PHI, WTDO, MU2, PHI2,
+     .               SRCTYPE, WAVELEN, SOLARMU, SOLARAZ, DIRFLUX,
+     .               SFCTYPE, NSFCPAR, SFCGRIDPARMS, NSTOKES, 
+     .               BCRAD)
+      ENDIF
+      RETURN
+      END
+      
+      
 
 
       SUBROUTINE VARIABLE_BRDF_SURFACE (NBOTPTS, IBEG, IEND, BCPTR,
@@ -2294,19 +2625,22 @@ C     are output in BCRAD(*,*,1).
       INTEGER JMU, JPHI, IBC, I, JANG, K, K1, K2
       REAL    OPI, REFLECT(4,4), W, SUM0, SUM1, RADSPEC(4)
 
+      ! INTEGER L,IMU, IPHI
+      ! REAL BESTDIFF, DIFF
+      ! LOGICAL INTERPOLATE
+
       OPI = 1.0/ACOS(-1.0)
-
       DO IBC = IBEG, IEND
-
 C         Initialize the upwelling boundary radiances to zero or to
 C           the reflection of direct unpolarized solar flux.
         BCRAD(:,IBC,1) = 0.0
         IF (SRCTYPE .NE. 'T') THEN
           I = BCPTR(IBC)
-          CALL SURFACE_BRDF (SFCTYPE(2:2), SFCGRIDPARMS(2,IBC),WAVELEN,
-     .                    MU2, PHI2, SOLARMU,SOLARAZ, NSTOKES, REFLECT)
+          CALL SURFACE_BRDF (SFCTYPE(2:2), SFCGRIDPARMS(2,IBC),
+     .                    WAVELEN,MU2, PHI2, SOLARMU,SOLARAZ, 
+     .                    NSTOKES, REFLECT)
           BCRAD(:,IBC,1) = BCRAD(:,IBC,1)
-     .                    + OPI*REFLECT(1:NSTOKES,1)*DIRFLUX(I)
+     .                   + OPI*REFLECT(1:NSTOKES,1)*DIRFLUX(I)
         ENDIF
 
 C         Integrate over the incident discrete ordinate directions (JMU,JPHI)
@@ -2314,13 +2648,13 @@ C         Integrate over the incident discrete ordinate directions (JMU,JPHI)
         DO JMU = 1, NMU/2
           DO JPHI = 1, NPHI0(JMU)
             CALL SURFACE_BRDF (SFCTYPE(2:2), SFCGRIDPARMS(2,IBC),
-     .                     WAVELEN, MU2,PHI2, MU(JMU),PHI(JMU,JPHI),
-     .                     NSTOKES, REFLECT)
+     .                       WAVELEN, MU2,PHI2, MU(JMU),PHI(JMU,JPHI),
+     .                      NSTOKES, REFLECT)
             W = OPI*ABS(MU(JMU))*WTDO(JMU,JPHI)
-C             Add in the polarized reflection
+C               Add in the polarized reflection
             DO K1 = 1, NSTOKES
               BCRAD(:,IBC,1) = BCRAD(:,IBC,1)
-     .                   + W*REFLECT(1:NSTOKES,K1)*BCRAD(K1,IBC,JANG+1)
+     .               + W*REFLECT(1:NSTOKES,K1)*BCRAD(K1,IBC,JANG+1)
             ENDDO
 C             Add in the polarized thermal emission
             BCRAD(1,IBC,1) = BCRAD(1,IBC,1)
@@ -2330,7 +2664,6 @@ C             Add in the polarized thermal emission
             JANG = JANG + 1
           ENDDO
         ENDDO
-
       ENDDO
       RETURN
       END
@@ -2469,12 +2802,20 @@ C     input array is adaptive (with pointer SHPTR); the last term for
 C     each grid point must be the maximum m for the particular l term.
       IMPLICIT NONE
       INTEGER NPTS, NSTOKES, NSTLEG
+Cf2py intent(in) :: NPTS, NSTOKES, NSTLEG
       INTEGER ML, MM, NLM, NMU, NPHI0MAX, NPHI0
+Cf2py intent(in) :: ML, MM, NLM, NMU, NPHI0MAX, NPHI0
       INTEGER IMU, SHPTR(NPTS+1)
+Cf2py intent(in) :: IMU, SHPTR
       LOGICAL FFTFLAG(NMU)
-      REAL    INDATA(NSTOKES,*), OUTDATA(NSTOKES,NPHI0MAX,*)
+Cf2py intent(in) :: FFTFLAG
+      REAL    INDATA(NSTOKES,*), OUTDATA(NSTOKES,NPHI0MAX,NPTS)
+Cf2py intent(in) :: INDATA
+Cf2py intent(out) :: OUTDATA
       REAL    CMU1(NSTLEG,NLM,NMU), CPHI1(-16:16,32,NMU)
+Cf2py intent(in) :: CMU1, CPHI1
       REAL    WSAVE(3*NPHI0MAX+15,NMU)
+Cf2py intent(in) :: WSAVE
       INTEGER I, J, K, L, M, M2, N, IPHI, MS, ME, MR, IS, NSH
       REAL    SUM1
       INTEGER, ALLOCATABLE :: MOFJ(:)
@@ -2604,12 +2945,20 @@ C     The number of floating point operations for the zenith angle transform
 C     is 2*Nmu*Nlm.
       IMPLICIT NONE
       INTEGER NPTS
+Cf2py intent(in) :: NPTS
       INTEGER ML, MM, NLM, NMU, NPHI0MAX, NPHI0
+Cf2py intent(in) :: ML, MM, NLM, NMU, NPHI0MAX, NPHI0
       INTEGER IMU, SHPTR(NPTS+1)
+Cf2py intent(in) :: IMU, SHPTR
       LOGICAL FFTFLAG(NMU)
+Cf2py intent(in) :: FFTFLAG
       REAL    INDATA(*), OUTDATA(NPHI0MAX,NPTS)
+Cf2py intent(in) :: INDATA
+Cf2py intent(in,out) :: OUTDATA
       REAL    CMU1(NLM,NMU), CPHI1(-16:16,32,NMU)
+Cf2py intent(in) :: CMU1, CPHI1
       REAL    WSAVE(3*NPHI0MAX+15,NMU)
+Cf2py intent(in) :: WSAVE
       INTEGER I, J, K, L, M, M2, N, IPHI, MS, ME, MR, IS, NSH
       REAL    SUM1
       INTEGER, ALLOCATABLE :: MOFJ(:)
@@ -2698,12 +3047,20 @@ C     harmonic space for one zenith angle (IMU) by keeping a running
 C     sum in OUTDATA between successive calls.  (See SH_TO_DO for more).
       IMPLICIT NONE
       INTEGER NPTS, NSTOKES, NSTLEG
+Cf2py intent(in) :: NPTS, NSTOKES, NSTLEG
       INTEGER ML, MM, NLM, NMU, NPHI0MAX, NPHI0
+Cf2py intent(in) :: ML, MM, NLM, NMU, NPHI0MAX, NPHI0
       INTEGER IMU, RSHPTR(NPTS+1)
+Cf2py intent(in) :: IMU, RSHPTR
       LOGICAL FFTFLAG(NMU)
+Cf2py intent(in) FFTFLAG
       REAL    INDATA(NSTOKES,NPHI0MAX,NPTS), OUTDATA(NSTOKES,*)
+Cf2py intent(in) :: INDATA
+Cf2py intent(in,out) :: OUTDATA
       REAL    CMU2(NSTLEG,NMU,NLM), CPHI2(32,-16:16,NMU)
+Cf2py intent(in) :: CMU2, CPHI2
       REAL    WSAVE(3*NPHI0MAX+15,NMU)
+Cf2py intent(in) :: WSAVE
       INTEGER I, IPHI, J, K, L, M, MS, ME, MR, N, IS, NSH
       REAL    SUM1, DELPHI
       INTEGER, ALLOCATABLE :: MOFJ(:)
@@ -2813,12 +3170,20 @@ C     harmonic space for one zenith angle (IMU) by keeping a running
 C     sum in OUTDATA between successive calls.  (See SH_TO_DO for more).
       IMPLICIT NONE
       INTEGER NPTS
+Cf2py intent(in) :: NPTS
       INTEGER ML, MM, NLM, NMU, NPHI0MAX, NPHI0
+Cf2py intent(in) :: ML, MM, NLM, NMU, NPHI0MAX, NPHI0
       INTEGER IMU, RSHPTR(NPTS+1)
+Cf2py intent(in) :: IMU, RSHPTR
       LOGICAL FFTFLAG(NMU)
+Cf2py intent(in) :: FFTFLAG
       REAL    INDATA(NPHI0MAX,NPTS), OUTDATA(*)
+Cf2py intent(in) :: INDATA
+Cf2py intent(in,out) :: OUTDATA
       REAL    CMU2(NMU,NLM), CPHI2(32,-16:16,NMU)
+Cf2py intent(in) :: CMU2, CPHI2
       REAL    WSAVE(3*NPHI0MAX+15,NMU)
+Cf2py intent(in) :: WSAVE
       INTEGER I, IPHI, J, K, L, M, MS, ME, MR, N, IS, NSH
       REAL    SUM1, DELPHI
       INTEGER, ALLOCATABLE :: MOFJ(:)
@@ -4354,7 +4719,8 @@ C             do first and put the second child on the stack.
      .             XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
      .             MAXPG, TOTAL_EXT, INTERPMETHOD, IERR, ERRMSG,
      .             PHASEINTERPWT, PHASEMAX, NLEGP, MAXNMICRO,
-     .             PHASEWTP)
+     .             PHASEWTP,NVOLSRC, VOLSRCGRIDPTR, VOLSRCSHPTR,
+     .             VOLSRC)
 C       Splits the cells that have a cell dividing criterion greater than
 C     CURSPLITACC if DOSPLIT is true.  The current splitting criterion
 C     achieved is returned in SPLITCRIT.  If we are at the end of the
@@ -4387,6 +4753,10 @@ C     by MAXIG, MAXIC, MAXIV, MAXIDO) then the OUTOFMEM flag is returned true.
       REAL    ADAPT(3), FRAC
       INTEGER IERR
       CHARACTER ERRMSG*600
+
+      INTEGER NVOLSRC
+      INTEGER  VOLSRCGRIDPTR(2,*), VOLSRCSHPTR(*)
+      REAL  VOLSRC(NSTOKES,*)
 
       INTEGER NPX, NPY, NPZ
       REAL DELX, DELY, XSTART, YSTART
@@ -4469,7 +4839,8 @@ C                 Interpolate the medium properties, radiance, and source
      .            DELYD, XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
      .            NPART,MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD, IERR,
      .            ERRMSG, PHASEINTERPWT, PHASEMAX,NLEGP, MAXNMICRO,
-     .            PHASEWTP)
+     .            PHASEWTP,NVOLSRC, VOLSRCGRIDPTR, VOLSRCSHPTR, 
+     .            VOLSRC)
 
               IF (IERR .NE. 0) RETURN
             ENDIF
@@ -4517,8 +4888,8 @@ C                   Interpolate the medium properties, radiance, and source
      .               DELYD,XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV,
      .               NPART,MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD,
      .               IERR, ERRMSG, PHASEINTERPWT,
-     .               PHASEMAX,NLEGP, MAXNMICRO, PHASEWTP)
-
+     .               PHASEMAX,NLEGP, MAXNMICRO, PHASEWTP,
+     .               NVOLSRC, VOLSRCGRIDPTR, VOLSRCSHPTR, VOLSRC)
                 IF (IERR .NE. 0) RETURN
               ENDIF
             ENDIF
@@ -4574,7 +4945,8 @@ C         Find the max adaptive cell criterion after the cell divisions
      .       CYINV, CZINV, DI, DJ, DK, IPDIRECT, DELXD, DELYD,
      .       XDOMAIN, YDOMAIN, EPSS, EPSZ, UNIFORMZLEV, NPART,
      .       MAXIG, MAXPG, TOTAL_EXT, INTERPMETHOD,IERR,ERRMSG,
-     .       PHASEINTERPWT,PHASEMAX,NLEGP, MAXNMICRO,PHASEWTP)
+     .       PHASEINTERPWT,PHASEMAX,NLEGP, MAXNMICRO,PHASEWTP,
+     .       NVOLSRC, VOLSRCGRIDPTR, VOLSRCSHPTR, VOLSRC)
 C       Interpolates the medium properties, radiance, and source function for
 C     new grid points (specified in NEWPOINTS).  The medium properties are
 C     interpolated from the property grid, since interpolating from the
@@ -4621,12 +4993,17 @@ C     function for the new points.
       INTEGER IPHASEP(MAXNMICRO,MAXPG,NPART)
       REAL PHASEWTP(MAXNMICRO,MAXPG,NPART)
       INTEGER NZCKD
-      REAL ZCKD(*), GASABS(*)
+      REAL ZCKD(*), GASABS(*), KG
       DOUBLE PRECISION  EXTMIN, SCATMIN
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
       INTEGER IPDIRECT, DI, DJ, DK, IPA
       DOUBLE PRECISION EPSS, EPSZ, XDOMAIN, YDOMAIN
       DOUBLE PRECISION UNIFORMZLEV, DELXD,DELYD
+
+      INTEGER NVOLSRC
+      INTEGER  VOLSRCGRIDPTR(2,*), VOLSRCSHPTR(*)
+      REAL  VOLSRC(NSTOKES,*)
+      INTEGER IV, NV
 
       DOUBLE PRECISION SCAT, ALB
       REAL TOTAL_PLANCK
@@ -4673,7 +5050,7 @@ C             Interpolate the medium properties from the property grid
      .             ALBEDOP(:,IPA), LEGENP, IPHASEP(:,:,IPA),
      .             NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
      .             INTERPMETHOD, IERR, ERRMSG, PHASEINTERPWT(:,IP,IPA),
-     .             NLEGP, MAXNMICRO, PHASEWTP(:,:,IPA))
+     .             NLEGP, MAXNMICRO, PHASEWTP(:,:,IPA), KG)
 C             Do the Delta-M scaling of extinction and albedo for this point
 	          IF (DELTAM) THEN
               IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
@@ -4694,6 +5071,9 @@ C             Do the Delta-M scaling of extinction and albedo for this point
    	           ALBEDO(IP,IPA) = (1.0-F)*ALBEDO(IP,IPA) /
      .              (1.0-ALBEDO(IP,IPA)*F)
 	          ENDIF
+            IF (IPA .EQ. 1) THEN
+              TOTAL_EXT(IP) = TOTAL_EXT(IP) + KG
+            ENDIF
 	          TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
 C             Compute the new Planck source function (if needed)
 	         IF (SRCTYPE .NE. 'S') THEN
@@ -4761,6 +5141,10 @@ C             Compute the source function for the new points
           LEGENT = 0.0
           TOTAL_PLANCK = 0.0
 
+C         Interpolate Volume Source - Not Implemented.
+          NV = 0
+          IV = 1
+
           DO IPA = 1, NPART
            SCAT = DBLE(EXTINCT(IP,IPA)*ALBEDO(IP,IPA))
            ALB = ALB + SCAT
@@ -4812,12 +5196,16 @@ C
             CALL CALC_SOURCE_PNT_UNPOL (NLM, NLEG, LOFJ,
      .        SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
      .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
-     .        NR, RADIANCE(1,IR+1),   SOURCET)
+     .        NR, RADIANCE(1,IR+1), SOURCET,
+     .        VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .        NV)
           ELSE
             CALL CALC_SOURCE_PNT (NSTOKES, NLM, NSTLEG, NLEG,
      .        LOFJ, SRCTYPE, DIRFLUX(IP)*SECMU0, YLMSUN,
      .        TOTAL_PLANCK, SNGL(ALB), 1, LEGENT,
-     .        NR, RADIANCE(1,IR+1), SOURCET)
+     .        NR, RADIANCE(1,IR+1), SOURCET,
+     .        VOLSRC(1,IV:IV+NV), VOLSRCSHPTR(IV:IV+NV),
+     .        NV)
           ENDIF
           DO J=1,NS
             SOURCE(:,IS+J) = SOURCET(:,J)

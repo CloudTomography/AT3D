@@ -58,7 +58,7 @@ class _VisualizationAccessor(object):
             cbar.mappable.set_clim([img.min(), img.max()])
             ax.set_title('{} = {:2.2f}'.format(dim, float(img[dim])))
 
-        interact(imshow_frame, frame=(0, num_frames-1));
+        interact(imshow_frame, frame=(0, num_frames-1))
 
     def animate(self, dim, ax=None, vmin=None, vmax=None, cmap='RdBu_r', add_ticks=True, add_colorbar=True,
                 fps=10, output=None):
@@ -118,7 +118,7 @@ class _VisualizationAccessor(object):
         im = ax.imshow(np.zeros((nx, ny)), extent=extent, origin='lower', cmap=cmap)
         if add_colorbar:
             fig.colorbar(im)
-        if add_ticks == False:
+        if not add_ticks:
             ax.set_xticks([])
             ax.set_yticks([])
 

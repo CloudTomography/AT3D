@@ -31,6 +31,7 @@ class SummaryWriter(tensorboardX.SummaryWriter):
 
 class CallbackFn:
     def __init__(self, callback_fn, ckpt_period=-1):
+        # callback_fn should return a dictionary.
         self._ckpt_period = ckpt_period
         self._ckpt_time = time.time()
         self._callback_fn = callback_fn

@@ -3346,7 +3346,7 @@ C     function for the new points.
       REAL LEGENP(*), EXTDIRP(*)
       INTEGER IPHASEP(NBPTS,NPART)
       INTEGER NZCKD
-      REAL ZCKD(*), GASABS(*)
+      REAL ZCKD(*), GASABS(*), KG
       DOUBLE PRECISION  EXTMIN, SCATMIN
       DOUBLE PRECISION CX, CY, CZ, CXINV, CYINV, CZINV
       INTEGER IPDIRECT, DI, DJ, DK
@@ -3389,7 +3389,8 @@ C             Interpolate the medium properties from the property grid
      .        LEGEN(0,IP), IPHASE(IP,IPA), NPX, NPY, NPZ,
      .        NUMPHASE, DELX, DELY, XSTART, YSTART, ZLEVELS,
      .        TEMPP, EXTINCTP(:,IPA), ALBEDOP(:,IPA), LEGENP, 
-     .        IPHASEP(:,IPA), NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN)
+     .        IPHASEP(:,IPA), NZCKD, ZCKD, GASABS, EXTMIN, SCATMIN,
+     .        KG)
 C             Do the Delta-M scaling of extinction and albedo for this point
           
             IF (DELTAM) THEN
@@ -3405,7 +3406,9 @@ C             Do the Delta-M scaling of extinction and albedo for this point
               ALBEDO(IP,IPA) = (1.0-F)*ALBEDO(IP,IPA) / 
      .                            (1.0-ALBEDO(IP,IPA)*F)
             ENDIF 
-            
+            IF (IPA .EQ. 1) THEN
+              TOTAL_EXT(IP) = TOTAL_EXT(IP) + KG
+            ENDIF
             TOTAL_EXT(IP) = TOTAL_EXT(IP) + EXTINCT(IP,IPA)
 C             Compute the new Planck source function (if needed)
             IF (SRCTYPE .NE. 'S') THEN

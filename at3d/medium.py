@@ -113,6 +113,18 @@ def make_optical_properties(grid, extinction, ssalb, phase_function_indices,
     at3d.checks.check_optical_properties(optical_properties)
     return optical_properties
 
+def gas_to_scatterer(gas_absorption):
+
+    phase_function_table = np.zeros((6,2,1))
+    phase_function_table[0,0,0] = 1.0
+    phase_function_table[0,1,0] = 0.0
+    gas_scatterer = at3d.medium.make_optical_properties(gas_absorption, gas_absorption.gas_absorption.data,
+                                       ssalb=np.zeros(gas_absorption.gas_absorption.shape),
+                                       phase_function_indices=np.zeros(gas_absorption.gas_absorption.shape,
+                                                                     dtype=int),
+                                       phase_function_table=phase_function_table)
+    return gas_scatterer
+
 class OpticalPropertyGenerator:
     """
     Transforms microphysical properties into optical properties and calculates
@@ -1355,15 +1367,16 @@ class MicrophysicsGridToOpticalProperties(GridToOpticalProperties):
     def __init__(self, rte_grid, optical_property_generator, fixed_dataset=None,
                  *fixed_data_arrays, **variable_data_bounds):
 
+        self._optical_property_generator = optical_property_generator
         GridToOpticalProperties.__init__(
             self,
             rte_grid,
             optical_property_generator.scatterer_name,
+            None, # a filler wavelength.
             fixed_dataset=fixed_dataset,
             *fixed_data_arrays,
             **variable_data_bounds
             )
-        self._optical_property_generator = optical_property_generator
 
     def calculate_optical_properties(self, **variable_data):
 
@@ -1391,6 +1404,7 @@ class MicrophysicsGridToOpticalProperties(GridToOpticalProperties):
                          np.zeros(self.grid_shape) + coords[name].max().data)
             self._check_bound(bound)
             bounds[name] = bound
+        return bounds
 
     def _checks(self, dataset):
 
@@ -1734,7 +1748,7 @@ class StateGenerator:
                         at3d.checks.check_optical_properties(opt_scat)
             elif name == 'num_stokes':
                 for value in variable.values():
-                    if not value in (1, 3, 4):
+                    if value not in (1, 3, 4):
                         raise ValueError(
                             "`num_stokes` should be an integer from (1, 3, 4) "
                             "not {}".format(variable)

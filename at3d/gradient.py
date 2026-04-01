@@ -10,7 +10,6 @@ LevisApproxGradient (e.g. LevisApproxGradientUncorrelated).
 """
 import copy
 import warnings
-import typing
 
 import numpy as np
 import xarray as xr
@@ -293,6 +292,14 @@ class LevisApproxGradient:
             interpmethod=rte_solver._interpmethod,
             dpath=rte_solver._direct_derivative_path,
             dptr=rte_solver._direct_derivative_ptr,
+            delxsfc=rte_solver._delxsfc,
+            delysfc=rte_solver._delysfc,
+            sfcgridrad=rte_solver._sfcgridrad,
+            nsfcpts=(rte_solver._nxsfc+2)*(rte_solver._nysfc+2),
+            nang=rte_solver._nang,
+            nsfcder=1,
+            sfcder=np.zeros((1,(rte_solver._nxsfc+2)*(rte_solver._nysfc+2)),
+                            order='F',dtype=np.float32),
             npx=rte_solver._pa.npx,
             npy=rte_solver._pa.npy,
             npz=rte_solver._pa.npz,
@@ -313,6 +320,7 @@ class LevisApproxGradient:
             iphasep=rte_solver._pa.iphasep,
             phasewtp=rte_solver._pa.phasewtp,
             maxnmicro=rte_solver._pa.max_num_micro,
+            deriv_maxnmicro=rte_solver._deriv_max_num_micro,
             albedop=rte_solver._pa.albedop,
             extinctp=rte_solver._pa.extinctp,
             phaseinterpwt=rte_solver._phaseinterpwt[:, :rte_solver._npts],
@@ -340,10 +348,8 @@ class LevisApproxGradient:
             npts=rte_solver._npts,
             maxpg=rte_solver._maxpg,
             ncells=rte_solver._ncells,
-            nbcells=rte_solver._nbcells,
             ml=rte_solver._ml,
             mm=rte_solver._mm,
-            ncs=rte_solver._ncs,
             nlm=rte_solver._nlm,
             numphase=rte_solver._pa.numphase,
             nmu=rte_solver._nmu,

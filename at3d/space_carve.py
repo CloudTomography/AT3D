@@ -33,8 +33,12 @@ class SpaceCarver:
     grid : xr.Dataset
         A valid SHDOM grid object containing the x, y, z coordinates. See grid.py
         for more details.
+    bcflag : int
+        Sets the horizontal boundary conditions for the ray tracing. The default
+        is 3 for open boundary conditions, 0 for periodic in both horizontal
+        directions.
     """
-    def __init__(self, grid, bcflag):
+    def __init__(self, grid, bcflag=3):
         at3d.checks.check_grid(grid)
         self._grid = grid
         if np.any([var in self._grid.data_vars for var in ('nx', 'ny', 'nz')]):
@@ -193,7 +197,7 @@ class SpaceCarver:
             for instrument in sensor_masks:
                 sensor_list.extend(sensor_masks[instrument]['sensor_list'])
 
-        counts = np.zeros((len(sensor_list), 2, self._nx, self._ny, self._nz), dtype=np.int)
+        counts = np.zeros((len(sensor_list), 2, self._nx, self._ny, self._nz), dtype=int)
         adjoint_weights = np.zeros((len(sensor_list), self._nx, self._ny, self._nz))
         for i, sensor in enumerate(sensor_list):
 
@@ -203,6 +207,10 @@ class SpaceCarver:
             cammu = sensor['ray_mu'].data
             camphi = sensor['ray_phi'].data
             flags = sensor['cloud_mask'].data
+            if 'distance_limits' in sensor.data_vars:
+                distance_limits = sensor['distance_limits'].data
+            else:
+                distance_limits = np.zeros(flags.shape)
             if 'weights' in sensor.data_vars:
                 weights = sensor['weights'].data
             else:
@@ -235,13 +243,14 @@ class SpaceCarver:
                 npix=total_pix,
                 flags=flags,
                 weights=weights,
-                linear=linear_mode
+                linear=linear_mode,
+                distance_limits=distance_limits
             )
             grid_counts = count.reshape(2, self._nx1, self._ny1, self._nz)
             grid_carved_volume = carved_volume.reshape(self._nx1, self._ny1, self._nz)
             if self._nx1 != self._nx:
                 counts[i] += grid_counts[:, :-1, :-1]
-                adjoint_weights[i] += grid_carved_volume[:, :-1, :-1]
+                adjoint_weights[i] += grid_carved_volume[:-1, :-1]
             else:
                 counts[i] += grid_counts
                 adjoint_weights[i] += grid_carved_volume
@@ -259,7 +268,7 @@ class SpaceCarver:
 
         if agreement is not None:
             mask = ((space_carved.cloudy_counts/space_carved.total_counts > agreement[0]).astype(
-                np.int).mean('nsensors') >= agreement[1]).astype(np.int)
+                int).mean('nsensors') >= agreement[1]).astype(int)
             masked_weights = (space_carved.weights/space_carved.total_counts).mean('nsensors')
             space_carved['mask'] = mask
             space_carved['masked_weights'] = masked_weights

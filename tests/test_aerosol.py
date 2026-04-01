@@ -1,8 +1,6 @@
 from unittest import TestCase
-import os
 import numpy as np
 import xarray as xr
-import pathlib
 
 import at3d.aerosol
 

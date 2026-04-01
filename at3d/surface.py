@@ -25,7 +25,7 @@ import numpy as np
 
 import at3d.core
 
-def lambertian(albedo, ground_temperature=298.15, delx=None, dely=None):
+def lambertian(albedo, ground_temperature=298.15, delx=None, dely=None, surface_source=None):
     """
     Defines either a fixed or spatially variable Lambertian surface for use
     in solver.RTE (SHDOM).
@@ -86,18 +86,25 @@ def lambertian(albedo, ground_temperature=298.15, delx=None, dely=None):
                 'sfcparms': [],
             }
             )
+        if surface_source is None:
+            surface_source = SurfaceSource()
+        if not isinstance(surface_source, SurfaceSource):
+            raise TypeError(
+                "`surface_source` should inherit from `at3d.surface.SurfaceSource."
+            )
+        dataset['surface_source'] = surface_source
     elif ground_temperature.size == 1:
         ground_temperature = np.full_like(albedo, fill_value=ground_temperature[0, 0])
         if dely is None or delx is None:
             raise ValueError('dely and delx must be defined for variable surface parameters.')
         dataset = _make_surface_dataset('variable_lambertian', ground_temperature,
-                                        delx, dely, albedo=albedo)
+                                        delx, dely, surface_source, albedo=albedo)
     else:
         raise ValueError('ground temperature must have a compatible shape.')
     return dataset
 
 def wave_fresnel(real_refractive_index, imaginary_refractive_index, surface_wind_speed,
-                 ground_temperature=298.15, delx=None, dely=None):
+                 ground_temperature=298.15, delx=None, dely=None, surface_source=None):
     """
     Defines either a fixed or spatially varying polarized surface BRDF for
     rough (oceanic) surfaces.
@@ -188,12 +195,13 @@ def wave_fresnel(real_refractive_index, imaginary_refractive_index, surface_wind
 
 
     dataset = _make_surface_dataset('wave_fresnel', ground_temperature, delx, dely,
+                                    surface_source,
                                  real_refractive_index=real_refractive_index,
                                  imaginary_refractive_index=imaginary_refractive_index,
                                  surface_wind_speed=surface_wind_speed)
     return dataset
 
-def diner(A, K, B, ZETA, SIGMA, ground_temperature=298.15, delx=None, dely=None):
+def diner(A, K, B, ZETA, SIGMA, ground_temperature=298.15, delx=None, dely=None, surface_source=None):
     """
     Defines either a fixed or spatially varying polarized surface BRDF for
     generic rough surfaces including a volumetric scattering term.
@@ -292,13 +300,13 @@ def diner(A, K, B, ZETA, SIGMA, ground_temperature=298.15, delx=None, dely=None)
         if dely is None or delx is None:
             raise ValueError('dely and delx must be defined for variable surface parameters.')
 
-    dataset = _make_surface_dataset('diner', ground_temperature, delx, dely,
+    dataset = _make_surface_dataset('diner', ground_temperature, delx, dely,surface_source,
                                  A=A, K=K, B=B, ZETA=ZETA, SIGMA=SIGMA)
     return dataset
 
 
 def ocean_unpolarized(surface_wind_speed, pigmentation, ground_temperature=298.15,
-                      delx=None, dely=None):
+                      delx=None, dely=None, surface_source=None):
     """
     Defines either a fixed or spatially varying scalar surface BRDF for
     rough (oceanic) surfaces.
@@ -387,12 +395,13 @@ def ocean_unpolarized(surface_wind_speed, pigmentation, ground_temperature=298.1
             raise ValueError('dely and delx must be defined for variable surface parameters.')
 
     dataset = _make_surface_dataset('ocean_unpolarized', ground_temperature, delx, dely,
+                                    surface_source,
                                  surface_wind_speed=surface_wind_speed,
                                  pigmentation=pigmentation)
     return dataset
 
 
-def RPV_unpolarized(RHO0, K, THETA, ground_temperature=298.15, delx=None, dely=None):
+def RPV_unpolarized(RHO0, K, THETA, ground_temperature=298.15, delx=None, dely=None, surface_source=None):
     """
     Defines either a fixed or spatially varying scalar surface BRDF for
     generic natural surfaces.
@@ -477,10 +486,83 @@ def RPV_unpolarized(RHO0, K, THETA, ground_temperature=298.15, delx=None, dely=N
             raise ValueError('dely and delx must be defined for variable surface parameters.')
 
     dataset = _make_surface_dataset('rpv_unpolarized', ground_temperature, delx, dely,
-                                 RHO0=RHO0, K=K, THETA=THETA)
+                                    surface_source,RHO0=RHO0, K=K, THETA=THETA)
     return dataset
 
-def _make_surface_dataset(surface_type, ground_temperature, delx, dely, **kwargs):
+def ross_li_thick_sparse(f_iso,f_geo,f_vol,hb_ratio=2.0, br_ratio=1.0, ground_temperature=298.15, delx=None, dely=None, surface_source=None):
+    """
+    Defines either a fixed or spatially varying scalar surface BRDF for
+    generic natural surfaces.
+
+    The empirical RPV model is used appropriate for scalar radiative transfer.
+    This BRDF model also includes a hotspot factor.
+
+    Parameters
+    ----------
+    ground_temperature : float or np.ndarray
+        The blackbody temperature of the surface emission with units of [K].
+        Can be of shape=(nxsfc, nysfc) where nxsfc and nysfc are the number of
+        points in the x and y directions.
+    delx : float or None, optional
+        The spacing of the surface parameters in their 1st dimension, in units of [km].
+        If the size of `ground_temperature` or other parameters is not equal to 1, then
+        this must be specified.
+    dely : float or None, optional.
+        The spacing of the surface parameters in their 2nd dimension, in units of [km].
+        If the size of `ground_temperature` or other parameters is not equal to 1, then
+        this must be specified.
+
+    Returns
+    -------
+    dataset : xr.Dataset
+        The dataset contains the parameters for the surface along with the correct
+        flags for use by solver.RTE (SHDOM).
+
+    Raises
+    ------
+    ValueError
+        If all surface parameters (arguments) don't have matching shapes.
+        If size of surface parameters is larger than 1 but delx, dely are
+        not specified.
+
+    Notes
+    -----
+    No checks are performed on the input values, users should read and understand the
+    reference.
+
+    Reference
+    ---------
+    """
+    ground_temperature = np.atleast_2d(ground_temperature)
+    f_iso = np.atleast_2d(f_iso)
+    f_geo = np.atleast_2d(f_geo)
+    f_vol = np.atleast_2d(f_vol)
+    hb_ratio = np.atleast_2d(hb_ratio)
+    br_ratio = np.atleast_2d(br_ratio)
+
+    if not ((f_iso.shape == f_geo.shape) &
+            (f_iso.shape == f_vol.shape)& (f_iso.shape == hb_ratio.shape)& (f_iso.shape == br_ratio.shape)):
+        raise ValueError('All surface brdf parameters must have the same shape.')
+
+    if ground_temperature.size == 1:
+        ground_temperature = np.full_like(f_iso, fill_value=ground_temperature[0, 0])
+    else:
+        raise ValueError('ground temperature must have a compatible shape')
+
+    if f_iso.size == 1:
+        if delx is None:
+            delx = 0.02
+        if dely is None:
+            dely = 0.02
+    else:
+        if dely is None or delx is None:
+            raise ValueError('dely and delx must be defined for variable surface parameters.')
+
+    dataset = at3d.surface._make_surface_dataset('ross_li_thick_sparse', ground_temperature, delx, dely,
+                                    surface_source,f_iso=f_iso,f_geo=f_geo,f_vol=f_vol,hb_ratio=hb_ratio,br_ratio=br_ratio)
+    return dataset
+
+def _make_surface_dataset(surface_type, ground_temperature, delx, dely, surface_source, **kwargs):
     """
     This function prepares surface inputs generated by the python functions in
     this module for use in solver.RTE (SHDOM).
@@ -538,6 +620,9 @@ def _make_surface_dataset(surface_type, ground_temperature, delx, dely, **kwargs
     elif surface_type == 'rpv_unpolarized':
         maxsfcpars = 4
         sfctype = 'VR'
+    elif surface_type == 'ross_li_thick_sparse':
+        maxsfcpars = 6
+        sfctype = 'VM'
     else:
         raise NotImplementedError
 
@@ -574,4 +659,72 @@ def _make_surface_dataset(surface_type, ground_temperature, delx, dely, **kwargs
             'sfcparms': ('nparameters', sfcparms),
         }
     )
+    if surface_source is None:
+        surface_source = SurfaceSource()
+    if not isinstance(surface_source, SurfaceSource):
+        raise TypeError(
+            "`surface_source` should inherit from `at3d.surface.SurfaceSource."
+        )
+    surface_dataset['surface_source'] = surface_source
     return surface_dataset
+
+class SurfaceSource:
+    """
+    A generic class for defining (non-thermal) surface emission.
+    """
+    def __init__(self, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    def _check_inputs(self, *args):
+        for arg in args:
+            if not isinstance(arg, np.ndarray):
+                raise TypeError(
+                    "Coordinates should be passed as numpy arrays."
+                )
+            if not arg.ndim == 1:
+                raise ValueError(
+                    "Coordinates should be arrays of rank 1"
+                )
+        if not all([arg.size==args[0].size for arg in args]):
+            raise ValueError(
+                "Coordinates should all have the same size."
+            )
+
+    def _rad_func(self, x,y,mu,phi):
+        return np.zeros(x.shape)
+
+    def _check_output(self, rad):
+        if np.any(~np.isfinite(rad)):
+            raise ValueError(
+                "Non-finite values in output of surface source model"
+            )
+
+    def __call__(self, x, y, mu, phi):
+        self._check_inputs(x,y,mu,phi)
+        rad_out = self._rad_func(x,y,mu,phi)
+        self._check_output(rad_out)
+        return rad_out
+
+class IsotropicPatch(SurfaceSource):
+    """
+    A rectangular patch of local isotropic emission.
+
+    Parameters
+    ----------
+    x0, y0 : float
+        The centre of the emission patch in the x-direction and y-direction.
+    dx, dy : float
+        The half-width of the emission patch in the x-direction and y-direction.
+    intensity : float
+        The intensity of the radiance at every angle.
+    """
+    def __init__(self, x0=0.5,y0=0.5, dx=0.25,dy=0.25, intensity=1.0):
+        SurfaceSource.__init__(self, x0=x0,y0=y0,dx=dx,dy=dy, intensity=intensity)
+
+    def _rad_func(self, x, y, mu, phi):
+        self._check_inputs(x,y,mu,phi)
+        cond = np.where((np.abs(x-self.x0)<=self.dx) & (np.abs(y-self.y0)<=self.dy))
+        rad_out = np.zeros((x.shape))
+        rad_out[cond] = self.intensity
+        return rad_out

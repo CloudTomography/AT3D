@@ -73,12 +73,12 @@ class LUTRetrieval:
         reshaped_data = [meshgrid.ravel() for meshgrid in big_meshgrid]
 
         rte_grid = at3d.grid.make_grid(0.05, reshaped_data[0].size,
-                                          0.05, 1, np.linspace(0.0, 1.0, 2))
+                                          0.05, 1, np.linspace(0.0, 1.0, 21))
 
         for name, data in zip(self.coordinate_data.keys(), big_meshgrid):
             rte_grid[name] = (
                 ['x', 'y', 'z'],
-                np.repeat(data.ravel()[:, None, None], 2, axis=-1)
+                np.repeat(data.ravel()[:, None, None], 21, axis=-1)
                 )
 
         optical_properties = self.optical_property_generator(rte_grid)

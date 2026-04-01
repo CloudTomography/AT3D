@@ -37,10 +37,12 @@ import at3d.configuration
 import at3d.solver
 import at3d.sensor
 import at3d.grid
+import at3d.gas_absorption
 import at3d.checks
 import at3d.gradient
 import at3d.optimize
 import at3d.space_carve
+import at3d.stereo
 import at3d.util
 import at3d.uncertainties
 import at3d.callback
@@ -53,3 +55,4 @@ import at3d.transforms
 import at3d.initialization
 import at3d.preprocessing
 import at3d.visualization
+import at3d.initialization_workflow  # noqa: F401

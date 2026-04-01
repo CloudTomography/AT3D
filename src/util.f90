@@ -1478,3 +1478,87 @@ subroutine test_source(NSTOKES, NPTS, ML, MM, NLM, NLEG, NSTLEG, &
   CALL CPU_TIME(TIME2)
   TIME_OUT = DBLE(TIME2) - DBLE(TIME1)
 END
+
+! A light integrator for emission problems.
+! Useful for atmospheric correction problems.
+! Assume that the (1) index is the TOA.
+subroutine integrate_thermal_source(extinction, planck,z,&
+                            tautol, cumulative_radiance, &
+                            nz, nprof, surface_emission, &
+                            cumulative_transmit)
+  implicit none
+  integer :: nz, nprof
+!f2py intent(in) :: nz, nprof
+  real*8 :: z(nz, nprof), extinction(nz, nprof), planck(nz, nprof)
+!f2py intent(in) :: z, extinction, planck
+  real*8 :: cumulative_radiance(nz, nprof), surface_emission(nprof)
+!f2py intent(in) :: surface_emission
+!f2py intent(out) :: cumulative_radiance
+  real*8 :: cumulative_transmit(nz, nprof)
+!f2py intent(out) :: cumulative_transmit
+  real*8 :: tautol
+!f2py intent(in) :: tautol
+
+  integer i, iz, iprof, ntau
+
+  real*8 :: inv_delz(nz - 1), diff, so, taugrid, dels, ext1, srcext1
+  real*8 :: s, u, ext0,srcext0, tau, abscell, transcell, src, ext, transmit
+
+  cumulative_radiance = 0.0d0
+
+  do iprof = 1, nprof
+    transmit = 1.0d0
+    cumulative_transmit(1,iprof) = 1.0d0
+
+    do iz=1,nz-1
+      diff = abs(z(iz,iprof) - z(iz + 1,iprof))
+      if (diff .gt. 1e-16) then
+        inv_delz(iz) = 1.0d0/diff
+      else
+        inv_delz(iz) = 1e16
+      endif
+    enddo
+
+    do iz = 1,nz - 1 ! cell indices
+      so = abs(z(iz,iprof) - z(iz + 1,iprof))
+      taugrid = so*0.5d0*(extinction(iz + 1,iprof)+extinction(iz,iprof))
+      ntau = max(1,1+int(taugrid/tautol))
+      dels = so/ntau
+
+      ext1 = extinction(iz,iprof)
+      srcext1 = ext1*planck(iz,iprof)
+
+!      print *, iprof, iz, ext1, planck(iz,iprof)
+
+      do i=1,ntau
+        s = i*dels
+        u = max(min(s*inv_delz(iz),1.0d0),0.0d0)
+        ext0 = u*extinction(iz + 1,iprof) + (1.0d0-u)*extinction(iz,iprof)
+        srcext0 = u*extinction(iz + 1,iprof)*planck(iz + 1,iprof) + &
+                  (1.0d0-u)*extinction(iz, iprof)*planck(iz,iprof)
+        ext = 0.5d0*(ext0 + ext1)
+        if (ext .gt. 0.0d0) then
+          tau = ext*dels
+          abscell = tau*(1.0d0 - 0.5d0*tau*(1.0d0-0.333333333333d0*tau))
+          transcell = 1.0d0 - abscell
+          src = ( 0.5d0*(srcext0 + srcext1) + &
+            0.08333333333d0*(ext0*srcext1-ext1*srcext0)*&
+            dels*(1.0d0 - 0.05d0 *(ext1-ext0)*dels))/ ext
+        else
+          abscell = 0.0d0
+          transcell = 1.0d0
+          src = 0.0d0
+        endif
+!        print *, iprof, iz, i, ext, tau, dels, src, abscell, transcell, transmit
+        cumulative_radiance(iz + 1,iprof) = cumulative_radiance(iz + 1,iprof) +&
+                                           transmit*src*abscell
+        transmit = transmit*transcell
+        cumulative_transmit(iz + 1,iprof) = transmit
+        ext1 = ext0
+        srcext1 = srcext0
+      enddo
+    enddo
+    cumulative_radiance(nz,iprof) = cumulative_radiance(nz,iprof) + &
+                transmit*surface_emission(iprof)
+  enddo
+end subroutine integrate_thermal_source

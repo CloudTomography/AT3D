@@ -1,6 +1,14 @@
 """
 Defines the high level abstract objects for handling solving
-the inverse problem including.
+the inverse problem.
+
+This includes a generic `ObjectiveFunction` object
+which specifies the data misfit with a specific case that uses the
+Levis Approximation to compute the gradient of the data misfit.
+
+The `Optimizer` is a wrapper around scipy.optimize.minimize that
+includes data misfit terms as well as priors from regularization.py,
+for example.
 """
 
 import time
@@ -145,7 +153,7 @@ class ObjectiveFunction:
 
 class Optimizer:
     """
-    Optmizer wrapps the scipy optimization methods.
+    Optmizer wraps the scipy optimization methods.
     Notes
     -----
     For documentation:

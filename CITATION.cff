@@ -15,7 +15,7 @@ authors:
   - family-names: Holodovsky
     given-names: Vadim
 title: "Atmospheric Tomography with 3D Radiative Transfer"
-version: 4.1.1
-doi: 10.5281/zenodo.7025718
-date-released: 2022-08-26
+version: 4.1.2
+doi: 10.5281/zenodo.4774222
+date-released: 2022-09-09
 url: https://github.com/CloudTomography/AT3D

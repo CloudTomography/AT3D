@@ -7,7 +7,6 @@ containers.py contains a `SolversDict` object which stores multiple solver.RTE
 objects and can be used for parallelization of solving the RTE etc.
 """
 
-import sys
 import warnings
 import copy
 import typing
@@ -20,6 +19,7 @@ import numpy as np
 import at3d.core
 import at3d.util
 import at3d.checks
+import at3d.surface
 
 
 class ShdomPropertyArrays(object):
@@ -110,14 +110,21 @@ class RTE:
 
     Rather than reading inputs from files, the xr.Datasets are directly passed to
     instantiate this class.
+
     Parameters
     ----------
-    medium: list or xr.dataset
+    medium : list or xr.Dataset
         A list or dataset containing the optical properties of the different scatter types within the medium
-    numerical_params: xr.dataset
-        A dataset containing the numerical parameters requiered for the RTE solution. These can be loaded
-        from a config file (see ancillary_data/config.cfg).
-    num_stokes: int, default=1
+    numerical_params : xr.Dataset
+        A dataset containing the numerical parameters required for the RTE solution. These can be loaded
+        from a config file (see default_config.json).
+    source : xr.Dataset
+        A dataset containing the source specification for the RTE solution (collimated solar / thermal emission).
+        Can include a uniform isotropic illumination of the domain top. See source.py.
+    surface : xr.Dataset
+        Specifies the spatially varying surface Bidrectional Reflectance Distribution Function (BRDF).
+        See surface.py.
+    num_stokes : int, default=1
         The number of stokes for which to solve the RTE can be 1, 3, or 4.
         num_stokes=1 means unpolarized.
         num_stokes=3 means linear polarization.
@@ -126,7 +133,9 @@ class RTE:
        The name for the solver. Will be used when printing solution iteration messages.
        If non specified a default <type> <wavelength> is given, where <type> is Radiance for num_stokes=1 and
        Polarized for num_stokes>1
-
+    atmosphere : xr.Dataset, optional
+        Contains the temperature and gas_absorption (volume extinction coefficients) for the solver.
+        temperature should be specified for thermal emission problems.
     Notes
     -----
     k-distribution not supported.
@@ -322,6 +331,115 @@ class RTE:
         self._netfluxdiv = None
         self._shterms = None
 
+        self._sfcgridrad = np.zeros((self._nang//2 + 1,
+                                       self._maxnbc),
+                                      dtype=np.float32,
+                                      order='F')
+
+        # # Calculate the Volume Source.
+        # nphi0, mu, phi, wtmu, wtdo, fftflag, nang = at3d.core.make_angle_set(
+        #     nmu=self._nmu,
+        #     nphi=self._nphi,
+        #     itype=self._angle_set,
+        #     nphi0max=self._nphi0max
+        # )
+
+        # mus = mu[:,None]*np.ones(phi.shape)
+        # mu_all = []
+        # phi_all = []
+        # weight_all = []
+        # for i in range(self._nmu//2, self._nmu):
+        #     mu_all.extend(mus[i,:nphi0[i]])
+        #     phi_all.extend(phi[i,:nphi0[i]])
+        #     weight_all.extend(wtdo[i,:nphi0[i]]*np.abs(mu[i]))
+        # mu_all = np.array(mu_all)
+        # phi_all = np.array(phi_all)
+        # weight_all = np.array(weight_all)
+
+        # rshptr = np.cumsum(np.ones(self._npts+1, dtype=np.int32)*self._nlm) - (self._nlm-1)
+        # vol_source_sh = np.zeros(rshptr[-1],dtype=np.float32)
+
+        # for imu in range(self._nmu):
+        #     x,y,z = self._gridpos[:,:self._npts]
+
+        #     x = (x[None,:]*np.ones(self._nphi0max)[:,None]).ravel()
+        #     y = (y[None,:]*np.ones(self._nphi0max)[:,None]).ravel()
+        #     z = (z[None,:]*np.ones(self._nphi0max)[:,None]).ravel()
+        #     mu_all = np.ones(x.shape)*mu[imu]
+        #     phi_all = phi[imu][:,None]*np.ones(self._npts)
+        #     rad = self._volume_source(x,y,z,mu_all.ravel(), phi_all.ravel())
+
+        #     rad_grid = np.asfortranarray(rad.reshape(self._nstokes, self._nphi0max, self._npts))
+
+        #     if self._nstokes == 1:
+        #         vol_source_sh = at3d.core.do_to_sh_unpol(
+        #             npts=self._npts,
+        #             ml=self._ml,
+        #             mm=self._mm,
+        #             nlm=self._nlm,
+        #             nmu=self._nmu,
+        #             nphi0max=self._nphi0max,
+        #             nphi0=nphi0[imu],
+        #             imu=imu+1,
+        #             rshptr=rshptr,
+        #             fftflag=self._fftflag,
+        #             cmu2=self._cmu2,
+        #             cphi2=self._cphi2,
+        #             wsave=self._wphisave,
+        #             indata=rad_grid[0],
+        #             outdata=vol_source_sh
+        #         )
+        #     else:
+        #         vol_source_sh = at3d.core.do_to_sh_unpol(
+        #             npts=self._npts,
+        #             ml=self._ml,
+        #             mm=self._mm,
+        #             nlm=self._nlm,
+        #             nmu=self._nmu,
+        #             nphi0max=self._nphi0max,
+        #             nphi0=self._nphi0[imu],
+        #             imu=imu+1,
+        #             rshptr=rshptr,
+        #             fftflag=self._fftflag,
+        #             cmu2=self._cmu2,
+        #             cphi2=self._cphi2,
+        #             wsave=self._wphisave,
+        #             indata=rad_grid,
+        #             outdata=vol_source_sh
+        #         )
+        # if self._nstokes == 1:
+        #    vol_source_sh = vol_source_sh[None,:]
+
+        # valid_sh = np.where(np.abs(vol_source_sh) > max(self._shacc, 1e-6))[0]
+
+        # vol_source_gridptr = np.zeros((2,self._npts), dtype=np.int32)
+        # vol_source_shptr = np.zeros(valid_sh.size, dtype=np.int32)
+
+        # # find grid point.
+        # istart = 0
+        # nv = 0
+        # for i,ish in enumerate(valid_sh):
+        #     ind_diff = (rshptr-1) - ish
+        #     ind_pos = np.where(ind_diff==np.min(np.abs(ind_diff)))[0]
+        #     if ind_diff[ind_pos] < 0:
+        #         igrid = ind_pos-1
+        #     else:
+        #         igrid = ind_pos
+
+        #     vol_source_shptr[i] = ish - rshptr[igrid] + 2
+        #     nv += 1
+
+        #     if oldigrid != igrid:
+        #         vol_source_gridptr[0,oldigrid] = istart+1
+        #         vol_source_gridptr[1,igrid] = istart+1+nv
+        #         istart = i
+        #         nv = 0
+        #     oldigrid = igrid
+        # self._volsrcgridptr = vol_source_gridptr
+        # self._volsrcshptr = vol_source_shptr
+        # self._nvolsrc = valid_sh.size
+        # self._volsrc = vol_source_sh[:,valid_sh]
+
         # Part 2: Solution itertaions
         # This is the time consuming part, equivalent to SOLVE_RTE in SHDOM.
         # All of these arrays are initialized in _init_solution or _setup_grid.
@@ -334,8 +452,15 @@ class RTE:
         self._radiance, self._fluxes, self._dirflux, self._uniformzlev, \
         self._pa.extdirp, self._oldnpts, self._total_ext, self._deljdot, \
         self._deljold, self._deljnew, self._jnorm, self._work, self._work1, \
-        self._work2, ierr, errmsg, self._phaseinterpwt, self._cpu_time \
+        self._work2, ierr, errmsg, self._phaseinterpwt, self._cpu_time, \
+        self._splitcrit, self._sfcgridrad \
          = at3d.core.solution_iterations(
+            volsrc=np.zeros((self._nstokes, 1),dtype=np.float32,order='F'),
+            volsrcgridptr=np.zeros((2,self._maxig),dtype=np.int32,order='F'),
+            volsrcshptr=np.zeros(2, dtype=np.int32),
+            nvolsrc=1,
+            sfcgridrad=self._sfcgridrad,
+            surface_rad=self._surface_rad_source.ravel(order='F'),
             transmin=self._transmin,
             newmethod=self._newmethod,
             verbose=verbose,
@@ -505,7 +630,7 @@ class RTE:
         #     warnings.warn("Actual adapt_grid_factor: {:.4f}".format(self._adapt_grid_factor_out))
         #     warnings.warn("Actual cell_point_ratio: {:.4f}".format(self._cell_point_out))
 
-    def integrate_to_sensor(self, sensor, single_scatter=False):
+    def integrate_to_sensor(self, sensor, single_scatter=False, nosurface=False):
         """Calculates the StokesVector at specified geometry using an RTE solution.
 
         Integrates the source function along rays with positions and
@@ -554,6 +679,9 @@ class RTE:
         self._precompute_phase()
 
         self._bcrad_output, output, ierr, errmsg = at3d.core.render(
+            sfcgridrad=self._sfcgridrad,
+            nang=self._nang,
+            nosurface=nosurface,
             correctinterpolate=self._correctinterpolate,
             singlescatter=single_scatter,
             transcut=self._transcut,
@@ -885,7 +1013,7 @@ class RTE:
         """
         A simple check on whether the solver solution has actually converged.
 
-        Useful for determining if outputs should be truested. May be used just to
+        Useful for determining if outputs should be trusted. May be used just to
         print a warning or in some contexts the flag may be used to raise an Exception,
         for example.
         """
@@ -1239,18 +1367,18 @@ class RTE:
                 unknown_scatterer_indices.append(scatterer_index+1)
             i += 1
 
-        deriv_max_num_micro = max(num_micros)
+        self._deriv_max_num_micro = max(num_micros)
         max_legendre = max(max_legendre)
         self._unknown_scatterer_indices = np.array(unknown_scatterer_indices).astype(np.int32)
         self._table_phase_derivative_flag = np.array(table_phase_derivative_flag).astype(np.int32)
 
         diphase = np.zeros(
-            shape=[deriv_max_num_micro, self._maxpg, num_derivatives],
+            shape=[self._deriv_max_num_micro, self._maxpg, num_derivatives],
             dtype=np.int32
         )
 
         dphasewt = np.zeros(
-            shape=[deriv_max_num_micro, self._maxpg, num_derivatives],
+            shape=[self._deriv_max_num_micro, self._maxpg, num_derivatives],
             dtype=np.float32
         )
 
@@ -1269,7 +1397,7 @@ class RTE:
                 dalb[:, i] = variable_derivative.ssalb.data.ravel()
                 dphasewt[..., i] = np.pad(
                     variable_derivative.phase_weights.data.reshape((-1,self._maxpg)),
-                    ((0,deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
+                    ((0,self._deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
                     mode='constant' # default pads with zeros.
                 )
 
@@ -1283,7 +1411,7 @@ class RTE:
                     ))
                 diphase[..., i] = np.pad(
                     variable_derivative.table_index.data.reshape((-1,self._maxpg)) + dleg_max,
-                    ((0,deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
+                    ((0,self._deriv_max_num_micro - variable_derivative.sizes['num_micro']), (0,0)),
                     mode='constant' # default pads with zeros.
                 )
                 i += 1
@@ -1297,19 +1425,43 @@ class RTE:
         diphase[np.where(diphase == 0)] = 1
 
         # Concatenate all legendre tables into one table
-        legendre_table = xr.concat(dleg_table, dim='table_index')
-        if self._pa.nlegp + 1 > legendre_table.sizes['legendre_index']:
-            legendre_table = legendre_table.pad(
-                {'legendre_index':
-                 (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])
-                }, constant_values=0.0
-            )
-        self._dnumphase = legendre_table.sizes['table_index']
-        dleg = legendre_table.data
+        if dleg_table:
+            legendre_table = xr.concat(dleg_table, dim='table_index')
+            if self._pa.nlegp + 1 > legendre_table.sizes['legendre_index']:
+                legendre_table = legendre_table.pad(
+                    {'legendre_index':
+                    (0, 1 + self._nleg - legendre_table.sizes['legendre_index'])
+                    }, constant_values=0.0
+                )
+            self._dnumphase = legendre_table.sizes['table_index']
+            dleg = legendre_table.data
 
-        scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0, self._pa.nlegp+1)]))
-        dleg[0, 0, :] = 0.0
-        dleg = dleg[:self._nstleg] / scaling_factor
+            scaling_factor = np.atleast_3d(np.array([2.0*i+1.0 for i in range(0, self._pa.nlegp+1)]))
+            dleg[0, 0, :] = 0.0
+            dleg = dleg[:self._nstleg] / scaling_factor
+
+            # compute lut of phase function derivatives evaluated at scattering angles.
+            self._dphasetab, ierr, errmsg = at3d.core.precompute_phase_check_grad(
+                negcheck=False,
+                nstphase=self._nstphase,
+                nstleg=self._nstleg,
+                nscatangle=self._nscatangle,
+                nstokes=self._nstokes,
+                dnumphase=self._dnumphase,
+                ml=self._ml,
+                nlm=self._nlm,
+                nleg=self._pa.nlegp,
+                dleg=dleg,
+                deltam=self._deltam
+            )
+            at3d.checks.check_errcode(ierr, errmsg)
+            # now that we have dphasetab we can truncate dleg
+            # to the RTE accuracy.
+            self._dleg = dleg[:, :self._nleg+1]
+        else:
+            self._dnumphase = 1
+            self._dleg = np.zeros((self._nstleg, self._nleg+1, self._dnumphase))
+            self._dphasetab = np.zeros((self._nstphase, self._nscatangle, self._dnumphase))
 
         self._dext = dext
         self._dalb = dalb
@@ -1318,24 +1470,6 @@ class RTE:
         # temperature derivatives are not yet supported in the python interface.
         self._dtemp = np.zeros((dext.shape))
 
-        # compute lut of phase function derivatives evaluated at scattering angles.
-        self._dphasetab, ierr, errmsg = at3d.core.precompute_phase_check_grad(
-            negcheck=False,
-            nstphase=self._nstphase,
-            nstleg=self._nstleg,
-            nscatangle=self._nscatangle,
-            nstokes=self._nstokes,
-            dnumphase=self._dnumphase,
-            ml=self._ml,
-            nlm=self._nlm,
-            nleg=self._pa.nlegp,
-            dleg=dleg,
-            deltam=self._deltam
-        )
-        at3d.checks.check_errcode(ierr, errmsg)
-        # now that we have dphasetab we can truncate dleg
-        # to the RTE accuracy.
-        self._dleg = dleg[:, :self._nleg+1]
         # make property grid to RTE grid pointers and interpolation weights.
         self._optinterpwt, self._interpptr, ierr, errmsg, \
         self._dalbm, self._dextm, self._dfj = \
@@ -1362,6 +1496,7 @@ class RTE:
             diphasep=self._diphasep,
             nleg=self._nleg,
             maxnmicro=self._pa.max_num_micro,
+            deriv_maxnmicro=self._deriv_max_num_micro,
             albedop=self._pa.albedop,
             extinctp=self._pa.extinctp,
             npart=self._npart,
@@ -1665,6 +1800,10 @@ class RTE:
                                "`atmosphere` despite using thermal source.")
 
             if 'gas_absorption' in atmosphere.data_vars:
+                # raise ValueError("'gas_absorption' in `atmosphere` is not currently supported. "
+                #             "GAS ABSORPTION IS NOT BEING ADDED!"
+                #             "Please add the gas absorption to medium. Use `at3d.medium.gas_to_scatterer`.")
+
                 at3d.checks.check_positivity(atmosphere, 'gas_absorption')
                 at3d.checks.check_hasdim(atmosphere, gas_absorption=['x', 'y', 'z'])
                 if np.all(atmosphere.gas_absorption[0, 0] == atmosphere.gas_absorption):
@@ -1675,7 +1814,7 @@ class RTE:
                     warnings.warn("'gas_absorption' does not collapse to 1D so is being added "
                                   "to `medium`.")
                     if 'gas_absorption' in self.medium:
-                        KeyError("'gas_absorption' key was already in `medium`.")
+                        raise KeyError("'gas_absorption' key was already in `medium`.")
                     else:
                         gas_absorption_scatterer = xr.Dataset(
                             data_vars={
@@ -1684,7 +1823,7 @@ class RTE:
                                            np.zeros(atmosphere.gas_absorption.shape)),
                                 'table_index': (['num_micro', 'x', 'y', 'z'],
                                                 np.zeros((1,)+atmosphere.gas_absorption.shape,
-                                                dtype=np.int)),
+                                                dtype=int)),
                                 'phase_weights': (['num_micro', 'x', 'y', 'z'],
                                                 np.ones((1,)+atmosphere.gas_absorption.shape,
                                                 dtype=np.float32)),
@@ -1733,6 +1872,12 @@ class RTE:
         self._skyrad = source.skyrad.data
         self._units = source.units.data
         self._waveno = source.wavenumber.data
+        self._volume_source = source.volume_source.values.item()
+        if not isinstance(self._volume_source, at3d.source.VolumeSource):
+            raise TypeError(
+                "`volume_source` should inherit from {}".format(at3d.source.VolumeSource)
+            )
+
 
         if self._srctype not in ('T', 'S', 'B'):
             raise ValueError("Invalid source type '{}'. Make sure to choose "
@@ -1774,7 +1919,7 @@ class RTE:
                                       dtype=np.float32,
                                       order='F')
 
-        if self._sfctype not in ('FL', 'VL', 'VW', 'VD', 'VO', 'VR'):
+        if self._sfctype not in ('FL', 'VL', 'VW', 'VD', 'VO', 'VR', 'VP','VM'):
             raise ValueError("surface type '{}' not recognized. "
                              "Make sure to choose a supported surface from"
                              " surface.py".format(self._sfctype))
@@ -1801,6 +1946,14 @@ class RTE:
         if (self._gndtemp <= 150.0) or (self._gndtemp >= 350.0):
             warnings.warn("Ground temperature '{}' out of Earth range. "
                           "[150.0, 350.0]".format(self._gndtemp))
+
+        # setup the surface source.
+        self._surface_source = surface.surface_source.values.item()
+        if self._surface_source is not None:
+            if not isinstance(self._surface_source, at3d.surface.SurfaceSource):
+                raise TypeError(
+                    "`surface_source` should inherit from `at3d.surface.SurfaceSource."
+                )
 
         return surface
 
@@ -1831,6 +1984,10 @@ class RTE:
         self._angle_set = numerical_params.angle_set.data
         self._transcut = numerical_params.transcut.data
         self._transmin = numerical_params.transmin.data
+
+        self._max_scat_angle = 721
+        if 'max_scat_angle' in numerical_params:
+            self._max_scat_angle = numerical_params['max_scat_angle'].data
 
         if self._deltam.dtype != bool:
             raise TypeError("numerical_params.deltam should be of boolean type.")
@@ -1863,6 +2020,16 @@ class RTE:
             raise at3d.exceptions.OutOfRangeError(
             "Numerical parameter `transmin` should be between 0.0 and 1.0."
             )
+        if self.source.skyrad.size != 1:
+            skyrad_shape = self.source.skyrad.shape
+            if (skyrad_shape[0] != self._nstokes) | (skyrad_shape[1] != self._nmu//2) | \
+                (skyrad_shape[2] != self._nphi):
+                raise ValueError(
+                    "Shape of `skyrad` ({}) in source is incompatible with numerical parameters "
+                    "NSTOKES={}, NMU/2={}, NPHI={}".format(
+                        skyrad_shape, self._nstokes,self._nmu//2,self._nphi
+                        )
+                )
 
         return numerical_params
 
@@ -2022,6 +2189,13 @@ class RTE:
         self._ml = self._nmu - 1
         self._mm = max(0, int(self._nphi / 2) - 1)
         self._nlm = (2 * self._mm + 1) * (self._ml + 1) - self._mm * (self._mm + 1)
+        if self._nlm < 4:
+            raise at3d.exceptions.SHDOMError(
+                "Insufficient Spherical Harmonics (NLM={})."
+                " Make sure `num_mu_bins`={} is large enough (>=2) and `num_phi_bins`"
+                "={} is ~2 times as large.".format(self._nlm, self._nmu, self._nphi)
+            )
+
         if self._ncs == 1:
             self._nphi0max = int((self._nphi + 2) / 2)
         elif self._ncs == 2:
@@ -2063,7 +2237,7 @@ class RTE:
         #and not take more than 90% of it. This hasn't been tested so the 90%
         #value may need to be adjusted. - JRLoveridge 2021/02/20
         if self._max_total_mb * 1024**2 > 0.9*psutil.virtual_memory().total:
-            self._max_total_mb = 0.9*psutil.virtual_memory().total
+            self._max_total_mb = (0.9*psutil.virtual_memory().total)/(1024**2)
             warnings.warn("MAX_TOTAL_MB reduced to fit memory model: {}".format(
                 self._max_total_mb))
 
@@ -2216,7 +2390,7 @@ class RTE:
         self._nleg = self._ml + 1 if self._deltam else self._ml
 
         self._pa.nlegp = max(legendre_table.sizes['legendre_index'] - 1, self._nleg)
-        self._nscatangle = max(36, min(721, 2 * self._pa.nlegp))
+        self._nscatangle = max(36, min(self._max_scat_angle, 2 * self._pa.nlegp))
 
         # Check if legendre table needs padding. It will only need
         # padding if angular resolution is larger than the number of
@@ -2386,6 +2560,69 @@ class RTE:
         if setup_grid:
             self._setup_grid(self._grid)
 
+        # Make the anisotropic domain top source.
+        if self._skyrad.size == 1: #upscale to isotropic.
+            self._skyrad = self._skyrad*np.ones((self._nstokes, self._nmu//2, self._nphi0max))
+        elif  self._skyrad.shape != (self._nstokes, self._nmu//2, self._nphi0max):
+            raise ValueError(
+            "`skyrad` variable should be either a float or of shape (NSTOKES, NMU, NPHI0MAX)"
+            )
+
+        # Set the non-thermal surface emission. NB involves a redundant
+        # Calculate Angle set and transform coeffs as we need this for
+        # surface and volume source evaluation.
+        self._nphi0,  self._mu,  self._phi,  self._wtmu,  self._wtdo, \
+        self._fftflag,  self._nang = at3d.core.make_angle_set(
+            nmu=self._nmu,
+            nphi=self._nphi,
+            itype=self._angle_set,
+            nphi0max=self._nphi0max
+        )
+
+        self._cmu1,  self._cmu2,  self._cphi1,  self._cphi2,  self._wphisave, \
+         = at3d.core.make_sh_do_coef(
+            nstleg=self._nstleg,
+            ml=self._ml,
+            mm=self._mm,
+            nlm=self._nlm,
+            nmu=self._nmu,
+            nphi0=self._nphi0,
+            nphi0max=self._nphi0max,
+            fftflag=self._fftflag,
+            mu=self._mu,
+            phi=self._phi,
+            wtmu=self._wtmu,
+            wtdo=self._wtdo
+        )
+
+        # Set the non-thermal surface emission. NB involves a redundant
+        # calculation of the Angle set.
+        # is also memory intensive.
+        mus = self._mu[:,None]*np.ones(self._phi.shape)
+        mu_all = []
+        phi_all = []
+        weight_all = []
+        for i in range(self._nmu//2, self._nmu):
+            mu_all.extend(mus[i,:self._nphi0[i]])
+            phi_all.extend(self._phi[i,:self._nphi0[i]])
+            weight_all.extend(self._wtdo[i,:self._nphi0[i]]*np.abs(self._mu[i]))
+        mu_all = np.array(mu_all)
+        phi_all = np.array(phi_all)
+        weight_all = np.array(weight_all)
+
+        x, y = np.meshgrid(np.append(self._xgrid, self._xgrid[0]),
+                           np.append(self._ygrid, self._ygrid[0]), indexing='ij')
+
+        x = x.ravel()[:,None]*np.ones(mu_all.shape)[None,:]
+        y = y.ravel()[:,None]*np.ones(mu_all.shape)[None,:]
+        mu_all = mu_all[None,:]*np.ones(x.shape)
+        phi_all = phi_all[None,:]*np.ones(x.shape)
+        rads = self._surface_source(x.ravel(),y.ravel(),mu_all.ravel(),phi_all.ravel())
+
+        surface_rad_source = np.asfortranarray(rads.reshape(y.shape).T.reshape(self._nang//2, self._nx1+1, self._ny1+1))
+        self._surface_rad_flux = np.sum(surface_rad_source*weight_all[:,None,None],axis=0).mean()
+        self._surface_rad_source = np.append(np.zeros((1,self._nx1+1,self._ny1+1)), surface_rad_source,axis=0)
+
         # Restart solution criteria
         self._oldnpts = 0
         self._solcrit = 1.0
@@ -2445,6 +2682,12 @@ class RTE:
         self._cphi2, self._wphisave, self._work, self._work1, self._work2, \
         self._uniform_sfc_brdf, self._sfc_brdf_do, ierr, errmsg, longest_path_pts\
          = at3d.core.init_solution(
+            volsrc=np.zeros((self._nstokes, 1),dtype=np.float32,order='F'),
+            volsrcgridptr=np.zeros((2,self._maxig),dtype=np.int32,order='F'),
+            volsrcshptr=np.zeros(2, dtype=np.int32),
+            nvolsrc=1,
+            surface_flux=self._surface_rad_flux,
+            surface_rad=self._surface_rad_source,
             newmethod=self._newmethod,
             ordinateset=self._angle_set,
             phasewtp=self._pa.phasewtp,
@@ -2626,6 +2869,82 @@ class RTE:
                 gasabs=self._pa.gasabs
             )
         self._longest_path_pts = max(longest_path_pts, 1)
+
+    def _get_radiance_exiting_boundary(self, top=True):
+        """
+        Calculates the spatially averaged radiance at the
+        discrete ordinate directions at the domain top or bottom.
+
+        Parameters
+        ----------
+        top : bool
+            If `True` then the radiances at the top face (in an upward direction)
+            are returned. If `False` then the radiances at the bottom face
+            (in a downward direction) are returned.
+
+        Returns
+        -------
+        skyrad : np.ndarray
+            The radiance exiting the boundary of shape (NSTOKES, NMU/2, NPHI).
+            Values at direction combinations where there is no discrete ordinate
+            are set to zero (e.g. for reduced Gaussian grid).
+
+        Raises
+        ------
+        at3d.exceptions.SHDOMError
+        """
+        self.check_solved(verbose=True)
+        if (not hasattr(self, '_source')):
+            raise at3d.exceptions.SHDOMError(
+                "Radiance exiting boundary cannot be calculated until "
+                "radiance field is initialized."
+            )
+
+        out_data = np.zeros((self._nstokes, self._nmu//2, self._nphi0max, self._npts))
+
+        for i in range(self._nmu//2):
+            if top:
+                imu= i+1
+                iphi = i
+            else:
+                imu = i+self._nmu//2+1
+                iphi = i +self._nmu//2
+            if self._nstokes == 1:
+                transformer = at3d.core.sh_to_do_unpol
+                radiance_in = self._radiance[0]
+            else:
+                transformer = at3d.core.sh_to_do
+                radiance_in = self._radiance
+
+            temp = transformer(
+                indata=radiance_in,
+                npts=self._npts,
+                ml=self._ml,
+                mm=self._mm,
+                nlm=self._nlm,
+                nmu=self._nmu,
+                nphi0max=self._nphi0max,
+                nphi0=self._nphi0[iphi],
+                imu=imu,
+                shptr=self._rshptr[:self._npts+1],
+                cmu1=self._cmu1,
+                cphi1=self._cphi1,
+                wsave=self._wphisave,
+                fftflag=self._fftflag
+            )
+            out_data[:,i] = temp
+
+        # spatially averaged radiance exiting the boundary.
+        if top:
+            skyrad = out_data[:,:,:,self._bcptr[:self._ntoppts,0]-1].mean(axis=-1)
+        else:
+            skyrad = out_data[:,:,:,self._bcptr[:self._nbotpts,1]-1].mean(axis=-1)
+
+        # zero everything negative.
+        # positivity should be maintained at the discrete ordinate directions which are
+        # what is sampled.
+        skyrad[np.where(skyrad < 0.0)] = 0.0
+        return skyrad
 
     @property
     def num_iterations(self):
