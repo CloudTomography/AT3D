@@ -16,3 +16,4 @@ src/core.pyf
 src/coremodule.c
 builddir/
 .mesonpy-*
+
