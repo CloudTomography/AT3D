@@ -3091,12 +3091,14 @@ Cf2py intent(in) :: RADIANCE, SOURCET
      .    NUMDER, PARTDER, DOEXACT, ML, DELTAM,
      .    ALBEDO, IPHASE, PHASEINTERPWT, PHASEMAX,
      .    INTERPMETHOD, DERIV_MAXNMICRO)
-C     This subroutine just precomputes the interpolation weights
-C     (OPTINTERPWT) and pointers (INTERPPTR) from the property
-C     grid onto the RTE grid in SHDOM analagously to in
-C     TRILIN_INTERP_PROP. This subroutine could be expanded
-C     to include all pre-computed quantities for the gradient
-C     calculation.
+C     Precomputes the interpolation weights (OPTINTERPWT) and pointers
+C     (INTERPPTR) from the property grid onto the RTE grid, and computes
+C     delta-M scaled derivative arrays DEXTM, DALBM, DFJ.
+C
+C     Restructured into three phases:
+C       Phase 1: Compute INTERPPTR/OPTINTERPWT once per RTE point.
+C       Phase 2: Compute FP, DFP, DEXTM on property grid directly.
+C       Phase 3: Compute DALBM, DFJ using precomputed FP/DFP + RTE-grid F.
       IMPLICIT NONE
       INTEGER NPTS, MAXPG, NUMDER, PARTDER(NUMDER)
 Cf2py intent(in) :: NPTS, MAXPG, NUMDER, PARTDER
@@ -3147,16 +3149,57 @@ Cf2py intent(in) :: INTERPMETHOD
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
 
-      INTEGER IP,IDR, Q, IPA
-      REAL F, ALBEDOJ, DIVIDE
+      INTEGER IP, IDR, Q, IPA, NB, IB
+      REAL F, ALBEDOJ, DIVIDE, FP_VAL, DFP_VAL
+      REAL, ALLOCATABLE :: FP_BUF(:,:), DFP_BUF(:,:)
 
       IERR = 0
-      DO IDR=1,NUMDER
-        IPA=PARTDER(IDR)
-        DO IP=1,NPTS
 
-C         compute F and ALBEDOJ
-          F=0.0
+C     === Phase 1: Compute INTERPPTR/OPTINTERPWT once per RTE point ===
+      DO IP = 1, NPTS
+        CALL COMPUTE_INTERP_WEIGHTS(GRIDPOS(1,IP), GRIDPOS(2,IP),
+     .    GRIDPOS(3,IP), NPX, NPY, NPZ, DELX, DELY, XSTART,
+     .    YSTART, ZLEVELS, INTERPPTR(:,IP), OPTINTERPWT(:,IP),
+     .    IERR, ERRMSG)
+        IF (IERR .NE. 0) RETURN
+      ENDDO
+
+C     === Phase 2: Compute FP, DFP, DEXTM on property grid directly ===
+      ALLOCATE(FP_BUF(MAXPG, NUMDER), DFP_BUF(MAXPG, NUMDER))
+      DO IDR = 1, NUMDER
+        IPA = PARTDER(IDR)
+        DO IB = 1, MAXPG
+          FP_VAL = 0.0
+          DFP_VAL = 0.0
+          IF (DELTAM) THEN
+            DO Q = 1, DERIV_MAXNMICRO
+              FP_VAL = FP_VAL + PHASEWTP(Q,IB,IPA)*
+     .          LEGEN(1,ML+1,IPHASEP(Q,IB,IPA))
+              IF (DOEXACT(IDR) .EQ. 1) THEN
+                DFP_VAL = DFP_VAL + PHASEWTP(Q,IB,IPA)*
+     .            DLEG(1,ML+1,DIPHASEP(Q,IB,IDR))
+              ELSEIF (DOEXACT(IDR) .EQ. 0) THEN
+                DFP_VAL = DFP_VAL + DPHASEWTP(Q,IB,IDR)*
+     .            LEGEN(1,ML+1,IPHASEP(Q,IB,IPA))
+              ENDIF
+            ENDDO
+          ENDIF
+          FP_BUF(IB,IDR) = FP_VAL
+          DFP_BUF(IB,IDR) = DFP_VAL
+          DEXTM(IB,IDR) = DEXT(IB,IDR)*(1 - FP_VAL*
+     .      ALBEDOP(IB,IPA)) - DALB(IB,IDR)*FP_VAL*
+     .      EXTINCTP(IB,IPA) - EXTINCTP(IB,IPA)*
+     .      ALBEDOP(IB,IPA)*DFP_VAL
+        ENDDO
+      ENDDO
+
+C     === Phase 3: Compute DALBM, DFJ using RTE-grid F + precomputed FP/DFP ===
+      DO IDR = 1, NUMDER
+        IPA = PARTDER(IDR)
+        DO IP = 1, NPTS
+
+C         Compute F and ALBEDOJ on the RTE grid
+          F = 0.0
           IF (DELTAM) THEN
             IF (INTERPMETHOD(2:2) .EQ. 'O') THEN
               F = LEGEN(1,ML+1,IPHASE(1,IP,IPA))
@@ -3164,10 +3207,10 @@ C         compute F and ALBEDOJ
               IF (PHASEINTERPWT(1,IP,IPA) .GE. PHASEMAX) THEN
                 F = LEGEN(1,ML+1,IPHASE(1,IP,IPA))
               ELSE
-                DO Q=1,8*MAXNMICRO
-                  IF (PHASEINTERPWT(Q,IP,IPA) < 1e-7) CYCLE
+                DO Q = 1, 8*MAXNMICRO
+                  IF (PHASEINTERPWT(Q,IP,IPA) .LT. 1e-7) CYCLE
                   F = F + PHASEINTERPWT(Q,IP,IPA)*
-     .            LEGEN(1,ML+1,IPHASE(Q,IP,IPA))
+     .              LEGEN(1,ML+1,IPHASE(Q,IP,IPA))
                 ENDDO
               ENDIF
             ENDIF
@@ -3175,73 +3218,69 @@ C         compute F and ALBEDOJ
           ELSE
             ALBEDOJ = ALBEDO(IP,IPA)
           ENDIF
-          DIVIDE = 1.0D0/(1.0D0-ALBEDOJ*F)
-          CALL GET_DERIV_INTERP(GRIDPOS(1,IP), GRIDPOS(2,IP),
-     .       GRIDPOS(3,IP), NPX, NPY, NPZ, DELX, DELY, XSTART,
-     .       YSTART, ZLEVELS, IERR, ERRMSG, OPTINTERPWT(:,IP),
-     .       INTERPPTR(:,IP), MAXPG, DALBM(:,IP,IDR),
-     .       DEXTM(:,IDR), DFJ(:,IP,IDR),DEXT(:,IDR),
-     .       DALB(:,IDR), MAXNMICRO, NSTLEG,NLEG, LEGEN,
-     .       DLEG, PHASEWTP(:,:,IPA), IPHASEP(:,:,IPA),
-     .       DIPHASEP(:,:,IDR), DPHASEWTP(:,:,IDR),
-     .       EXTINCTP(:,IPA), ALBEDOP(:,IPA), DOEXACT(IDR),
-     .       ML, F, DIVIDE, ALBEDOJ, DELTAM, NUMPHASE,
-     .       DNUMPHASE, DERIV_MAXNMICRO)
-            IF (IERR .NE. 0) RETURN
+          DIVIDE = 1.0/(1.0 - ALBEDOJ*F)
+
+          DO NB = 1, 8
+            IB = INTERPPTR(NB,IP)
+            DALBM(NB,IP,IDR) = DIVIDE*(
+     .        DEXT(IB,IDR)*((1-F)*(ALBEDOP(IB,IPA) - ALBEDOJ)
+     .          + (ALBEDOJ-1)*ALBEDOP(IB,IPA)*
+     .            (FP_BUF(IB,IDR)-F))
+     .        + DALB(IB,IDR)*((1-F)*EXTINCTP(IB,IPA)
+     .          + (ALBEDOJ-1)*EXTINCTP(IB,IPA)*
+     .            (FP_BUF(IB,IDR)-F))
+     .        + DFP_BUF(IB,IDR)*(ALBEDOJ-1)*
+     .          EXTINCTP(IB,IPA)*ALBEDOP(IB,IPA))
+            DFJ(NB,IP,IDR) = (DEXT(IB,IDR)*
+     .        (FP_BUF(IB,IDR)-F)*ALBEDOP(IB,IPA)
+     .        + DALB(IB,IDR)*(FP_BUF(IB,IDR)-F)*
+     .          EXTINCTP(IB,IPA)
+     .        + DFP_BUF(IB,IDR)*EXTINCTP(IB,IPA)*
+     .          ALBEDOP(IB,IPA))/(1-F)
+          ENDDO
         ENDDO
       ENDDO
+
+      DEALLOCATE(FP_BUF, DFP_BUF)
       RETURN
       END
 
-      SUBROUTINE GET_DERIV_INTERP (X, Y, Z, NPX, NPY, NPZ, DELX,
-     .  DELY, XSTART, YSTART, ZLEVELS, IERR, ERRMSG, OPTINTERPWT,
-     .  INTERPPTR, MAXPG, DALBM, DEXTM, DFJ, DEXT, DALB, MAXNMICRO,
-     .  NSTLEG,NLEG, LEGEN, DLEG, PHASEWTP, IPHASEP, DIPHASEP,
-     .  DPHASEWTP, EXTINCTP, ALBEDOP, DOEXACT, ML, F, DIVIDE,
-     .  ALBEDOJ, DELTAM, NUMPHASE, DNUMPHASE, DERIV_MAXNMICRO)
-C     Modified from TRILIN_INTERP_PROP to only return the interpolation
-C     weights (OPTINTERPWT) and pointers (INTERPPTR)from the property grid
-C     onto the RTE grid for use in gradient calculations.
+
+      SUBROUTINE COMPUTE_INTERP_WEIGHTS (X, Y, Z, NPX, NPY, NPZ,
+     .  DELX, DELY, XSTART, YSTART, ZLEVELS,
+     .  INTERPPTR, OPTINTERPWT, IERR, ERRMSG)
+C     Computes trilinear interpolation weights and pointers from the
+C     property grid onto the RTE grid for a single RTE grid point.
       IMPLICIT NONE
+      REAL    X, Y, Z
+      INTEGER NPX, NPY, NPZ
+      REAL    DELX, DELY, XSTART, YSTART
+      REAL    ZLEVELS(*)
       INTEGER INTERPPTR(8)
-      REAL OPTINTERPWT(8), DALBM(8), DEXTM(MAXPG), DFJ(8)
+      REAL    OPTINTERPWT(8)
       INTEGER IERR
       CHARACTER ERRMSG*600
-      REAL    X, Y, Z
-      LOGICAL DELTAM
-
-      INTEGER NPX, NPY, NPZ, MAXPG, ML, DERIV_MAXNMICRO
-      INTEGER NUMPHASE, DNUMPHASE, NLEG, NSTLEG, MAXNMICRO
-      REAL DELX, DELY, XSTART, YSTART
-      REAL ZLEVELS(*)
-      REAL LEGEN(NSTLEG,0:NLEG,NUMPHASE)
-      REAL DLEG(NSTLEG,0:NLEG,DNUMPHASE)
-      REAL DEXT(MAXPG), DALB(MAXPG), EXTINCTP(MAXPG), ALBEDOP(MAXPG)
-      REAL PHASEWTP(MAXNMICRO,MAXPG), DPHASEWTP(DERIV_MAXNMICRO,MAXPG)
-      INTEGER IPHASEP(MAXNMICRO,MAXPG), DIPHASEP(DERIV_MAXNMICRO,MAXPG)
-      INTEGER DOEXACT
-      REAL F, ALBEDOJ, DIVIDE
 
       INTEGER IX, IXP, IY, IYP, IZ, IL, IM, IU
-      INTEGER I1, I2, I3, I4, I5, I6, I7, I8
-      DOUBLE PRECISION U, V, W, F1, F2, F3, F4, F5, F6, F7, F8
-      INTEGER Q,NB,IB
-      REAL FP,DFP
-C
-C         Find the grid location and compute the interpolation factors
-      IL=0
-      IU=NPZ
+      INTEGER I1, I2, I3, I4
+      DOUBLE PRECISION U, V, W
+
+C     Find the Z grid location via binary search
+      IL = 0
+      IU = NPZ
       DO WHILE (IU-IL .GT. 1)
         IM = (IU+IL)/2
         IF (Z .GE. ZLEVELS(IM)) THEN
           IL = IM
         ELSE
-          IU=IM
+          IU = IM
         ENDIF
       ENDDO
       IZ = MAX(IL,1)
       W = DBLE(Z - ZLEVELS(IZ))/(ZLEVELS(IZ+1) - ZLEVELS(IZ))
       W = MAX( MIN( W, 1.0D0), 0.0D0)
+
+C     Find X grid location
       IX = INT((X-XSTART)/DELX) + 1
       IF (ABS(X-XSTART-NPX*DELX) .LT. 0.01*DELX) IX = NPX
       IF (IX .LT. 1 .OR. IX .GT. NPX) THEN
@@ -3254,6 +3293,8 @@ C         Find the grid location and compute the interpolation factors
       U = MAX( MIN( U, 1.0D0), 0.0D0)
       IF (U .LT. 1.0D-5) U = 0.0D0
       IF (U .GT. 1.0D0-1.0D-5) U = 1.0D0
+
+C     Find Y grid location
       IY = INT((Y-YSTART)/DELY) + 1
       IF (ABS(Y-YSTART-NPY*DELY) .LT. 0.01*DELY) IY = NPY
       IF (IY .LT. 1 .OR. IY .GT. NPY) THEN
@@ -3267,81 +3308,32 @@ C         Find the grid location and compute the interpolation factors
       IF (V .LT. 1.0D-5) V = 0.0D0
       IF (V .GT. 1.0D0-1.0D-5) V = 1.0D0
 
-      F1 = (1-U)*(1-V)*(1-W)
-      F2 =    U *(1-V)*(1-W)
-      F3 = (1-U)*   V *(1-W)
-      F4 =    U *   V *(1-W)
-      F5 = (1-U)*(1-V)*   W
-      F6 =    U *(1-V)*   W
-      F7 = (1-U)*   V *   W
-      F8 =    U *   V *   W
+C     Compute trilinear interpolation weights
+      OPTINTERPWT(1) = (1-U)*(1-V)*(1-W)
+      OPTINTERPWT(2) =    U *(1-V)*(1-W)
+      OPTINTERPWT(3) = (1-U)*   V *(1-W)
+      OPTINTERPWT(4) =    U *   V *(1-W)
+      OPTINTERPWT(5) = (1-U)*(1-V)*   W
+      OPTINTERPWT(6) =    U *(1-V)*   W
+      OPTINTERPWT(7) = (1-U)*   V *   W
+      OPTINTERPWT(8) =    U *   V *   W
+
+C     Compute interpolation pointers
       I1 = IZ + NPZ*(IY-1) + NPZ*NPY*(IX-1)
       I2 = IZ + NPZ*(IY-1) + NPZ*NPY*(IXP-1)
       I3 = IZ + NPZ*(IYP-1) + NPZ*NPY*(IX-1)
       I4 = IZ + NPZ*(IYP-1) + NPZ*NPY*(IXP-1)
-      I5 = I1+1
-      I6 = I2+1
-      I7 = I3+1
-      I8 = I4+1
-
       INTERPPTR(1) = I1
       INTERPPTR(2) = I2
       INTERPPTR(3) = I3
       INTERPPTR(4) = I4
-      INTERPPTR(5) = I5
-      INTERPPTR(6) = I6
-      INTERPPTR(7) = I7
-      INTERPPTR(8) = I8
-
-      OPTINTERPWT(1) = F1
-      OPTINTERPWT(2) = F2
-      OPTINTERPWT(3) = F3
-      OPTINTERPWT(4) = F4
-      OPTINTERPWT(5) = F5
-      OPTINTERPWT(6) = F6
-      OPTINTERPWT(7) = F7
-      OPTINTERPWT(8) = F8
-
-      DO NB=1,8
-        IB = INTERPPTR(NB)
-C     FP is the delta-M scale factor on the property grid.
-C     DFP is the derivative of the delta-M scale factor with
-C     respect to the unknowns.
-        FP = 0.0
-        DFP = 0.0
-        DO Q=1,DERIV_MAXNMICRO
-          IF (DELTAM) THEN
-            FP = FP + PHASEWTP(Q,IB)*
-     .          LEGEN(1,ML+1,IPHASEP(Q,IB))
-            IF (DOEXACT .EQ. 1) THEN
-              DFP = DFP + PHASEWTP(Q,IB)*
-     .          DLEG(1,ML+1,DIPHASEP(Q,IB))
-            ELSEIF (DOEXACT .EQ. 0) THEN
-              DFP = DFP + DPHASEWTP(Q,IB)*
-     .          LEGEN(1,ML+1,IPHASEP(Q,IB))
-            ENDIF
-          ENDIF
-        ENDDO
-        DEXTM(IB) = (DEXT(IB)*(1-FP*ALBEDOP(IB)) -
-     .            DALB(IB)*FP*EXTINCTP(IB) -
-     .            EXTINCTP(IB)*ALBEDOP(IB)*DFP)
-
-        DALBM(NB) = DIVIDE*(
-     .           DEXT(IB)*((1-F)*(ALBEDOP(IB) - ALBEDOJ)
-     .            +(ALBEDOJ - 1)*ALBEDOP(IB)*(FP - F))
-     .          +DALB(IB)*((1-F)*EXTINCTP(IB)
-     .            +(ALBEDOJ - 1)*EXTINCTP(IB)*(FP - F))
-     .          +DFP*(ALBEDOJ - 1)*EXTINCTP(IB)*ALBEDOP(IB)
-     .          )
-        DFJ(NB) = (DEXT(IB)*(FP-F)*ALBEDOP(IB) +
-     .       DALB(IB)*(FP-F)*EXTINCTP(IB) +
-     .       DFP*EXTINCTP(IB)*ALBEDOP(IB))/(1-F)
-      ENDDO
+      INTERPPTR(5) = I1+1
+      INTERPPTR(6) = I2+1
+      INTERPPTR(7) = I3+1
+      INTERPPTR(8) = I4+1
 
       RETURN
       END
-
-
 
       SUBROUTINE PLANCK_DERIVATIVE (TEMP, UNITS, WAVENO, WAVELEN,
      .                              PLANCK)
