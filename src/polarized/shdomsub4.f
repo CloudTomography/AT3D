@@ -1153,18 +1153,12 @@ C         speaking, it should only need to be performed when there is no
 C         extinction from any of the particle species for which derivatives
 C         are calculated for.
 
-C         Add the radiance increment to the gridpoints we have passed.
-C         so that component of the gradient can be calculated.
-C         (This is done finally at the end of this subroutine).
+C         Store the radiance contribution for this subgrid interval.
+C         The cumulative sum needed by COMPUTE_RADIANCE_DERIVATIVE
+C         is built in a single O(N) backward pass after the ray loop.
             PASSEDABSCELL(NPASSED) = ABSCELL
             PASSEDTRANSMIT(NPASSED) = TRANSMIT
-C         Zero the newest point for radiance calculation plus a few points
-C         just in case.
-            PASSEDRAD(:,NPASSED) = 0.0
-            DO KK=1,NPASSED
-              PASSEDRAD(:,KK) = PASSEDRAD(:,KK) +
-     .        TRANSMIT*SRC(:)*ABSCELL/PASSEDTRANSMIT(KK)
-            ENDDO
+            PASSEDRAD(:,NPASSED) = TRANSMIT*SRC(:)*ABSCELL
 C          CALL CPU_TIME(TIME2)
 C          TIME_SUBGRID = TIME_SUBGRID + TIME2-TIME1
 
@@ -1289,6 +1283,9 @@ C        longer a valid reason for stopping ray integration as this
 C        may compromise physical accuracy.
         IF ((TRANSMIT .LT. TRANSCUT)) THEN
           VALIDRAD = .TRUE.
+C         No boundary radiance; initialise the sentinel entry.
+          PASSEDRAD(:,NPASSED) = 0.0D0
+          PASSEDTRANSMIT(NPASSED) = 1.0D0
 
         ELSE IF (INEXTCELL .EQ. 0 .AND. IFACE .GE. 5) THEN
           VALIDRAD = .TRUE.
@@ -1311,13 +1308,9 @@ C         These values aren't actually used. set to -1.0 for
 C         debugging purposes.
           PASSEDTRANSMIT(NPASSED) = TRANSMIT
           PASSEDABSCELL(NPASSED) = -1.0
-C         zero radiance before adding to it.
-          PASSEDRAD(1:NSTOKES,NPASSED) = 0.0
-          
-          DO KK=1,NPASSED
-            PASSEDRAD(:,KK) = PASSEDRAD(:,KK) +
-     .        TRANSMIT*RADBND(:)/PASSEDTRANSMIT(KK)
-          ENDDO
+C         Store boundary radiance contribution in the last entry.
+C         The backward cumsum after the ray loop will propagate it.
+          PASSEDRAD(:,NPASSED) = TRANSMIT*RADBND(:)
 C         Calculate the sensitivity of the surface reflection to
 C         extinction along the path between the surface and the sun.
 C         This does not include sensitivity of surface reflection to
@@ -1356,12 +1349,19 @@ C     .      TIME2 - TIME1
           DEALLOCATE (SUNDIRLEG)
         ENDIF
       ENDIF
+C     Build the cumulative future-radiance array via backward sum.
+C     After this loop PASSEDRAD(:,k) = (1/T_k) * sum_{n=k}^{N} F_n
+C     where F_n = T_n * S_n * A_n, matching the original semantics.
+      DO KK = NPASSED-1, 1, -1
+        PASSEDRAD(:,KK) = PASSEDRAD(:,KK) + PASSEDRAD(:,KK+1)
+      ENDDO
+      DO KK = 1, NPASSED
+        PASSEDRAD(:,KK) = PASSEDRAD(:,KK) / PASSEDTRANSMIT(KK)
+      ENDDO
+
 C     Add in the gradient components due to the radiance that is now
 C     fully calculated using the saved properties from each
 C     subgrid integration interval.
-C      CALL CPU_TIME(TIME1)
-C     Zero the final radiance value.
-C      PASSEDRAD(:,NPASSED) = 0.0
       CALL COMPUTE_RADIANCE_DERIVATIVE(NUMDER,
      .  PASSEDDELS, PASSEDPOINTS, PASSEDINTERP0,
      .  PASSEDINTERP1, TOTAL_EXT, PASSEDRAD, RAYGRAD,
