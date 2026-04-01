@@ -1,19 +1,28 @@
-.. pyshdom documentation master file, created by
-   sphinx-quickstart on Tue Dec 15 18:19:08 2020.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+AT3D Documentation
+===================
 
-Welcome to pyshdom's documentation!
-===================================
-
-.. include:: ../README.md
+AT3D (Atmospheric Tomography with 3D Radiative Transfer) is a Python package
+for 3D atmospheric radiative transfer modelling using the Spherical Harmonic
+Discrete Ordinate Method (SHDOM). It provides tools for computing radiances,
+optimizing atmospheric properties, and working with remote sensing observations.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Tutorials
+
+   tutorials/MakeMieTablesExample
+   tutorials/MakePolydiserseMie
+   tutorials/MakingOpticalProperties
+   tutorials/MakeSensors
+   tutorials/SolveRTE
+   tutorials/SimulatingRadiances
+   tutorials/SimpleInverseProblem
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API Reference
 
    reference/index
-
 
 
 Indices and tables

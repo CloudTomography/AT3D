@@ -1,7 +1,7 @@
-shdom.medium
-============
+at3d.stereo
+===========
 
-.. automodule:: shdom.medium
+.. automodule:: at3d.stereo
    :members:
    :undoc-members:
    :show-inheritance:
