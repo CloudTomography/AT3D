@@ -21,10 +21,10 @@ Cf2py intent(in,out) :: COMM
 
 
       SUBROUTINE MAP_SHDOM_MPI (BCFLAG, NPX, NPY, NX, NY, NZ, DELX,
-     .                 DELY, PROPFILE, XSTART, YSTART, RUNNAME)
+     .                 DELY, PROPFILE, XSTART, YSTART, RUNNAME, COMM)
       IMPLICIT NONE
-      INTEGER BCFLAG, NPX, NPY, NX, NY, NZ
-Cf2py intent(in, out) :: BCFLAG, NPX, NPY, NX, NY, NZ
+      INTEGER BCFLAG, NPX, NPY, NX, NY, NZ, COMM
+Cf2py intent(in, out) :: BCFLAG, NPX, NPY, NX, NY, NZ, COMM
       REAL    DELX, DELY
 Cf2py intent(in) :: DELX, DELY
       CHARACTER PROPFILE*64, RUNNAME*64

@@ -73,6 +73,7 @@ F2PY_CORE_API = [
     # MPI / init
     "start_mpi",
     "end_shdom_mpi",
+    "map_shdom_mpi",
     "check_input_parmeters",
     # Grid
     "new_grids",

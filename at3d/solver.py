@@ -193,6 +193,12 @@ class RTE:
             self._mpi_comm = None
         # start_mpi returns (masterproc, comm) because COMM is intent(in,out)
         self._masterproc, _ = at3d.core.start_mpi(comm_handle)
+        # Number of MPI processes in this solver's communicator.
+        # Defaults to 1 (no domain decomposition).  When multi-rank
+        # domain decomposition is desired, call
+        # _setup_mpi_domain_with_comm(comm) explicitly before the first
+        # solve() to partition the property grid.
+        self._numproc = 1
 
         # Link to the properties array module.
         self._pa = ShdomPropertyArrays()
@@ -209,6 +215,7 @@ class RTE:
         self._iters = 0
 
         self.numerical_params = self._setup_numerical_params(numerical_params)
+        self._setup_mpi_domain()
         self._setup_grid(self._grid)
         self.surface = self._setup_surface(surface)
         # atmosphere includes temperature for thermal radiation
@@ -1803,7 +1810,18 @@ class RTE:
                    np.any(atmosphere.temperature <= 150.0):
                     warnings.warn("Temperatures in `atmosphere` are out of "
                                   "Earth's range [150.0, 350.0].")
-                self._pa.tempp[:] = atmosphere.temperature.data.ravel()
+                temp_data = atmosphere.temperature
+                if self._numproc > 1:
+                    delx = float(self._grid.delx.data)
+                    dely = float(self._grid.dely.data)
+                    ix_s = int(round(self._mpi_xstart / delx)) if delx > 0 else 0
+                    iy_s = int(round(self._mpi_ystart / dely)) if dely > 0 else 0
+                    full_npx = self._full_npx
+                    full_npy = self._full_npy
+                    ix_idx = np.arange(ix_s, ix_s + self._pa.npx) % full_npx
+                    iy_idx = np.arange(iy_s, iy_s + self._pa.npy) % full_npy
+                    temp_data = temp_data.isel(x=ix_idx, y=iy_idx)
+                self._pa.tempp[:] = temp_data.data.ravel()
             elif self._srctype in ('T', 'B'):
                 raise KeyError("'temperature' variable was not specified in "
                                "`atmosphere` despite using thermal source.")
@@ -2042,6 +2060,102 @@ class RTE:
 
         return numerical_params
 
+    def _setup_mpi_domain(self):
+        """Set up MPI domain decomposition by calling MAP_SHDOM_MPI.
+
+        When ``self._numproc > 1`` this calls the Fortran routine that
+        creates the 2-D Cartesian communicator (``comm2d``), determines
+        this rank's subdomain property-grid and base-grid sizes, and
+        returns the subdomain origin ``(xstart, ystart)``.  The Fortran
+        module variables ``comm2d``, ``iprocneigh``, ``IXYPRP`` are set
+        as a side-effect.
+
+        When ``self._numproc == 1`` the method is a no-op: no domain
+        decomposition is performed and the full grid is used.
+        """
+        # Store the full-domain sizes before MAP_SHDOM_MPI modifies them.
+        grid = self._grid
+        self._full_npx = grid.sizes['x']
+        self._full_npy = grid.sizes['y']
+
+        if self._numproc <= 1:
+            # No domain decomposition — the solver uses the full grid.
+            self._mpi_xstart = 0.0
+            self._mpi_ystart = 0.0
+            self._mpi_npx = grid.sizes['x']
+            self._mpi_npy = grid.sizes['y']
+            self._mpi_nx = grid.sizes['x'] if 'nx' not in grid.data_vars else int(grid.nx.data)
+            self._mpi_ny = grid.sizes['y'] if 'ny' not in grid.data_vars else int(grid.ny.data)
+            self._mpi_bcflag = None  # will be computed in _setup_grid
+            return
+
+        # Full-domain property grid and base grid sizes.
+        npx = grid.sizes['x']
+        npy = grid.sizes['y']
+        nz  = grid.sizes['z']
+        nx = npx if 'nx' not in grid.data_vars else int(grid.nx.data)
+        ny = npy if 'ny' not in grid.data_vars else int(grid.ny.data)
+        delx = float(grid.delx.data)
+        dely = float(grid.dely.data)
+
+        # Initial bcflag from numerical params (open/periodic boundaries).
+        bcflag = 0
+        if self.numerical_params.x_boundary_condition == 'open' and \
+                self._ipflag in (0, 2, 4, 6):
+            bcflag += 1
+        if self.numerical_params.y_boundary_condition == 'open' and \
+                self._ipflag in (0, 1, 4, 5):
+            bcflag += 2
+
+        comm_handle = self._mpi_comm.py2f()
+
+        # MAP_SHDOM_MPI modifies NPX, NPY, NX, NY, BCFLAG in-place via
+        # intent(in,out) and outputs XSTART, YSTART.  It also sets
+        # the Fortran SHDOM_MPI_DATA module variables (comm2d, etc.).
+        bcflag, npx, npy, nx, ny, nz, xstart, ystart, comm_handle = \
+            at3d.core.map_shdom_mpi(
+                bcflag=bcflag,
+                npx=npx,
+                npy=npy,
+                nx=nx,
+                ny=ny,
+                nz=nz,
+                delx=delx,
+                dely=dely,
+                propfile='',
+                runname=self._name,
+                comm=comm_handle,
+            )
+
+        self._mpi_xstart = float(xstart)
+        self._mpi_ystart = float(ystart)
+        self._mpi_npx = int(npx)
+        self._mpi_npy = int(npy)
+        self._mpi_nx  = int(nx)
+        self._mpi_ny  = int(ny)
+        self._mpi_bcflag = int(bcflag)
+
+    def setup_domain_decomposition(self, comm):
+        """Activate MPI domain decomposition with *comm*.
+
+        This sets the solver's communicator and number of processes,
+        then calls :meth:`_setup_mpi_domain` to partition the property
+        grid, rebuild the SHDOM internal grid, and re-prepare optical
+        properties for the subdomain.
+
+        Parameters
+        ----------
+        comm : mpi4py.MPI.Intracomm
+            The MPI communicator for this solver's rank group.
+        """
+        self._mpi_comm = comm
+        self._numproc = comm.Get_size()
+        at3d.core.start_mpi(comm.py2f())
+        self._setup_mpi_domain()
+        self._setup_grid(self._grid)
+        self.atmosphere = self._setup_atmosphere(self.atmosphere)
+        self._prepare_optical_properties()
+
     def _setup_grid(self, grid):
         """
         A utility function to set the base grid and related grid structures for SHDOM.
@@ -2066,12 +2180,18 @@ class RTE:
         self._pa.npx = grid.sizes['x']
         self._pa.npy = grid.sizes['y']
         self._pa.npz = grid.sizes['z']
-        #All grids start from 0.0, xstart should be used only
-        #for MPI as each worker will have different starting positions.
-        assert np.allclose(grid.x[0], 0.0), 'X-dimension of property grid should start from 0.0'
-        assert np.allclose(grid.y[0], 0.0), 'Y-dimension of property grid should start from 0.0'
-        self._pa.xstart = grid.x[0]
-        self._pa.ystart = grid.y[0]
+        # For single-rank or nompi builds the grid always starts at 0.
+        # When MPI domain decomposition is active, _setup_mpi_domain
+        # sets _mpi_xstart/_mpi_ystart to the subdomain origin and
+        # _mpi_npx/_mpi_npy/_mpi_nx/_mpi_ny to subdomain sizes.
+        if self._numproc > 1:
+            self._pa.xstart = np.float32(self._mpi_xstart)
+            self._pa.ystart = np.float32(self._mpi_ystart)
+        else:
+            assert np.allclose(grid.x[0], 0.0), 'X-dimension of property grid should start from 0.0'
+            assert np.allclose(grid.y[0], 0.0), 'Y-dimension of property grid should start from 0.0'
+            self._pa.xstart = grid.x[0]
+            self._pa.ystart = grid.y[0]
 
         self._pa.delx = grid.delx.data
         self._pa.dely = grid.dely.data
@@ -2111,6 +2231,16 @@ class RTE:
         # Set the full domain grid sizes (variables end in t)
         self._nxt, self._nyt, self._npxt, self._npyt = \
             self._nx, self._ny, self._pa.npx, self._pa.npy
+
+        # When domain decomposition is active, override local sizes
+        # with those returned by MAP_SHDOM_MPI.
+        if self._numproc > 1:
+            self._pa.npx = int(self._mpi_npx)
+            self._pa.npy = int(self._mpi_npy)
+            self._nx = int(self._mpi_nx)
+            self._ny = int(self._mpi_ny)
+            self._maxpg = self._pa.npx * self._pa.npy * self._pa.npz
+
         self._nx, self._ny, self._nz = \
             max(1, self._nx), max(1, self._ny), max(2, self._nz)
 
@@ -2121,11 +2251,16 @@ class RTE:
             self._ipflag = self._ipflag | (1<<1) # second bit for Y-dim.
 
         # set boundary condition flag based on updated information about ipflag.
-        self._bcflag = 0
-        if (self.numerical_params.x_boundary_condition == 'open') & (self._ipflag in (0, 2, 4, 6)):
-            self._bcflag += 1
-        if (self.numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0, 1, 4, 5)):
-            self._bcflag += 2
+        # When MPI is active, MAP_SHDOM_MPI already set bits 2/3 for
+        # multi-processor boundaries and cleared open-BC bits.
+        if self._numproc > 1 and self._mpi_bcflag is not None:
+            self._bcflag = self._mpi_bcflag
+        else:
+            self._bcflag = 0
+            if (self.numerical_params.x_boundary_condition == 'open') & (self._ipflag in (0, 2, 4, 6)):
+                self._bcflag += 1
+            if (self.numerical_params.y_boundary_condition == 'open')& (self._ipflag in (0, 1, 4, 5)):
+                self._bcflag += 2
 
         # Set up base grid point actual size (NX1xNY1xNZ)
         self._nx1, self._ny1 = self._nx + 1, self._ny + 1
@@ -2339,27 +2474,46 @@ class RTE:
         as well as the arrays that will be used in the solution of SHDOM.
         The SHDOM optical properties includes adaptive points and may be delta-M scaled.
         """
+        # When MPI domain decomposition is active, slice each scatterer's
+        # gridded fields to the local subdomain.  The property-grid indices
+        # are derived from xstart/ystart and the local npx/npy returned by
+        # MAP_SHDOM_MPI, matching the Fortran SCATTER_PROPERTIES logic.
+        if self._numproc > 1:
+            medium = OrderedDict()
+            delx = float(self._grid.delx.data)
+            dely = float(self._grid.dely.data)
+            ix_start = int(round(self._mpi_xstart / delx)) if delx > 0 else 0
+            iy_start = int(round(self._mpi_ystart / dely)) if dely > 0 else 0
+            full_npx = self._full_npx
+            full_npy = self._full_npy
+            ix_idx = np.arange(ix_start, ix_start + self._pa.npx) % full_npx
+            iy_idx = np.arange(iy_start, iy_start + self._pa.npy) % full_npy
+            for name, scatterer in self.medium.items():
+                medium[name] = scatterer.isel(x=ix_idx, y=iy_idx)
+        else:
+            medium = self.medium
+
         # Iterate over all particle types and aggregate the legendre scattering table
 
         # sefl._maxpg is different to self._nbpts as that has the extra boundary points.
-        self._pa.extinctp = np.zeros(shape=[self._maxpg, len(self.medium)], dtype=np.float32)
-        self._pa.albedop = np.zeros(shape=[self._maxpg, len(self.medium)], dtype=np.float32)
+        self._pa.extinctp = np.zeros(shape=[self._maxpg, len(medium)], dtype=np.float32)
+        self._pa.albedop = np.zeros(shape=[self._maxpg, len(medium)], dtype=np.float32)
 
         # find maximum number of phase pointers across all species.
         self._pa.max_num_micro = max(
-            [scatterer.num_micro.size for scatterer in self.medium.values()]
+            [scatterer.num_micro.size for scatterer in medium.values()]
         )
 
         self._pa.iphasep = np.zeros(
-            shape=[self._pa.max_num_micro, self._maxpg, len(self.medium)],
+            shape=[self._pa.max_num_micro, self._maxpg, len(medium)],
             dtype=np.int32
         )
         self._pa.phasewtp = np.zeros(
-            shape=[self._pa.max_num_micro, self._maxpg, len(self.medium)],
+            shape=[self._pa.max_num_micro, self._maxpg, len(medium)],
             dtype=np.float32
         )
 
-        for i, scatterer in enumerate(self.medium.values()):
+        for i, scatterer in enumerate(medium.values()):
             self._pa.extinctp[:, i] = scatterer.extinction.data.ravel()
             self._pa.albedop[:, i] = scatterer.ssalb.data.ravel()
             self._pa.iphasep[..., i] = scatterer.table_index.pad(
