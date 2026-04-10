@@ -1,0 +1,16 @@
+name: at3d2
+channels:
+  - https://repo.anaconda.com/pkgs/main
+  - https://repo.anaconda.com/pkgs/r
+dependencies:
+  - python==3.10.19
+  - plotly
+  - spyder
+  - dask
+  - scipy
+  - numpy=1.21.2
+  - scikit-image
+  - cartopy
+  - tqdm
+  - pymap3d
+prefix: /home/benting/miniconda3/envs/at3d2

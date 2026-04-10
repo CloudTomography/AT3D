@@ -234,6 +234,112 @@ def calculate_sensor_trajectory(sensor_zenith_list,
 
     return positions, up_vectors
 
+
+def _rotation_matrix_x(angle_deg):
+    a = np.deg2rad(angle_deg)
+    return np.array([
+        [1, 0, 0],
+        [0, np.cos(a), -np.sin(a)],
+        [0, np.sin(a),  np.cos(a)]
+    ])
+
+
+def _rotation_matrix_y(angle_deg):
+    a = np.deg2rad(angle_deg)
+    return np.array([
+        [ np.cos(a), 0, np.sin(a)],
+        [0,          1, 0],
+        [-np.sin(a), 0, np.cos(a)]
+    ])
+
+
+def _rotation_matrix_z(angle_deg):
+    # heading: cw from +y → convert to math (ccw from +x)
+    a = np.deg2rad(90 - angle_deg)
+    return np.array([
+        [np.cos(a), -np.sin(a), 0],
+        [np.sin(a),  np.cos(a), 0],
+        [0,          0,         1]
+    ])
+
+
+def calculate_sensor_trajectory_from_aircraft(
+        look_at_point=np.array([0.0, 0.0, 0.0]),
+        sensor_altitude=20.0,
+
+        heading_angle_deg=0.0,
+        pitch_angle_deg=0.0,
+        roll_angle_deg=0.0,
+
+        camera_pitch_relative_deg=0.0,   # 沿机身方向前后摆（关键参数）
+        camera_roll_relative_deg=0.0,    # 相机自身roll
+
+        n_views=1
+):
+    """
+    Aircraft-based sensor geometry.
+
+    Inputs:
+      - heading / pitch / roll: aircraft attitude
+      - camera_pitch_relative_deg: camera tilt along aircraft body (forward/backward)
+      - camera_roll_relative_deg: camera roll around LOS
+
+    Output:
+      - positions: (N, 3)
+      - up_vectors: (N, 3)
+    """
+
+    positions = []
+    up_vectors = []
+
+    # ===== 1. 相机在机体系下的初始方向（nadir）=====
+    cam_dir_body = np.array([0.0, 0.0, -1.0])
+
+    # ===== 2. 相机相对飞机旋转（先作用）=====
+    R_cam = _rotation_matrix_y(camera_pitch_relative_deg)
+    cam_dir_body = R_cam @ cam_dir_body
+
+    # ===== 3. 飞机姿态旋转 =====
+    R_roll = _rotation_matrix_x(roll_angle_deg)
+    R_pitch = _rotation_matrix_y(pitch_angle_deg)
+    R_heading = _rotation_matrix_z(heading_angle_deg)
+
+    # 注意顺序：body → roll → pitch → heading
+    R_aircraft = R_heading @ R_pitch @ R_roll
+
+    # ===== 4. 转到世界坐标 =====
+    look_dir_world = R_aircraft @ cam_dir_body
+    look_dir_world = look_dir_world / np.linalg.norm(look_dir_world)
+
+    # ===== 5. 推位置 =====
+    zen = np.arccos(-look_dir_world[2])
+    R = sensor_altitude / np.cos(zen)
+
+    pos = look_at_point - R * look_dir_world
+    pos[2] = sensor_altitude
+
+    # ===== 6. up vector =====
+    world_up = np.array([0.0, 0.0, 1.0])
+    right = np.cross(look_dir_world, world_up)
+    if np.linalg.norm(right) < 1e-9:
+        right = np.array([1.0, 0.0, 0.0])
+    else:
+        right = right / np.linalg.norm(right)
+
+    up_vec = np.cross(right, look_dir_world)
+    up_vec = up_vec / np.linalg.norm(up_vec)
+
+    # ===== 7. 相机自身 roll（绕LOS）=====
+    if abs(camera_roll_relative_deg) > 1e-12:
+        up_vec = _rotate_vector_about_axis(up_vec, look_dir_world, camera_roll_relative_deg)
+        up_vec = up_vec / np.linalg.norm(up_vec)
+
+    # ===== 8. 多视角（可选扩展）=====
+    for _ in range(n_views):
+        positions.append(pos.copy())
+        up_vectors.append(up_vec.copy())
+
+    return np.array(positions), np.array(up_vectors)
 def project_to_ground_lookat(img, pos, look_at_point, up_vector, fov_diag_deg, Xg, Yg):
     ny, nx = img.shape
     img_ground = np.full(Xg.shape, np.nan, dtype=np.float32)
@@ -1396,6 +1502,21 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         camera_relative_roll_deg=sen.camera_relative_roll_deg,
         camera_align_with_flight_heading=sen.camera_align_with_flight_heading,
     )
+    center_NEU = center
+    center_NEU[0], center_NEU[1] = center_NEU[1], center_NEU[0]
+    
+    position_vectors, up_vectors = calculate_sensor_trajectory_from_aircraft(
+        look_at_point=center_NEU,
+        sensor_altitude=sen.altitude_km,
+        heading_angle_deg = -0.16,
+        pitch_angle_deg = 0.53,
+        roll_angle_deg = -10.26,
+        camera_pitch_relative_deg = 0.0,   # 沿机身方向前后摆（关键参数）
+        camera_roll_relative_deg = 0.0,    # 相机自身roll
+        n_views = 1
+        )
+    
+    center_NEU[0], center_NEU[1] = center_NEU[1], center_NEU[0]
     lookat_vectors = [center for _ in sen.views_names]
     for name, pos, look, up in zip(sen.views_names, position_vectors, lookat_vectors, up_vectors):
         stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
@@ -1821,7 +1942,6 @@ def build_versions_single_band(sensor_dict,
         #     solar_azimuth_deg=phi0
         # )
         
-        sensor_ds = sensor['sensor_list'][0]
         v_out_map = compute_vout_map_from_sensor(sensor_ds)
         
         v_out_map = _apply_image_orientation(v_out_map, transpose, flip_lr)
@@ -1837,10 +1957,34 @@ def build_versions_single_band(sensor_dict,
         vz = np.clip(v_out_map[..., 2], -1.0, 1.0) 
         vza_map = np.degrees(np.arccos(vz)) # 像素级VZA 
         vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0 # 像素级VAA 
-        vaa_map = (vaa_map + _get_flight_azimuth_offset_deg_from_context(context)) % 360.0
+        vaa_map = (90-(vaa_map + _get_flight_azimuth_offset_deg_from_context(context))+360) % 360.0
         saa = (context.get("solar_azimuth", 0.0) + 360.0) % 360.0 # 太阳方位（当前是场景常数） 
-        sza = context.get("theta_0", np.nan) # 太阳天顶（当前是场景常数） 
+        sza = context.get("theta_0", np.nan) # 太阳天顶（当前是场景常数）
+        saa = (90 - saa + 360) % 360.0
         raa_map = ((vaa_map - saa + 180.0) % 360.0) - 180.0 # 像素级relative azimuth
+        
+        min_idx = np.nanargmin(vaa_map)   # 忽略 NaN
+        min_row, min_col = np.unravel_index(min_idx, vza_map.shape)
+        min_val = vza_map[min_row, min_col]
+        fig, ax = plt.subplots(figsize=(7, 6))
+
+        im = ax.imshow(vaa_map,origin="lower",cmap="viridis",)
+        
+        ax.scatter(min_col, min_row,   # 注意：imshow 是 (x=col, y=row)
+            color='red',s=80,marker='x',label='Min VZA')
+        
+        ax.text(min_col, min_row,
+                f"{min_val:.2f}",
+                color='red',fontsize=10,ha='left',va='bottom')
+        
+        # ===== colorbar =====
+        fig.colorbar(im, ax=ax, label='VZA (deg)')
+        
+        ax.legend()
+        ax.set_title("VZA map with minimum location")
+        
+        plt.show()
+        
         mu0 = np.cos(np.radians(sza))          # solar zenith
         mu  = np.cos(np.radians(vza_map))      # viewing zenith
         
@@ -1875,13 +2019,13 @@ def build_versions_single_band(sensor_dict,
                         show=False
                     )
 
-        Q, U, chi = rotate_qu_pixelwise_to_scattering_plane(
-            Q, U,
-            v_out_map=v_out_map,
-            up_vec_world=up,               # 这里用你构造 sensor 时的那个 up_vector
-            theta0_deg_shdom=theta0,
-            solar_azimuth_deg=phi0
-        )
+        # Q, U, chi = rotate_qu_pixelwise_to_scattering_plane(
+        #     Q, U,
+        #     v_out_map=v_out_map,
+        #     up_vec_world=up,               # 这里用你构造 sensor 时的那个 up_vector
+        #     theta0_deg_shdom=theta0,
+        #     solar_azimuth_deg=phi0
+        # )
         
         DoLP = np.sqrt(Q**2 + U**2) / np.maximum(I, 1e-12)
         I_orig[iv] = I; Q_orig[iv] = Q; U_orig[iv] = U; DoLP_orig[iv] = DoLP
@@ -2292,6 +2436,67 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
         
         spectral_AOD_all[w] = AOD     # AOD 是一个 dict: {'cloud': 2-D, 'rayleigh': 2-D, 'total': 2-D}
         spectral_SSA_all[w] = SSA     # SSA 是一个 dict
+        
+        ###
+        name = "nadir"
+        wavelength_nm = 470
+        key = f"{name}_{int(wavelength_nm)}nm"
+        sensor = sensor_dict[key]
+        sensor_ds = sensor['sensor_list'][0]
+        
+        transpose, flip_lr = _get_image_orientation_from_sensor_cfg(sen_cfg)
+        v_out_map = compute_vout_map_from_sensor(sensor_ds)
+        
+        v_out_map = _apply_image_orientation(v_out_map, transpose, flip_lr)
+        # target_shape = v_out_map.shape[:2]
+        # I = _ensure_2d_shape(I, target_shape)
+        # Q = _ensure_2d_shape(Q, target_shape)
+        # U = _ensure_2d_shape(U, target_shape)
+        # xg = _ensure_2d_shape(xg, target_shape)
+        # yg = _ensure_2d_shape(yg, target_shape)
+        # lat_img = _ensure_2d_shape(lat_img, target_shape)
+        # lon_img = _ensure_2d_shape(lon_img, target_shape)
+        
+        vz = np.clip(v_out_map[..., 2], -1.0, 1.0) 
+        vza_map = np.degrees(np.arccos(vz)) # 像素级VZA 
+        vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0 # 像素级VAA 
+        vaa_map = (90-(vaa_map + _get_flight_azimuth_offset_deg_from_context(context))+360) % 360.0
+        saa = (context.get("solar_azimuth", 0.0) + 360.0) % 360.0 # 太阳方位（当前是场景常数） 
+        sza = context.get("theta_0", np.nan) # 太阳天顶（当前是场景常数）
+        saa = (90 - saa + 360) % 360.0
+        raa_map = ((vaa_map - saa + 180.0) % 360.0) - 180.0 # 像素级relative azimuth
+        
+        mu0 = np.cos(np.radians(sza))          # solar zenith
+        mu  = np.cos(np.radians(vza_map))      # viewing zenith
+        
+        raa = np.radians(raa_map)
+        
+        cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(raa)
+        cos_sca = np.clip(cos_sca, -1.0, 1.0)
+        sca_angle = np.degrees(np.arccos(cos_sca))
+        
+        data_plot = np.fliplr(vza_map)
+        min_idx = np.nanargmin(data_plot)   # 忽略 NaN
+        min_row, min_col = np.unravel_index(min_idx, data_plot.shape)
+        min_val = data_plot[min_row, min_col]
+        fig, ax = plt.subplots(figsize=(7, 6))
+
+        im = ax.imshow(data_plot ,origin="lower",cmap="viridis",)
+        
+        # ax.scatter(min_col, min_row,    # 注意：imshow 是 (x=col, y=row)
+        #     color='red',s=80,marker='x',label='Min VZA')
+        
+        # ax.text(min_col, min_row, 
+        #         f"{min_val:.2f}",
+        #         color='red',fontsize=10,ha='left',va='bottom')
+        
+        # ===== colorbar =====
+        fig.colorbar(im, ax=ax)
+        
+        ax.legend()
+        # ax.set_title("VZA map with minimum location")
+        
+        plt.show()
 
         sensor_dict.get_measurements(solvers_dict, n_jobs=n_jobs, verbose=True)
         ds = build_versions_single_band(sensor_dict, xlats, xlons, w, pol, sen_cfg, grd_cfg, dsm_cfg,

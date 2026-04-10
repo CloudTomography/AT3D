@@ -3,7 +3,7 @@
 # =============================
 
 output:
-  root_dir: "output/airmspi_sim_5_23"
+  root_dir: "output/airmspi_sim_5_20"
   save_png: true
   save_nc: true
   plot_mode: "overwrite"   # "skip" | "if_missing" | "overwrite"
@@ -16,14 +16,14 @@ sensor:
   resolution_km: 0.010
   views:
     names: ["nadir"]
-    zenith_deg: [0]      # 先调这个：控制VZA整体大小（越大，边缘VZA越大）
-    azimuth_deg: [153]     # 先调这个：控制视线主方向（会影响VAA/RAA的整体朝向）
+    zenith_deg: [1]      # 先调这个：控制VZA整体大小（越大，边缘VZA越大）
+    azimuth_deg: [0]     # 先调这个：控制视线主方向（会影响VAA/RAA的整体朝向）
 
   trajectory:
     mode: "sensor_azimuth"                 # "adjacent_views"(相邻视角推断) | "sensor_azimuth"(按每个视角方位角)
     fallback_heading_deg: 0.0     # 单视角或几何退化时的默认飞行方向角(度)
     manual_flight_azimuth_deg: 0.0  # 兼容旧字段（trajectory.mode=sensor_azimuth时不再作为主开关）
-    camera_relative_roll_deg: 0.6   # 相机相对飞机的滚转角(度)，默认0表示相机x/y轴与飞机参考方向对齐
+    camera_relative_roll_deg: 0.0   # 相机相对飞机的滚转角(度)，默认0表示相机x/y轴与飞机参考方向对齐
     camera_align_with_flight_heading: false  # false: 相机坐标与世界上方向对齐(默认，分界线更稳定竖直/水平)
     apply_flight_azimuth_offset_to_vaa: false  # 默认关闭：VAA直接来自几何；若需额外航向偏置再开启
     camera_image_transpose: false   # 是否对模拟图像做转置（仅用于对齐历史AirMSPI观测像元方向）
@@ -31,13 +31,13 @@ sensor:
 
 # camera pixel grid for perspective_projection
 camera:
-  x_resolution: 2000
+  x_resolution: 2048
   y_resolution: 3072
 
 # scene source and camera look-at point (km)
 scene:
   input_path: "../data/synthetic_cloud_fields/jpl_les/firex_case21_test143_multiview-single-layer_coarse_shdom_coordinate.txt"
-  lookat_center_km: [3.8, 4.5, 0.0]  # 关键参数：平移VZA“最低点”在图上的位置（不必在区域几何中心）
+  lookat_center_km: [0.0, 6.0, 0.0]  # 关键参数：平移VZA“最低点”在图上的位置（不必在区域几何中心）
 
 # solar geometry in geophysical convention
 solar:
