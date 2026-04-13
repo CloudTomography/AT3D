@@ -1503,20 +1503,20 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         camera_align_with_flight_heading=sen.camera_align_with_flight_heading,
     )
     center_NEU = center
-    center_NEU[0], center_NEU[1] = center_NEU[1], center_NEU[0]
+    # center_NEU[0], center_NEU[1] = center_NEU[1], center_NEU[0]
     
     position_vectors, up_vectors = calculate_sensor_trajectory_from_aircraft(
         look_at_point=center_NEU,
         sensor_altitude=sen.altitude_km,
-        heading_angle_deg = -0.16,
+        heading_angle_deg = 89.84,
         pitch_angle_deg = 0.53,
-        roll_angle_deg = -10.26,
+        roll_angle_deg = -0.26,
         camera_pitch_relative_deg = 0.0,   # 沿机身方向前后摆（关键参数）
         camera_roll_relative_deg = 0.0,    # 相机自身roll
         n_views = 1
         )
     
-    center_NEU[0], center_NEU[1] = center_NEU[1], center_NEU[0]
+    # center_NEU[0], center_NEU[1] = center_NEU[1], center_NEU[0]
     lookat_vectors = [center for _ in sen.views_names]
     for name, pos, look, up in zip(sen.views_names, position_vectors, lookat_vectors, up_vectors):
         stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
