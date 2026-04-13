@@ -529,6 +529,17 @@ def _apply_image_orientation(arr: np.ndarray, transpose: bool, flip_lr: bool) ->
     return out
 
 
+def _to_aircraft_eye_view(arr: np.ndarray) -> np.ndarray:
+    """
+    Convert raw camera image to a WYSIWYG view (as seen from aircraft cockpit).
+    For pinhole-style camera geometry this corresponds to a 180° image rotation.
+    """
+    out = np.asarray(arr)
+    if out.ndim < 2:
+        return out
+    return np.flipud(np.fliplr(out))
+
+
 def _ensure_2d_shape(arr: np.ndarray, target_shape: Tuple[int, int]) -> np.ndarray:
     """Ensure 2D array matches target shape; allow implicit transpose if needed."""
     out = np.asarray(arr)
@@ -1217,13 +1228,17 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
                 ax.set_xlim(*x_range)
                 ax.set_ylim(*y_range)
         else:
-            im = ax.imshow(data, origin="lower", cmap=cmap, vmin=vmin, vmax=vmax)
+            data_show = _to_aircraft_eye_view(data)
+            im = ax.imshow(data_show, origin="upper", cmap=cmap, vmin=vmin, vmax=vmax)
         ax.set_title(title)
         return im
 
     if option == "panel":
-        fig1, ax1 = plt.subplots(1, 3, figsize=(15, 4.5))
-        for ax, data, name, cmap in zip(ax1, [I, Q, U], ["I", "Q", "U"], ["viridis", "RdBu_r", "RdBu_r"]):
+        fig1, ax1 = plt.subplots(2, 2, figsize=(10, 8))
+        iqud_maps = [I, Q, U, np.sqrt(Q**2 + U**2) / np.maximum(I, 1e-12)]
+        iqud_names = ["I", "Q", "U", "DoLP"]
+        iqud_cmaps = ["viridis", "RdBu_r", "RdBu_r", "viridis"]
+        for ax, data, name, cmap in zip(ax1.flatten(), iqud_maps, iqud_names, iqud_cmaps):
             if name in {"Q", "U"}:
                 vmin, vmax = _symmetric_limits_about_zero(data)
             else:
@@ -1257,6 +1272,7 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
             "I": (I, "viridis"),
             "Q": (Q, "RdBu_r"),
             "U": (U, "RdBu_r"),
+            "DoLP": (np.sqrt(Q**2 + U**2) / np.maximum(I, 1e-12), "viridis"),
             "VZA": (vza, "viridis"),
             "VAA": (vaa, "viridis"),
             "RAA": (raa, "RdBu_r"),
@@ -1990,7 +2006,7 @@ def build_versions_single_band(sensor_dict,
                 )
                 if out_cfg.plot_mode == "overwrite" or not os.path.exists(angle_png):
                     plot_image(
-                        angle_map,
+                        _to_aircraft_eye_view(angle_map),
                         np.arange(1, angle_map.shape[1] + 2),
                         np.arange(1, angle_map.shape[0] + 2),
                         title=f"{name} {angle_name} {int(wavelength_nm)} nm",
@@ -2020,9 +2036,10 @@ def build_versions_single_band(sensor_dict,
             cam_png_I = os.path.join(out_subdirs["original"], f"I_{int(wavelength_nm)}nm_{name}_camera.png")
             cam_png_Q = os.path.join(out_subdirs["original"], f"Q_{int(wavelength_nm)}nm_{name}_camera.png")
             cam_png_U = os.path.join(out_subdirs["original"], f"U_{int(wavelength_nm)}nm_{name}_camera.png")
+            cam_png_DoLP = os.path.join(out_subdirs["original"], f"DoLP_{int(wavelength_nm)}nm_{name}_camera.png")
             if out_cfg.plot_mode == "overwrite" or not os.path.exists(cam_png_I):
 
-                plot_image(I_brf, np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2), 
+                plot_image(_to_aircraft_eye_view(I_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2), 
                            title=f"{name} I {int(wavelength_nm)} nm",
                            cmap=plot_cfg.colormap, 
                            save_path=cam_png_I, show=False)
@@ -2035,16 +2052,20 @@ def build_versions_single_band(sensor_dict,
                         q_lim = 1.0
                     if (not np.isfinite(u_lim)) or u_lim <= 0:
                         u_lim = 1.0
-                    plot_image(Q_brf, np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                    plot_image(_to_aircraft_eye_view(Q_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} Q {int(wavelength_nm)} nm",
                                cmap="RdBu_r",
                                vmin=-q_lim, vmax=q_lim,
                                save_path=cam_png_Q, show=False)
-                    plot_image(U_brf, np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                    plot_image(_to_aircraft_eye_view(U_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} U {int(wavelength_nm)} nm",
                                cmap="RdBu_r",
                                vmin=-u_lim, vmax=u_lim,
                                save_path=cam_png_U, show=False)
+                    plot_image(_to_aircraft_eye_view(DoLP), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                               title=f"{name} DoLP {int(wavelength_nm)} nm",
+                               cmap=plot_cfg.colormap,
+                               save_path=cam_png_DoLP, show=False)
                 
                 
                 # fig, ax = plt.subplots(figsize=(7, 6))
@@ -2472,9 +2493,9 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
             vza_map, vaa_map, raa_map, sca_angle = _compute_angle_maps_from_sensor(sensor_ds, context, sen_cfg)
             _, _, aod_surface = _aod_grid_to_surface_via_camera(sensor_ds)
 
-            panel_maps = [vza_map, vaa_map, raa_map, sca_angle, aod_surface]
-            titles = ["VZA", "VAA", "RAA", "Scattering Angle", "AOD (grid→camera→surface)"]
-            cmaps = ["viridis", "viridis", "RdBu_r", "viridis", "viridis"]
+            panel_maps = [vza_map, vaa_map, aod_surface, raa_map, sca_angle]
+            titles = ["VZA", "VAA", "AOD (grid→camera→surface)", "RAA", "Scattering Angle"]
+            cmaps = ["viridis", "viridis", "viridis", "viridis", "viridis"]
             fig, axes = plt.subplots(2, 3, figsize=(15, 8))
             xv, yv = centers_to_edges_2d(xg, yg)
             xlim = (np.nanmin(xg), np.nanmax(xg))
