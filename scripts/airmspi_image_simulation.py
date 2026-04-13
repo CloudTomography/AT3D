@@ -2420,6 +2420,44 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
     def _save_precheck_panels(sensor_dict, context, AOD, SSA, wavelength_nm):
         preview_dir = os.path.join(out_cfg.root_dir, "precheck")
         os.makedirs(preview_dir, exist_ok=True)
+
+        def _aod_grid_to_surface_via_camera(sensor_ds):
+            """
+            1) Interpolate grid AOD to camera pixels (camera image domain).
+            2) Reproject that camera image back to surface using the same per-pixel ground intersections.
+            This guarantees pixel-by-pixel correspondence with angle maps.
+            """
+            cloud_x = np.asarray(context.get("cloud_x"), dtype=float).ravel()
+            cloud_y = np.asarray(context.get("cloud_y"), dtype=float).ravel()
+            aod_grid = np.asarray(AOD.get("aerosol"), dtype=float)
+            if aod_grid.ndim != 2 or cloud_x.size < 2 or cloud_y.size < 2:
+                return None, None, None
+
+            # Normalize AOD grid shape to (ny, nx) for RegularGridInterpolator((y, x), values)
+            if aod_grid.shape == (cloud_x.size, cloud_y.size):
+                aod_grid = aod_grid.T
+            elif aod_grid.shape != (cloud_y.size, cloud_x.size):
+                return None, None, None
+
+            ground = reproject_to_ground(sensor_ds, ground_z=0.0)
+            transpose, flip_lr = _get_image_orientation_from_sensor_cfg(sen_cfg)
+            xg = _apply_image_orientation(ground.x_ground.values, transpose, flip_lr)
+            yg = _apply_image_orientation(ground.y_ground.values, transpose, flip_lr)
+
+            interp = RegularGridInterpolator(
+                (cloud_y, cloud_x),
+                aod_grid,
+                bounds_error=False,
+                fill_value=np.nan
+            )
+
+            # Step-1: grid -> camera pixels
+            pts = np.stack([yg.ravel(), xg.ravel()], axis=-1)
+            aod_camera = interp(pts).reshape(xg.shape)
+            # Step-2: camera image -> surface (same pixel rays / same xg, yg)
+            aod_surface = aod_camera.copy()
+            return xg, yg, aod_surface
+
         for view_name in sen_cfg.views_names:
             key = f"{view_name}_{int(wavelength_nm)}nm"
             if key not in sensor_dict:
@@ -2430,18 +2468,26 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
             xg = _apply_image_orientation(ground.x_ground.values, transpose, flip_lr)
             yg = _apply_image_orientation(ground.y_ground.values, transpose, flip_lr)
             vza_map, vaa_map, raa_map, sca_angle = _compute_angle_maps_from_sensor(sensor_ds, context, sen_cfg)
-            angle_maps = [vza_map, vaa_map, raa_map, sca_angle]
-            titles = ["VZA", "VAA", "RAA", "Scattering Angle"]
-            cmaps = ["viridis", "viridis", "RdBu_r", "viridis"]
-            fig, axes = plt.subplots(2, 2, figsize=(11, 8))
-            for ax, data, title, cmap in zip(axes.ravel(), angle_maps, titles, cmaps):
-                xv, yv = centers_to_edges_2d(xg, yg)
+            _, _, aod_surface = _aod_grid_to_surface_via_camera(sensor_ds)
+
+            panel_maps = [vza_map, vaa_map, raa_map, sca_angle, aod_surface]
+            titles = ["VZA", "VAA", "RAA", "Scattering Angle", "AOD (grid→camera→surface)"]
+            cmaps = ["viridis", "viridis", "RdBu_r", "viridis", "viridis"]
+            fig, axes = plt.subplots(2, 3, figsize=(15, 8))
+            xv, yv = centers_to_edges_2d(xg, yg)
+            xlim = (np.nanmin(xg), np.nanmax(xg))
+            ylim = (np.nanmin(yg), np.nanmax(yg))
+            for ax, data, title, cmap in zip(axes.ravel(), panel_maps, titles, cmaps):
                 im = ax.pcolormesh(xv, yv, data, shading="flat", cmap=cmap)
                 ax.set_title(title)
                 ax.set_xlabel("x_ground [km]")
                 ax.set_ylabel("y_ground [km]")
                 ax.set_aspect("equal", adjustable="box")
+                ax.set_xlim(*xlim)
+                ax.set_ylim(*ylim)
                 fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            # 2x3 panel has one extra slot
+            axes.ravel()[-1].axis("off")
             plt.tight_layout()
             plt.savefig(os.path.join(preview_dir, f"angles_panel_{int(wavelength_nm)}nm_{view_name}.png"),
                         dpi=300, bbox_inches="tight")
