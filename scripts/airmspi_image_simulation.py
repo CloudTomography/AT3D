@@ -1502,7 +1502,9 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         camera_relative_roll_deg=sen.camera_relative_roll_deg,
         camera_align_with_flight_heading=sen.camera_align_with_flight_heading,
     )
-    center_NEU = center
+    # AT3D/SHDOM world coordinates follow x=North, y=East, z=Up (NEU).
+    # This axis ordering is left-handed (x × y = -z), so avoid accidental x/y swaps.
+    center_NEU = center.copy()
     # center_NEU[0], center_NEU[1] = center_NEU[1], center_NEU[0]
     
     position_vectors, up_vectors = calculate_sensor_trajectory_from_aircraft(

@@ -36,6 +36,7 @@ camera:
 
 # scene source and camera look-at point (km)
 scene:
+  # AT3D/SHDOM world coordinates: [x, y, z] = [North, East, Up] (NEU, left-handed).
   input_path: "../data/synthetic_cloud_fields/jpl_les/firex_case21_test143_multiview-single-layer_coarse_NEU_coordinate.txt"
   lookat_center_km: [4.5, 3.8, 0.0]  # 关键参数：平移VZA“最低点”在图上的位置（不必在区域几何中心）
 
