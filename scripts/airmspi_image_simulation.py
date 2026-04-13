@@ -1963,28 +1963,6 @@ def build_versions_single_band(sensor_dict,
         saa = (90 - saa + 360) % 360.0
         raa_map = ((vaa_map - saa + 180.0) % 360.0) - 180.0 # 像素级relative azimuth
         
-        min_idx = np.nanargmin(vaa_map)   # 忽略 NaN
-        min_row, min_col = np.unravel_index(min_idx, vza_map.shape)
-        min_val = vza_map[min_row, min_col]
-        fig, ax = plt.subplots(figsize=(7, 6))
-
-        im = ax.imshow(vaa_map,origin="lower",cmap="viridis",)
-        
-        ax.scatter(min_col, min_row,   # 注意：imshow 是 (x=col, y=row)
-            color='red',s=80,marker='x',label='Min VZA')
-        
-        ax.text(min_col, min_row,
-                f"{min_val:.2f}",
-                color='red',fontsize=10,ha='left',va='bottom')
-        
-        # ===== colorbar =====
-        fig.colorbar(im, ax=ax, label='VZA (deg)')
-        
-        ax.legend()
-        ax.set_title("VZA map with minimum location")
-        
-        plt.show()
-        
         mu0 = np.cos(np.radians(sza))          # solar zenith
         mu  = np.cos(np.radians(vza_map))      # viewing zenith
         
@@ -2403,7 +2381,8 @@ def _record_experiment_snapshot(cfg_path: str, cfg: Dict[str, Any], out_root: st
 # =============================
 
 def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
-         n_jobs: Optional[int] = None, overwrite: bool = False, clean_after_band: bool = True):
+         n_jobs: Optional[int] = None, overwrite: bool = False, clean_after_band: bool = True,
+         precheck_only: bool = False):
     (cfg, out_cfg, sen_cfg, bnd_cfg, dsm_cfg, svr_cfg, plt_cfg, grd_cfg, comp_cfg, crop_cfg,
      scene_cfg, cam_cfg, solar_cfg, solver_cfg, aerosol_cfg) = utils.load_config(cfg_path)
     _record_experiment_snapshot(cfg_path, cfg, out_cfg.root_dir)
@@ -2419,6 +2398,68 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
             
     spectral_AOD_all = {}
     spectral_SSA_all = {}
+
+    def _compute_angle_maps_from_sensor(sensor_ds, context, sen_cfg):
+        transpose, flip_lr = _get_image_orientation_from_sensor_cfg(sen_cfg)
+        v_out_map = compute_vout_map_from_sensor(sensor_ds)
+        v_out_map = _apply_image_orientation(v_out_map, transpose, flip_lr)
+        vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
+        vza_map = np.degrees(np.arccos(vz))
+        vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
+        vaa_map = (90 - (vaa_map + _get_flight_azimuth_offset_deg_from_context(context)) + 360) % 360.0
+        saa = (context.get("solar_azimuth", 0.0) + 360.0) % 360.0
+        sza = context.get("theta_0", np.nan)
+        saa = (90 - saa + 360) % 360.0
+        raa_map = ((vaa_map - saa + 180.0) % 360.0) - 180.0
+        mu0 = np.cos(np.radians(sza))
+        mu = np.cos(np.radians(vza_map))
+        cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa_map))
+        sca_angle = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
+        return vza_map, vaa_map, raa_map, sca_angle
+
+    def _save_precheck_panels(sensor_dict, context, AOD, SSA, wavelength_nm):
+        preview_dir = os.path.join(out_cfg.root_dir, "precheck")
+        os.makedirs(preview_dir, exist_ok=True)
+        for view_name in sen_cfg.views_names:
+            key = f"{view_name}_{int(wavelength_nm)}nm"
+            if key not in sensor_dict:
+                continue
+            sensor_ds = sensor_dict[key]["sensor_list"][0]
+            ground = reproject_to_ground(sensor_ds, ground_z=0.0)
+            transpose, flip_lr = _get_image_orientation_from_sensor_cfg(sen_cfg)
+            xg = _apply_image_orientation(ground.x_ground.values, transpose, flip_lr)
+            yg = _apply_image_orientation(ground.y_ground.values, transpose, flip_lr)
+            vza_map, vaa_map, raa_map, sca_angle = _compute_angle_maps_from_sensor(sensor_ds, context, sen_cfg)
+            angle_maps = [vza_map, vaa_map, raa_map, sca_angle]
+            titles = ["VZA", "VAA", "RAA", "Scattering Angle"]
+            cmaps = ["viridis", "viridis", "RdBu_r", "viridis"]
+            fig, axes = plt.subplots(2, 2, figsize=(11, 8))
+            for ax, data, title, cmap in zip(axes.ravel(), angle_maps, titles, cmaps):
+                xv, yv = centers_to_edges_2d(xg, yg)
+                im = ax.pcolormesh(xv, yv, data, shading="flat", cmap=cmap)
+                ax.set_title(title)
+                ax.set_xlabel("x_ground [km]")
+                ax.set_ylabel("y_ground [km]")
+                ax.set_aspect("equal", adjustable="box")
+                fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            plt.tight_layout()
+            plt.savefig(os.path.join(preview_dir, f"angles_panel_{int(wavelength_nm)}nm_{view_name}.png"),
+                        dpi=300, bbox_inches="tight")
+            plt.close(fig)
+
+        fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
+        fields = [AOD.get("aerosol"), SSA.get("aerosol")]
+        titles = [f"AOD aerosol @ {int(wavelength_nm)} nm", f"SSA aerosol @ {int(wavelength_nm)} nm"]
+        for ax, data, title in zip(axes, fields, titles):
+            im = ax.imshow(np.asarray(data).T, origin="lower", cmap="viridis")
+            ax.set_title(title)
+            fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        plt.tight_layout()
+        plt.savefig(os.path.join(preview_dir, f"aod_ssa_panel_{int(wavelength_nm)}nm.png"),
+                    dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        print(f"🧪 Saved precheck maps to: {preview_dir}")
+
     for i, (w, pol) in enumerate(bands, start=1):
         print(f"\n==============================")
         print(f"🚀 Processing wavelength {w} nm  ({i}/{len(bands)})")
@@ -2436,67 +2477,10 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
         
         spectral_AOD_all[w] = AOD     # AOD 是一个 dict: {'cloud': 2-D, 'rayleigh': 2-D, 'total': 2-D}
         spectral_SSA_all[w] = SSA     # SSA 是一个 dict
-        
-        ###
-        name = "nadir"
-        wavelength_nm = 470
-        key = f"{name}_{int(wavelength_nm)}nm"
-        sensor = sensor_dict[key]
-        sensor_ds = sensor['sensor_list'][0]
-        
-        transpose, flip_lr = _get_image_orientation_from_sensor_cfg(sen_cfg)
-        v_out_map = compute_vout_map_from_sensor(sensor_ds)
-        
-        v_out_map = _apply_image_orientation(v_out_map, transpose, flip_lr)
-        # target_shape = v_out_map.shape[:2]
-        # I = _ensure_2d_shape(I, target_shape)
-        # Q = _ensure_2d_shape(Q, target_shape)
-        # U = _ensure_2d_shape(U, target_shape)
-        # xg = _ensure_2d_shape(xg, target_shape)
-        # yg = _ensure_2d_shape(yg, target_shape)
-        # lat_img = _ensure_2d_shape(lat_img, target_shape)
-        # lon_img = _ensure_2d_shape(lon_img, target_shape)
-        
-        vz = np.clip(v_out_map[..., 2], -1.0, 1.0) 
-        vza_map = np.degrees(np.arccos(vz)) # 像素级VZA 
-        vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0 # 像素级VAA 
-        vaa_map = (90-(vaa_map + _get_flight_azimuth_offset_deg_from_context(context))+360) % 360.0
-        saa = (context.get("solar_azimuth", 0.0) + 360.0) % 360.0 # 太阳方位（当前是场景常数） 
-        sza = context.get("theta_0", np.nan) # 太阳天顶（当前是场景常数）
-        saa = (90 - saa + 360) % 360.0
-        raa_map = ((vaa_map - saa + 180.0) % 360.0) - 180.0 # 像素级relative azimuth
-        
-        mu0 = np.cos(np.radians(sza))          # solar zenith
-        mu  = np.cos(np.radians(vza_map))      # viewing zenith
-        
-        raa = np.radians(raa_map)
-        
-        cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(raa)
-        cos_sca = np.clip(cos_sca, -1.0, 1.0)
-        sca_angle = np.degrees(np.arccos(cos_sca))
-        
-        data_plot = np.fliplr(vza_map)
-        min_idx = np.nanargmin(data_plot)   # 忽略 NaN
-        min_row, min_col = np.unravel_index(min_idx, data_plot.shape)
-        min_val = data_plot[min_row, min_col]
-        fig, ax = plt.subplots(figsize=(7, 6))
-
-        im = ax.imshow(data_plot ,origin="lower",cmap="viridis",)
-        
-        # ax.scatter(min_col, min_row,    # 注意：imshow 是 (x=col, y=row)
-        #     color='red',s=80,marker='x',label='Min VZA')
-        
-        # ax.text(min_col, min_row, 
-        #         f"{min_val:.2f}",
-        #         color='red',fontsize=10,ha='left',va='bottom')
-        
-        # ===== colorbar =====
-        fig.colorbar(im, ax=ax)
-        
-        ax.legend()
-        # ax.set_title("VZA map with minimum location")
-        
-        plt.show()
+        _save_precheck_panels(sensor_dict, context, AOD, SSA, w)
+        if precheck_only:
+            print(f"⏭️ precheck_only=True, skip RTE solve for {int(w)} nm.")
+            continue
 
         sensor_dict.get_measurements(solvers_dict, n_jobs=n_jobs, verbose=True)
         ds = build_versions_single_band(sensor_dict, xlats, xlons, w, pol, sen_cfg, grd_cfg, dsm_cfg,
@@ -2545,7 +2529,9 @@ if __name__ == "__main__":
     parser.add_argument("--n_jobs", type=int, default=None, help="Number of parallel jobs (overrides config)")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing NetCDF files")
     parser.add_argument("--no_clean", action="store_true", help="Do not cleanup per-band data (debug)")
+    parser.add_argument("--precheck_only", action="store_true",
+                        help="Only build geometry/medium and save precheck angle+AOD/SSA maps; skip RTE solve")
     args = parser.parse_args()
-    args.overwrite = True
     main(cfg_path=args.config, only_band=args.band, n_jobs=args.n_jobs,
-         overwrite=args.overwrite, clean_after_band=not args.no_clean)
+         overwrite=args.overwrite, clean_after_band=not args.no_clean,
+         precheck_only=args.precheck_only)
