@@ -2496,23 +2496,39 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
             panel_maps = [vza_map, vaa_map, aod_surface, raa_map, sca_angle]
             titles = ["VZA", "VAA", "AOD (grid→camera→surface)", "RAA", "Scattering Angle"]
             cmaps = ["viridis", "viridis", "viridis", "viridis", "viridis"]
+
+            # Figure-1: camera image coordinates (pixel domain)
+            fig_cam, axes_cam = plt.subplots(2, 3, figsize=(15, 8))
+            for ax, data, title, cmap in zip(axes_cam.ravel(), panel_maps, titles, cmaps):
+                im = ax.imshow(np.asarray(data), origin="lower", cmap=cmap)
+                ax.set_title(f"{title} (camera)")
+                ax.set_xlabel("x_pixel")
+                ax.set_ylabel("y_pixel")
+                fig_cam.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            axes_cam.ravel()[-1].axis("off")
+            plt.tight_layout()
+            plt.savefig(os.path.join(preview_dir, f"angles_panel_camera_{int(wavelength_nm)}nm_{view_name}.png"),
+                        dpi=300, bbox_inches="tight")
+            plt.close(fig_cam)
+
+            # Figure-2: ground-projected coordinates
             fig, axes = plt.subplots(2, 3, figsize=(15, 8))
             xv, yv = centers_to_edges_2d(xg, yg)
             xlim = (np.nanmin(xg), np.nanmax(xg))
             ylim = (np.nanmin(yg), np.nanmax(yg))
             for ax, data, title, cmap in zip(axes.ravel(), panel_maps, titles, cmaps):
-                im = ax.pcolormesh(xv, yv, data, shading="flat", cmap=cmap)
-                ax.set_title(title)
-                ax.set_xlabel("x_ground [km]")
-                ax.set_ylabel("y_ground [km]")
+                im = ax.pcolormesh(yv, xv, data, shading="flat", cmap=cmap)
+                ax.set_title(f"{title} (ground)")
+                ax.set_xlabel("y_ground [km]")
+                ax.set_ylabel("x_ground [km]")
                 ax.set_aspect("equal", adjustable="box")
-                ax.set_xlim(*xlim)
-                ax.set_ylim(*ylim)
+                ax.set_xlim(*ylim)
+                ax.set_ylim(*xlim)
                 fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
             # 2x3 panel has one extra slot
             axes.ravel()[-1].axis("off")
             plt.tight_layout()
-            plt.savefig(os.path.join(preview_dir, f"angles_panel_{int(wavelength_nm)}nm_{view_name}.png"),
+            plt.savefig(os.path.join(preview_dir, f"angles_panel_ground_{int(wavelength_nm)}nm_{view_name}.png"),
                         dpi=300, bbox_inches="tight")
             plt.close(fig)
 
@@ -2520,7 +2536,7 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
         fields = [AOD.get("aerosol"), SSA.get("aerosol")]
         titles = [f"AOD aerosol @ {int(wavelength_nm)} nm", f"SSA aerosol @ {int(wavelength_nm)} nm"]
         for ax, data, title in zip(axes, fields, titles):
-            im = ax.imshow(np.asarray(data).T, origin="lower", cmap="viridis")
+            im = ax.imshow(np.asarray(data), origin="lower", cmap="viridis")
             ax.set_title(title)
             fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         plt.tight_layout()

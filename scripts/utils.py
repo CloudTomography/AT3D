@@ -203,7 +203,7 @@ def compute_cloud_column_ssa(medium, tau_min=1e-4):
 def plot_field(field, title, save_path=None, vmin=0.95, vmax=1.0):
     plt.figure(figsize=(4, 3))
     im = plt.imshow(
-        field.T,
+        field,
         origin="lower",
         cmap="viridis",
         vmin=vmin,
