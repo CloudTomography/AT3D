@@ -2429,11 +2429,11 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
         vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
         vza_map = np.degrees(np.arccos(vz))
         vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-        vaa_map = (90 - (vaa_map + _get_flight_azimuth_offset_deg_from_context(context)) + 360) % 360.0
+        vaa_map = ((vaa_map + _get_flight_azimuth_offset_deg_from_context(context)) + 360) % 360.0
         saa = (context.get("solar_azimuth", 0.0) + 360.0) % 360.0
         sza = context.get("theta_0", np.nan)
-        saa = (90 - saa + 360) % 360.0
-        raa_map = ((vaa_map - saa + 180.0) % 360.0) - 180.0
+        # saa = (90 - saa + 360) % 360.0
+        raa_map = ((vaa_map - saa) % 360.0)
         mu0 = np.cos(np.radians(sza))
         mu = np.cos(np.radians(vza_map))
         cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa_map))
@@ -2568,10 +2568,13 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
         print(f"⏱️  {int(w)} nm done in {dur/60:.2f} min")
     print("\n✅ All requested wavelengths processed.")
     if out_cfg.save_nc:
-        ds = utils.build_multiband_xarray(spectral_AOD_all, spectral_SSA_all)
-        out_path = os.path.join(out_cfg.root_dir, "spectral_AOD_SSA.nc")
-        ds.to_netcdf(out_path)
-        print(f"📦 Saved spectral AOD/SSA NetCDF to {out_path}")
+        if len(spectral_AOD_all) == 0:
+            print("⚠️ Skip spectral_AOD_SSA.nc: no AOD/SSA data collected (all bands skipped or precheck_only mode).")
+        else:
+            ds = utils.build_multiband_xarray(spectral_AOD_all, spectral_SSA_all)
+            out_path = os.path.join(out_cfg.root_dir, "spectral_AOD_SSA.nc")
+            ds.to_netcdf(out_path)
+            print(f"📦 Saved spectral AOD/SSA NetCDF to {out_path}")
 
 
 __all__ = [

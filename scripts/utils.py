@@ -220,7 +220,8 @@ def plot_field(field, title, save_path=None, vmin=0.95, vmax=1.0):
     plt.close()
     
 def build_multiband_xarray(AOD_all, SSA_all):
-
+    if not AOD_all:
+        raise ValueError("AOD_all is empty; no bands were processed.")
     wavelengths = sorted(AOD_all.keys())  # e.g. [355, 380, 445, ...]
 
     # 读取空间维度 (假设所有波段一样)
