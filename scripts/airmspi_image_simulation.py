@@ -552,6 +552,38 @@ def _ensure_2d_shape(arr: np.ndarray, target_shape: Tuple[int, int]) -> np.ndarr
         return out.T
     raise ValueError(f"Shape mismatch: got {out.shape}, expected {target_shape}")
 
+
+def _compute_angle_maps_from_sensor(
+    sensor_ds,
+    solar_azimuth_deg: float,
+    solar_zenith_deg: float,
+    heading_angle_deg: float = 0.0,
+    transpose: bool = False,
+    flip_lr: bool = False,
+):
+    """
+    Compute VZA/VAA/RAA/Scattering-angle maps from a sensor dataset using one
+    unified geometry path (shared by simulation and precheck/replot code).
+    """
+    v_out_map = compute_vout_map_from_sensor(sensor_ds)
+    v_out_map = _apply_image_orientation(v_out_map, transpose, flip_lr)
+
+    vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
+    vza_map = np.degrees(np.arccos(vz))
+
+    vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
+    vaa_map = ((vaa_map - float(heading_angle_deg) + 360.0) % 360.0)
+
+    saa = (float(solar_azimuth_deg) + 360.0) % 360.0
+    sza = float(solar_zenith_deg)
+    raa_map = ((vaa_map - saa) % 360.0)
+
+    mu0 = np.cos(np.radians(sza))
+    mu = np.cos(np.radians(vza_map))
+    cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa_map))
+    sca_angle = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
+    return vza_map, vaa_map, raa_map, sca_angle
+
 def assign_latlon_from_grid(xg, yg, wrf_x, wrf_y, xlats, xlons):
     """
     将相机重投影地面坐标 (xg, yg) 映射为对应的 (lat, lon)。
@@ -1969,25 +2001,14 @@ def build_versions_single_band(sensor_dict,
         lat_img = _ensure_2d_shape(lat_img, target_shape)
         lon_img = _ensure_2d_shape(lon_img, target_shape)
         
-        vz = np.clip(v_out_map[..., 2], -1.0, 1.0) 
-        vza_map = np.degrees(np.arccos(vz)) # 像素级VZA 
-        vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0 # 像素级VAA 
-        vaa_map = ((vaa_map - _get_flight_azimuth_offset_deg_from_context(context) + 360.0) % 360.0)
-        saa = (context.get("solar_azimuth", 0.0) + 360.0) % 360.0 # 太阳方位（当前是场景常数） 
-        sza = context.get("theta_0", np.nan) # 太阳天顶（当前是场景常数）
-        saa = (90 - saa + 360) % 360.0
-        raa_map = ((vaa_map - saa + 180.0) % 360.0) - 180.0 # 像素级relative azimuth
-        
-        mu0 = np.cos(np.radians(sza))          # solar zenith
-        mu  = np.cos(np.radians(vza_map))      # viewing zenith
-        
-        raa = np.radians(raa_map)
-        
-        cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(raa)
-        
-        cos_sca = np.clip(cos_sca, -1.0, 1.0)
-        
-        sca_angle = np.degrees(np.arccos(cos_sca))
+        vza_map, vaa_map, raa_map, sca_angle = _compute_angle_maps_from_sensor(
+            sensor_ds=sensor_ds,
+            solar_azimuth_deg=context.get("solar_azimuth", 0.0),
+            solar_zenith_deg=context.get("theta_0", np.nan),
+            heading_angle_deg=_get_flight_azimuth_offset_deg_from_context(context),
+            transpose=transpose,
+            flip_lr=flip_lr,
+        )
 
         if out_cfg.save_png and (out_cfg.plot_mode != "skip"):
             angle_products = {
@@ -2419,24 +2440,6 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
     spectral_AOD_all = {}
     spectral_SSA_all = {}
 
-    def _compute_angle_maps_from_sensor(sensor_ds, context, sen_cfg):
-        transpose, flip_lr = _get_image_orientation_from_sensor_cfg(sen_cfg)
-        v_out_map = compute_vout_map_from_sensor(sensor_ds)
-        v_out_map = _apply_image_orientation(v_out_map, transpose, flip_lr)
-        vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
-        vza_map = np.degrees(np.arccos(vz))
-        vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-        vaa_map = ((vaa_map - _get_flight_azimuth_offset_deg_from_context(sen_cfg) + 360.0) % 360.0)
-        saa = (context.get("solar_azimuth", 0.0) + 360.0) % 360.0
-        sza = context.get("theta_0", np.nan)
-        # saa = (90 - saa + 360) % 360.0
-        raa_map = ((vaa_map - saa) % 360.0)
-        mu0 = np.cos(np.radians(sza))
-        mu = np.cos(np.radians(vza_map))
-        cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa_map))
-        sca_angle = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
-        return vza_map, vaa_map, raa_map, sca_angle
-
     def _save_precheck_panels(sensor_dict, context, AOD, SSA, wavelength_nm):
         preview_dir = os.path.join(out_cfg.root_dir, "precheck")
         os.makedirs(preview_dir, exist_ok=True)
@@ -2487,7 +2490,14 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
             transpose, flip_lr = _get_image_orientation_from_sensor_cfg(sen_cfg)
             xg = _apply_image_orientation(ground.x_ground.values, transpose, flip_lr)
             yg = _apply_image_orientation(ground.y_ground.values, transpose, flip_lr)
-            vza_map, vaa_map, raa_map, sca_angle = _compute_angle_maps_from_sensor(sensor_ds, context, sen_cfg)
+            vza_map, vaa_map, raa_map, sca_angle = _compute_angle_maps_from_sensor(
+                sensor_ds=sensor_ds,
+                solar_azimuth_deg=context.get("solar_azimuth", 0.0),
+                solar_zenith_deg=context.get("theta_0", np.nan),
+                heading_angle_deg=_get_flight_azimuth_offset_deg_from_context(sen_cfg),
+                transpose=transpose,
+                flip_lr=flip_lr,
+            )
             _, _, aod_surface = _aod_grid_to_surface_via_camera(sensor_ds)
 
             panel_maps = [vza_map, vaa_map, aod_surface, raa_map, sca_angle]
