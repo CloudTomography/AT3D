@@ -279,65 +279,69 @@ def calculate_sensor_trajectory_from_aircraft(
     """
     Aircraft-based sensor geometry.
 
-    Inputs:
-      - heading / pitch / roll: aircraft attitude
-      - camera_pitch_relative_deg: camera tilt along aircraft body (forward/backward)
-      - camera_roll_relative_deg: camera roll around LOS
+    Assumed body frame:
+      x = forward
+      y = right
+      z = up
 
-    Output:
-      - positions: (N, 3)
-      - up_vectors: (N, 3)
+    Camera nominal nadir-looking:
+      look = -z
+
+    Image 'up' direction in body frame is chosen as +x
+    (i.e. top of image points toward aircraft forward direction when no extra roll)
     """
 
     positions = []
     up_vectors = []
 
-    # ===== 1. 相机在机体系下的初始方向（nadir）=====
-    cam_dir_body = np.array([0.0, 0.0, -1.0])
+    # --- 1. camera basis in body frame ---
+    cam_look_body = np.array([0.0, 0.0, -1.0])
+    cam_up_body = np.array([1.0, 0.0, 0.0])   # image top = aircraft forward
 
-    # ===== 2. 相机相对飞机旋转（先作用）=====
-    R_cam = _rotation_matrix_y(camera_pitch_relative_deg)
-    cam_dir_body = R_cam @ cam_dir_body
+    # --- 2. camera relative rotation ---
+    # first tilt camera relative to aircraft
+    R_cam_pitch = _rotation_matrix_y(camera_pitch_relative_deg)
+    cam_look_body = R_cam_pitch @ cam_look_body
+    cam_up_body = R_cam_pitch @ cam_up_body
 
-    # ===== 3. 飞机姿态旋转 =====
+    # then camera self-roll around LOS
+    if abs(camera_roll_relative_deg) > 1e-12:
+        cam_up_body = _rotate_vector_about_axis(
+            cam_up_body, cam_look_body, camera_roll_relative_deg
+        )
+
+    # --- 3. aircraft attitude rotation ---
     R_roll = _rotation_matrix_x(roll_angle_deg)
     R_pitch = _rotation_matrix_y(pitch_angle_deg)
     R_heading = _rotation_matrix_z(heading_angle_deg)
-
-    # 注意顺序：body → roll → pitch → heading
     R_aircraft = R_heading @ R_pitch @ R_roll
 
-    # ===== 4. 转到世界坐标 =====
-    look_dir_world = R_aircraft @ cam_dir_body
+    # --- 4. transform to world ---
+    look_dir_world = R_aircraft @ cam_look_body
+    up_vec_world = R_aircraft @ cam_up_body
+
     look_dir_world = look_dir_world / np.linalg.norm(look_dir_world)
 
-    # ===== 5. 推位置 =====
-    zen = np.arccos(-look_dir_world[2])
-    R = sensor_altitude / np.cos(zen)
+    # make up vector exactly perpendicular to look direction
+    up_vec_world = up_vec_world - np.dot(up_vec_world, look_dir_world) * look_dir_world
+    up_vec_world = up_vec_world / np.linalg.norm(up_vec_world)
 
-    pos = look_at_point - R * look_dir_world
+    # --- 5. sensor position ---
+    # line from sensor to look_at_point follows look_dir_world
+    # sensor = look_at_point - s * look_dir_world
+    if abs(look_dir_world[2]) < 1e-12:
+        raise ValueError("Look direction is horizontal; cannot intersect z=sensor_altitude plane.")
+
+    s = (look_at_point[2] - sensor_altitude) / look_dir_world[2]
+    pos = look_at_point - s * look_dir_world
+
+    # ensure exact altitude
     pos[2] = sensor_altitude
 
-    # ===== 6. up vector =====
-    world_up = np.array([0.0, 0.0, 1.0])
-    right = np.cross(look_dir_world, world_up)
-    if np.linalg.norm(right) < 1e-9:
-        right = np.array([1.0, 0.0, 0.0])
-    else:
-        right = right / np.linalg.norm(right)
-
-    up_vec = np.cross(right, look_dir_world)
-    up_vec = up_vec / np.linalg.norm(up_vec)
-
-    # ===== 7. 相机自身 roll（绕LOS）=====
-    if abs(camera_roll_relative_deg) > 1e-12:
-        up_vec = _rotate_vector_about_axis(up_vec, look_dir_world, camera_roll_relative_deg)
-        up_vec = up_vec / np.linalg.norm(up_vec)
-
-    # ===== 8. 多视角（可选扩展）=====
+    # --- 6. replicate for n_views ---
     for _ in range(n_views):
         positions.append(pos.copy())
-        up_vectors.append(up_vec.copy())
+        up_vectors.append(up_vec_world.copy())
 
     return np.array(positions), np.array(up_vectors)
 def project_to_ground_lookat(img, pos, look_at_point, up_vector, fov_diag_deg, Xg, Yg):
@@ -499,14 +503,13 @@ def compute_vout_map_from_sensor(sensor_ds):
 
 def _get_flight_azimuth_offset_deg_from_context(context_cfg: Any) -> float:
     """
-    Optional yaw-like offset applied to VAA when manual trajectory azimuth is used.
+    Flight heading angle used to rotate VAA into flight-referenced convention.
+    Always applied; default heading is 0° (North).
     """
-    if not isinstance(context_cfg, dict):
-        return 0.0
-    if not bool(context_cfg.get("apply_flight_azimuth_offset_to_vaa", False)):
-        return 0.0
     try:
-        return float(context_cfg.get("flight_azimuth_offset_deg", 0.0))
+        if isinstance(context_cfg, dict):
+            return float(context_cfg.get("heading_angle_deg", 0.0))
+        return float(getattr(context_cfg, "aircraft_heading_deg", 0.0))
     except Exception:
         return 0.0
 
@@ -529,6 +532,17 @@ def _apply_image_orientation(arr: np.ndarray, transpose: bool, flip_lr: bool) ->
     return out
 
 
+def _to_aircraft_eye_view(arr: np.ndarray) -> np.ndarray:
+    """
+    Convert raw camera image to a WYSIWYG view (as seen from aircraft cockpit).
+    For pinhole-style camera geometry this corresponds to a 180° image rotation.
+    """
+    out = np.asarray(arr)
+    if out.ndim < 2:
+        return out
+    return np.flipud(np.fliplr(out))
+
+
 def _ensure_2d_shape(arr: np.ndarray, target_shape: Tuple[int, int]) -> np.ndarray:
     """Ensure 2D array matches target shape; allow implicit transpose if needed."""
     out = np.asarray(arr)
@@ -537,6 +551,40 @@ def _ensure_2d_shape(arr: np.ndarray, target_shape: Tuple[int, int]) -> np.ndarr
     if out.ndim == 2 and out.T.shape == target_shape:
         return out.T
     raise ValueError(f"Shape mismatch: got {out.shape}, expected {target_shape}")
+
+
+def _compute_angle_maps_from_sensor(
+    sensor_ds,
+    solar_azimuth_deg: float,
+    solar_zenith_deg: float,
+    heading_angle_deg: float = 0.0,
+    transpose: bool = False,
+    flip_lr: bool = False,
+):
+    """
+    Compute VZA/VAA/RAA/Scattering-angle maps from a sensor dataset using one
+    unified geometry path (shared by simulation and precheck/replot code).
+    """
+    v_out_map = compute_vout_map_from_sensor(sensor_ds)
+    v_out_map = _apply_image_orientation(v_out_map, transpose, flip_lr)
+
+    vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
+    vza_map = np.degrees(np.arccos(vz))
+
+    vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
+    # Camera-image convention: enforce 0° from image center toward "up" (not down).
+    vaa_map = (vaa_map + 180.0) % 360.0
+    # vaa_map = ((vaa_map - float(heading_angle_deg) + 360.0) % 360.0)
+
+    saa = (float(solar_azimuth_deg) + 360.0) % 360.0
+    sza = float(solar_zenith_deg)
+    raa_map = ((vaa_map - saa) % 360.0)
+
+    mu0 = np.cos(np.radians(sza))
+    mu = np.cos(np.radians(vza_map))
+    cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa_map))
+    sca_angle = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
+    return vza_map, vaa_map, raa_map, sca_angle
 
 def assign_latlon_from_grid(xg, yg, wrf_x, wrf_y, xlats, xlons):
     """
@@ -771,7 +819,8 @@ def _build_level_npz_from_original(target_npz_path: str, overwrite: bool = False
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-                vaa0 = (vaa0 + _get_flight_azimuth_offset_deg_from_context(context_cfg)) % 360.0
+                vaa0 = (vaa0 + 180.0) % 360.0
+                vaa0 = ((vaa0 - _get_flight_azimuth_offset_deg_from_context(context_cfg) + 360.0) % 360.0)
                 saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0 if isinstance(context_cfg, dict) else 0.0
                 sza = context_cfg.get("theta_0", np.nan) if isinstance(context_cfg, dict) else np.nan
                 raa0 = ((vaa0 - saa + 180.0) % 360.0) - 180.0
@@ -996,7 +1045,8 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-                vaa0 = (vaa0 + _get_flight_azimuth_offset_deg_from_context(context_cfg)) % 360.0
+                vaa0 = (vaa0 + 180.0) % 360.0
+                vaa0 = ((vaa0 - _get_flight_azimuth_offset_deg_from_context(context_cfg) + 360.0) % 360.0)
 
                 saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0
                 sza = context_cfg.get("theta_0", np.nan)
@@ -1217,13 +1267,17 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
                 ax.set_xlim(*x_range)
                 ax.set_ylim(*y_range)
         else:
-            im = ax.imshow(data, origin="lower", cmap=cmap, vmin=vmin, vmax=vmax)
+            data_show = _to_aircraft_eye_view(data)
+            im = ax.imshow(data_show, origin="upper", cmap=cmap, vmin=vmin, vmax=vmax)
         ax.set_title(title)
         return im
 
     if option == "panel":
-        fig1, ax1 = plt.subplots(1, 3, figsize=(15, 4.5))
-        for ax, data, name, cmap in zip(ax1, [I, Q, U], ["I", "Q", "U"], ["viridis", "RdBu_r", "RdBu_r"]):
+        fig1, ax1 = plt.subplots(2, 2, figsize=(10, 8))
+        iqud_maps = [I, Q, U, np.sqrt(Q**2 + U**2) / np.maximum(I, 1e-12)]
+        iqud_names = ["I", "Q", "U", "DoLP"]
+        iqud_cmaps = ["viridis", "RdBu_r", "RdBu_r", "viridis"]
+        for ax, data, name, cmap in zip(ax1.flatten(), iqud_maps, iqud_names, iqud_cmaps):
             if name in {"Q", "U"}:
                 vmin, vmax = _symmetric_limits_about_zero(data)
             else:
@@ -1257,6 +1311,7 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
             "I": (I, "viridis"),
             "Q": (Q, "RdBu_r"),
             "U": (U, "RdBu_r"),
+            "DoLP": (np.sqrt(Q**2 + U**2) / np.maximum(I, 1e-12), "viridis"),
             "VZA": (vza, "viridis"),
             "VAA": (vaa, "viridis"),
             "RAA": (raa, "RdBu_r"),
@@ -1502,17 +1557,19 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         camera_relative_roll_deg=sen.camera_relative_roll_deg,
         camera_align_with_flight_heading=sen.camera_align_with_flight_heading,
     )
-    center_NEU = center
+    # AT3D/SHDOM world coordinates follow x=North, y=East, z=Up (NEU).
+    # This axis ordering is left-handed (x × y = -z), so avoid accidental x/y swaps.
+    center_NEU = center.copy()
     # center_NEU[0], center_NEU[1] = center_NEU[1], center_NEU[0]
     
     position_vectors, up_vectors = calculate_sensor_trajectory_from_aircraft(
         look_at_point=center_NEU,
         sensor_altitude=sen.altitude_km,
-        heading_angle_deg = 89.84,
-        pitch_angle_deg = 0.53,
-        roll_angle_deg = -0.26,
-        camera_pitch_relative_deg = 0.0,   # 沿机身方向前后摆（关键参数）
-        camera_roll_relative_deg = 0.0,    # 相机自身roll
+        heading_angle_deg=sen.aircraft_heading_deg,
+        pitch_angle_deg=sen.aircraft_pitch_deg,
+        roll_angle_deg=sen.aircraft_roll_deg,
+        camera_pitch_relative_deg=sen.camera_pitch_relative_deg,
+        camera_roll_relative_deg=sen.camera_roll_relative_deg,
         n_views = 1
         )
     
@@ -1701,15 +1758,9 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    fallback_heading_deg=sen.fallback_heading_deg,
                    camera_relative_roll_deg=sen.camera_relative_roll_deg,
                    camera_align_with_flight_heading=sen.camera_align_with_flight_heading,
-                   apply_flight_azimuth_offset_to_vaa=sen.apply_flight_azimuth_offset_to_vaa,
                    camera_image_transpose=sen.camera_image_transpose,
                    camera_image_flip_lr=sen.camera_image_flip_lr,
-                   flight_azimuth_offset_deg=(
-                       float(sen.manual_flight_azimuth_deg) - float(sen.fallback_heading_deg)
-                       if str(getattr(sen, "trajectory_mode", "")).lower() == "manual_azimuth"
-                       and getattr(sen, "manual_flight_azimuth_deg", None) is not None
-                       else 0.0
-                   ),
+                   heading_angle_deg=sen.aircraft_heading_deg,
                    lat=lat_2d,
                    lon=lon_2d,
                    latlon_source=latlon_source,
@@ -1954,25 +2005,14 @@ def build_versions_single_band(sensor_dict,
         lat_img = _ensure_2d_shape(lat_img, target_shape)
         lon_img = _ensure_2d_shape(lon_img, target_shape)
         
-        vz = np.clip(v_out_map[..., 2], -1.0, 1.0) 
-        vza_map = np.degrees(np.arccos(vz)) # 像素级VZA 
-        vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0 # 像素级VAA 
-        vaa_map = (90-(vaa_map + _get_flight_azimuth_offset_deg_from_context(context))+360) % 360.0
-        saa = (context.get("solar_azimuth", 0.0) + 360.0) % 360.0 # 太阳方位（当前是场景常数） 
-        sza = context.get("theta_0", np.nan) # 太阳天顶（当前是场景常数）
-        saa = (90 - saa + 360) % 360.0
-        raa_map = ((vaa_map - saa + 180.0) % 360.0) - 180.0 # 像素级relative azimuth
-        
-        mu0 = np.cos(np.radians(sza))          # solar zenith
-        mu  = np.cos(np.radians(vza_map))      # viewing zenith
-        
-        raa = np.radians(raa_map)
-        
-        cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(raa)
-        
-        cos_sca = np.clip(cos_sca, -1.0, 1.0)
-        
-        sca_angle = np.degrees(np.arccos(cos_sca))
+        vza_map, vaa_map, raa_map, sca_angle = _compute_angle_maps_from_sensor(
+            sensor_ds=sensor_ds,
+            solar_azimuth_deg=context.get("solar_azimuth", 0.0),
+            solar_zenith_deg=context.get("theta_0", np.nan),
+            heading_angle_deg=_get_flight_azimuth_offset_deg_from_context(context),
+            transpose=transpose,
+            flip_lr=flip_lr,
+        )
 
         if out_cfg.save_png and (out_cfg.plot_mode != "skip"):
             angle_products = {
@@ -1988,7 +2028,7 @@ def build_versions_single_band(sensor_dict,
                 )
                 if out_cfg.plot_mode == "overwrite" or not os.path.exists(angle_png):
                     plot_image(
-                        angle_map,
+                        _to_aircraft_eye_view(angle_map),
                         np.arange(1, angle_map.shape[1] + 2),
                         np.arange(1, angle_map.shape[0] + 2),
                         title=f"{name} {angle_name} {int(wavelength_nm)} nm",
@@ -2018,9 +2058,10 @@ def build_versions_single_band(sensor_dict,
             cam_png_I = os.path.join(out_subdirs["original"], f"I_{int(wavelength_nm)}nm_{name}_camera.png")
             cam_png_Q = os.path.join(out_subdirs["original"], f"Q_{int(wavelength_nm)}nm_{name}_camera.png")
             cam_png_U = os.path.join(out_subdirs["original"], f"U_{int(wavelength_nm)}nm_{name}_camera.png")
+            cam_png_DoLP = os.path.join(out_subdirs["original"], f"DoLP_{int(wavelength_nm)}nm_{name}_camera.png")
             if out_cfg.plot_mode == "overwrite" or not os.path.exists(cam_png_I):
 
-                plot_image(I_brf, np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2), 
+                plot_image(_to_aircraft_eye_view(I_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2), 
                            title=f"{name} I {int(wavelength_nm)} nm",
                            cmap=plot_cfg.colormap, 
                            save_path=cam_png_I, show=False)
@@ -2033,16 +2074,20 @@ def build_versions_single_band(sensor_dict,
                         q_lim = 1.0
                     if (not np.isfinite(u_lim)) or u_lim <= 0:
                         u_lim = 1.0
-                    plot_image(Q_brf, np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                    plot_image(_to_aircraft_eye_view(Q_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} Q {int(wavelength_nm)} nm",
                                cmap="RdBu_r",
                                vmin=-q_lim, vmax=q_lim,
                                save_path=cam_png_Q, show=False)
-                    plot_image(U_brf, np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                    plot_image(_to_aircraft_eye_view(U_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} U {int(wavelength_nm)} nm",
                                cmap="RdBu_r",
                                vmin=-u_lim, vmax=u_lim,
                                save_path=cam_png_U, show=False)
+                    plot_image(_to_aircraft_eye_view(DoLP), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                               title=f"{name} DoLP {int(wavelength_nm)} nm",
+                               cmap=plot_cfg.colormap,
+                               save_path=cam_png_DoLP, show=False)
                 
                 
                 # fig, ax = plt.subplots(figsize=(7, 6))
@@ -2399,24 +2444,6 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
     spectral_AOD_all = {}
     spectral_SSA_all = {}
 
-    def _compute_angle_maps_from_sensor(sensor_ds, context, sen_cfg):
-        transpose, flip_lr = _get_image_orientation_from_sensor_cfg(sen_cfg)
-        v_out_map = compute_vout_map_from_sensor(sensor_ds)
-        v_out_map = _apply_image_orientation(v_out_map, transpose, flip_lr)
-        vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
-        vza_map = np.degrees(np.arccos(vz))
-        vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-        vaa_map = (90 - (vaa_map + _get_flight_azimuth_offset_deg_from_context(context)) + 360) % 360.0
-        saa = (context.get("solar_azimuth", 0.0) + 360.0) % 360.0
-        sza = context.get("theta_0", np.nan)
-        saa = (90 - saa + 360) % 360.0
-        raa_map = ((vaa_map - saa + 180.0) % 360.0) - 180.0
-        mu0 = np.cos(np.radians(sza))
-        mu = np.cos(np.radians(vza_map))
-        cos_sca = -mu0 * mu + np.sqrt(1 - mu0**2) * np.sqrt(1 - mu**2) * np.cos(np.radians(raa_map))
-        sca_angle = np.degrees(np.arccos(np.clip(cos_sca, -1.0, 1.0)))
-        return vza_map, vaa_map, raa_map, sca_angle
-
     def _save_precheck_panels(sensor_dict, context, AOD, SSA, wavelength_nm):
         preview_dir = os.path.join(out_cfg.root_dir, "precheck")
         os.makedirs(preview_dir, exist_ok=True)
@@ -2467,29 +2494,52 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
             transpose, flip_lr = _get_image_orientation_from_sensor_cfg(sen_cfg)
             xg = _apply_image_orientation(ground.x_ground.values, transpose, flip_lr)
             yg = _apply_image_orientation(ground.y_ground.values, transpose, flip_lr)
-            vza_map, vaa_map, raa_map, sca_angle = _compute_angle_maps_from_sensor(sensor_ds, context, sen_cfg)
+            vza_map, vaa_map, raa_map, sca_angle = _compute_angle_maps_from_sensor(
+                sensor_ds=sensor_ds,
+                solar_azimuth_deg=context.get("solar_azimuth", 0.0),
+                solar_zenith_deg=context.get("theta_0", np.nan),
+                heading_angle_deg=_get_flight_azimuth_offset_deg_from_context(sen_cfg),
+                transpose=transpose,
+                flip_lr=flip_lr,
+            )
             _, _, aod_surface = _aod_grid_to_surface_via_camera(sensor_ds)
 
-            panel_maps = [vza_map, vaa_map, raa_map, sca_angle, aod_surface]
-            titles = ["VZA", "VAA", "RAA", "Scattering Angle", "AOD (grid→camera→surface)"]
-            cmaps = ["viridis", "viridis", "RdBu_r", "viridis", "viridis"]
+            panel_maps = [vza_map, vaa_map, aod_surface, raa_map, sca_angle]
+            titles = ["VZA", "VAA", "AOD (grid→camera→surface)", "RAA", "Scattering Angle"]
+            cmaps = ["viridis", "viridis", "viridis", "viridis", "viridis"]
+
+            # Figure-1: camera image coordinates (pixel domain)
+            fig_cam, axes_cam = plt.subplots(2, 3, figsize=(15, 8))
+            for ax, data, title, cmap in zip(axes_cam.ravel(), panel_maps, titles, cmaps):
+                im = ax.imshow(np.asarray(data), origin="lower", cmap=cmap)
+                ax.set_title(f"{title} (camera)")
+                ax.set_xlabel("x_pixel")
+                ax.set_ylabel("y_pixel")
+                fig_cam.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            axes_cam.ravel()[-1].axis("off")
+            plt.tight_layout()
+            plt.savefig(os.path.join(preview_dir, f"angles_panel_camera_{int(wavelength_nm)}nm_{view_name}.png"),
+                        dpi=300, bbox_inches="tight")
+            plt.close(fig_cam)
+
+            # Figure-2: ground-projected coordinates
             fig, axes = plt.subplots(2, 3, figsize=(15, 8))
             xv, yv = centers_to_edges_2d(xg, yg)
             xlim = (np.nanmin(xg), np.nanmax(xg))
             ylim = (np.nanmin(yg), np.nanmax(yg))
             for ax, data, title, cmap in zip(axes.ravel(), panel_maps, titles, cmaps):
-                im = ax.pcolormesh(xv, yv, data, shading="flat", cmap=cmap)
-                ax.set_title(title)
-                ax.set_xlabel("x_ground [km]")
-                ax.set_ylabel("y_ground [km]")
+                im = ax.pcolormesh(yv, xv, data, shading="flat", cmap=cmap)
+                ax.set_title(f"{title} (ground)")
+                ax.set_xlabel("y_ground [km]")
+                ax.set_ylabel("x_ground [km]")
                 ax.set_aspect("equal", adjustable="box")
-                ax.set_xlim(*xlim)
-                ax.set_ylim(*ylim)
+                ax.set_xlim(*ylim)
+                ax.set_ylim(*xlim)
                 fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
             # 2x3 panel has one extra slot
             axes.ravel()[-1].axis("off")
             plt.tight_layout()
-            plt.savefig(os.path.join(preview_dir, f"angles_panel_{int(wavelength_nm)}nm_{view_name}.png"),
+            plt.savefig(os.path.join(preview_dir, f"angles_panel_ground_{int(wavelength_nm)}nm_{view_name}.png"),
                         dpi=300, bbox_inches="tight")
             plt.close(fig)
 
@@ -2497,7 +2547,7 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
         fields = [AOD.get("aerosol"), SSA.get("aerosol")]
         titles = [f"AOD aerosol @ {int(wavelength_nm)} nm", f"SSA aerosol @ {int(wavelength_nm)} nm"]
         for ax, data, title in zip(axes, fields, titles):
-            im = ax.imshow(np.asarray(data).T, origin="lower", cmap="viridis")
+            im = ax.imshow(np.asarray(data), origin="lower", cmap="viridis")
             ax.set_title(title)
             fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         plt.tight_layout()
@@ -2545,10 +2595,13 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
         print(f"⏱️  {int(w)} nm done in {dur/60:.2f} min")
     print("\n✅ All requested wavelengths processed.")
     if out_cfg.save_nc:
-        ds = utils.build_multiband_xarray(spectral_AOD_all, spectral_SSA_all)
-        out_path = os.path.join(out_cfg.root_dir, "spectral_AOD_SSA.nc")
-        ds.to_netcdf(out_path)
-        print(f"📦 Saved spectral AOD/SSA NetCDF to {out_path}")
+        if len(spectral_AOD_all) == 0:
+            print("⚠️ Skip spectral_AOD_SSA.nc: no AOD/SSA data collected (all bands skipped or precheck_only mode).")
+        else:
+            ds = utils.build_multiband_xarray(spectral_AOD_all, spectral_SSA_all)
+            out_path = os.path.join(out_cfg.root_dir, "spectral_AOD_SSA.nc")
+            ds.to_netcdf(out_path)
+            print(f"📦 Saved spectral AOD/SSA NetCDF to {out_path}")
 
 
 __all__ = [

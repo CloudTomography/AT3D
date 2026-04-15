@@ -53,6 +53,11 @@ def load_config(cfg_path: str):
         apply_flight_azimuth_offset_to_vaa=bool(trajectory_cfg.get("apply_flight_azimuth_offset_to_vaa", False)),
         camera_image_transpose=bool(trajectory_cfg.get("camera_image_transpose", False)),
         camera_image_flip_lr=bool(trajectory_cfg.get("camera_image_flip_lr", False)),
+        aircraft_heading_deg=float(trajectory_cfg.get("aircraft_heading_deg", 0.0)),
+        aircraft_pitch_deg=float(trajectory_cfg.get("aircraft_pitch_deg", 0.0)),
+        aircraft_roll_deg=float(trajectory_cfg.get("aircraft_roll_deg", 0.0)),
+        camera_pitch_relative_deg=float(trajectory_cfg.get("camera_pitch_relative_deg", 0.0)),
+        camera_roll_relative_deg=float(trajectory_cfg.get("camera_roll_relative_deg", 0.0)),
     )
     bnd = BandsConfig(
         wavelength_nm=[int(w) for w in cfg["bands"]["wavelength_nm"]],
@@ -203,7 +208,7 @@ def compute_cloud_column_ssa(medium, tau_min=1e-4):
 def plot_field(field, title, save_path=None, vmin=0.95, vmax=1.0):
     plt.figure(figsize=(4, 3))
     im = plt.imshow(
-        field.T,
+        field,
         origin="lower",
         cmap="viridis",
         vmin=vmin,
@@ -220,7 +225,8 @@ def plot_field(field, title, save_path=None, vmin=0.95, vmax=1.0):
     plt.close()
     
 def build_multiband_xarray(AOD_all, SSA_all):
-
+    if not AOD_all:
+        raise ValueError("AOD_all is empty; no bands were processed.")
     wavelengths = sorted(AOD_all.keys())  # e.g. [355, 380, 445, ...]
 
     # 读取空间维度 (假设所有波段一样)
