@@ -58,6 +58,36 @@ def load_config(cfg_path: str):
         aircraft_roll_deg=float(trajectory_cfg.get("aircraft_roll_deg", 0.0)),
         camera_pitch_relative_deg=float(trajectory_cfg.get("camera_pitch_relative_deg", 0.0)),
         camera_roll_relative_deg=float(trajectory_cfg.get("camera_roll_relative_deg", 0.0)),
+        cross_track_nbytes=int(trajectory_cfg.get("cross_track_nbytes", 2)),
+        cross_track_scale=float(trajectory_cfg.get("cross_track_scale", 1.0)),
+        cross_track_x1=(
+            None if trajectory_cfg.get("cross_track_x1", None) is None
+            else float(trajectory_cfg.get("cross_track_x1"))
+        ),
+        cross_track_y1=(
+            None if trajectory_cfg.get("cross_track_y1", None) is None
+            else float(trajectory_cfg.get("cross_track_y1"))
+        ),
+        cross_track_z1=(
+            None if trajectory_cfg.get("cross_track_z1", None) is None
+            else float(trajectory_cfg.get("cross_track_z1"))
+        ),
+        cross_track_x2=(
+            None if trajectory_cfg.get("cross_track_x2", None) is None
+            else float(trajectory_cfg.get("cross_track_x2"))
+        ),
+        cross_track_y2=(
+            None if trajectory_cfg.get("cross_track_y2", None) is None
+            else float(trajectory_cfg.get("cross_track_y2"))
+        ),
+        cross_track_z2=(
+            None if trajectory_cfg.get("cross_track_z2", None) is None
+            else float(trajectory_cfg.get("cross_track_z2"))
+        ),
+        cross_track_spacing=float(trajectory_cfg.get("cross_track_spacing", 0.0)),
+        cross_track_scan1_deg=float(trajectory_cfg.get("cross_track_scan1_deg", -30.0)),
+        cross_track_scan2_deg=float(trajectory_cfg.get("cross_track_scan2_deg", 30.0)),
+        cross_track_delscan_deg=float(trajectory_cfg.get("cross_track_delscan_deg", 1.0)),
     )
     bnd = BandsConfig(
         wavelength_nm=[int(w) for w in cfg["bands"]["wavelength_nm"]],
