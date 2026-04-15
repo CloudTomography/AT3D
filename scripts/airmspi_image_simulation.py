@@ -574,7 +574,7 @@ def _compute_angle_maps_from_sensor(
     vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
     # Camera-image convention: enforce 0° from image center toward "up" (not down).
     vaa_map = (vaa_map + 180.0) % 360.0
-    vaa_map = ((vaa_map - float(heading_angle_deg) + 360.0) % 360.0)
+    # vaa_map = ((vaa_map - float(heading_angle_deg) + 360.0) % 360.0)
 
     saa = (float(solar_azimuth_deg) + 360.0) % 360.0
     sza = float(solar_zenith_deg)
