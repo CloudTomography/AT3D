@@ -34,6 +34,11 @@ class SensorConfig:
     apply_flight_azimuth_offset_to_vaa: bool = False
     camera_image_transpose: bool = False
     camera_image_flip_lr: bool = False
+    aircraft_heading_deg: float = 0.0
+    aircraft_pitch_deg: float = 0.0
+    aircraft_roll_deg: float = 0.0
+    camera_pitch_relative_deg: float = 0.0
+    camera_roll_relative_deg: float = 0.0
 
 @dataclass
 class BandsConfig:

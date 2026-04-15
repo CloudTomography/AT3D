@@ -279,65 +279,69 @@ def calculate_sensor_trajectory_from_aircraft(
     """
     Aircraft-based sensor geometry.
 
-    Inputs:
-      - heading / pitch / roll: aircraft attitude
-      - camera_pitch_relative_deg: camera tilt along aircraft body (forward/backward)
-      - camera_roll_relative_deg: camera roll around LOS
+    Assumed body frame:
+      x = forward
+      y = right
+      z = up
 
-    Output:
-      - positions: (N, 3)
-      - up_vectors: (N, 3)
+    Camera nominal nadir-looking:
+      look = -z
+
+    Image 'up' direction in body frame is chosen as +x
+    (i.e. top of image points toward aircraft forward direction when no extra roll)
     """
 
     positions = []
     up_vectors = []
 
-    # ===== 1. 相机在机体系下的初始方向（nadir）=====
-    cam_dir_body = np.array([0.0, 0.0, -1.0])
+    # --- 1. camera basis in body frame ---
+    cam_look_body = np.array([0.0, 0.0, -1.0])
+    cam_up_body = np.array([1.0, 0.0, 0.0])   # image top = aircraft forward
 
-    # ===== 2. 相机相对飞机旋转（先作用）=====
-    R_cam = _rotation_matrix_y(camera_pitch_relative_deg)
-    cam_dir_body = R_cam @ cam_dir_body
+    # --- 2. camera relative rotation ---
+    # first tilt camera relative to aircraft
+    R_cam_pitch = _rotation_matrix_y(camera_pitch_relative_deg)
+    cam_look_body = R_cam_pitch @ cam_look_body
+    cam_up_body = R_cam_pitch @ cam_up_body
 
-    # ===== 3. 飞机姿态旋转 =====
+    # then camera self-roll around LOS
+    if abs(camera_roll_relative_deg) > 1e-12:
+        cam_up_body = _rotate_vector_about_axis(
+            cam_up_body, cam_look_body, camera_roll_relative_deg
+        )
+
+    # --- 3. aircraft attitude rotation ---
     R_roll = _rotation_matrix_x(roll_angle_deg)
     R_pitch = _rotation_matrix_y(pitch_angle_deg)
     R_heading = _rotation_matrix_z(heading_angle_deg)
-
-    # 注意顺序：body → roll → pitch → heading
     R_aircraft = R_heading @ R_pitch @ R_roll
 
-    # ===== 4. 转到世界坐标 =====
-    look_dir_world = R_aircraft @ cam_dir_body
+    # --- 4. transform to world ---
+    look_dir_world = R_aircraft @ cam_look_body
+    up_vec_world = R_aircraft @ cam_up_body
+
     look_dir_world = look_dir_world / np.linalg.norm(look_dir_world)
 
-    # ===== 5. 推位置 =====
-    zen = np.arccos(-look_dir_world[2])
-    R = sensor_altitude / np.cos(zen)
+    # make up vector exactly perpendicular to look direction
+    up_vec_world = up_vec_world - np.dot(up_vec_world, look_dir_world) * look_dir_world
+    up_vec_world = up_vec_world / np.linalg.norm(up_vec_world)
 
-    pos = look_at_point - R * look_dir_world
+    # --- 5. sensor position ---
+    # line from sensor to look_at_point follows look_dir_world
+    # sensor = look_at_point - s * look_dir_world
+    if abs(look_dir_world[2]) < 1e-12:
+        raise ValueError("Look direction is horizontal; cannot intersect z=sensor_altitude plane.")
+
+    s = (look_at_point[2] - sensor_altitude) / look_dir_world[2]
+    pos = look_at_point - s * look_dir_world
+
+    # ensure exact altitude
     pos[2] = sensor_altitude
 
-    # ===== 6. up vector =====
-    world_up = np.array([0.0, 0.0, 1.0])
-    right = np.cross(look_dir_world, world_up)
-    if np.linalg.norm(right) < 1e-9:
-        right = np.array([1.0, 0.0, 0.0])
-    else:
-        right = right / np.linalg.norm(right)
-
-    up_vec = np.cross(right, look_dir_world)
-    up_vec = up_vec / np.linalg.norm(up_vec)
-
-    # ===== 7. 相机自身 roll（绕LOS）=====
-    if abs(camera_roll_relative_deg) > 1e-12:
-        up_vec = _rotate_vector_about_axis(up_vec, look_dir_world, camera_roll_relative_deg)
-        up_vec = up_vec / np.linalg.norm(up_vec)
-
-    # ===== 8. 多视角（可选扩展）=====
+    # --- 6. replicate for n_views ---
     for _ in range(n_views):
         positions.append(pos.copy())
-        up_vectors.append(up_vec.copy())
+        up_vectors.append(up_vec_world.copy())
 
     return np.array(positions), np.array(up_vectors)
 def project_to_ground_lookat(img, pos, look_at_point, up_vector, fov_diag_deg, Xg, Yg):
@@ -499,14 +503,13 @@ def compute_vout_map_from_sensor(sensor_ds):
 
 def _get_flight_azimuth_offset_deg_from_context(context_cfg: Any) -> float:
     """
-    Optional yaw-like offset applied to VAA when manual trajectory azimuth is used.
+    Flight heading angle used to rotate VAA into flight-referenced convention.
+    Always applied; default heading is 0° (North).
     """
-    if not isinstance(context_cfg, dict):
-        return 0.0
-    if not bool(context_cfg.get("apply_flight_azimuth_offset_to_vaa", False)):
-        return 0.0
     try:
-        return float(context_cfg.get("flight_azimuth_offset_deg", 0.0))
+        if isinstance(context_cfg, dict):
+            return float(context_cfg.get("heading_angle_deg", 0.0))
+        return float(getattr(context_cfg, "aircraft_heading_deg", 0.0))
     except Exception:
         return 0.0
 
@@ -782,7 +785,7 @@ def _build_level_npz_from_original(target_npz_path: str, overwrite: bool = False
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-                vaa0 = (vaa0 + _get_flight_azimuth_offset_deg_from_context(context_cfg)) % 360.0
+                vaa0 = ((vaa0 - _get_flight_azimuth_offset_deg_from_context(context_cfg) + 360.0) % 360.0)
                 saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0 if isinstance(context_cfg, dict) else 0.0
                 sza = context_cfg.get("theta_0", np.nan) if isinstance(context_cfg, dict) else np.nan
                 raa0 = ((vaa0 - saa + 180.0) % 360.0) - 180.0
@@ -1007,7 +1010,7 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-                vaa0 = (vaa0 + _get_flight_azimuth_offset_deg_from_context(context_cfg)) % 360.0
+                vaa0 = ((vaa0 - _get_flight_azimuth_offset_deg_from_context(context_cfg) + 360.0) % 360.0)
 
                 saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0
                 sza = context_cfg.get("theta_0", np.nan)
@@ -1526,11 +1529,11 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     position_vectors, up_vectors = calculate_sensor_trajectory_from_aircraft(
         look_at_point=center_NEU,
         sensor_altitude=sen.altitude_km,
-        heading_angle_deg = 89.84,
-        pitch_angle_deg = 0.53,
-        roll_angle_deg = -0.26,
-        camera_pitch_relative_deg = 0.0,   # 沿机身方向前后摆（关键参数）
-        camera_roll_relative_deg = 0.0,    # 相机自身roll
+        heading_angle_deg=sen.aircraft_heading_deg,
+        pitch_angle_deg=sen.aircraft_pitch_deg,
+        roll_angle_deg=sen.aircraft_roll_deg,
+        camera_pitch_relative_deg=sen.camera_pitch_relative_deg,
+        camera_roll_relative_deg=sen.camera_roll_relative_deg,
         n_views = 1
         )
     
@@ -1719,15 +1722,9 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    fallback_heading_deg=sen.fallback_heading_deg,
                    camera_relative_roll_deg=sen.camera_relative_roll_deg,
                    camera_align_with_flight_heading=sen.camera_align_with_flight_heading,
-                   apply_flight_azimuth_offset_to_vaa=sen.apply_flight_azimuth_offset_to_vaa,
                    camera_image_transpose=sen.camera_image_transpose,
                    camera_image_flip_lr=sen.camera_image_flip_lr,
-                   flight_azimuth_offset_deg=(
-                       float(sen.manual_flight_azimuth_deg) - float(sen.fallback_heading_deg)
-                       if str(getattr(sen, "trajectory_mode", "")).lower() == "manual_azimuth"
-                       and getattr(sen, "manual_flight_azimuth_deg", None) is not None
-                       else 0.0
-                   ),
+                   heading_angle_deg=sen.aircraft_heading_deg,
                    lat=lat_2d,
                    lon=lon_2d,
                    latlon_source=latlon_source,
@@ -1975,7 +1972,7 @@ def build_versions_single_band(sensor_dict,
         vz = np.clip(v_out_map[..., 2], -1.0, 1.0) 
         vza_map = np.degrees(np.arccos(vz)) # 像素级VZA 
         vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0 # 像素级VAA 
-        vaa_map = (90-(vaa_map + _get_flight_azimuth_offset_deg_from_context(context))+360) % 360.0
+        vaa_map = ((vaa_map - _get_flight_azimuth_offset_deg_from_context(context) + 360.0) % 360.0)
         saa = (context.get("solar_azimuth", 0.0) + 360.0) % 360.0 # 太阳方位（当前是场景常数） 
         sza = context.get("theta_0", np.nan) # 太阳天顶（当前是场景常数）
         saa = (90 - saa + 360) % 360.0
@@ -2429,7 +2426,7 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
         vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
         vza_map = np.degrees(np.arccos(vz))
         vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-        vaa_map = ((vaa_map + _get_flight_azimuth_offset_deg_from_context(context)) + 360) % 360.0
+        vaa_map = ((vaa_map - _get_flight_azimuth_offset_deg_from_context(sen_cfg) + 360.0) % 360.0)
         saa = (context.get("solar_azimuth", 0.0) + 360.0) % 360.0
         sza = context.get("theta_0", np.nan)
         # saa = (90 - saa + 360) % 360.0

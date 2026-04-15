@@ -23,6 +23,11 @@ sensor:
     mode: "sensor_azimuth"                 # "adjacent_views"(相邻视角推断) | "sensor_azimuth"(按每个视角方位角)
     fallback_heading_deg: 0.0     # 单视角或几何退化时的默认飞行方向角(度)
     manual_flight_azimuth_deg: 0.0  # 兼容旧字段（trajectory.mode=sensor_azimuth时不再作为主开关）
+    aircraft_heading_deg: 45.0     # 飞机航向角(正北=0, 顺时针)
+    aircraft_pitch_deg: 0.0        # 飞机俯仰角
+    aircraft_roll_deg: 0.0         # 飞机滚转角
+    camera_pitch_relative_deg: 0.0 # 相机相对飞机俯仰
+    camera_roll_relative_deg: 0.0  # 相机相对飞机绕LOS滚转
     camera_relative_roll_deg: 0.6   # 相机相对飞机的滚转角(度)，默认0表示相机x/y轴与飞机参考方向对齐
     camera_align_with_flight_heading: false  # false: 相机坐标与世界上方向对齐(默认，分界线更稳定竖直/水平)
     apply_flight_azimuth_offset_to_vaa: false  # 默认关闭：VAA直接来自几何；若需额外航向偏置再开启

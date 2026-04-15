@@ -53,6 +53,11 @@ def load_config(cfg_path: str):
         apply_flight_azimuth_offset_to_vaa=bool(trajectory_cfg.get("apply_flight_azimuth_offset_to_vaa", False)),
         camera_image_transpose=bool(trajectory_cfg.get("camera_image_transpose", False)),
         camera_image_flip_lr=bool(trajectory_cfg.get("camera_image_flip_lr", False)),
+        aircraft_heading_deg=float(trajectory_cfg.get("aircraft_heading_deg", 0.0)),
+        aircraft_pitch_deg=float(trajectory_cfg.get("aircraft_pitch_deg", 0.0)),
+        aircraft_roll_deg=float(trajectory_cfg.get("aircraft_roll_deg", 0.0)),
+        camera_pitch_relative_deg=float(trajectory_cfg.get("camera_pitch_relative_deg", 0.0)),
+        camera_roll_relative_deg=float(trajectory_cfg.get("camera_roll_relative_deg", 0.0)),
     )
     bnd = BandsConfig(
         wavelength_nm=[int(w) for w in cfg["bands"]["wavelength_nm"]],
