@@ -513,7 +513,8 @@ def cross_track_scan_projection(
     return sensor, scan_positions, scan_angles, scan_pitch_deg
 
 
-def shdom_cross_track_sensor_wrapper(x, y, z, mu, phi, stokes, wavelength):
+def shdom_cross_track_sensor_wrapper(
+        x, y, z, mu, phi, stokes, wavelength, fill_ray_variables=True):
     """
     Wrapper-style sensor builder that directly constructs a SHDOM/AT3D sensor dataset.
     """
@@ -525,7 +526,7 @@ def shdom_cross_track_sensor_wrapper(x, y, z, mu, phi, stokes, wavelength):
         phi=np.asarray(phi, dtype=float),
         stokes=stokes,
         wavelength=wavelength,
-        fill_ray_variables=True
+        fill_ray_variables=bool(fill_ray_variables)
     )
 
 
