@@ -422,6 +422,77 @@ def calculate_sensor_trajectory_cross_track(
         lookat_vectors.append(np.asarray(lookat, dtype=float))
         up_vectors.append(np.asarray(up_vec, dtype=float))
     return np.asarray(positions), np.asarray(lookat_vectors), np.asarray(up_vectors)
+
+
+def cross_track_scan_projection(
+        wavelength,
+        stokes,
+        x1, y1, z1,
+        x2, y2, z2,
+        spacing,
+        scan1_deg,
+        scan2_deg,
+        delscan_deg):
+    """
+    Build a single cross-track scan sensor without perspective projection.
+    Pixels are organized as [scan_index, cross_track_angle_index].
+    """
+    if abs(float(delscan_deg)) < 1e-12:
+        raise ValueError("cross_track_delscan_deg cannot be 0.")
+    p1 = np.array([x1, y1, z1], dtype=float)
+    p2 = np.array([x2, y2, z2], dtype=float)
+    track_vec = p2 - p1
+    track_len = np.linalg.norm(track_vec)
+    if track_len < 1e-12:
+        raise ValueError("cross track start/end positions are identical.")
+    along_track = track_vec / track_len
+
+    if spacing <= 0.0:
+        scan_positions = np.array([p1], dtype=float)
+    else:
+        n_scans = int(np.floor(track_len / spacing)) + 1
+        dists = np.arange(n_scans, dtype=float) * spacing
+        dists = np.clip(dists, 0.0, track_len)
+        scan_positions = p1[None, :] + dists[:, None] * along_track[None, :]
+        if np.linalg.norm(scan_positions[-1] - p2) > 1e-8:
+            scan_positions = np.vstack([scan_positions, p2[None, :]])
+
+    if np.sign(scan2_deg - scan1_deg) == np.sign(delscan_deg):
+        scan_angles = np.arange(scan1_deg, scan2_deg + 0.5 * delscan_deg, delscan_deg, dtype=float)
+    else:
+        scan_angles = np.array([scan1_deg], dtype=float)
+    if scan_angles.size == 0:
+        raise ValueError("No cross-track scan angles generated.")
+
+    base_look = np.array([0.0, 0.0, -1.0], dtype=float)
+    x, y, z, mu, phi = [], [], [], [], []
+    for pos in scan_positions:
+        for ang in scan_angles:
+            look_dir = _rotate_vector_about_axis(base_look, along_track, float(ang))
+            look_dir = look_dir / max(np.linalg.norm(look_dir), 1e-12)  # sensor->scene
+            v_out = -look_dir  # scene->sensor
+            x.append(pos[0]); y.append(pos[1]); z.append(pos[2])
+            mu.append(v_out[2])
+            phi.append((np.arctan2(v_out[1], v_out[0]) + 2*np.pi) % (2*np.pi))
+
+    sensor = at3d.sensor.make_sensor_dataset(
+        x=np.asarray(x, dtype=float),
+        y=np.asarray(y, dtype=float),
+        z=np.asarray(z, dtype=float),
+        mu=np.asarray(mu, dtype=float),
+        phi=np.asarray(phi, dtype=float),
+        stokes=stokes,
+        wavelength=wavelength,
+        fill_ray_variables=True
+    )
+    sensor.attrs.update({
+        'projection': 'CrossTrackScan',
+        'x_resolution': int(scan_angles.size),
+        'y_resolution': int(scan_positions.shape[0]),
+        'cross_track_scan_angles_deg': scan_angles.astype(float).tolist(),
+        'cross_track_scan_positions': scan_positions.astype(float).tolist(),
+    })
+    return sensor, scan_positions, scan_angles
 def project_to_ground_lookat(img, pos, look_at_point, up_vector, fov_diag_deg, Xg, Yg):
     ny, nx = img.shape
     img_ground = np.full(Xg.shape, np.nan, dtype=np.float32)
@@ -477,39 +548,17 @@ def reproject_to_ground(sensor, ground_z=0.0):
         corresponding to each image pixel.
     """
 
-    # ---- 从 sensor.attrs 中恢复几何信息 ----
+    # ---- 从 sensor 中恢复几何信息 ----
     nx = int(sensor.attrs['x_resolution'])
     ny = int(sensor.attrs['y_resolution'])
-    position = np.array(sensor.attrs['position'])
-    rotation_matrix = np.array(sensor.attrs['rotation_matrix']).reshape(3, 3)
-    k = np.array(sensor.attrs['sensor_to_camera_transform_matrix']).reshape(3, 3)
-    fov = sensor.attrs['fov_deg']
+    v_out_map = compute_vout_map_from_sensor(sensor)
+    rays_world = -v_out_map.reshape(-1, 3).T  # sensor -> scene
 
-    # ---- 相机坐标网格 ----
-    M = max(nx, ny)
-    R = np.array([nx, ny]) / M
-    dy = 2 * R[1] / ny
-    dx = 2 * R[0] / nx
-    x_s, y_s = np.meshgrid(
-        np.linspace(-R[0] + dx / 2, R[0] - dx / 2, nx),
-        np.linspace(-R[1] + dy / 2, R[1] - dy / 2, ny)
-    )
-
-    # ---- 相机焦距（归一化单位）----
-    focal = 1.0 / np.tan(np.deg2rad(fov) / 2.0)
-
-    # ---- 像素坐标转射线方向（在相机坐标系中）----
-    inv_k = np.linalg.inv(k)
-    homogeneous_coords = np.stack([x_s.ravel(), y_s.ravel(), np.ones_like(x_s).ravel()])
-    rays_cam = inv_k @ homogeneous_coords
-    rays_cam = rays_cam / np.linalg.norm(rays_cam, axis=0)
-
-    # ---- 转换到世界坐标系 ----
-    rays_world = rotation_matrix @ rays_cam
-    rays_world = rays_world / np.linalg.norm(rays_world, axis=0)
+    cam_x = np.asarray(sensor.cam_x.data, dtype=float).reshape(-1)
+    cam_y = np.asarray(sensor.cam_y.data, dtype=float).reshape(-1)
+    cam_z = np.asarray(sensor.cam_z.data, dtype=float).reshape(-1)
 
     # ---- 计算与地面 (z=ground_z) 的交点 ----
-    cam_z = position[2]
     dir_z = rays_world[2, :]
     t = (ground_z - cam_z) / dir_z  # 每个射线到地面的比例因子
 
@@ -522,8 +571,8 @@ def reproject_to_ground(sensor, ground_z=0.0):
     y_ground = np.full_like(t, np.nan, dtype=float)
     z_ground = np.full_like(t, np.nan, dtype=float)
 
-    x_ground[valid] = position[0] + t[valid] * rays_world[0, valid]
-    y_ground[valid] = position[1] + t[valid] * rays_world[1, valid]
+    x_ground[valid] = cam_x[valid] + t[valid] * rays_world[0, valid]
+    y_ground[valid] = cam_y[valid] + t[valid] * rays_world[1, valid]
     z_ground[valid] = ground_z
 
     # ---- 整理为 DataArray ----
@@ -540,7 +589,7 @@ def reproject_to_ground(sensor, ground_z=0.0):
     ground_coords.attrs = {
         "description": "Ground-projected coordinates from camera pixels",
         "ground_z": ground_z,
-        "camera_position": position.tolist()
+        "camera_position": [float(np.nanmean(cam_x)), float(np.nanmean(cam_y)), float(np.nanmean(cam_z))]
     }
 
     return ground_coords
@@ -552,30 +601,14 @@ def compute_vout_map_from_sensor(sensor_ds):
     """
     nx = int(sensor_ds.attrs['x_resolution'])
     ny = int(sensor_ds.attrs['y_resolution'])
-    rotation_matrix = np.array(sensor_ds.attrs['rotation_matrix']).reshape(3, 3)
-    k = np.array(sensor_ds.attrs['sensor_to_camera_transform_matrix']).reshape(3, 3)
-
-    # camera grid (same as your reproject_to_ground)
-    M = max(nx, ny)
-    R = np.array([nx, ny]) / M
-    dy = 2 * R[1] / ny
-    dx = 2 * R[0] / nx
-    x_s, y_s = np.meshgrid(
-        np.linspace(-R[0] + dx / 2, R[0] - dx / 2, nx),
-        np.linspace(-R[1] + dy / 2, R[1] - dy / 2, ny)
-    )
-
-    inv_k = np.linalg.inv(k)
-    homogeneous = np.stack([x_s.ravel(), y_s.ravel(), np.ones_like(x_s).ravel()])
-    rays_cam = inv_k @ homogeneous
-    rays_cam /= np.linalg.norm(rays_cam, axis=0, keepdims=True)
-
-    # camera -> world
-    rays_world = rotation_matrix @ rays_cam
-    rays_world /= np.linalg.norm(rays_world, axis=0, keepdims=True)
-
-    # outgoing propagation direction: scene -> sensor
-    v_out = -rays_world.T.reshape(ny, nx, 3)
+    mu = np.asarray(sensor_ds.cam_mu.data, dtype=float).reshape(ny, nx)
+    phi = np.asarray(sensor_ds.cam_phi.data, dtype=float).reshape(ny, nx)
+    sin_theta = np.sqrt(np.clip(1.0 - mu**2, 0.0, 1.0))
+    v_out = np.stack([
+        sin_theta * np.cos(phi),
+        sin_theta * np.sin(phi),
+        mu
+    ], axis=-1)
     return v_out
 
 
@@ -1638,8 +1671,11 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             raise ValueError(
                 "cross_track mode requires trajectory.cross_track_x1/y1/z1 and x2/y2/z2 in config."
             )
-        position_vectors, lookat_vectors, up_vectors = calculate_sensor_trajectory_cross_track(
-            n_views=None,
+        stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
+        base_name = str(view_names[0]) if len(view_names) > 0 else "cross_track"
+        cross_sensor, scan_positions, scan_angles = cross_track_scan_projection(
+            wavelength=wavelength_nm/1000,
+            stokes=stokes,
             x1=sen.cross_track_x1, y1=sen.cross_track_y1, z1=sen.cross_track_z1,
             x2=sen.cross_track_x2, y2=sen.cross_track_y2, z2=sen.cross_track_z2,
             spacing=sen.cross_track_spacing,
@@ -1647,17 +1683,13 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             scan2_deg=sen.cross_track_scan2_deg,
             delscan_deg=sen.cross_track_delscan_deg
         )
-        n_generated = len(position_vectors)
-        if len(view_names) != n_generated:
-            if len(view_names) == 1:
-                base = str(view_names[0])
-                view_names = [f"{base}_ct_{i:04d}" for i in range(n_generated)]
-            else:
-                raise ValueError(
-                    f"cross_track generated {n_generated} samples but sensor.views.names has {len(view_names)} entries. "
-                    "Please set one base name (auto-expanded) or provide the exact same number of names."
-                )
+        key = f"{base_name}_{int(wavelength_nm)}nm"
+        sensor_dict.add_sensor(key, cross_sensor)
+        view_names = [base_name]
         sen.views_names = view_names
+        position_vectors = np.array([scan_positions[0]], dtype=float)
+        lookat_vectors = np.full((1, 3), np.nan, dtype=float)
+        up_vectors = np.full((1, 3), np.nan, dtype=float)
     else:
         position_vectors, up_vectors = calculate_sensor_trajectory(
             sensor_zenith_list=sen.views_zenith_deg,
@@ -1681,26 +1713,27 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             n_views=1
             )
         lookat_vectors = [center for _ in view_names]
-    for name, pos, look, up in zip(view_names, position_vectors, lookat_vectors, up_vectors):
-        stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
-        if sen.type == "perspective_projection":
-            sensor = at3d.sensor.perspective_projection(
-                wavelength=wavelength_nm/1000,
-                fov=sen.fov_deg,
-                x_resolution=int(cam_cfg.x_resolution),
-                y_resolution=int(cam_cfg.y_resolution),
-                position_vector=pos,
-                lookat_vector=look,
-                up_vector=up,
-                stokes=stokes
-            )
-        else:
-            raise NotImplementedError(
-                f"sensor.type={sen.type} is not implemented in v5b; "
-                "currently only perspective_projection is supported."
-            )
-        key = f"{name}_{int(wavelength_nm)}nm"
-        sensor_dict.add_sensor(key, sensor)
+    if mode_lc != "cross_track":
+        for name, pos, look, up in zip(view_names, position_vectors, lookat_vectors, up_vectors):
+            stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
+            if sen.type == "perspective_projection":
+                sensor = at3d.sensor.perspective_projection(
+                    wavelength=wavelength_nm/1000,
+                    fov=sen.fov_deg,
+                    x_resolution=int(cam_cfg.x_resolution),
+                    y_resolution=int(cam_cfg.y_resolution),
+                    position_vector=pos,
+                    lookat_vector=look,
+                    up_vector=up,
+                    stokes=stokes
+                )
+            else:
+                raise NotImplementedError(
+                    f"sensor.type={sen.type} is not implemented in v5b; "
+                    "currently only perspective_projection is supported."
+                )
+            key = f"{name}_{int(wavelength_nm)}nm"
+            sensor_dict.add_sensor(key, sensor)
     t_stage["build_sensors"] = time.perf_counter() - t0
     wavelengths = sensor_dict.get_unique_solvers()
     mie_mono_tables = OrderedDict()
@@ -1880,6 +1913,8 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    cross_track_scan1_deg=sen.cross_track_scan1_deg,
                    cross_track_scan2_deg=sen.cross_track_scan2_deg,
                    cross_track_delscan_deg=sen.cross_track_delscan_deg,
+                   cross_track_scan_positions=(scan_positions.tolist() if mode_lc == "cross_track" else None),
+                   cross_track_scan_angles_deg=(scan_angles.tolist() if mode_lc == "cross_track" else None),
                    lat=lat_2d,
                    lon=lon_2d,
                    latlon_source=latlon_source,
