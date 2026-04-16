@@ -358,8 +358,9 @@ def calculate_sensor_trajectory_cross_track(
     SHDOM-like cross track geometry sampler.
     A sequence of camera positions is generated from (x1,y1,z1) to (x2,y2,z2),
     and each scan applies a cross-track rotation around the along-track axis.
+    If `n_views` is None all generated (scan_position, scan_angle) samples are returned.
     """
-    if n_views <= 0:
+    if n_views is not None and n_views <= 0:
         raise ValueError("n_views must be > 0 for cross track mode.")
     if abs(float(delscan_deg)) < 1e-12:
         raise ValueError("cross_track_delscan_deg cannot be 0.")
@@ -390,17 +391,20 @@ def calculate_sensor_trajectory_cross_track(
     samples = [(pos, ang) for pos in scan_positions for ang in scan_angles]
     if len(samples) == 0:
         raise ValueError("No valid cross track samples were generated.")
-    if len(samples) < n_views:
-        reps = int(np.ceil(n_views / len(samples)))
-        samples = samples * reps
-    samples = samples[:n_views]
+    if n_views is None:
+        selected_samples = samples
+    else:
+        if len(samples) < n_views:
+            reps = int(np.ceil(n_views / len(samples)))
+            samples = samples * reps
+        selected_samples = samples[:n_views]
 
     positions = []
     lookat_vectors = []
     up_vectors = []
     base_look = np.array([0.0, 0.0, -1.0], dtype=float)
     world_up = np.array([0.0, 0.0, 1.0], dtype=float)
-    for pos, ang in samples:
+    for pos, ang in selected_samples:
         look_dir = _rotate_vector_about_axis(base_look, along_track, float(ang))
         look_dir = look_dir / np.linalg.norm(look_dir)
         lookat = np.asarray(pos, dtype=float) + look_dir
@@ -1624,6 +1628,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     # This axis ordering is left-handed (x × y = -z), so avoid accidental x/y swaps.
     center_NEU = center.copy()
     mode_lc = str(sen.trajectory_mode).lower()
+    view_names = list(sen.views_names)
     if mode_lc == "cross_track":
         required = [
             sen.cross_track_x1, sen.cross_track_y1, sen.cross_track_z1,
@@ -1634,7 +1639,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                 "cross_track mode requires trajectory.cross_track_x1/y1/z1 and x2/y2/z2 in config."
             )
         position_vectors, lookat_vectors, up_vectors = calculate_sensor_trajectory_cross_track(
-            n_views=len(sen.views_names),
+            n_views=None,
             x1=sen.cross_track_x1, y1=sen.cross_track_y1, z1=sen.cross_track_z1,
             x2=sen.cross_track_x2, y2=sen.cross_track_y2, z2=sen.cross_track_z2,
             spacing=sen.cross_track_spacing,
@@ -1642,6 +1647,17 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             scan2_deg=sen.cross_track_scan2_deg,
             delscan_deg=sen.cross_track_delscan_deg
         )
+        n_generated = len(position_vectors)
+        if len(view_names) != n_generated:
+            if len(view_names) == 1:
+                base = str(view_names[0])
+                view_names = [f"{base}_ct_{i:04d}" for i in range(n_generated)]
+            else:
+                raise ValueError(
+                    f"cross_track generated {n_generated} samples but sensor.views.names has {len(view_names)} entries. "
+                    "Please set one base name (auto-expanded) or provide the exact same number of names."
+                )
+        sen.views_names = view_names
     else:
         position_vectors, up_vectors = calculate_sensor_trajectory(
             sensor_zenith_list=sen.views_zenith_deg,
@@ -1664,8 +1680,8 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             camera_roll_relative_deg=sen.camera_roll_relative_deg,
             n_views=1
             )
-        lookat_vectors = [center for _ in sen.views_names]
-    for name, pos, look, up in zip(sen.views_names, position_vectors, lookat_vectors, up_vectors):
+        lookat_vectors = [center for _ in view_names]
+    for name, pos, look, up in zip(view_names, position_vectors, lookat_vectors, up_vectors):
         stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
         if sen.type == "perspective_projection":
             sensor = at3d.sensor.perspective_projection(
@@ -1838,6 +1854,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     )
     t_stage["build_rte_solver"] = time.perf_counter() - t0
     context = dict(center=center,
+                   view_names=view_names,
                    position_vectors=position_vectors,
                    lookat_vectors=lookat_vectors,
                    up_vectors=up_vectors,

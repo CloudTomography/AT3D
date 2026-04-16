@@ -126,5 +126,11 @@
 当前 `cross_track` 实现是“按 sample 生成离散 view 外参”并交给 pinhole 相机渲染，
 并非严格复刻 SHDOM `V` 模式里“扫描线/像元级时序采样器”的完整测量过程。
 
+补充（当前代码行为）：
+
+- cross-track 轨迹函数会先生成**全部** `(scan_position, scan_angle)` 组合样本。  
+- 若配置里 `sensor.views.names` 只有 1 个基名，会自动扩展为 `base_ct_0000`, `base_ct_0001`, ...，保证每个样本都会建一个 view。  
+- 若手工提供了多个 `sensor.views.names`，其数量必须与生成样本数一致，否则会报错。  
+
 如果后续要与 SHDOM 的 `V` 模式逐像元严格对齐，通常还需要进一步把扫描几何映射到
 每个像元列（或时间序列）层面，而不只是 view 级采样。
