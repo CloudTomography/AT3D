@@ -405,7 +405,10 @@ def calculate_sensor_trajectory_cross_track(
     base_look = np.array([0.0, 0.0, -1.0], dtype=float)
     world_up = np.array([0.0, 0.0, 1.0], dtype=float)
     for pos, ang in selected_samples:
-        look_dir = _rotate_vector_about_axis(base_look, along_track, float(ang))
+        # SHDOM cross-track convention:
+        # scan angle sign is defined in scanner coordinates; in this NEU setup we
+        # need the opposite rotation sign to keep left/right VAA ordering consistent.
+        look_dir = _rotate_vector_about_axis(base_look, along_track, -float(ang))
         look_dir = look_dir / np.linalg.norm(look_dir)
         lookat = np.asarray(pos, dtype=float) + look_dir
 
@@ -479,7 +482,8 @@ def cross_track_scan_projection(
     for iscan, pos in enumerate(scan_positions):
         pitch_deg = float(scan_pitch_deg[iscan])
         for ang in scan_angles:
-            look_dir = _rotate_vector_about_axis(base_look, along_track, float(ang))
+            # Keep sign convention consistent with calculate_sensor_trajectory_cross_track.
+            look_dir = _rotate_vector_about_axis(base_look, along_track, -float(ang))
             right = np.cross(look_dir, along_track)
             if np.linalg.norm(right) < 1e-12:
                 right = np.cross(look_dir, world_up)
