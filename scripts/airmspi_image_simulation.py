@@ -713,15 +713,19 @@ def _apply_image_orientation(arr: np.ndarray, transpose: bool, flip_lr: bool) ->
     return out
 
 
-def _to_aircraft_eye_view(arr: np.ndarray) -> np.ndarray:
+def _to_aircraft_eye_view(arr: np.ndarray, flip_vertical: bool = True) -> np.ndarray:
     """
     Convert raw camera image to a WYSIWYG view (as seen from aircraft cockpit).
-    For pinhole-style camera geometry this corresponds to a 180° image rotation.
+    By default this is a 180° image rotation; for cross-track mode users may
+    request keeping the vertical direction unchanged.
     """
     out = np.asarray(arr)
     if out.ndim < 2:
         return out
-    return np.flipud(np.fliplr(out))
+    out = np.fliplr(out)
+    if flip_vertical:
+        out = np.flipud(out)
+    return out
 
 
 def _ensure_2d_shape(arr: np.ndarray, target_shape: Tuple[int, int]) -> np.ndarray:
@@ -739,6 +743,7 @@ def _compute_angle_maps_from_sensor(
     solar_azimuth_deg: float,
     solar_zenith_deg: float,
     heading_angle_deg: float = 0.0,
+    apply_heading_offset: bool = False,
     transpose: bool = False,
     flip_lr: bool = False,
 ):
@@ -756,7 +761,8 @@ def _compute_angle_maps_from_sensor(
     # Camera-image convention: enforce 0° from image center toward "up" (not down).
     vaa_map = (360 - vaa_map) % 360
     # vaa_map = (vaa_map + 180.0) % 360.0
-    # vaa_map = ((vaa_map - float(heading_angle_deg) + 360.0) % 360.0)
+    if apply_heading_offset:
+        vaa_map = ((vaa_map - float(heading_angle_deg) + 360.0) % 360.0)
 
     saa = (float(solar_azimuth_deg) + 360.0) % 360.0
     sza = float(solar_zenith_deg)
@@ -1449,8 +1455,8 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
                 ax.set_xlim(*x_range)
                 ax.set_ylim(*y_range)
         else:
-            data_show = _to_aircraft_eye_view(data)
-            im = ax.imshow(data_show, origin="upper", cmap=cmap, vmin=vmin, vmax=vmax)
+            data_show = _to_aircraft_eye_view(data, flip_vertical=(requested_level != "original"))
+            im = ax.imshow(data_show, origin=("lower" if requested_level == "original" else "upper"), cmap=cmap, vmin=vmin, vmax=vmax)
         ax.set_title(title)
         return im
 
@@ -2243,9 +2249,12 @@ def build_versions_single_band(sensor_dict,
             solar_azimuth_deg=context.get("solar_azimuth", 0.0),
             solar_zenith_deg=context.get("theta_0", np.nan),
             heading_angle_deg=_get_flight_azimuth_offset_deg_from_context(context),
+            apply_heading_offset=bool(getattr(sen, "apply_flight_azimuth_offset_to_vaa", False)),
             transpose=transpose,
             flip_lr=flip_lr,
         )
+
+        is_cross_track_mode = str(context.get("trajectory_mode", "")).lower() == "cross_track"
 
         if out_cfg.save_png and (out_cfg.plot_mode != "skip"):
             angle_products = {
@@ -2261,7 +2270,7 @@ def build_versions_single_band(sensor_dict,
                 )
                 if out_cfg.plot_mode == "overwrite" or not os.path.exists(angle_png):
                     plot_image(
-                        _to_aircraft_eye_view(angle_map),
+                        _to_aircraft_eye_view(angle_map, flip_vertical=not is_cross_track_mode),
                         np.arange(1, angle_map.shape[1] + 2),
                         np.arange(1, angle_map.shape[0] + 2),
                         title=f"{name} {angle_name} {int(wavelength_nm)} nm",
@@ -2294,7 +2303,7 @@ def build_versions_single_band(sensor_dict,
             cam_png_DoLP = os.path.join(out_subdirs["original"], f"DoLP_{int(wavelength_nm)}nm_{name}_camera.png")
             if out_cfg.plot_mode == "overwrite" or not os.path.exists(cam_png_I):
 
-                plot_image(_to_aircraft_eye_view(I_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2), 
+                plot_image(_to_aircraft_eye_view(I_brf, flip_vertical=not is_cross_track_mode), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2), 
                            title=f"{name} I {int(wavelength_nm)} nm",
                            cmap=plot_cfg.colormap, 
                            save_path=cam_png_I, show=False)
@@ -2307,17 +2316,17 @@ def build_versions_single_band(sensor_dict,
                         q_lim = 1.0
                     if (not np.isfinite(u_lim)) or u_lim <= 0:
                         u_lim = 1.0
-                    plot_image(_to_aircraft_eye_view(Q_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                    plot_image(_to_aircraft_eye_view(Q_brf, flip_vertical=not is_cross_track_mode), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} Q {int(wavelength_nm)} nm",
                                cmap="RdBu_r",
                                vmin=-q_lim, vmax=q_lim,
                                save_path=cam_png_Q, show=False)
-                    plot_image(_to_aircraft_eye_view(U_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                    plot_image(_to_aircraft_eye_view(U_brf, flip_vertical=not is_cross_track_mode), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} U {int(wavelength_nm)} nm",
                                cmap="RdBu_r",
                                vmin=-u_lim, vmax=u_lim,
                                save_path=cam_png_U, show=False)
-                    plot_image(_to_aircraft_eye_view(DoLP), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                    plot_image(_to_aircraft_eye_view(DoLP, flip_vertical=not is_cross_track_mode), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} DoLP {int(wavelength_nm)} nm",
                                cmap=plot_cfg.colormap,
                                save_path=cam_png_DoLP, show=False)
@@ -2732,6 +2741,7 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
                 solar_azimuth_deg=context.get("solar_azimuth", 0.0),
                 solar_zenith_deg=context.get("theta_0", np.nan),
                 heading_angle_deg=_get_flight_azimuth_offset_deg_from_context(sen_cfg),
+                apply_heading_offset=bool(getattr(sen_cfg, "apply_flight_azimuth_offset_to_vaa", False)),
                 transpose=transpose,
                 flip_lr=flip_lr,
             )
