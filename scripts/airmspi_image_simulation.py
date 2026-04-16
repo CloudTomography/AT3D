@@ -1310,6 +1310,23 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
             npz.close()
             return None, None
 
+
+        def _infer_is_cross_track(npz_path):
+            try:
+                npz = np.load(npz_path, allow_pickle=True)
+                mode = None
+                if "context" in npz.files:
+                    ctx = npz["context"].item()
+                    if isinstance(ctx, dict):
+                        mode = str(ctx.get("trajectory_mode", "")).lower()
+                if (not mode) and ("sen" in npz.files):
+                    sen_obj = npz["sen"].item()
+                    mode = str(getattr(sen_obj, "trajectory_mode", "")).lower()
+                npz.close()
+                return mode == "cross_track"
+            except Exception:
+                return False
+
         def _try_load_cloud_box(npz_path):
             """Load cloud_x/y ranges (input txt box) from context if present."""
             try:
@@ -1333,6 +1350,7 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
 
         arr, used_path = _open_npz_with_iqu(result_path, allow_sensor_fallback=False)
         cloud_box = _try_load_cloud_box(result_path)
+        is_cross_track_camera = _infer_is_cross_track(result_path)
         if arr is None and requested_level == "original":
             # 对 original 路径优先尝试其自身 metadata 回退，避免误跳转到 registered 层级。
             arr, used_path = _open_npz_with_iqu(result_path, allow_sensor_fallback=True)
@@ -1363,6 +1381,9 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
             # 最后兜底：仍允许直接从 metadata-only NPZ(sensor_dict) 读取，
             # 但这通常是相机投影图，不一定等同于 registered/downsampled_registered。
             arr, used_path = _open_npz_with_iqu(result_path, allow_sensor_fallback=True)
+
+        if used_path is not None:
+            is_cross_track_camera = _infer_is_cross_track(used_path)
 
         if arr is None:
             arr_dbg = np.load(result_path, allow_pickle=True)
@@ -1455,8 +1476,8 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
                 ax.set_xlim(*x_range)
                 ax.set_ylim(*y_range)
         else:
-            data_show = _to_aircraft_eye_view(data, flip_vertical=(requested_level != "original"))
-            im = ax.imshow(data_show, origin=("lower" if requested_level == "original" else "upper"), cmap=cmap, vmin=vmin, vmax=vmax)
+            data_show = _to_aircraft_eye_view(data, flip_vertical=(not is_cross_track_camera))
+            im = ax.imshow(data_show, origin="lower", cmap=cmap, vmin=vmin, vmax=vmax)
         ax.set_title(title)
         return im
 
@@ -2254,7 +2275,7 @@ def build_versions_single_band(sensor_dict,
             flip_lr=flip_lr,
         )
 
-        is_cross_track_mode = str(context.get("trajectory_mode", "")).lower() == "cross_track"
+        is_cross_track_mode = str(sensor_ds.attrs.get("projection", "")).lower() == "crosstrackscan"
 
         if out_cfg.save_png and (out_cfg.plot_mode != "skip"):
             angle_products = {
