@@ -47,6 +47,12 @@ sensor:
     cross_track_scan1_deg: -35.0     # 左侧最小cross-track扫描角
     cross_track_scan2_deg: 35.0      # 右侧最大cross-track扫描角
     cross_track_delscan_deg: 2.0     # 像元间扫描角步长
+    # along-track每条扫描线可设置独立pitch（2种输入二选一）：
+    # 1) start/end -> 按扫描线数线性插值
+    # 2) list -> 手动逐线给定（长度必须等于扫描线数）
+    cross_track_pitch_start_deg: null
+    cross_track_pitch_end_deg: null
+    cross_track_pitch_list_deg: null
 
 # camera pixel grid for perspective_projection
 camera:

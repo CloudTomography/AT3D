@@ -51,6 +51,9 @@ class SensorConfig:
     cross_track_scan1_deg: float = -30.0
     cross_track_scan2_deg: float = 30.0
     cross_track_delscan_deg: float = 1.0
+    cross_track_pitch_start_deg: Optional[float] = None
+    cross_track_pitch_end_deg: Optional[float] = None
+    cross_track_pitch_list_deg: Optional[List[float]] = None
 
 @dataclass
 class BandsConfig:

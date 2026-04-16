@@ -88,6 +88,18 @@ def load_config(cfg_path: str):
         cross_track_scan1_deg=float(trajectory_cfg.get("cross_track_scan1_deg", -30.0)),
         cross_track_scan2_deg=float(trajectory_cfg.get("cross_track_scan2_deg", 30.0)),
         cross_track_delscan_deg=float(trajectory_cfg.get("cross_track_delscan_deg", 1.0)),
+        cross_track_pitch_start_deg=(
+            None if trajectory_cfg.get("cross_track_pitch_start_deg", None) is None
+            else float(trajectory_cfg.get("cross_track_pitch_start_deg"))
+        ),
+        cross_track_pitch_end_deg=(
+            None if trajectory_cfg.get("cross_track_pitch_end_deg", None) is None
+            else float(trajectory_cfg.get("cross_track_pitch_end_deg"))
+        ),
+        cross_track_pitch_list_deg=(
+            None if trajectory_cfg.get("cross_track_pitch_list_deg", None) is None
+            else [float(v) for v in trajectory_cfg.get("cross_track_pitch_list_deg")]
+        ),
     )
     bnd = BandsConfig(
         wavelength_nm=[int(w) for w in cfg["bands"]["wavelength_nm"]],

@@ -34,6 +34,7 @@
 - `cross_track` 模式：
   - 用 `cross_track_x1..z2` + `spacing` 生成 along-track 扫描行；
   - 用 `scan1/scan2/delscan` 生成跨轨扫描列；
+  - 可选为每条 along-track 扫描线指定独立 pitch（线性插值或手动列表）；
   - 逐像元直接写入 `cam_mu/cam_phi`（一行一个扫描位置，一列一个扫描角）。
 
 因此，即使两种模式最终都走同一角度反演流程，几何输入不同也会让 `v_out_map` 不同。
@@ -89,6 +90,8 @@
 - `cross_track_scan1_deg`
 - `cross_track_scan2_deg`
 - `cross_track_delscan_deg`
+- `cross_track_pitch_start_deg` / `cross_track_pitch_end_deg`（按扫描线线性插值）
+- `cross_track_pitch_list_deg`（手动逐扫描线 pitch 列表）
 
 ### 当前实现里仅做元数据记录（不直接进 `v_out_map` 计算）
 
@@ -114,6 +117,8 @@
 - `y` 方向表示 along-track 的扫描行；
 - `x` 方向表示 cross-track 的扫描列；
 - 因而不会像“每个 sample 一个 view”那样造成大量视角对象，速度/内存更稳定。
+- 传感器数据集通过 `shdom_cross_track_sensor_wrapper(...)` 直接调用
+  `at3d.sensor.make_sensor_dataset(...)` 生成（AT3D 对 SHDOM 的封装路径）。
 
 如果后续要与 SHDOM 的 `V` 模式逐像元严格对齐，通常还需要进一步把扫描几何映射到
 每个像元列（或时间序列）层面，而不只是 view 级采样。

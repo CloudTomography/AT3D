@@ -432,7 +432,10 @@ def cross_track_scan_projection(
         spacing,
         scan1_deg,
         scan2_deg,
-        delscan_deg):
+        delscan_deg,
+        pitch_start_deg=None,
+        pitch_end_deg=None,
+        pitch_list_deg=None):
     """
     Build a single cross-track scan sensor without perspective projection.
     Pixels are organized as [scan_index, cross_track_angle_index].
@@ -465,17 +468,31 @@ def cross_track_scan_projection(
         raise ValueError("No cross-track scan angles generated.")
 
     base_look = np.array([0.0, 0.0, -1.0], dtype=float)
+    world_up = np.array([0.0, 0.0, 1.0], dtype=float)
+    scan_pitch_deg = _resolve_cross_track_scan_pitch_angles(
+        n_scans=scan_positions.shape[0],
+        pitch_start_deg=pitch_start_deg,
+        pitch_end_deg=pitch_end_deg,
+        pitch_list_deg=pitch_list_deg,
+    )
     x, y, z, mu, phi = [], [], [], [], []
-    for pos in scan_positions:
+    for iscan, pos in enumerate(scan_positions):
+        pitch_deg = float(scan_pitch_deg[iscan])
         for ang in scan_angles:
             look_dir = _rotate_vector_about_axis(base_look, along_track, float(ang))
+            right = np.cross(look_dir, along_track)
+            if np.linalg.norm(right) < 1e-12:
+                right = np.cross(look_dir, world_up)
+            right = right / max(np.linalg.norm(right), 1e-12)
+            if abs(pitch_deg) > 1e-12:
+                look_dir = _rotate_vector_about_axis(look_dir, right, pitch_deg)
             look_dir = look_dir / max(np.linalg.norm(look_dir), 1e-12)  # sensor->scene
             v_out = -look_dir  # scene->sensor
             x.append(pos[0]); y.append(pos[1]); z.append(pos[2])
             mu.append(v_out[2])
             phi.append((np.arctan2(v_out[1], v_out[0]) + 2*np.pi) % (2*np.pi))
 
-    sensor = at3d.sensor.make_sensor_dataset(
+    sensor = shdom_cross_track_sensor_wrapper(
         x=np.asarray(x, dtype=float),
         y=np.asarray(y, dtype=float),
         z=np.asarray(z, dtype=float),
@@ -491,8 +508,47 @@ def cross_track_scan_projection(
         'y_resolution': int(scan_positions.shape[0]),
         'cross_track_scan_angles_deg': scan_angles.astype(float).tolist(),
         'cross_track_scan_positions': scan_positions.astype(float).tolist(),
+        'cross_track_scan_pitch_deg': scan_pitch_deg.astype(float).tolist(),
     })
-    return sensor, scan_positions, scan_angles
+    return sensor, scan_positions, scan_angles, scan_pitch_deg
+
+
+def shdom_cross_track_sensor_wrapper(x, y, z, mu, phi, stokes, wavelength):
+    """
+    Wrapper-style sensor builder that directly constructs a SHDOM/AT3D sensor dataset.
+    """
+    return at3d.sensor.make_sensor_dataset(
+        x=np.asarray(x, dtype=float),
+        y=np.asarray(y, dtype=float),
+        z=np.asarray(z, dtype=float),
+        mu=np.asarray(mu, dtype=float),
+        phi=np.asarray(phi, dtype=float),
+        stokes=stokes,
+        wavelength=wavelength,
+        fill_ray_variables=True
+    )
+
+
+def _resolve_cross_track_scan_pitch_angles(n_scans, pitch_start_deg=None, pitch_end_deg=None, pitch_list_deg=None):
+    """
+    Resolve along-track per-scan pitch angles (deg).
+    Priority:
+      1) pitch_list_deg (manual list, length must equal n_scans),
+      2) pitch_start_deg + pitch_end_deg (linear interpolation),
+      3) zeros.
+    """
+    if pitch_list_deg is not None:
+        pitch_arr = np.asarray(pitch_list_deg, dtype=float).reshape(-1)
+        if pitch_arr.size != int(n_scans):
+            raise ValueError(
+                f"cross_track_pitch_list_deg length {pitch_arr.size} != n_scans {int(n_scans)}."
+            )
+        return pitch_arr
+    if (pitch_start_deg is None) ^ (pitch_end_deg is None):
+        raise ValueError("cross_track_pitch_start_deg and cross_track_pitch_end_deg must be both set.")
+    if pitch_start_deg is not None and pitch_end_deg is not None:
+        return np.linspace(float(pitch_start_deg), float(pitch_end_deg), int(n_scans), dtype=float)
+    return np.zeros(int(n_scans), dtype=float)
 def project_to_ground_lookat(img, pos, look_at_point, up_vector, fov_diag_deg, Xg, Yg):
     ny, nx = img.shape
     img_ground = np.full(Xg.shape, np.nan, dtype=np.float32)
@@ -1673,7 +1729,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             )
         stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
         base_name = str(view_names[0]) if len(view_names) > 0 else "cross_track"
-        cross_sensor, scan_positions, scan_angles = cross_track_scan_projection(
+        cross_sensor, scan_positions, scan_angles, scan_pitch_deg = cross_track_scan_projection(
             wavelength=wavelength_nm/1000,
             stokes=stokes,
             x1=sen.cross_track_x1, y1=sen.cross_track_y1, z1=sen.cross_track_z1,
@@ -1681,7 +1737,10 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             spacing=sen.cross_track_spacing,
             scan1_deg=sen.cross_track_scan1_deg,
             scan2_deg=sen.cross_track_scan2_deg,
-            delscan_deg=sen.cross_track_delscan_deg
+            delscan_deg=sen.cross_track_delscan_deg,
+            pitch_start_deg=sen.cross_track_pitch_start_deg,
+            pitch_end_deg=sen.cross_track_pitch_end_deg,
+            pitch_list_deg=sen.cross_track_pitch_list_deg,
         )
         key = f"{base_name}_{int(wavelength_nm)}nm"
         sensor_dict.add_sensor(key, cross_sensor)
@@ -1713,6 +1772,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             n_views=1
             )
         lookat_vectors = [center for _ in view_names]
+        scan_pitch_deg = None
     if mode_lc != "cross_track":
         for name, pos, look, up in zip(view_names, position_vectors, lookat_vectors, up_vectors):
             stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
@@ -1913,8 +1973,12 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    cross_track_scan1_deg=sen.cross_track_scan1_deg,
                    cross_track_scan2_deg=sen.cross_track_scan2_deg,
                    cross_track_delscan_deg=sen.cross_track_delscan_deg,
+                   cross_track_pitch_start_deg=sen.cross_track_pitch_start_deg,
+                   cross_track_pitch_end_deg=sen.cross_track_pitch_end_deg,
+                   cross_track_pitch_list_deg=sen.cross_track_pitch_list_deg,
                    cross_track_scan_positions=(scan_positions.tolist() if mode_lc == "cross_track" else None),
                    cross_track_scan_angles_deg=(scan_angles.tolist() if mode_lc == "cross_track" else None),
+                   cross_track_scan_pitch_deg=(scan_pitch_deg.tolist() if mode_lc == "cross_track" else None),
                    lat=lat_2d,
                    lon=lon_2d,
                    latlon_source=latlon_source,
