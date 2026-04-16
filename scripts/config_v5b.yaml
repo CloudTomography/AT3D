@@ -3,7 +3,7 @@
 # =============================
 
 output:
-  root_dir: "output/airmspi_sim_5_32"
+  root_dir: "output/airmspi_sim_5_33"
   save_png: false
   save_nc: true
   plot_mode: "overwrite"   # "skip" | "if_missing" | "overwrite"
@@ -41,7 +41,7 @@ sensor:
     cross_track_y1: 0.0
     cross_track_z1: 20.0
     cross_track_x2: 4.5
-    cross_track_y2: 8.0
+    cross_track_y2: 9.2
     cross_track_z2: 20.0
     cross_track_spacing: 0.010        # along track distance between scans (along-track 相邻扫描位置间距)
     cross_track_scan1_deg: -15.0     # 左侧最小cross-track扫描角

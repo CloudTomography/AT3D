@@ -504,7 +504,8 @@ def cross_track_scan_projection(
         phi=np.asarray(phi, dtype=float),
         stokes=stokes,
         wavelength=wavelength,
-        fill_ray_variables=True
+        fill_ray_variables=True,
+        image_shape=(int(scan_angles.size), int(scan_positions.shape[0]))
     )
     sensor.attrs.update({
         'projection': 'CrossTrackScan',
@@ -518,11 +519,11 @@ def cross_track_scan_projection(
 
 
 def shdom_cross_track_sensor_wrapper(
-        x, y, z, mu, phi, stokes, wavelength, fill_ray_variables=True):
+        x, y, z, mu, phi, stokes, wavelength, fill_ray_variables=True, image_shape=None):
     """
     Wrapper-style sensor builder that directly constructs a SHDOM/AT3D sensor dataset.
     """
-    return at3d.sensor.make_sensor_dataset(
+    sensor = at3d.sensor.make_sensor_dataset(
         x=np.asarray(x, dtype=float),
         y=np.asarray(y, dtype=float),
         z=np.asarray(z, dtype=float),
@@ -532,6 +533,14 @@ def shdom_cross_track_sensor_wrapper(
         wavelength=wavelength,
         fill_ray_variables=bool(fill_ray_variables)
     )
+    if image_shape is not None:
+        nx, ny = int(image_shape[0]), int(image_shape[1])
+        sensor['image_shape'] = xr.DataArray(
+            [nx, ny],
+            coords={'image_dims': ['nx', 'ny']},
+            dims='image_dims'
+        )
+    return sensor
 
 
 def _resolve_cross_track_scan_pitch_angles(n_scans, pitch_start_deg=None, pitch_end_deg=None, pitch_list_deg=None):
@@ -745,7 +754,8 @@ def _compute_angle_maps_from_sensor(
 
     vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
     # Camera-image convention: enforce 0° from image center toward "up" (not down).
-    vaa_map = (vaa_map + 180.0) % 360.0
+    vaa_map = (360 - vaa_map) % 360
+    # vaa_map = (vaa_map + 180.0) % 360.0
     # vaa_map = ((vaa_map - float(heading_angle_deg) + 360.0) % 360.0)
 
     saa = (float(solar_azimuth_deg) + 360.0) % 360.0
