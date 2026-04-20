@@ -96,6 +96,44 @@ def _flatten_xyz(arr3d_zyx: np.ndarray) -> np.ndarray:
     return np.transpose(arr3d_zyx, (2, 1, 0)).reshape(-1)
 
 
+
+
+def _to_2d_field(arr: np.ndarray, ny: int, nx: int, name: str, wavelength_index: int = 0) -> np.ndarray:
+    """Normalize array to (ny, nx).
+
+    Supports:
+    - 2D field: (ny, nx)
+    - 3D spectral field: one axis is wavelength/band, e.g. (nband, ny, nx)
+      or (ny, nx, nband). `wavelength_index` is selected.
+    """
+    arr = np.asarray(arr, dtype=float)
+    if arr.ndim == 2:
+        if arr.shape != (ny, nx):
+            raise ValueError(f"{name} shape {arr.shape} != expected {(ny, nx)}")
+        return arr
+
+    if arr.ndim == 3:
+        candidate_axes = []
+        for axis in range(3):
+            s = arr.shape
+            other = tuple(s[i] for i in range(3) if i != axis)
+            if other == (ny, nx):
+                candidate_axes.append(axis)
+        if not candidate_axes:
+            raise ValueError(
+                f"{name} has 3 dims {arr.shape} but cannot find spectral axis for target {(ny, nx)}"
+            )
+        spec_axis = candidate_axes[0]
+        nband = arr.shape[spec_axis]
+        if wavelength_index < 0 or wavelength_index >= nband:
+            raise IndexError(f"wavelength_index={wavelength_index} out of range [0, {nband-1}] for {name}")
+        arr2d = np.take(arr, indices=wavelength_index, axis=spec_axis)
+        if arr2d.shape != (ny, nx):
+            raise ValueError(f"{name} selected slice shape {arr2d.shape} != expected {(ny, nx)}")
+        return arr2d
+
+    raise ValueError(f"{name} must be 2D or 3D, got shape {arr.shape}")
+
 def generate_latlon(lat0: float, lon0: float, dx_m: float, dy_m: float, ny: int, nx: int) -> Tuple[np.ndarray, np.ndarray]:
     """Generate regular-grid lat/lon from origin + spacing (LES fallback helper)."""
     km_per_deg_lat = 111.32
@@ -181,6 +219,7 @@ def build_from_retrieval_1d_netcdf(
     default_veff: float = 0.10,
     fallback_lat0: Optional[float] = None,
     fallback_lon0: Optional[float] = None,
+    wavelength_index: int = 0,
 ) -> Tuple[pd.DataFrame, GridGeometry, ExtendedGridOptions]:
     """Convert a retrieval-1D netCDF (2D fields) into extended 3D grid dataframe.
 
@@ -234,8 +273,8 @@ def build_from_retrieval_1d_netcdf(
     base["z"] = Z.reshape(-1)
     base["cv"] = _flatten_xyz(cv3d)
     # Backward-compatible scalar reff/veff columns use mode1.
-    mode1_reff2d = np.asarray(ds[reff_vars[0]].values, dtype=float) if reff_vars and reff_vars[0] in ds else np.full_like(cv2d, 0.2)
-    mode1_veff2d = np.asarray(ds[veff_vars[0]].values, dtype=float) if veff_vars and veff_vars[0] in ds else np.full_like(cv2d, default_veff)
+    mode1_reff2d = _to_2d_field(ds[reff_vars[0]].values, ny, nx, reff_vars[0], wavelength_index) if reff_vars and reff_vars[0] in ds else np.full_like(cv2d, 0.2)
+    mode1_veff2d = _to_2d_field(ds[veff_vars[0]].values, ny, nx, veff_vars[0], wavelength_index) if veff_vars and veff_vars[0] in ds else np.full_like(cv2d, default_veff)
     base["reff"] = _flatten_xyz(_broadcast_2d_to_3d(mode1_reff2d, nz))
     base["veff"] = _flatten_xyz(_broadcast_2d_to_3d(mode1_veff2d, nz))
     base["lat"] = _flatten_xyz(lat3d)
@@ -244,10 +283,10 @@ def build_from_retrieval_1d_netcdf(
     for i_mode in range(mode_count):
         m = i_mode + 1
         frac2d = mode_fraction_2d[i_mode]
-        reff2d = np.asarray(ds[reff_vars[i_mode]].values, dtype=float) if i_mode < len(reff_vars) and reff_vars[i_mode] in ds else mode1_reff2d
-        veff2d = np.asarray(ds[veff_vars[i_mode]].values, dtype=float) if i_mode < len(veff_vars) and veff_vars[i_mode] in ds else np.full_like(cv2d, default_veff)
-        mr2d = np.asarray(ds[mr_vars[i_mode]].values, dtype=float) if i_mode < len(mr_vars) and mr_vars[i_mode] in ds else np.full_like(cv2d, np.nan)
-        mi2d = np.asarray(ds[mi_vars[i_mode]].values, dtype=float) if i_mode < len(mi_vars) and mi_vars[i_mode] in ds else np.full_like(cv2d, np.nan)
+        reff2d = _to_2d_field(ds[reff_vars[i_mode]].values, ny, nx, reff_vars[i_mode], wavelength_index) if i_mode < len(reff_vars) and reff_vars[i_mode] in ds else mode1_reff2d
+        veff2d = _to_2d_field(ds[veff_vars[i_mode]].values, ny, nx, veff_vars[i_mode], wavelength_index) if i_mode < len(veff_vars) and veff_vars[i_mode] in ds else np.full_like(cv2d, default_veff)
+        mr2d = _to_2d_field(ds[mr_vars[i_mode]].values, ny, nx, mr_vars[i_mode], wavelength_index) if i_mode < len(mr_vars) and mr_vars[i_mode] in ds else np.full_like(cv2d, np.nan)
+        mi2d = _to_2d_field(ds[mi_vars[i_mode]].values, ny, nx, mi_vars[i_mode], wavelength_index) if i_mode < len(mi_vars) and mi_vars[i_mode] in ds else np.full_like(cv2d, np.nan)
 
         base[f"mode{m}_fraction"] = _flatten_xyz(_broadcast_2d_to_3d(frac2d, nz))
         base[f"mode{m}_reff"] = _flatten_xyz(_broadcast_2d_to_3d(reff2d, nz))
@@ -328,6 +367,7 @@ def run_retrieval_case(
     dy_km: float,
     z_levels_km: Sequence[float],
     mode_count: int = 2,
+    wavelength_index: int = 0,
 ) -> Path:
     """Spyder-friendly wrapper: one function call to build CSV from retrieval nc."""
     df, geom, options = build_from_retrieval_1d_netcdf(
@@ -336,6 +376,7 @@ def run_retrieval_case(
         dx_km=dx_km,
         dy_km=dy_km,
         mode_count=mode_count,
+        wavelength_index=wavelength_index,
     )
     return write_extended_grid_csv(output_csv, df, geom, options)
 
@@ -351,6 +392,7 @@ if __name__ == "__main__":
     dy_km = 0.16
     z_levels_km = parse_z_levels("0.01:0.5:20")
     mode_count = 2
+    wavelength_index = 0  # 例如 AirMSPI: 0..6 -> [355,380,445,470,555,660,865]
 
     out = run_retrieval_case(
         input_nc=input_nc,
@@ -359,5 +401,6 @@ if __name__ == "__main__":
         dy_km=dy_km,
         z_levels_km=z_levels_km,
         mode_count=mode_count,
+        wavelength_index=wavelength_index,
     )
     print(f"✅ wrote: {out}")

@@ -72,12 +72,15 @@
 - `dx_km / dy_km`
 - `z_levels_km`
 - `mode_count`
+- `wavelength_index`
 
 然后在 Spyder 里直接 **Run File**。
 
 脚本里也提供了可直接调用的函数：
 
 - `run_retrieval_case(...)`
+
+- `wavelength_index`（重要）：当折射率等变量是 3D（例如 `(band, y, x)`）时，选择使用哪个波段切片。
 
 > `dx/dy` 需要你按反演网格实际大小填写（文档中的 0.16 km 只是例子）。
 
