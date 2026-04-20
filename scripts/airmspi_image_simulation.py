@@ -759,14 +759,14 @@ def _compute_angle_maps_from_sensor(
 
     vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
     # Camera-image convention: enforce 0° from image center toward "up" (not down).
-    vaa_map = (360 - vaa_map) % 360
+    # vaa_map = (360 - vaa_map) % 360
     # vaa_map = (vaa_map + 180.0) % 360.0
     if apply_heading_offset:
         vaa_map = ((vaa_map - float(heading_angle_deg) + 360.0) % 360.0)
 
     saa = (float(solar_azimuth_deg) + 360.0) % 360.0
     sza = float(solar_zenith_deg)
-    raa_map = ((vaa_map - saa) % 360.0)
+    raa_map = ((vaa_map - saa))
 
     mu0 = np.cos(np.radians(sza))
     mu = np.cos(np.radians(vza_map))
@@ -1467,7 +1467,7 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
         )
         if use_ground:
             xv, yv = centers_to_edges_2d(x_plot, y_plot)
-            im = ax.pcolormesh(xv, yv, data, shading="flat", cmap=cmap, vmin=vmin, vmax=vmax)
+            im = ax.pcolormesh(yv, xv, data, shading="flat", cmap=cmap, vmin=vmin, vmax=vmax)
             ax.set_aspect('equal', adjustable='box')
             ax.set_xlabel("x_ground [km]")
             ax.set_ylabel("y_ground [km]")
