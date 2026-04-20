@@ -11,7 +11,6 @@ Design goals
 
 from __future__ import annotations
 
-import argparse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
@@ -313,36 +312,52 @@ def build_from_les_arrays(
     return df, geom, options
 
 
-def _parse_z_levels(z: str) -> List[float]:
-    # Accept "0.01:0.5:20" or "0.01,0.51,1.01"
+
+def parse_z_levels(z: str) -> List[float]:
+    """Accept "0.01:0.5:20" or "0.01,0.51,1.01"."""
     if ":" in z:
         a, b, c = [float(v) for v in z.split(":")]
         return list(np.arange(a, c + 1e-12, b))
     return [float(v) for v in z.split(",") if v.strip()]
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Build extended AT3D grid CSV from retrieval-1D netCDF.")
-    parser.add_argument("--input-nc", required=True, help="Path to retrieval 1D netCDF file")
-    parser.add_argument("--output-csv", required=True, help="Path to output CSV file")
-    parser.add_argument("--z-levels-km", default="0.01:0.5:20", help="z levels in km, e.g. '0.01:0.5:20'")
-    parser.add_argument("--dx-km", type=float, required=True, help="Grid spacing in x [km]")
-    parser.add_argument("--dy-km", type=float, required=True, help="Grid spacing in y [km]")
-    parser.add_argument("--mode-count", type=int, default=2)
-    args = parser.parse_args()
-
-    z_levels_km = _parse_z_levels(args.z_levels_km)
+def run_retrieval_case(
+    input_nc: str,
+    output_csv: str,
+    dx_km: float,
+    dy_km: float,
+    z_levels_km: Sequence[float],
+    mode_count: int = 2,
+) -> Path:
+    """Spyder-friendly wrapper: one function call to build CSV from retrieval nc."""
     df, geom, options = build_from_retrieval_1d_netcdf(
-        nc_path=args.input_nc,
+        nc_path=input_nc,
         z_levels_km=z_levels_km,
-        dx_km=args.dx_km,
-        dy_km=args.dy_km,
-        mode_count=args.mode_count,
+        dx_km=dx_km,
+        dy_km=dy_km,
+        mode_count=mode_count,
     )
-    write_extended_grid_csv(args.output_csv, df, geom, options)
-    print(f"✅ wrote: {args.output_csv}")
-    print(f"   shape: nx={geom.nx}, ny={geom.ny}, nz={geom.nz}, rows={len(df)}")
+    return write_extended_grid_csv(output_csv, df, geom, options)
 
 
 if __name__ == "__main__":
-    main()
+    # =========================
+    # Spyder editable run block
+    # =========================
+    # 直接修改下面变量后，在 Spyder 中 Run File 即可。
+    input_nc = "../data/retrieval_1d/2019_0806_1839_N_Pxl25_3_3.nc"
+    output_csv = "../data/synthetic_cloud_fields/jpl_les/retrieval_2019_0806_1839_extended.csv"
+    dx_km = 0.16
+    dy_km = 0.16
+    z_levels_km = parse_z_levels("0.01:0.5:20")
+    mode_count = 2
+
+    out = run_retrieval_case(
+        input_nc=input_nc,
+        output_csv=output_csv,
+        dx_km=dx_km,
+        dy_km=dy_km,
+        z_levels_km=z_levels_km,
+        mode_count=mode_count,
+    )
+    print(f"✅ wrote: {out}")

@@ -59,25 +59,27 @@
 - `geometry`（`nx,ny,nz,dx,dy,z_levels`）
 - `options`（mode/surface 等校验配置）
 
-## 你的示例：从 retrieval_1d 生成 grid data
+## 你的示例：从 retrieval_1d 生成 grid data（Spyder 方式）
 
 如果你的文件在：
 
 - `data/retrieval_1d/2019_0806_1839_N_Pxl25_3_3.nc`
 
-可以直接运行：
+请打开 `scripts/grid_data_builder.py`，编辑 `if __name__ == "__main__":` 下方变量：
 
-```bash
-python scripts/grid_data_builder.py \
-  --input-nc data/retrieval_1d/2019_0806_1839_N_Pxl25_3_3.nc \
-  --output-csv data/synthetic_cloud_fields/jpl_les/retrieval_2019_0806_1839_extended.csv \
-  --dx-km 0.16 \
-  --dy-km 0.16 \
-  --z-levels-km 0.01:0.5:20 \
-  --mode-count 2
-```
+- `input_nc`
+- `output_csv`
+- `dx_km / dy_km`
+- `z_levels_km`
+- `mode_count`
 
-> `dx/dy` 需要你按反演网格实际大小填写（上面 0.16 km 只是例子）。
+然后在 Spyder 里直接 **Run File**。
+
+脚本里也提供了可直接调用的函数：
+
+- `run_retrieval_case(...)`
+
+> `dx/dy` 需要你按反演网格实际大小填写（文档中的 0.16 km 只是例子）。
 
 ## airmspi_image_simulation.py 需要做的调整
 
@@ -91,3 +93,13 @@ python scripts/grid_data_builder.py \
 - `scene.input_path` 指向你新生成的 CSV。
 
 其余流程可保持不变，先跑通数据链路，再逐步接入 per-grid 折射率到光学性质模块。
+
+
+## 为什么很多项目仍保留 CLI（即使你现在不用）
+
+- 批处理方便（一次跑很多 case）。
+- 可重复性强（命令即参数快照，便于论文/复现实验）。
+- 更容易接入调度系统（crontab/slurm/CI）。
+- 不依赖 IDE，服务器无图形界面时更稳。
+
+你当前以 Spyder 为主是完全合理的：开发调试阶段效率更高。
