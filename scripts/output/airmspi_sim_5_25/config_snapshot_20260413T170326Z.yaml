@@ -3,7 +3,7 @@
 # =============================
 
 output:
-  root_dir: "output/airmspi_sim_5_38"
+  root_dir: "output/airmspi_sim_5_25"
   save_png: false
   save_nc: true
   plot_mode: "overwrite"   # "skip" | "if_missing" | "overwrite"
@@ -20,39 +20,14 @@ sensor:
     azimuth_deg: [153]     # 先调这个：控制视线主方向（会影响VAA/RAA的整体朝向）
 
   trajectory:
-    mode: "cross_track"                 # "adjacent_views"(相邻视角推断) | "sensor_azimuth"(按每个视角方位角) | "cross_track"(横向扫描)
+    mode: "sensor_azimuth"                 # "adjacent_views"(相邻视角推断) | "sensor_azimuth"(按每个视角方位角)
     fallback_heading_deg: 0.0     # 单视角或几何退化时的默认飞行方向角(度)
     manual_flight_azimuth_deg: 0.0  # 兼容旧字段（trajectory.mode=sensor_azimuth时不再作为主开关）
-    aircraft_heading_deg: 90.16     # 飞机航向角(正北=0, 顺时针)
-    aircraft_pitch_deg: 0.53        # 飞机俯仰角
-    aircraft_roll_deg: -0.26         # 飞机滚转角
-    camera_pitch_relative_deg: 0.0 # 相机相对飞机俯仰
-    camera_roll_relative_deg: 0.0  # 相机相对飞机绕LOS滚转
     camera_relative_roll_deg: 0.6   # 相机相对飞机的滚转角(度)，默认0表示相机x/y轴与飞机参考方向对齐
     camera_align_with_flight_heading: false  # false: 相机坐标与世界上方向对齐(默认，分界线更稳定竖直/水平)
-    apply_flight_azimuth_offset_to_vaa: true  # 开启：VAA/RAA按飞机航向角做偏置（当前参数飞机沿+Y飞行）
+    apply_flight_azimuth_offset_to_vaa: false  # 默认关闭：VAA直接来自几何；若需额外航向偏置再开启
     camera_image_transpose: false   # 是否对模拟图像做转置（仅用于对齐历史AirMSPI观测像元方向）
     camera_image_flip_lr: false     # 是否做左右翻转（仅用于复现实测图像方向）
-    # --- SHDOM-style cross track mode parameters ---
-    # mode="cross_track" 时启用以下参数；单位为 km，角度为 deg。
-    cross_track_nbytes: 2            # 兼容SHDOM参数，当前用于元数据记录 number of bytes per pixel in PGM output images
-    cross_track_scale: 1.0           # 兼容SHDOM参数，当前用于元数据记录 the scaling from radiance to pixel value in image
-    cross_track_x1: 3.2               # the starting camera location
-    cross_track_y1: -47.6
-    cross_track_z1: 20.0
-    cross_track_x2: 2.8
-    cross_track_y2: -36.4
-    cross_track_z2: 20.0
-    cross_track_spacing: 0.010        # along track distance between scans (along-track 相邻扫描位置间距)
-    cross_track_scan1_deg: -15.0     # 左侧最小cross-track扫描角
-    cross_track_scan2_deg: 15.0      # 右侧最大cross-track扫描角
-    cross_track_delscan_deg: 0.02     # the angle [degl between pixels in the scan 像元间扫描角步长
-    # along-track每条扫描线可设置独立pitch（2种输入二选一）：
-    # 1) start/end -> 按扫描线数线性插值
-    # 2) list -> 手动逐线给定（长度必须等于扫描线数）
-    cross_track_pitch_start_deg: 67.223 # null # 
-    cross_track_pitch_end_deg: 67.123 # null # 
-    cross_track_pitch_list_deg: null
 
 # camera pixel grid for perspective_projection
 camera:
@@ -68,7 +43,7 @@ scene:
 # solar geometry in geophysical convention
 solar:
   sza_deg: 35.5    # 主要影响散射角绝对值范围（与VZA共同决定）
-  saa_deg: -35.0   # 主要影响RAA和散射角的方向梯度
+  saa_deg: 35.0   # 主要影响RAA和散射角的方向梯度
 
 # radiative transfer solver parameters
 solver:

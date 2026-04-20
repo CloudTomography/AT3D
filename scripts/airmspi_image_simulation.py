@@ -344,6 +344,225 @@ def calculate_sensor_trajectory_from_aircraft(
         up_vectors.append(up_vec_world.copy())
 
     return np.array(positions), np.array(up_vectors)
+
+
+def calculate_sensor_trajectory_cross_track(
+        n_views,
+        x1, y1, z1,
+        x2, y2, z2,
+        spacing,
+        scan1_deg,
+        scan2_deg,
+        delscan_deg):
+    """
+    SHDOM-like cross track geometry sampler.
+    A sequence of camera positions is generated from (x1,y1,z1) to (x2,y2,z2),
+    and each scan applies a cross-track rotation around the along-track axis.
+    If `n_views` is None all generated (scan_position, scan_angle) samples are returned.
+    """
+    if n_views is not None and n_views <= 0:
+        raise ValueError("n_views must be > 0 for cross track mode.")
+    if abs(float(delscan_deg)) < 1e-12:
+        raise ValueError("cross_track_delscan_deg cannot be 0.")
+
+    p1 = np.array([x1, y1, z1], dtype=float)
+    p2 = np.array([x2, y2, z2], dtype=float)
+    track_vec = p2 - p1
+    track_len = np.linalg.norm(track_vec)
+    if track_len < 1e-12:
+        raise ValueError("cross track start/end positions are identical.")
+    along_track = track_vec / track_len
+
+    if spacing <= 0.0:
+        scan_positions = np.array([p1], dtype=float)
+    else:
+        n_scans = int(np.floor(track_len / spacing)) + 1
+        dists = np.arange(n_scans, dtype=float) * spacing
+        dists = np.clip(dists, 0.0, track_len)
+        scan_positions = p1[None, :] + dists[:, None] * along_track[None, :]
+        if np.linalg.norm(scan_positions[-1] - p2) > 1e-8:
+            scan_positions = np.vstack([scan_positions, p2[None, :]])
+
+    if np.sign(scan2_deg - scan1_deg) == np.sign(delscan_deg):
+        scan_angles = np.arange(scan1_deg, scan2_deg + 0.5 * delscan_deg, delscan_deg, dtype=float)
+    else:
+        scan_angles = np.array([scan1_deg], dtype=float)
+
+    samples = [(pos, ang) for pos in scan_positions for ang in scan_angles]
+    if len(samples) == 0:
+        raise ValueError("No valid cross track samples were generated.")
+    if n_views is None:
+        selected_samples = samples
+    else:
+        if len(samples) < n_views:
+            reps = int(np.ceil(n_views / len(samples)))
+            samples = samples * reps
+        selected_samples = samples[:n_views]
+
+    positions = []
+    lookat_vectors = []
+    up_vectors = []
+    base_look = np.array([0.0, 0.0, -1.0], dtype=float)
+    world_up = np.array([0.0, 0.0, 1.0], dtype=float)
+    for pos, ang in selected_samples:
+        # SHDOM cross-track convention:
+        # scan angle sign is defined in scanner coordinates; in this NEU setup we
+        # need the opposite rotation sign to keep left/right VAA ordering consistent.
+        look_dir = _rotate_vector_about_axis(base_look, along_track, -float(ang))
+        look_dir = look_dir / np.linalg.norm(look_dir)
+        lookat = np.asarray(pos, dtype=float) + look_dir
+
+        right = np.cross(look_dir, along_track)
+        if np.linalg.norm(right) < 1e-12:
+            right = np.cross(look_dir, world_up)
+        up_vec = np.cross(right, look_dir)
+        if np.linalg.norm(up_vec) < 1e-12:
+            up_vec = calculate_up_vector(np.asarray(pos, dtype=float), lookat)
+        else:
+            up_vec = up_vec / np.linalg.norm(up_vec)
+
+        positions.append(np.asarray(pos, dtype=float))
+        lookat_vectors.append(np.asarray(lookat, dtype=float))
+        up_vectors.append(np.asarray(up_vec, dtype=float))
+    return np.asarray(positions), np.asarray(lookat_vectors), np.asarray(up_vectors)
+
+
+def cross_track_scan_projection(
+        wavelength,
+        stokes,
+        x1, y1, z1,
+        x2, y2, z2,
+        spacing,
+        scan1_deg,
+        scan2_deg,
+        delscan_deg,
+        pitch_start_deg=None,
+        pitch_end_deg=None,
+        pitch_list_deg=None):
+    """
+    Build a single cross-track scan sensor without perspective projection.
+    Pixels are organized as [scan_index, cross_track_angle_index].
+    """
+    if abs(float(delscan_deg)) < 1e-12:
+        raise ValueError("cross_track_delscan_deg cannot be 0.")
+    p1 = np.array([x1, y1, z1], dtype=float)
+    p2 = np.array([x2, y2, z2], dtype=float)
+    track_vec = p2 - p1
+    track_len = np.linalg.norm(track_vec)
+    if track_len < 1e-12:
+        raise ValueError("cross track start/end positions are identical.")
+    along_track = track_vec / track_len
+
+    if spacing <= 0.0:
+        scan_positions = np.array([p1], dtype=float)
+    else:
+        n_scans = int(np.floor(track_len / spacing)) + 1
+        dists = np.arange(n_scans, dtype=float) * spacing
+        dists = np.clip(dists, 0.0, track_len)
+        scan_positions = p1[None, :] + dists[:, None] * along_track[None, :]
+        if np.linalg.norm(scan_positions[-1] - p2) > 1e-8:
+            scan_positions = np.vstack([scan_positions, p2[None, :]])
+
+    if np.sign(scan2_deg - scan1_deg) == np.sign(delscan_deg):
+        scan_angles = np.arange(scan1_deg, scan2_deg + 0.5 * delscan_deg, delscan_deg, dtype=float)
+    else:
+        scan_angles = np.array([scan1_deg], dtype=float)
+    if scan_angles.size == 0:
+        raise ValueError("No cross-track scan angles generated.")
+
+    base_look = np.array([0.0, 0.0, -1.0], dtype=float)
+    world_up = np.array([0.0, 0.0, 1.0], dtype=float)
+    scan_pitch_deg = _resolve_cross_track_scan_pitch_angles(
+        n_scans=scan_positions.shape[0],
+        pitch_start_deg=pitch_start_deg,
+        pitch_end_deg=pitch_end_deg,
+        pitch_list_deg=pitch_list_deg,
+    )
+    x, y, z, mu, phi = [], [], [], [], []
+    for iscan, pos in enumerate(scan_positions):
+        pitch_deg = float(scan_pitch_deg[iscan])
+        for ang in scan_angles:
+            # Keep sign convention consistent with calculate_sensor_trajectory_cross_track.
+            look_dir = _rotate_vector_about_axis(base_look, along_track, -float(ang))
+            right = np.cross(look_dir, along_track)
+            if np.linalg.norm(right) < 1e-12:
+                right = np.cross(look_dir, world_up)
+            right = right / max(np.linalg.norm(right), 1e-12)
+            if abs(pitch_deg) > 1e-12:
+                look_dir = _rotate_vector_about_axis(look_dir, right, pitch_deg)
+            look_dir = look_dir / max(np.linalg.norm(look_dir), 1e-12)  # sensor->scene
+            v_out = -look_dir  # scene->sensor
+            x.append(pos[0]); y.append(pos[1]); z.append(pos[2])
+            mu.append(v_out[2])
+            phi.append((np.arctan2(v_out[1], v_out[0]) + 2*np.pi) % (2*np.pi))
+
+    sensor = shdom_cross_track_sensor_wrapper(
+        x=np.asarray(x, dtype=float),
+        y=np.asarray(y, dtype=float),
+        z=np.asarray(z, dtype=float),
+        mu=np.asarray(mu, dtype=float),
+        phi=np.asarray(phi, dtype=float),
+        stokes=stokes,
+        wavelength=wavelength,
+        fill_ray_variables=True,
+        image_shape=(int(scan_angles.size), int(scan_positions.shape[0]))
+    )
+    sensor.attrs.update({
+        'projection': 'CrossTrackScan',
+        'x_resolution': int(scan_angles.size),
+        'y_resolution': int(scan_positions.shape[0]),
+        'cross_track_scan_angles_deg': scan_angles.astype(float).tolist(),
+        'cross_track_scan_positions': scan_positions.astype(float).tolist(),
+        'cross_track_scan_pitch_deg': scan_pitch_deg.astype(float).tolist(),
+    })
+    return sensor, scan_positions, scan_angles, scan_pitch_deg
+
+
+def shdom_cross_track_sensor_wrapper(
+        x, y, z, mu, phi, stokes, wavelength, fill_ray_variables=True, image_shape=None):
+    """
+    Wrapper-style sensor builder that directly constructs a SHDOM/AT3D sensor dataset.
+    """
+    sensor = at3d.sensor.make_sensor_dataset(
+        x=np.asarray(x, dtype=float),
+        y=np.asarray(y, dtype=float),
+        z=np.asarray(z, dtype=float),
+        mu=np.asarray(mu, dtype=float),
+        phi=np.asarray(phi, dtype=float),
+        stokes=stokes,
+        wavelength=wavelength,
+        fill_ray_variables=bool(fill_ray_variables)
+    )
+    if image_shape is not None:
+        nx, ny = int(image_shape[0]), int(image_shape[1])
+        sensor['image_shape'] = xr.DataArray(
+            [nx, ny],
+            coords={'image_dims': ['nx', 'ny']},
+            dims='image_dims'
+        )
+    return sensor
+
+
+def _resolve_cross_track_scan_pitch_angles(n_scans, pitch_start_deg=None, pitch_end_deg=None, pitch_list_deg=None):
+    """
+    Resolve along-track per-scan pitch angles (deg).
+    Priority:
+      1) pitch_list_deg (manual list, length must equal n_scans),
+      2) pitch_start_deg + pitch_end_deg (linear interpolation),
+      3) zeros.
+    """
+    if pitch_list_deg is not None:
+        pitch_arr = np.asarray(pitch_list_deg, dtype=float).reshape(-1)
+        if pitch_arr.size != int(n_scans):
+            raise ValueError(
+                f"cross_track_pitch_list_deg length {pitch_arr.size} != n_scans {int(n_scans)}."
+            )
+        return pitch_arr
+    if (pitch_start_deg is None) ^ (pitch_end_deg is None):
+        raise ValueError("cross_track_pitch_start_deg and cross_track_pitch_end_deg must be both set.")
+    if pitch_start_deg is not None and pitch_end_deg is not None:
+        return np.linspace(float(pitch_start_deg), float(pitch_end_deg), int(n_scans), dtype=float)
+    return np.zeros(int(n_scans), dtype=float)
 def project_to_ground_lookat(img, pos, look_at_point, up_vector, fov_diag_deg, Xg, Yg):
     ny, nx = img.shape
     img_ground = np.full(Xg.shape, np.nan, dtype=np.float32)
@@ -399,39 +618,17 @@ def reproject_to_ground(sensor, ground_z=0.0):
         corresponding to each image pixel.
     """
 
-    # ---- 从 sensor.attrs 中恢复几何信息 ----
+    # ---- 从 sensor 中恢复几何信息 ----
     nx = int(sensor.attrs['x_resolution'])
     ny = int(sensor.attrs['y_resolution'])
-    position = np.array(sensor.attrs['position'])
-    rotation_matrix = np.array(sensor.attrs['rotation_matrix']).reshape(3, 3)
-    k = np.array(sensor.attrs['sensor_to_camera_transform_matrix']).reshape(3, 3)
-    fov = sensor.attrs['fov_deg']
+    v_out_map = compute_vout_map_from_sensor(sensor)
+    rays_world = -v_out_map.reshape(-1, 3).T  # sensor -> scene
 
-    # ---- 相机坐标网格 ----
-    M = max(nx, ny)
-    R = np.array([nx, ny]) / M
-    dy = 2 * R[1] / ny
-    dx = 2 * R[0] / nx
-    x_s, y_s = np.meshgrid(
-        np.linspace(-R[0] + dx / 2, R[0] - dx / 2, nx),
-        np.linspace(-R[1] + dy / 2, R[1] - dy / 2, ny)
-    )
-
-    # ---- 相机焦距（归一化单位）----
-    focal = 1.0 / np.tan(np.deg2rad(fov) / 2.0)
-
-    # ---- 像素坐标转射线方向（在相机坐标系中）----
-    inv_k = np.linalg.inv(k)
-    homogeneous_coords = np.stack([x_s.ravel(), y_s.ravel(), np.ones_like(x_s).ravel()])
-    rays_cam = inv_k @ homogeneous_coords
-    rays_cam = rays_cam / np.linalg.norm(rays_cam, axis=0)
-
-    # ---- 转换到世界坐标系 ----
-    rays_world = rotation_matrix @ rays_cam
-    rays_world = rays_world / np.linalg.norm(rays_world, axis=0)
+    cam_x = np.asarray(sensor.cam_x.data, dtype=float).reshape(-1)
+    cam_y = np.asarray(sensor.cam_y.data, dtype=float).reshape(-1)
+    cam_z = np.asarray(sensor.cam_z.data, dtype=float).reshape(-1)
 
     # ---- 计算与地面 (z=ground_z) 的交点 ----
-    cam_z = position[2]
     dir_z = rays_world[2, :]
     t = (ground_z - cam_z) / dir_z  # 每个射线到地面的比例因子
 
@@ -444,8 +641,8 @@ def reproject_to_ground(sensor, ground_z=0.0):
     y_ground = np.full_like(t, np.nan, dtype=float)
     z_ground = np.full_like(t, np.nan, dtype=float)
 
-    x_ground[valid] = position[0] + t[valid] * rays_world[0, valid]
-    y_ground[valid] = position[1] + t[valid] * rays_world[1, valid]
+    x_ground[valid] = cam_x[valid] + t[valid] * rays_world[0, valid]
+    y_ground[valid] = cam_y[valid] + t[valid] * rays_world[1, valid]
     z_ground[valid] = ground_z
 
     # ---- 整理为 DataArray ----
@@ -462,7 +659,7 @@ def reproject_to_ground(sensor, ground_z=0.0):
     ground_coords.attrs = {
         "description": "Ground-projected coordinates from camera pixels",
         "ground_z": ground_z,
-        "camera_position": position.tolist()
+        "camera_position": [float(np.nanmean(cam_x)), float(np.nanmean(cam_y)), float(np.nanmean(cam_z))]
     }
 
     return ground_coords
@@ -474,30 +671,14 @@ def compute_vout_map_from_sensor(sensor_ds):
     """
     nx = int(sensor_ds.attrs['x_resolution'])
     ny = int(sensor_ds.attrs['y_resolution'])
-    rotation_matrix = np.array(sensor_ds.attrs['rotation_matrix']).reshape(3, 3)
-    k = np.array(sensor_ds.attrs['sensor_to_camera_transform_matrix']).reshape(3, 3)
-
-    # camera grid (same as your reproject_to_ground)
-    M = max(nx, ny)
-    R = np.array([nx, ny]) / M
-    dy = 2 * R[1] / ny
-    dx = 2 * R[0] / nx
-    x_s, y_s = np.meshgrid(
-        np.linspace(-R[0] + dx / 2, R[0] - dx / 2, nx),
-        np.linspace(-R[1] + dy / 2, R[1] - dy / 2, ny)
-    )
-
-    inv_k = np.linalg.inv(k)
-    homogeneous = np.stack([x_s.ravel(), y_s.ravel(), np.ones_like(x_s).ravel()])
-    rays_cam = inv_k @ homogeneous
-    rays_cam /= np.linalg.norm(rays_cam, axis=0, keepdims=True)
-
-    # camera -> world
-    rays_world = rotation_matrix @ rays_cam
-    rays_world /= np.linalg.norm(rays_world, axis=0, keepdims=True)
-
-    # outgoing propagation direction: scene -> sensor
-    v_out = -rays_world.T.reshape(ny, nx, 3)
+    mu = np.asarray(sensor_ds.cam_mu.data, dtype=float).reshape(ny, nx)
+    phi = np.asarray(sensor_ds.cam_phi.data, dtype=float).reshape(ny, nx)
+    sin_theta = np.sqrt(np.clip(1.0 - mu**2, 0.0, 1.0))
+    v_out = np.stack([
+        sin_theta * np.cos(phi),
+        sin_theta * np.sin(phi),
+        mu
+    ], axis=-1)
     return v_out
 
 
@@ -532,15 +713,19 @@ def _apply_image_orientation(arr: np.ndarray, transpose: bool, flip_lr: bool) ->
     return out
 
 
-def _to_aircraft_eye_view(arr: np.ndarray) -> np.ndarray:
+def _to_aircraft_eye_view(arr: np.ndarray, flip_vertical: bool = True) -> np.ndarray:
     """
     Convert raw camera image to a WYSIWYG view (as seen from aircraft cockpit).
-    For pinhole-style camera geometry this corresponds to a 180° image rotation.
+    By default this is a 180° image rotation; for cross-track mode users may
+    request keeping the vertical direction unchanged.
     """
     out = np.asarray(arr)
     if out.ndim < 2:
         return out
-    return np.flipud(np.fliplr(out))
+    out = np.fliplr(out)
+    if flip_vertical:
+        out = np.flipud(out)
+    return out
 
 
 def _ensure_2d_shape(arr: np.ndarray, target_shape: Tuple[int, int]) -> np.ndarray:
@@ -558,6 +743,7 @@ def _compute_angle_maps_from_sensor(
     solar_azimuth_deg: float,
     solar_zenith_deg: float,
     heading_angle_deg: float = 0.0,
+    apply_heading_offset: bool = False,
     transpose: bool = False,
     flip_lr: bool = False,
 ):
@@ -573,12 +759,14 @@ def _compute_angle_maps_from_sensor(
 
     vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
     # Camera-image convention: enforce 0° from image center toward "up" (not down).
-    vaa_map = (vaa_map + 180.0) % 360.0
-    # vaa_map = ((vaa_map - float(heading_angle_deg) + 360.0) % 360.0)
+    # vaa_map = (360 - vaa_map) % 360
+    # vaa_map = (vaa_map + 180.0) % 360.0
+    if apply_heading_offset:
+        vaa_map = ((vaa_map - float(heading_angle_deg) + 360.0) % 360.0)
 
     saa = (float(solar_azimuth_deg) + 360.0) % 360.0
     sza = float(solar_zenith_deg)
-    raa_map = ((vaa_map - saa) % 360.0)
+    raa_map = ((vaa_map - saa))
 
     mu0 = np.cos(np.radians(sza))
     mu = np.cos(np.radians(vza_map))
@@ -1122,6 +1310,23 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
             npz.close()
             return None, None
 
+
+        def _infer_is_cross_track(npz_path):
+            try:
+                npz = np.load(npz_path, allow_pickle=True)
+                mode = None
+                if "context" in npz.files:
+                    ctx = npz["context"].item()
+                    if isinstance(ctx, dict):
+                        mode = str(ctx.get("trajectory_mode", "")).lower()
+                if (not mode) and ("sen" in npz.files):
+                    sen_obj = npz["sen"].item()
+                    mode = str(getattr(sen_obj, "trajectory_mode", "")).lower()
+                npz.close()
+                return mode == "cross_track"
+            except Exception:
+                return False
+
         def _try_load_cloud_box(npz_path):
             """Load cloud_x/y ranges (input txt box) from context if present."""
             try:
@@ -1145,6 +1350,7 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
 
         arr, used_path = _open_npz_with_iqu(result_path, allow_sensor_fallback=False)
         cloud_box = _try_load_cloud_box(result_path)
+        is_cross_track_camera = _infer_is_cross_track(result_path)
         if arr is None and requested_level == "original":
             # 对 original 路径优先尝试其自身 metadata 回退，避免误跳转到 registered 层级。
             arr, used_path = _open_npz_with_iqu(result_path, allow_sensor_fallback=True)
@@ -1175,6 +1381,9 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
             # 最后兜底：仍允许直接从 metadata-only NPZ(sensor_dict) 读取，
             # 但这通常是相机投影图，不一定等同于 registered/downsampled_registered。
             arr, used_path = _open_npz_with_iqu(result_path, allow_sensor_fallback=True)
+
+        if used_path is not None:
+            is_cross_track_camera = _infer_is_cross_track(used_path)
 
         if arr is None:
             arr_dbg = np.load(result_path, allow_pickle=True)
@@ -1258,7 +1467,7 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
         )
         if use_ground:
             xv, yv = centers_to_edges_2d(x_plot, y_plot)
-            im = ax.pcolormesh(xv, yv, data, shading="flat", cmap=cmap, vmin=vmin, vmax=vmax)
+            im = ax.pcolormesh(yv, xv, data, shading="flat", cmap=cmap, vmin=vmin, vmax=vmax)
             ax.set_aspect('equal', adjustable='box')
             ax.set_xlabel("x_ground [km]")
             ax.set_ylabel("y_ground [km]")
@@ -1267,8 +1476,8 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
                 ax.set_xlim(*x_range)
                 ax.set_ylim(*y_range)
         else:
-            data_show = _to_aircraft_eye_view(data)
-            im = ax.imshow(data_show, origin="upper", cmap=cmap, vmin=vmin, vmax=vmax)
+            data_show = _to_aircraft_eye_view(data, flip_vertical=(not is_cross_track_camera))
+            im = ax.imshow(data_show, origin="lower", cmap=cmap, vmin=vmin, vmax=vmax)
         ax.set_title(title)
         return im
 
@@ -1546,55 +1755,87 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     sensor_dict = at3d.containers.SensorsDict()
     center = np.array(scene_cfg.lookat_center_km, dtype=float)
     t0 = time.perf_counter()
-    position_vectors, up_vectors = calculate_sensor_trajectory(
-        sensor_zenith_list=sen.views_zenith_deg,
-        sensor_azimuth_list=sen.views_azimuth_deg,
-        look_at_point=center,
-        sensor_altitude=sen.altitude_km,
-        trajectory_mode=sen.trajectory_mode,
-        fallback_heading_deg=sen.fallback_heading_deg,
-        manual_flight_azimuth_deg=sen.manual_flight_azimuth_deg,
-        camera_relative_roll_deg=sen.camera_relative_roll_deg,
-        camera_align_with_flight_heading=sen.camera_align_with_flight_heading,
-    )
     # AT3D/SHDOM world coordinates follow x=North, y=East, z=Up (NEU).
     # This axis ordering is left-handed (x × y = -z), so avoid accidental x/y swaps.
     center_NEU = center.copy()
-    # center_NEU[0], center_NEU[1] = center_NEU[1], center_NEU[0]
-    
-    position_vectors, up_vectors = calculate_sensor_trajectory_from_aircraft(
-        look_at_point=center_NEU,
-        sensor_altitude=sen.altitude_km,
-        heading_angle_deg=sen.aircraft_heading_deg,
-        pitch_angle_deg=sen.aircraft_pitch_deg,
-        roll_angle_deg=sen.aircraft_roll_deg,
-        camera_pitch_relative_deg=sen.camera_pitch_relative_deg,
-        camera_roll_relative_deg=sen.camera_roll_relative_deg,
-        n_views = 1
-        )
-    
-    # center_NEU[0], center_NEU[1] = center_NEU[1], center_NEU[0]
-    lookat_vectors = [center for _ in sen.views_names]
-    for name, pos, look, up in zip(sen.views_names, position_vectors, lookat_vectors, up_vectors):
+    mode_lc = str(sen.trajectory_mode).lower()
+    view_names = list(sen.views_names)
+    if mode_lc == "cross_track":
+        required = [
+            sen.cross_track_x1, sen.cross_track_y1, sen.cross_track_z1,
+            sen.cross_track_x2, sen.cross_track_y2, sen.cross_track_z2
+        ]
+        if any(v is None for v in required):
+            raise ValueError(
+                "cross_track mode requires trajectory.cross_track_x1/y1/z1 and x2/y2/z2 in config."
+            )
         stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
-        if sen.type == "perspective_projection":
-            sensor = at3d.sensor.perspective_projection(
-                wavelength=wavelength_nm/1000,
-                fov=sen.fov_deg,
-                x_resolution=int(cam_cfg.x_resolution),
-                y_resolution=int(cam_cfg.y_resolution),
-                position_vector=pos,
-                lookat_vector=look,
-                up_vector=up,
-                stokes=stokes
+        base_name = str(view_names[0]) if len(view_names) > 0 else "cross_track"
+        cross_sensor, scan_positions, scan_angles, scan_pitch_deg = cross_track_scan_projection(
+            wavelength=wavelength_nm/1000,
+            stokes=stokes,
+            x1=sen.cross_track_x1, y1=sen.cross_track_y1, z1=sen.cross_track_z1,
+            x2=sen.cross_track_x2, y2=sen.cross_track_y2, z2=sen.cross_track_z2,
+            spacing=sen.cross_track_spacing,
+            scan1_deg=sen.cross_track_scan1_deg,
+            scan2_deg=sen.cross_track_scan2_deg,
+            delscan_deg=sen.cross_track_delscan_deg,
+            pitch_start_deg=sen.cross_track_pitch_start_deg,
+            pitch_end_deg=sen.cross_track_pitch_end_deg,
+            pitch_list_deg=sen.cross_track_pitch_list_deg,
+        )
+        key = f"{base_name}_{int(wavelength_nm)}nm"
+        sensor_dict.add_sensor(key, cross_sensor)
+        view_names = [base_name]
+        sen.views_names = view_names
+        position_vectors = np.array([scan_positions[0]], dtype=float)
+        lookat_vectors = np.full((1, 3), np.nan, dtype=float)
+        up_vectors = np.full((1, 3), np.nan, dtype=float)
+    else:
+        position_vectors, up_vectors = calculate_sensor_trajectory(
+            sensor_zenith_list=sen.views_zenith_deg,
+            sensor_azimuth_list=sen.views_azimuth_deg,
+            look_at_point=center,
+            sensor_altitude=sen.altitude_km,
+            trajectory_mode=sen.trajectory_mode,
+            fallback_heading_deg=sen.fallback_heading_deg,
+            manual_flight_azimuth_deg=sen.manual_flight_azimuth_deg,
+            camera_relative_roll_deg=sen.camera_relative_roll_deg,
+            camera_align_with_flight_heading=sen.camera_align_with_flight_heading,
+        )
+        position_vectors, up_vectors = calculate_sensor_trajectory_from_aircraft(
+            look_at_point=center_NEU,
+            sensor_altitude=sen.altitude_km,
+            heading_angle_deg=sen.aircraft_heading_deg,
+            pitch_angle_deg=sen.aircraft_pitch_deg,
+            roll_angle_deg=sen.aircraft_roll_deg,
+            camera_pitch_relative_deg=sen.camera_pitch_relative_deg,
+            camera_roll_relative_deg=sen.camera_roll_relative_deg,
+            n_views=1
             )
-        else:
-            raise NotImplementedError(
-                f"sensor.type={sen.type} is not implemented in v5b; "
-                "currently only perspective_projection is supported."
-            )
-        key = f"{name}_{int(wavelength_nm)}nm"
-        sensor_dict.add_sensor(key, sensor)
+        lookat_vectors = [center for _ in view_names]
+        scan_pitch_deg = None
+    if mode_lc != "cross_track":
+        for name, pos, look, up in zip(view_names, position_vectors, lookat_vectors, up_vectors):
+            stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
+            if sen.type == "perspective_projection":
+                sensor = at3d.sensor.perspective_projection(
+                    wavelength=wavelength_nm/1000,
+                    fov=sen.fov_deg,
+                    x_resolution=int(cam_cfg.x_resolution),
+                    y_resolution=int(cam_cfg.y_resolution),
+                    position_vector=pos,
+                    lookat_vector=look,
+                    up_vector=up,
+                    stokes=stokes
+                )
+            else:
+                raise NotImplementedError(
+                    f"sensor.type={sen.type} is not implemented in v5b; "
+                    "currently only perspective_projection is supported."
+                )
+            key = f"{name}_{int(wavelength_nm)}nm"
+            sensor_dict.add_sensor(key, sensor)
     t_stage["build_sensors"] = time.perf_counter() - t0
     wavelengths = sensor_dict.get_unique_solvers()
     mie_mono_tables = OrderedDict()
@@ -1748,6 +1989,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     )
     t_stage["build_rte_solver"] = time.perf_counter() - t0
     context = dict(center=center,
+                   view_names=view_names,
                    position_vectors=position_vectors,
                    lookat_vectors=lookat_vectors,
                    up_vectors=up_vectors,
@@ -1761,6 +2003,24 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    camera_image_transpose=sen.camera_image_transpose,
                    camera_image_flip_lr=sen.camera_image_flip_lr,
                    heading_angle_deg=sen.aircraft_heading_deg,
+                   cross_track_nbytes=sen.cross_track_nbytes,
+                   cross_track_scale=sen.cross_track_scale,
+                   cross_track_x1=sen.cross_track_x1,
+                   cross_track_y1=sen.cross_track_y1,
+                   cross_track_z1=sen.cross_track_z1,
+                   cross_track_x2=sen.cross_track_x2,
+                   cross_track_y2=sen.cross_track_y2,
+                   cross_track_z2=sen.cross_track_z2,
+                   cross_track_spacing=sen.cross_track_spacing,
+                   cross_track_scan1_deg=sen.cross_track_scan1_deg,
+                   cross_track_scan2_deg=sen.cross_track_scan2_deg,
+                   cross_track_delscan_deg=sen.cross_track_delscan_deg,
+                   cross_track_pitch_start_deg=sen.cross_track_pitch_start_deg,
+                   cross_track_pitch_end_deg=sen.cross_track_pitch_end_deg,
+                   cross_track_pitch_list_deg=sen.cross_track_pitch_list_deg,
+                   cross_track_scan_positions=(scan_positions.tolist() if mode_lc == "cross_track" else None),
+                   cross_track_scan_angles_deg=(scan_angles.tolist() if mode_lc == "cross_track" else None),
+                   cross_track_scan_pitch_deg=(scan_pitch_deg.tolist() if mode_lc == "cross_track" else None),
                    lat=lat_2d,
                    lon=lon_2d,
                    latlon_source=latlon_source,
@@ -2010,9 +2270,12 @@ def build_versions_single_band(sensor_dict,
             solar_azimuth_deg=context.get("solar_azimuth", 0.0),
             solar_zenith_deg=context.get("theta_0", np.nan),
             heading_angle_deg=_get_flight_azimuth_offset_deg_from_context(context),
+            apply_heading_offset=bool(getattr(sen, "apply_flight_azimuth_offset_to_vaa", False)),
             transpose=transpose,
             flip_lr=flip_lr,
         )
+
+        is_cross_track_mode = str(sensor_ds.attrs.get("projection", "")).lower() == "crosstrackscan"
 
         if out_cfg.save_png and (out_cfg.plot_mode != "skip"):
             angle_products = {
@@ -2028,7 +2291,7 @@ def build_versions_single_band(sensor_dict,
                 )
                 if out_cfg.plot_mode == "overwrite" or not os.path.exists(angle_png):
                     plot_image(
-                        _to_aircraft_eye_view(angle_map),
+                        _to_aircraft_eye_view(angle_map, flip_vertical=not is_cross_track_mode),
                         np.arange(1, angle_map.shape[1] + 2),
                         np.arange(1, angle_map.shape[0] + 2),
                         title=f"{name} {angle_name} {int(wavelength_nm)} nm",
@@ -2061,7 +2324,7 @@ def build_versions_single_band(sensor_dict,
             cam_png_DoLP = os.path.join(out_subdirs["original"], f"DoLP_{int(wavelength_nm)}nm_{name}_camera.png")
             if out_cfg.plot_mode == "overwrite" or not os.path.exists(cam_png_I):
 
-                plot_image(_to_aircraft_eye_view(I_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2), 
+                plot_image(_to_aircraft_eye_view(I_brf, flip_vertical=not is_cross_track_mode), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2), 
                            title=f"{name} I {int(wavelength_nm)} nm",
                            cmap=plot_cfg.colormap, 
                            save_path=cam_png_I, show=False)
@@ -2074,17 +2337,17 @@ def build_versions_single_band(sensor_dict,
                         q_lim = 1.0
                     if (not np.isfinite(u_lim)) or u_lim <= 0:
                         u_lim = 1.0
-                    plot_image(_to_aircraft_eye_view(Q_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                    plot_image(_to_aircraft_eye_view(Q_brf, flip_vertical=not is_cross_track_mode), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} Q {int(wavelength_nm)} nm",
                                cmap="RdBu_r",
                                vmin=-q_lim, vmax=q_lim,
                                save_path=cam_png_Q, show=False)
-                    plot_image(_to_aircraft_eye_view(U_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                    plot_image(_to_aircraft_eye_view(U_brf, flip_vertical=not is_cross_track_mode), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} U {int(wavelength_nm)} nm",
                                cmap="RdBu_r",
                                vmin=-u_lim, vmax=u_lim,
                                save_path=cam_png_U, show=False)
-                    plot_image(_to_aircraft_eye_view(DoLP), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                    plot_image(_to_aircraft_eye_view(DoLP, flip_vertical=not is_cross_track_mode), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} DoLP {int(wavelength_nm)} nm",
                                cmap=plot_cfg.colormap,
                                save_path=cam_png_DoLP, show=False)
@@ -2499,6 +2762,7 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
                 solar_azimuth_deg=context.get("solar_azimuth", 0.0),
                 solar_zenith_deg=context.get("theta_0", np.nan),
                 heading_angle_deg=_get_flight_azimuth_offset_deg_from_context(sen_cfg),
+                apply_heading_offset=bool(getattr(sen_cfg, "apply_flight_azimuth_offset_to_vaa", False)),
                 transpose=transpose,
                 flip_lr=flip_lr,
             )

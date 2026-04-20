@@ -26,7 +26,7 @@ class SensorConfig:
     views_names: List[str]
     views_zenith_deg: List[float]
     views_azimuth_deg: List[float]
-    trajectory_mode: str = "auto"  # "auto" | "manual_azimuth"
+    trajectory_mode: str = "auto"  # "auto" | "manual_azimuth" | "cross_track"
     fallback_heading_deg: float = 0.0
     manual_flight_azimuth_deg: Optional[float] = None
     camera_relative_roll_deg: float = 0.0
@@ -39,6 +39,21 @@ class SensorConfig:
     aircraft_roll_deg: float = 0.0
     camera_pitch_relative_deg: float = 0.0
     camera_roll_relative_deg: float = 0.0
+    cross_track_nbytes: int = 2
+    cross_track_scale: float = 1.0
+    cross_track_x1: Optional[float] = None
+    cross_track_y1: Optional[float] = None
+    cross_track_z1: Optional[float] = None
+    cross_track_x2: Optional[float] = None
+    cross_track_y2: Optional[float] = None
+    cross_track_z2: Optional[float] = None
+    cross_track_spacing: float = 0.0
+    cross_track_scan1_deg: float = -30.0
+    cross_track_scan2_deg: float = 30.0
+    cross_track_delscan_deg: float = 1.0
+    cross_track_pitch_start_deg: Optional[float] = None
+    cross_track_pitch_end_deg: Optional[float] = None
+    cross_track_pitch_list_deg: Optional[List[float]] = None
 
 @dataclass
 class BandsConfig:
