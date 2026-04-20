@@ -45,3 +45,49 @@
 - 按 AT3D 兼容头格式写出 CSV。
 
 该函数与 MATLAB 反演结果输出解耦，适合作为“新的专用函数”规范。
+
+## 两种输入模式的公共函数建议
+
+建议把输入统一为两条路径，然后都产出同一个“扩展 CSV”规范：
+
+- 路径 A（retrieval-1D netCDF）: 用 `build_from_retrieval_1d_netcdf(...)`
+- 路径 B（LES/WRF arrays）: 用 `build_from_les_arrays(...)`
+
+这两个函数都在 `scripts/grid_data_builder.py` 中，并且都返回：
+
+- `df`（可直接写 CSV）
+- `geometry`（`nx,ny,nz,dx,dy,z_levels`）
+- `options`（mode/surface 等校验配置）
+
+## 你的示例：从 retrieval_1d 生成 grid data
+
+如果你的文件在：
+
+- `data/retrieval_1d/2019_0806_1839_N_Pxl25_3_3.nc`
+
+可以直接运行：
+
+```bash
+python scripts/grid_data_builder.py \
+  --input-nc data/retrieval_1d/2019_0806_1839_N_Pxl25_3_3.nc \
+  --output-csv data/synthetic_cloud_fields/jpl_les/retrieval_2019_0806_1839_extended.csv \
+  --dx-km 0.16 \
+  --dy-km 0.16 \
+  --z-levels-km 0.01:0.5:20 \
+  --mode-count 2
+```
+
+> `dx/dy` 需要你按反演网格实际大小填写（上面 0.16 km 只是例子）。
+
+## airmspi_image_simulation.py 需要做的调整
+
+本仓库已做兼容更新：
+
+1. 不再强制 `density='cv'`，改为自动识别 `cv/lwc/density`。
+2. 若输入没有 `reff/veff`（LES 常见），自动补默认值 `reff=12`, `veff=0.10`。
+
+因此在配置层通常只需要改：
+
+- `scene.input_path` 指向你新生成的 CSV。
+
+其余流程可保持不变，先跑通数据链路，再逐步接入 per-grid 折射率到光学性质模块。

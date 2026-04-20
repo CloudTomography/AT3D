@@ -1661,7 +1661,22 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     t0_all = time.perf_counter()
     input_path = scene_cfg.input_path
     t0 = time.perf_counter()
-    cloud_scatterer = at3d.util.load_from_csv(input_path, density='cv', origin=(0.0, 0.0))
+    # Compatible with both retrieval-style CSV (cv) and LES-style CSV (lwc/density).
+    cloud_scatterer = at3d.util.load_from_csv(input_path, density=None, origin=(0.0, 0.0))
+    density_candidates = ["cv", "lwc", "density"]
+    density_name = next((name for name in density_candidates if name in cloud_scatterer.data_vars), None)
+    if density_name is None:
+        raise ValueError(f"No density variable found in {input_path}. Tried {density_candidates}")
+    if density_name != "density":
+        cloud_scatterer = cloud_scatterer.rename_vars({density_name: "density"})
+        cloud_scatterer.attrs["density_name"] = density_name
+
+    # Provide conservative defaults for legacy LES files.
+    if "reff" not in cloud_scatterer:
+        cloud_scatterer["reff"] = (['x', 'y', 'z'], np.full(cloud_scatterer.density.shape, 12.0, dtype=float))
+    if "veff" not in cloud_scatterer:
+        cloud_scatterer["veff"] = (['x', 'y', 'z'], np.full(cloud_scatterer.density.shape, 0.10, dtype=float))
+
     cloud_scatterer["density"] *= 1
     t_stage["load_cloud_csv"] = time.perf_counter() - t0
     latlon_source = "text"
