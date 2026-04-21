@@ -1678,6 +1678,13 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         cloud_scatterer["veff"] = (['x', 'y', 'z'], np.full(cloud_scatterer.density.shape, 0.10, dtype=float))
 
     cloud_scatterer["density"] *= 1
+
+    # Guard for extended CSV optional fields (e.g., mode2_mr/mode2_mi) that may be all-NaN.
+    # at3d.grid.resample_onto_grid asserts each variable is not entirely NaN.
+    for _name in list(cloud_scatterer.data_vars):
+        _arr = np.asarray(cloud_scatterer[_name].data)
+        if np.issubdtype(_arr.dtype, np.number) and np.all(np.isnan(_arr)):
+            cloud_scatterer[_name] = (cloud_scatterer[_name].dims, np.zeros_like(_arr, dtype=float))
     t_stage["load_cloud_csv"] = time.perf_counter() - t0
     latlon_source = "text"
     try:
@@ -1702,7 +1709,14 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     ny_cloud = cloud_y.size
     nx_cloud = cloud_x.size
 
-    if lat_2d.shape == (ny_cloud, nx_cloud) and lon_2d.shape == (ny_cloud, nx_cloud):
+    latlon_is_valid = (
+        lat_2d.shape == (ny_cloud, nx_cloud)
+        and lon_2d.shape == (ny_cloud, nx_cloud)
+        and np.isfinite(lat_2d).any()
+        and np.isfinite(lon_2d).any()
+        and not (np.nanmax(np.abs(lat_2d)) == 0 and np.nanmax(np.abs(lon_2d)) == 0)
+    )
+    if latlon_is_valid:
         xlats, xlons = lat_2d, lon_2d
     else:
         latlon_source = "synthetic_regular_grid_fallback"
