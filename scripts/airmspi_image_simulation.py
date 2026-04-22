@@ -1813,9 +1813,10 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     # (lat/lon, mode fractions, mode reff/veff, refractive indices, etc.) vertically invariant.
     cloud_scatterer_on_rte_grid = at3d.grid.resample_onto_grid(rte_grid, cloud_scatterer[['density']])
 
+    reserved_grid_vars = {'density', 'delx', 'dely', 'nx', 'ny', 'nz'}
     static_like_vars = [
         name for name in cloud_scatterer.data_vars
-        if name != 'density'
+        if name not in reserved_grid_vars
     ]
     nz_target = cloud_scatterer_on_rte_grid.sizes['z']
     for name in static_like_vars:
@@ -1850,6 +1851,11 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                 else:
                     # Skip unsupported auxiliary variable dimensions.
                     print(f"⚠️ Skip static var '{name}' with dims={da.dims} (unsupported for z-broadcast)")
+
+    # Ensure grid spacing variables remain scalar for at3d.checks.check_grid.
+    cloud_scatterer_on_rte_grid['delx'] = xr.DataArray(float(np.asarray(rte_grid.delx).reshape(-1)[0]))
+    cloud_scatterer_on_rte_grid['dely'] = xr.DataArray(float(np.asarray(rte_grid.dely).reshape(-1)[0]))
+
     size_distribution_function = at3d.size_distribution.gamma
     size_distribution_function = at3d.size_distribution.lognormal
     # cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.reff.dims,
