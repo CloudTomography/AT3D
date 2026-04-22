@@ -1894,26 +1894,56 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     ho_p_kgm3 = rho_p_gcm3 * 1000.0 # kg/m^3    
     particle_density_gm3 = rho_p_gcm3 * 1e6  # g/cm^3 → g/m^3
     
-    # === 从 scatterer 中动态获取范围 ===
-    reff_min = float(cloud_scatterer_on_rte_grid.reff.min())
-    reff_max = float(cloud_scatterer_on_rte_grid.reff.max())
-    veff_min = float(cloud_scatterer_on_rte_grid.veff.min())
-    veff_max = float(cloud_scatterer_on_rte_grid.veff.max())
-    
+    # === sanitize microphysics (avoid NaN/Inf/outliers causing interpolation range errors) ===
+    reff_data = np.asarray(cloud_scatterer_on_rte_grid.reff.data, dtype=float)
+    veff_data = np.asarray(cloud_scatterer_on_rte_grid.veff.data, dtype=float)
+
+    bad_reff = (~np.isfinite(reff_data)) | (reff_data <= 0)
+    bad_veff = (~np.isfinite(veff_data)) | (veff_data <= 0)
+    if np.any(bad_reff):
+        reff_data[bad_reff] = 0.2
+    if np.any(bad_veff):
+        veff_data[bad_veff] = 0.10
+
+    # Conservative clipping for aerosol retrieval products.
+    reff_data = np.clip(reff_data, 0.05, 30.0)
+    veff_data = np.clip(veff_data, 0.01, 1.0)
+
+    cloud_scatterer_on_rte_grid['reff'] = (cloud_scatterer_on_rte_grid.reff.dims, reff_data)
+    cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.veff.dims, veff_data)
+
+    # === 从 scatterer 中动态获取范围（finite-only）===
+    reff_finite = reff_data[np.isfinite(reff_data)]
+    veff_finite = veff_data[np.isfinite(veff_data)]
+    reff_min = float(np.min(reff_finite))
+    reff_max = float(np.max(reff_finite))
+    veff_min = float(np.min(veff_finite))
+    veff_max = float(np.max(veff_finite))
+
     # === 留 margin（非常重要）===
     margin_reff = 0.1   # μm
     margin_veff = 0.01
-    
+
     reff_grid = np.linspace(
         max(0.05, reff_min - margin_reff),
         reff_max + margin_reff,
         40
     )
-    
+
     veff_grid = np.linspace(
         max(0.01, veff_min - margin_veff),
         veff_max + margin_veff,
         10    # ⚠️ 如果 veff 几乎不变，直接用 1
+    )
+
+    # Ensure microphysics coordinates lie inside interpolation grid (numerical safety).
+    cloud_scatterer_on_rte_grid['reff'] = (
+        cloud_scatterer_on_rte_grid.reff.dims,
+        np.clip(cloud_scatterer_on_rte_grid.reff.data, reff_grid.min(), reff_grid.max())
+    )
+    cloud_scatterer_on_rte_grid['veff'] = (
+        cloud_scatterer_on_rte_grid.veff.dims,
+        np.clip(cloud_scatterer_on_rte_grid.veff.data, veff_grid.min(), veff_grid.max())
     )
 
 
