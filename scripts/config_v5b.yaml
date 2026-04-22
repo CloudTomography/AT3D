@@ -85,6 +85,13 @@ aerosol:
   refractive_index_real: 1.4
   refractive_index_imag: 0.001
   particle_density: 1.6
+  # microphysics sanitize/clipping controls (used before OpticalPropertyGenerator)
+  reff_default: 0.2
+  veff_default: 0.10
+  reff_clip_min: 0.05
+  reff_clip_max: 30.0
+  veff_clip_min: 0.01
+  veff_clip_max: 1.0
 
 bands:
   wavelength_nm: [470]

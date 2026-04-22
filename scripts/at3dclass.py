@@ -123,3 +123,9 @@ class AerosolConfig:
     refractive_index_real: float = 1.4
     refractive_index_imag: float = 0.001
     particle_density: float = 1.6
+    reff_default: float = 0.2
+    veff_default: float = 0.10
+    reff_clip_min: float = 0.05
+    reff_clip_max: float = 30.0
+    veff_clip_min: float = 0.01
+    veff_clip_max: float = 1.0

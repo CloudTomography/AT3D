@@ -1901,16 +1901,20 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     bad_reff = (~np.isfinite(reff_data)) | (reff_data <= 0)
     bad_veff = (~np.isfinite(veff_data)) | (veff_data <= 0)
     if np.any(bad_reff):
-        reff_data[bad_reff] = 0.2
+        reff_data[bad_reff] = float(aerosol_cfg.reff_default)
     if np.any(bad_veff):
-        veff_data[bad_veff] = 0.10
+        veff_data[bad_veff] = float(aerosol_cfg.veff_default)
 
     # Conservative clipping for aerosol retrieval products.
-    reff_data = np.clip(reff_data, 0.05, 30.0)
-    veff_data = np.clip(veff_data, 0.01, 1.0)
+    reff_data = np.clip(reff_data, float(aerosol_cfg.reff_clip_min), float(aerosol_cfg.reff_clip_max))
+    veff_data = np.clip(veff_data, float(aerosol_cfg.veff_clip_min), float(aerosol_cfg.veff_clip_max))
 
     cloud_scatterer_on_rte_grid['reff'] = (cloud_scatterer_on_rte_grid.reff.dims, reff_data)
     cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.veff.dims, veff_data)
+    print(
+        f"🧪 microphysics clip range: reff[{aerosol_cfg.reff_clip_min}, {aerosol_cfg.reff_clip_max}], "
+        f"veff[{aerosol_cfg.veff_clip_min}, {aerosol_cfg.veff_clip_max}]"
+    )
 
     # === 从 scatterer 中动态获取范围（finite-only）===
     reff_finite = reff_data[np.isfinite(reff_data)]

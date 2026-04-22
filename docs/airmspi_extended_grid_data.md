@@ -106,3 +106,18 @@
 - 不依赖 IDE，服务器无图形界面时更稳。
 
 你当前以 Spyder 为主是完全合理的：开发调试阶段效率更高。
+
+
+## reff/veff 限定范围在哪里改
+
+当前 `airmspi_image_simulation.py` 会在构建光学插值网格前对 `reff/veff` 做 sanitize + clip。
+这些阈值不再硬编码，改为从配置读取：
+
+- `aerosol.reff_default`
+- `aerosol.veff_default`
+- `aerosol.reff_clip_min`
+- `aerosol.reff_clip_max`
+- `aerosol.veff_clip_min`
+- `aerosol.veff_clip_max`
+
+建议直接在 `scripts/config_v5b.yaml` 的 `aerosol:` 段修改。
