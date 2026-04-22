@@ -374,20 +374,31 @@ def build_from_retrieval_1d_netcdf(
         dx_km = dx_est if dx_km is None else dx_km
         dy_km = dy_est if dy_km is None else dy_km
 
+    # Ensure SHDOM x-axis (North) increases northward.
+    dlat_row = np.nanmedian(lat2d[1:, :] - lat2d[:-1, :]) if lat2d.shape[0] > 1 else 0.0
+    flip_north_axis = np.isfinite(dlat_row) and (dlat_row < 0)
+
+    def _flip_north(a2d: np.ndarray) -> np.ndarray:
+        return np.flipud(a2d) if flip_north_axis else a2d
+
+    cv2d = _flip_north(cv2d)
+    lat2d = _flip_north(lat2d)
+    lon2d = _flip_north(lon2d)
+
     # Build vertical density profile from column-integrated Cv_total.
     vd_mode = str(vertical_distribution).lower()
     if vd_mode == 'from_nc' and (hmean_var in ds) and (sigma_var in ds):
-        h2d = _to_2d_field(ds[hmean_var].values, ny, nx, hmean_var, wavelength_index)
-        s2d = _to_2d_field(ds[sigma_var].values, ny, nx, sigma_var, wavelength_index)
+        h2d = _flip_north(_to_2d_field(ds[hmean_var].values, ny, nx, hmean_var, wavelength_index))
+        s2d = _flip_north(_to_2d_field(ds[sigma_var].values, ny, nx, sigma_var, wavelength_index))
     elif vd_mode in ('fixed', 'from_nc'):
-        h2d = np.full((ny, nx), float(fixed_h_km), dtype=float)
-        s2d = np.full((ny, nx), float(fixed_sigma_km), dtype=float)
+        h2d = _flip_north(np.full((ny, nx), float(fixed_h_km), dtype=float))
+        s2d = _flip_north(np.full((ny, nx), float(fixed_sigma_km), dtype=float))
     elif vd_mode == 'uniform':
         # Fallback legacy behavior (not recommended for Cv_total)
         dz_km = _z_layer_thickness_km(z_levels_km)
         cv3d = np.repeat((cv2d / np.sum(dz_km))[:, :, None], nz, axis=2)
-        h2d = np.full((ny, nx), float(fixed_h_km), dtype=float)
-        s2d = np.full((ny, nx), float(fixed_sigma_km), dtype=float)
+        h2d = _flip_north(np.full((ny, nx), float(fixed_h_km), dtype=float))
+        s2d = _flip_north(np.full((ny, nx), float(fixed_sigma_km), dtype=float))
     else:
         raise ValueError("vertical_distribution should be one of: from_nc, fixed, uniform")
 
@@ -407,7 +418,7 @@ def build_from_retrieval_1d_netcdf(
     if mode_count == 1:
         mode_fraction_2d = [np.ones_like(cv2d)]
     else:
-        fine = np.asarray(ds[fine_fraction_var].values, dtype=float) if fine_fraction_var in ds else np.full_like(cv2d, 0.5)
+        fine = _flip_north(np.asarray(ds[fine_fraction_var].values, dtype=float)) if fine_fraction_var in ds else np.full_like(cv2d, 0.5)
         mode_fraction_2d.append(fine)
         if mode_count >= 2:
             mode_fraction_2d.append(1.0 - fine)
@@ -422,8 +433,8 @@ def build_from_retrieval_1d_netcdf(
     base["z"] = Z.reshape(-1)
     base["cv"] = _flatten_xyz(cv3d)
     # Mode1 remains the canonical per-mode definition; scalar reff/veff are omitted to avoid duplicates.
-    mode1_rm2d = _to_2d_field(ds[reff_vars[0]].values, ny, nx, reff_vars[0], wavelength_index) if reff_vars and reff_vars[0] in ds else np.full_like(cv2d, 0.2)
-    mode1_sig2d = _to_2d_field(ds[veff_vars[0]].values, ny, nx, veff_vars[0], wavelength_index) if veff_vars and veff_vars[0] in ds else np.full_like(cv2d, default_veff)
+    mode1_rm2d = _flip_north(_to_2d_field(ds[reff_vars[0]].values, ny, nx, reff_vars[0], wavelength_index)) if reff_vars and reff_vars[0] in ds else np.full_like(cv2d, 0.2)
+    mode1_sig2d = _flip_north(_to_2d_field(ds[veff_vars[0]].values, ny, nx, veff_vars[0], wavelength_index)) if veff_vars and veff_vars[0] in ds else np.full_like(cv2d, default_veff)
     if convert_lognormal_params:
         mode1_reff2d = mode1_rm2d * np.exp(2.5 * mode1_sig2d**2)
         mode1_veff2d = np.exp(mode1_sig2d**2) - 1.0
@@ -436,16 +447,16 @@ def build_from_retrieval_1d_netcdf(
     for i_mode in range(mode_count):
         m = i_mode + 1
         frac2d = mode_fraction_2d[i_mode]
-        rm2d = _to_2d_field(ds[reff_vars[i_mode]].values, ny, nx, reff_vars[i_mode], wavelength_index) if i_mode < len(reff_vars) and reff_vars[i_mode] in ds else mode1_rm2d
-        sig2d = _to_2d_field(ds[veff_vars[i_mode]].values, ny, nx, veff_vars[i_mode], wavelength_index) if i_mode < len(veff_vars) and veff_vars[i_mode] in ds else mode1_sig2d
+        rm2d = _flip_north(_to_2d_field(ds[reff_vars[i_mode]].values, ny, nx, reff_vars[i_mode], wavelength_index)) if i_mode < len(reff_vars) and reff_vars[i_mode] in ds else mode1_rm2d
+        sig2d = _flip_north(_to_2d_field(ds[veff_vars[i_mode]].values, ny, nx, veff_vars[i_mode], wavelength_index)) if i_mode < len(veff_vars) and veff_vars[i_mode] in ds else mode1_sig2d
         if convert_lognormal_params:
             reff2d = rm2d * np.exp(2.5 * sig2d**2)
             veff2d = np.exp(sig2d**2) - 1.0
         else:
             reff2d = rm2d
             veff2d = sig2d
-        mr2d = _to_2d_field(ds[mr_vars[i_mode]].values, ny, nx, mr_vars[i_mode], wavelength_index) if i_mode < len(mr_vars) and mr_vars[i_mode] in ds else np.full_like(cv2d, np.nan)
-        mi2d = _to_2d_field(ds[mi_vars[i_mode]].values, ny, nx, mi_vars[i_mode], wavelength_index) if i_mode < len(mi_vars) and mi_vars[i_mode] in ds else np.full_like(cv2d, np.nan)
+        mr2d = _flip_north(_to_2d_field(ds[mr_vars[i_mode]].values, ny, nx, mr_vars[i_mode], wavelength_index)) if i_mode < len(mr_vars) and mr_vars[i_mode] in ds else np.full_like(cv2d, np.nan)
+        mi2d = _flip_north(_to_2d_field(ds[mi_vars[i_mode]].values, ny, nx, mi_vars[i_mode], wavelength_index)) if i_mode < len(mi_vars) and mi_vars[i_mode] in ds else np.full_like(cv2d, np.nan)
 
         base[f"mode{m}_fraction"] = _flatten_xyz(_broadcast_2d_to_3d(frac2d, nz))
         base[f"mode{m}_reff"] = _flatten_xyz(_broadcast_2d_to_3d(reff2d, nz))
