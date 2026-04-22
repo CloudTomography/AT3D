@@ -78,6 +78,10 @@ solver:
   num_phi_bins: 12
   split_accuracy: 0.1
   deltam: true
+  # optional memory/adaptive-grid controls (for MAXNBC / memory pressure)
+  adapt_grid_factor: null
+  cell_to_point_ratio: null
+  max_total_mb: null
 
 # aerosol optical setup
 # complex refractive index = n - i*k
@@ -92,6 +96,7 @@ aerosol:
   reff_clip_max: 30.0
   veff_clip_min: 0.01
   veff_clip_max: 1.0
+  density_floor: 0.0
 
 bands:
   wavelength_nm: [470]

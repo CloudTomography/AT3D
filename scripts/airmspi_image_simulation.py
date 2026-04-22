@@ -1928,6 +1928,9 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     
     # === sanitize microphysics (avoid NaN/Inf/outliers causing interpolation range errors) ===
     density_data = np.asarray(cloud_scatterer_on_rte_grid.density.data, dtype=float)
+    if float(aerosol_cfg.density_floor) > 0:
+        density_data[density_data < float(aerosol_cfg.density_floor)] = 0.0
+        cloud_scatterer_on_rte_grid['density'] = (cloud_scatterer_on_rte_grid.density.dims, density_data)
     clear_air = (~np.isfinite(density_data)) | (density_data <= 0)
 
     reff_data = np.asarray(cloud_scatterer_on_rte_grid.reff.data, dtype=float)
@@ -2050,6 +2053,12 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     config["num_phi_bins"] = int(solver_cfg.num_phi_bins)
     config["split_accuracy"] = float(solver_cfg.split_accuracy)
     config["deltam"] = bool(solver_cfg.deltam)
+    if solver_cfg.adapt_grid_factor is not None:
+        config["adapt_grid_factor"] = float(solver_cfg.adapt_grid_factor)
+    if solver_cfg.cell_to_point_ratio is not None:
+        config["cell_to_point_ratio"] = float(solver_cfg.cell_to_point_ratio)
+    if solver_cfg.max_total_mb is not None:
+        config["max_total_mb"] = float(solver_cfg.max_total_mb)
     
     
     w = wavelength_nm/1000

@@ -224,8 +224,8 @@ def build_from_retrieval_1d_netcdf(
     mr_vars: Optional[Sequence[str]] = None,
     mi_vars: Optional[Sequence[str]] = None,
     default_veff: float = 0.10,
-    fallback_lat0: Optional[float] = None,
-    fallback_lon0: Optional[float] = None,
+    fallback_lat0: Optional[float] = 35.0,
+    fallback_lon0: Optional[float] = -112.0,
     wavelength_index: int = 0,
 ) -> Tuple[pd.DataFrame, GridGeometry, ExtendedGridOptions]:
     """Convert a retrieval-1D netCDF (2D fields) into extended 3D grid dataframe.
@@ -248,15 +248,16 @@ def build_from_retrieval_1d_netcdf(
     if mi_vars is None:
         mi_vars = ["Refractive_Index_Imaginary_Mode_1", "Refractive_Index_Imaginary_Mode_2"][:mode_count]
 
-    # lat/lon: prefer file, else regular-grid fallback
+    # lat/lon: prefer file (supports 2D or spectral-like 3D), else regular-grid fallback
     if lat_var in ds and lon_var in ds:
-        lat2d = np.asarray(ds[lat_var].values, dtype=float)
-        lon2d = np.asarray(ds[lon_var].values, dtype=float)
+        lat2d = _to_2d_field(ds[lat_var].values, ny, nx, lat_var, wavelength_index)
+        lon2d = _to_2d_field(ds[lon_var].values, ny, nx, lon_var, wavelength_index)
+        if (np.nanmax(np.abs(lat2d)) == 0) and (np.nanmax(np.abs(lon2d)) == 0):
+            lat2d, lon2d = generate_latlon(float(fallback_lat0), float(fallback_lon0), dx_km * 1000.0, dy_km * 1000.0, ny, nx)
     elif fallback_lat0 is not None and fallback_lon0 is not None:
-        lat2d, lon2d = generate_latlon(fallback_lat0, fallback_lon0, dx_km * 1000.0, dy_km * 1000.0, ny, nx)
+        lat2d, lon2d = generate_latlon(float(fallback_lat0), float(fallback_lon0), dx_km * 1000.0, dy_km * 1000.0, ny, nx)
     else:
-        lat2d = np.zeros((ny, nx), dtype=float)
-        lon2d = np.zeros((ny, nx), dtype=float)
+        raise ValueError("lat/lon variables not found and fallback_lat0/lon0 are None")
 
     cv3d = _broadcast_2d_to_3d(cv2d, nz)
     lat3d = _broadcast_2d_to_3d(lat2d, nz)
@@ -371,6 +372,8 @@ def run_retrieval_case(
     z_levels_km: Sequence[float],
     mode_count: int = 2,
     wavelength_index: int = 0,
+    fallback_lat0: float = 35.0,
+    fallback_lon0: float = -112.0,
 ) -> Path:
     """Spyder-friendly wrapper: one function call to build CSV from retrieval nc."""
     df, geom, options = build_from_retrieval_1d_netcdf(
@@ -380,6 +383,8 @@ def run_retrieval_case(
         dy_km=dy_km,
         mode_count=mode_count,
         wavelength_index=wavelength_index,
+        fallback_lat0=fallback_lat0,
+        fallback_lon0=fallback_lon0,
     )
     return write_extended_grid_csv(output_csv, df, geom, options)
 
@@ -396,6 +401,8 @@ if __name__ == "__main__":
     z_levels_km = parse_z_levels("0.01:0.5:20")
     mode_count = 2
     wavelength_index = 0  # 例如 AirMSPI: 0..6 -> [355,380,445,470,555,660,865]
+    fallback_lat0 = 35.0
+    fallback_lon0 = -112.0
 
     out = run_retrieval_case(
         input_nc=input_nc,
@@ -405,5 +412,7 @@ if __name__ == "__main__":
         z_levels_km=z_levels_km,
         mode_count=mode_count,
         wavelength_index=wavelength_index,
+        fallback_lat0=fallback_lat0,
+        fallback_lon0=fallback_lon0,
     )
     print(f"✅ wrote: {out}")

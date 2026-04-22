@@ -142,3 +142,19 @@
 
 - 标量 `reff/veff`；
 - 所有存在且 `mode*_fraction>0` 的 `mode*_reff/veff`。
+
+
+## lat/lon 写入保证
+
+`build_from_retrieval_1d_netcdf(...)` 现在会优先读取文件中的 `lat/lon`，若缺失或全零，自动用
+`fallback_lat0/fallback_lon0 + dx/dy` 生成规则网格经纬度；默认 fallback 为 `(35.0, -112.0)`。
+
+## MAXNBC / 内存压力调参位置
+
+若出现 `BOUNDARY_PNTS: MAXNBC exceeded` 或内存相关 warning，可在 `config_v5b.yaml` 中调：
+
+- `solver.split_accuracy`（增大可减少自适应细分）
+- `solver.adapt_grid_factor`
+- `solver.cell_to_point_ratio`
+- `solver.max_total_mb`
+- `aerosol.density_floor`（把极小密度直接置零，减少无意义细分）

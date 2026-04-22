@@ -117,6 +117,9 @@ class SolverConfig:
     num_phi_bins: int = 96
     split_accuracy: float = 0.01
     deltam: bool = True
+    adapt_grid_factor: Optional[float] = None
+    cell_to_point_ratio: Optional[float] = None
+    max_total_mb: Optional[float] = None
 
 @dataclass
 class AerosolConfig:
@@ -129,3 +132,4 @@ class AerosolConfig:
     reff_clip_max: float = 30.0
     veff_clip_min: float = 0.01
     veff_clip_max: float = 1.0
+    density_floor: float = 0.0
