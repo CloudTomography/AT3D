@@ -177,6 +177,39 @@ def _column_to_mass_density_profile(cv_column_um: np.ndarray,
     mass_density = float(particle_density_g_cm3) * cv_column_um[:, :, None] * w * 1e-3
     return mass_density
 
+
+
+def _estimate_dxdy_from_latlon(lat2d: np.ndarray, lon2d: np.ndarray) -> Tuple[float, float]:
+    """Estimate NEU grid spacing from geodetic grid.
+
+    Returns
+    -------
+    dx_km : spacing along x (North direction)
+    dy_km : spacing along y (East direction)
+    """
+    lat = np.asarray(lat2d, dtype=float)
+    lon = np.asarray(lon2d, dtype=float)
+
+    # North-direction neighbors (row-to-row): map to x in NEU.
+    dlat_n = lat[1:, :] - lat[:-1, :]
+    dlon_n = lon[1:, :] - lon[:-1, :]
+    lat_mid_n = 0.5 * (lat[1:, :] + lat[:-1, :])
+    dn_km = np.sqrt((dlat_n * 111.32) ** 2 + (dlon_n * 111.32 * np.cos(np.deg2rad(lat_mid_n))) ** 2)
+
+    # East-direction neighbors (col-to-col): map to y in NEU.
+    dlat_e = lat[:, 1:] - lat[:, :-1]
+    dlon_e = lon[:, 1:] - lon[:, :-1]
+    lat_mid_e = 0.5 * (lat[:, 1:] + lat[:, :-1])
+    de_km = np.sqrt((dlat_e * 111.32) ** 2 + (dlon_e * 111.32 * np.cos(np.deg2rad(lat_mid_e))) ** 2)
+
+    dx_km = float(np.nanmedian(dn_km))
+    dy_km = float(np.nanmedian(de_km))
+    if not np.isfinite(dx_km) or dx_km <= 0:
+        dx_km = 0.25
+    if not np.isfinite(dy_km) or dy_km <= 0:
+        dy_km = 0.25
+    return dx_km, dy_km
+
 def validate_extended_grid_data(df: pd.DataFrame, options: ExtendedGridOptions) -> None:
     required = list(BASE_COLUMNS)
     required.extend(_mode_columns(options.mode_count))
@@ -246,8 +279,8 @@ def write_extended_grid_csv(
 def build_from_retrieval_1d_netcdf(
     nc_path: str | Path,
     z_levels_km: Sequence[float],
-    dx_km: float,
-    dy_km: float,
+    dx_km: Optional[float] = None,
+    dy_km: Optional[float] = None,
     mode_count: int = 2,
     lat_var: str = "lat",
     lon_var: str = "lon",
@@ -300,6 +333,11 @@ def build_from_retrieval_1d_netcdf(
     else:
         raise ValueError("lat/lon variables not found and fallback_lat0/lon0 are None")
 
+    if dx_km is None or dy_km is None:
+        dx_est, dy_est = _estimate_dxdy_from_latlon(lat2d, lon2d)
+        dx_km = dx_est if dx_km is None else dx_km
+        dy_km = dy_est if dy_km is None else dy_km
+
     # Build vertical density profile from column-integrated Cv_total.
     vd_mode = str(vertical_distribution).lower()
     if vd_mode == 'from_nc' and (hmean_var in ds) and (sigma_var in ds):
@@ -341,9 +379,10 @@ def build_from_retrieval_1d_netcdf(
             mode_fraction_2d.append(np.zeros_like(cv2d))
 
     base: Dict[str, np.ndarray] = {}
-    X, Y, Z = np.meshgrid(np.arange(nx), np.arange(ny), np.arange(nz), indexing="xy")
-    base["x"] = X.reshape(-1)
-    base["y"] = Y.reshape(-1)
+    # NC grid is ENU-like (rows~North, cols~East). AT3D expects NEU with x=North, y=East.
+    Xn, Ye, Z = np.meshgrid(np.arange(ny), np.arange(nx), np.arange(nz), indexing="ij")
+    base["x"] = Xn.reshape(-1)
+    base["y"] = Ye.reshape(-1)
     base["z"] = Z.reshape(-1)
     base["cv"] = _flatten_xyz(cv3d)
     # Mode1 remains the canonical per-mode definition; scalar reff/veff are omitted to avoid duplicates.
@@ -380,7 +419,7 @@ def build_from_retrieval_1d_netcdf(
 
     options = ExtendedGridOptions(mode_count=mode_count, include_surface=True, include_per_grid_refractive_index=True)
     df = build_extended_grid_dataframe(base, options)
-    geom = GridGeometry(nx=nx, ny=ny, nz=nz, dx_km=dx_km, dy_km=dy_km, z_levels_km=list(z_levels_km))
+    geom = GridGeometry(nx=ny, ny=nx, nz=nz, dx_km=float(dx_km), dy_km=float(dy_km), z_levels_km=list(z_levels_km))
     return df, geom, options
 
 
@@ -407,10 +446,11 @@ def build_from_les_arrays(
     nz, ny, nx = lwc_gm3.shape
     lwc_yxz = np.transpose(lwc_gm3, (1, 2, 0))
 
-    X, Y, Z = np.meshgrid(np.arange(nx), np.arange(ny), np.arange(nz), indexing="xy")
+    # LES arrays are typically indexed [z, north, east]; map to AT3D NEU (x=north, y=east).
+    Xn, Ye, Z = np.meshgrid(np.arange(ny), np.arange(nx), np.arange(nz), indexing="ij")
     base: Dict[str, np.ndarray] = {
-        "x": X.reshape(-1),
-        "y": Y.reshape(-1),
+        "x": Xn.reshape(-1),
+        "y": Ye.reshape(-1),
         "z": Z.reshape(-1),
         "cv": _flatten_xyz(lwc_yxz),
         "lat": _flatten_xyz(_broadcast_2d_to_3d(lat_c, nz)),
@@ -424,11 +464,11 @@ def build_from_les_arrays(
     options = ExtendedGridOptions(mode_count=1, include_surface=True, include_per_grid_refractive_index=False)
     df = build_extended_grid_dataframe(base, options)
     geom = GridGeometry(
-        nx=nx,
-        ny=ny,
+        nx=ny,
+        ny=nx,
         nz=nz,
-        dx_km=(dx_m * cx) / 1000.0,
-        dy_km=(dy_m * cy) / 1000.0,
+        dx_km=(dy_m * cy) / 1000.0,
+        dy_km=(dx_m * cx) / 1000.0,
         z_levels_km=(z_c / 1000.0).tolist(),
     )
     return df, geom, options
@@ -446,9 +486,9 @@ def parse_z_levels(z: str) -> List[float]:
 def run_retrieval_case(
     input_nc: str,
     output_csv: str,
-    dx_km: float,
-    dy_km: float,
     z_levels_km: Sequence[float],
+    dx_km: Optional[float] = None,
+    dy_km: Optional[float] = None,
     mode_count: int = 2,
     wavelength_index: int = 0,
     fallback_lat0: float = 35.0,
@@ -483,8 +523,8 @@ if __name__ == "__main__":
     # 直接修改下面变量后，在 Spyder 中 Run File 即可。
     input_nc = "../data/retrieval_1d/2019_0806_1839_N_Pxl25_3_3.nc"
     output_csv = "../data/synthetic_cloud_fields/jpl_les/retrieval_2019_0806_1839_extended.csv"
-    dx_km = 0.16
-    dy_km = 0.16
+    dx_km = None  # None -> estimate from lat/lon in nc
+    dy_km = None  # None -> estimate from lat/lon in nc
     z_levels_km = parse_z_levels("0.01:0.5:20")
     mode_count = 2
     wavelength_index = 0  # 例如 AirMSPI: 0..6 -> [355,380,445,470,555,660,865]

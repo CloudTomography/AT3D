@@ -182,3 +182,21 @@
 - `mass_density_z = rho_p[g/cm^3] * Cv_total[um] * w(z) * 1e-3`  (g/m^3)
 
 并保证 `sum(w * dz_km)=1`。
+
+
+## ENU 到 NEU 的坐标映射
+
+NC 网格通常可理解为 ENU（行/列近似 North/East）。AT3D 使用 NEU，且 `x=North`, `y=East`。
+因此 builder 在写 CSV 时会把：
+
+- `x` 轴映射到原网格的 North 方向（原二维数组行方向）；
+- `y` 轴映射到原网格的 East 方向（原二维数组列方向）。
+
+## dx/dy 自动估算（来自 lat/lon）
+
+当 `dx_km` 或 `dy_km` 传入为 `None` 时，builder 会根据 nc 中 `lat/lon` 估算：
+
+- `dx_km`：相邻“行”点的地理距离中位数（North 方向）；
+- `dy_km`：相邻“列”点的地理距离中位数（East 方向）。
+
+这样 `dx` 与 `dy` 可不相等，并且通常接近你说的 ~0.25 km 量级（取决于具体场景分辨率）。
