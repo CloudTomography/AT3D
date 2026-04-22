@@ -158,3 +158,10 @@
 - `solver.cell_to_point_ratio`
 - `solver.max_total_mb`
 - `aerosol.density_floor`（把极小密度直接置零，减少无意义细分）
+
+
+## 关于 z 方向插值策略
+
+为贴合你给的 MATLAB 版本语义，`build_scene_and_sensors_single_band` 现在只对 `density`
+做 `resample_onto_grid`，其余字段（如 `lat/lon`, `mode*_fraction`, `mode*_reff/veff`, `mode*_mr/mi`）
+按“z 不变”处理：取首层并沿 z 广播，避免在 z 方向被插值改写。

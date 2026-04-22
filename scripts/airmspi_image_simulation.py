@@ -1808,7 +1808,39 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     rte_grid = at3d.grid.make_grid(cloud_scatterer.x.diff('x')[0], cloud_scatterer.x.data.size,
                                    cloud_scatterer.y.diff('y')[0], cloud_scatterer.y.data.size,
                                    np.append(0, cloud_scatterer.z.data))
-    cloud_scatterer_on_rte_grid = at3d.grid.resample_onto_grid(rte_grid, cloud_scatterer)
+
+    # Only resample density in z; keep geophysical/microphysical descriptor fields
+    # (lat/lon, mode fractions, mode reff/veff, refractive indices, etc.) vertically invariant.
+    cloud_scatterer_on_rte_grid = at3d.grid.resample_onto_grid(rte_grid, cloud_scatterer[['density']])
+
+    static_like_vars = [
+        name for name in cloud_scatterer.data_vars
+        if name != 'density'
+    ]
+    nz_target = cloud_scatterer_on_rte_grid.sizes['z']
+    for name in static_like_vars:
+        da = cloud_scatterer[name]
+        arr = np.asarray(da.data)
+        if 'z' in da.dims:
+            # Keep original vertical-invariant intent: use first z slice and broadcast.
+            z_axis = da.dims.index('z')
+            arr2d = np.take(arr, indices=0, axis=z_axis)
+            arr3d = np.repeat(arr2d[..., None], nz_target, axis=2)
+            cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+        else:
+            # 2D field, broadcast over z.
+            if da.dims == ('x', 'y'):
+                arr3d = np.repeat(arr[..., None], nz_target, axis=2)
+                cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+            elif da.dims == ('y', 'x'):
+                arr_xy = np.transpose(arr, (1, 0))
+                arr3d = np.repeat(arr_xy[..., None], nz_target, axis=2)
+                cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+            else:
+                # Fallback: try aligning to x/y order then broadcast.
+                arr_xy = np.asarray(da.transpose('x', 'y').data)
+                arr3d = np.repeat(arr_xy[..., None], nz_target, axis=2)
+                cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
     size_distribution_function = at3d.size_distribution.gamma
     size_distribution_function = at3d.size_distribution.lognormal
     # cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.reff.dims,
