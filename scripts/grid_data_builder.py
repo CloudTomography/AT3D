@@ -179,6 +179,14 @@ def _column_to_mass_density_profile(cv_column_um: np.ndarray,
 
 
 
+
+
+def _first_existing_var(ds: xr.Dataset, candidates: Sequence[str]) -> Optional[str]:
+    for name in candidates:
+        if name and name in ds:
+            return name
+    return None
+
 def _estimate_dxdy_from_latlon(lat2d: np.ndarray, lon2d: np.ndarray) -> Tuple[float, float]:
     """Estimate NEU grid spacing from geodetic grid.
 
@@ -190,20 +198,36 @@ def _estimate_dxdy_from_latlon(lat2d: np.ndarray, lon2d: np.ndarray) -> Tuple[fl
     lat = np.asarray(lat2d, dtype=float)
     lon = np.asarray(lon2d, dtype=float)
 
+    valid = np.isfinite(lat) & np.isfinite(lon) & (np.abs(lat) > 1e-12) & (np.abs(lon) > 1e-12)
+
     # North-direction neighbors (row-to-row): map to x in NEU.
+    valid_n = valid[1:, :] & valid[:-1, :]
     dlat_n = lat[1:, :] - lat[:-1, :]
     dlon_n = lon[1:, :] - lon[:-1, :]
     lat_mid_n = 0.5 * (lat[1:, :] + lat[:-1, :])
     dn_km = np.sqrt((dlat_n * 111.32) ** 2 + (dlon_n * 111.32 * np.cos(np.deg2rad(lat_mid_n))) ** 2)
+    dn_km = dn_km[valid_n]
 
     # East-direction neighbors (col-to-col): map to y in NEU.
+    valid_e = valid[:, 1:] & valid[:, :-1]
     dlat_e = lat[:, 1:] - lat[:, :-1]
     dlon_e = lon[:, 1:] - lon[:, :-1]
     lat_mid_e = 0.5 * (lat[:, 1:] + lat[:, :-1])
     de_km = np.sqrt((dlat_e * 111.32) ** 2 + (dlon_e * 111.32 * np.cos(np.deg2rad(lat_mid_e))) ** 2)
+    de_km = de_km[valid_e]
 
-    dx_km = float(np.nanmedian(dn_km))
-    dy_km = float(np.nanmedian(de_km))
+    # Robust median after removing extreme outliers from invalid edges.
+    dn_km = dn_km[np.isfinite(dn_km)]
+    de_km = de_km[np.isfinite(de_km)]
+    if dn_km.size > 10:
+        lo, hi = np.nanpercentile(dn_km, [5, 95])
+        dn_km = dn_km[(dn_km >= lo) & (dn_km <= hi)]
+    if de_km.size > 10:
+        lo, hi = np.nanpercentile(de_km, [5, 95])
+        de_km = de_km[(de_km >= lo) & (de_km <= hi)]
+
+    dx_km = float(np.nanmedian(dn_km)) if dn_km.size else np.nan
+    dy_km = float(np.nanmedian(de_km)) if de_km.size else np.nan
     if not np.isfinite(dx_km) or dx_km <= 0:
         dx_km = 0.25
     if not np.isfinite(dy_km) or dy_km <= 0:
@@ -282,8 +306,8 @@ def build_from_retrieval_1d_netcdf(
     dx_km: Optional[float] = None,
     dy_km: Optional[float] = None,
     mode_count: int = 2,
-    lat_var: str = "lat",
-    lon_var: str = "lon",
+    lat_var: str = "latitude",
+    lon_var: str = "longitude",
     cv_var: str = "Cv_total",
     fine_fraction_var: str = "FineModeFraction",
     reff_vars: Optional[Sequence[str]] = None,
@@ -323,11 +347,20 @@ def build_from_retrieval_1d_netcdf(
         mi_vars = ["Refractive_Index_Imaginary_Mode_1", "Refractive_Index_Imaginary_Mode_2"][:mode_count]
 
     # lat/lon: prefer file (supports 2D or spectral-like 3D), else regular-grid fallback
-    if lat_var in ds and lon_var in ds:
-        lat2d = _to_2d_field(ds[lat_var].values, ny, nx, lat_var, wavelength_index)
-        lon2d = _to_2d_field(ds[lon_var].values, ny, nx, lon_var, wavelength_index)
-        if (np.nanmax(np.abs(lat2d)) == 0) and (np.nanmax(np.abs(lon2d)) == 0):
-            lat2d, lon2d = generate_latlon(float(fallback_lat0), float(fallback_lon0), dx_km * 1000.0, dy_km * 1000.0, ny, nx)
+    lat_name = _first_existing_var(ds, [lat_var, 'lat', 'Latitude', 'LAT'])
+    lon_name = _first_existing_var(ds, [lon_var, 'lon', 'Longitude', 'LON'])
+    if lat_name is not None and lon_name is not None:
+        lat2d = _to_2d_field(ds[lat_name].values, ny, nx, lat_name, wavelength_index)
+        lon2d = _to_2d_field(ds[lon_name].values, ny, nx, lon_name, wavelength_index)
+        invalid_geo = (~np.isfinite(lat2d)) | (~np.isfinite(lon2d)) | (np.abs(lat2d) < 1e-12) | (np.abs(lon2d) < 1e-12)
+        lat2d = lat2d.astype(float)
+        lon2d = lon2d.astype(float)
+        lat2d[invalid_geo] = np.nan
+        lon2d[invalid_geo] = np.nan
+        if np.all(~np.isfinite(lat2d)) or np.all(~np.isfinite(lon2d)):
+            dx_seed = 0.25 if dx_km is None else float(dx_km)
+            dy_seed = 0.25 if dy_km is None else float(dy_km)
+            lat2d, lon2d = generate_latlon(float(fallback_lat0), float(fallback_lon0), dx_seed * 1000.0, dy_seed * 1000.0, ny, nx)
     elif fallback_lat0 is not None and fallback_lon0 is not None:
         # If dx/dy are unknown, use a conservative fallback before synthetic lat/lon generation.
         dx_seed = 0.25 if dx_km is None else float(dx_km)
