@@ -329,7 +329,10 @@ def build_from_retrieval_1d_netcdf(
         if (np.nanmax(np.abs(lat2d)) == 0) and (np.nanmax(np.abs(lon2d)) == 0):
             lat2d, lon2d = generate_latlon(float(fallback_lat0), float(fallback_lon0), dx_km * 1000.0, dy_km * 1000.0, ny, nx)
     elif fallback_lat0 is not None and fallback_lon0 is not None:
-        lat2d, lon2d = generate_latlon(float(fallback_lat0), float(fallback_lon0), dx_km * 1000.0, dy_km * 1000.0, ny, nx)
+        # If dx/dy are unknown, use a conservative fallback before synthetic lat/lon generation.
+        dx_seed = 0.25 if dx_km is None else float(dx_km)
+        dy_seed = 0.25 if dy_km is None else float(dy_km)
+        lat2d, lon2d = generate_latlon(float(fallback_lat0), float(fallback_lon0), dx_seed * 1000.0, dy_seed * 1000.0, ny, nx)
     else:
         raise ValueError("lat/lon variables not found and fallback_lat0/lon0 are None")
 
