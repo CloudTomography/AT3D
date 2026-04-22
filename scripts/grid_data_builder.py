@@ -418,7 +418,12 @@ def build_from_retrieval_1d_netcdf(
     if mode_count == 1:
         mode_fraction_2d = [np.ones_like(cv2d)]
     else:
-        fine = _flip_north(np.asarray(ds[fine_fraction_var].values, dtype=float)) if fine_fraction_var in ds else np.full_like(cv2d, 0.5)
+        fine = (
+            _flip_north(_to_2d_field(ds[fine_fraction_var].values, ny, nx, fine_fraction_var, wavelength_index))
+            if fine_fraction_var in ds
+            else np.full_like(cv2d, 0.5)
+        )
+        fine = np.clip(fine, 0.0, 1.0)
         mode_fraction_2d.append(fine)
         if mode_count >= 2:
             mode_fraction_2d.append(1.0 - fine)
