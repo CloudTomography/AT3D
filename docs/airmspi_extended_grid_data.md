@@ -165,3 +165,20 @@
 为贴合你给的 MATLAB 版本语义，`build_scene_and_sensors_single_band` 现在只对 `density`
 做 `resample_onto_grid`，其余字段（如 `lat/lon`, `mode*_fraction`, `mode*_reff/veff`, `mode*_mr/mi`）
 按“z 不变”处理：取首层并沿 z 广播，避免在 z 方向被插值改写。
+
+
+## Cv_total 到竖直质量浓度的写入方式
+
+`build_from_retrieval_1d_netcdf(...)` 不再把 `Cv_total` 直接复制到每个 z 层。
+
+现在默认按 MATLAB 逻辑把列积分量分配到竖直：
+
+- 默认 `vertical_distribution="from_nc"`：使用 `Hmean_aerosol` 与 `Saerosol` 作为高斯中心/宽度；
+- 可选 `vertical_distribution="fixed"`：使用 `fixed_h_km` / `fixed_sigma_km`；
+- 可选 `vertical_distribution="uniform"`：仅用于回退。
+
+质量浓度写入遵循：
+
+- `mass_density_z = rho_p[g/cm^3] * Cv_total[um] * w(z) * 1e-3`  (g/m^3)
+
+并保证 `sum(w * dz_km)=1`。

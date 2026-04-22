@@ -144,6 +144,39 @@ def generate_latlon(lat0: float, lon0: float, dx_m: float, dy_m: float, ny: int,
     return np.meshgrid(lat_1d, lon_1d, indexing='ij')
 
 
+
+
+def _z_layer_thickness_km(z_levels_km: Sequence[float]) -> np.ndarray:
+    z = np.asarray(z_levels_km, dtype=float)
+    if z.ndim != 1 or z.size < 2:
+        raise ValueError("z_levels_km must contain at least 2 levels")
+    z_edge = np.concatenate(([z[0] - (z[1]-z[0])/2], 0.5*(z[:-1] + z[1:]), [z[-1] + (z[-1]-z[-2])/2]))
+    return np.diff(z_edge)
+
+
+def _column_to_mass_density_profile(cv_column_um: np.ndarray,
+                                    z_levels_km: Sequence[float],
+                                    h_km: np.ndarray,
+                                    sigma_km: np.ndarray,
+                                    particle_density_g_cm3: float) -> np.ndarray:
+    """Convert column-integrated Cv_total [um] to 3D mass density [g/m^3]."""
+    z = np.asarray(z_levels_km, dtype=float)
+    dz_km = _z_layer_thickness_km(z)
+
+    h = np.asarray(h_km, dtype=float)
+    sigma = np.asarray(sigma_km, dtype=float)
+    sigma = np.where(np.isfinite(sigma) & (sigma > 1e-6), sigma, 0.5)
+
+    # Gaussian shape in z for each (y,x)
+    w = np.exp(-((z[None, None, :] - h[:, :, None]) ** 2) / (2.0 * sigma[:, :, None] ** 2))
+    norm = np.sum(w * dz_km[None, None, :], axis=2, keepdims=True)
+    norm = np.where(norm > 0, norm, 1.0)
+    w = w / norm
+
+    # MATLAB-equivalent: mass_density_z = rho_p[g/cm^3] * Cv_total[um] * w * 1e-3  [g/m^3]
+    mass_density = float(particle_density_g_cm3) * cv_column_um[:, :, None] * w * 1e-3
+    return mass_density
+
 def validate_extended_grid_data(df: pd.DataFrame, options: ExtendedGridOptions) -> None:
     required = list(BASE_COLUMNS)
     required.extend(_mode_columns(options.mode_count))
@@ -228,6 +261,13 @@ def build_from_retrieval_1d_netcdf(
     fallback_lat0: Optional[float] = 35.0,
     fallback_lon0: Optional[float] = -112.0,
     wavelength_index: int = 0,
+    vertical_distribution: str = "from_nc",
+    hmean_var: str = "Hmean_aerosol",
+    sigma_var: str = "Saerosol",
+    fixed_h_km: float = 2.0,
+    fixed_sigma_km: float = 0.5,
+    particle_density_g_cm3: float = 1.6,
+    convert_lognormal_params: bool = True,
 ) -> Tuple[pd.DataFrame, GridGeometry, ExtendedGridOptions]:
     """Convert a retrieval-1D netCDF (2D fields) into extended 3D grid dataframe.
 
@@ -260,7 +300,32 @@ def build_from_retrieval_1d_netcdf(
     else:
         raise ValueError("lat/lon variables not found and fallback_lat0/lon0 are None")
 
-    cv3d = _broadcast_2d_to_3d(cv2d, nz)
+    # Build vertical density profile from column-integrated Cv_total.
+    vd_mode = str(vertical_distribution).lower()
+    if vd_mode == 'from_nc' and (hmean_var in ds) and (sigma_var in ds):
+        h2d = _to_2d_field(ds[hmean_var].values, ny, nx, hmean_var, wavelength_index)
+        s2d = _to_2d_field(ds[sigma_var].values, ny, nx, sigma_var, wavelength_index)
+    elif vd_mode in ('fixed', 'from_nc'):
+        h2d = np.full((ny, nx), float(fixed_h_km), dtype=float)
+        s2d = np.full((ny, nx), float(fixed_sigma_km), dtype=float)
+    elif vd_mode == 'uniform':
+        # Fallback legacy behavior (not recommended for Cv_total)
+        dz_km = _z_layer_thickness_km(z_levels_km)
+        cv3d = np.repeat((cv2d / np.sum(dz_km))[:, :, None], nz, axis=2)
+        h2d = np.full((ny, nx), float(fixed_h_km), dtype=float)
+        s2d = np.full((ny, nx), float(fixed_sigma_km), dtype=float)
+    else:
+        raise ValueError("vertical_distribution should be one of: from_nc, fixed, uniform")
+
+    if vd_mode != 'uniform':
+        cv3d = _column_to_mass_density_profile(
+            cv_column_um=cv2d,
+            z_levels_km=z_levels_km,
+            h_km=h2d,
+            sigma_km=s2d,
+            particle_density_g_cm3=particle_density_g_cm3,
+        )
+
     lat3d = _broadcast_2d_to_3d(lat2d, nz)
     lon3d = _broadcast_2d_to_3d(lon2d, nz)
 
@@ -282,16 +347,28 @@ def build_from_retrieval_1d_netcdf(
     base["z"] = Z.reshape(-1)
     base["cv"] = _flatten_xyz(cv3d)
     # Mode1 remains the canonical per-mode definition; scalar reff/veff are omitted to avoid duplicates.
-    mode1_reff2d = _to_2d_field(ds[reff_vars[0]].values, ny, nx, reff_vars[0], wavelength_index) if reff_vars and reff_vars[0] in ds else np.full_like(cv2d, 0.2)
-    mode1_veff2d = _to_2d_field(ds[veff_vars[0]].values, ny, nx, veff_vars[0], wavelength_index) if veff_vars and veff_vars[0] in ds else np.full_like(cv2d, default_veff)
+    mode1_rm2d = _to_2d_field(ds[reff_vars[0]].values, ny, nx, reff_vars[0], wavelength_index) if reff_vars and reff_vars[0] in ds else np.full_like(cv2d, 0.2)
+    mode1_sig2d = _to_2d_field(ds[veff_vars[0]].values, ny, nx, veff_vars[0], wavelength_index) if veff_vars and veff_vars[0] in ds else np.full_like(cv2d, default_veff)
+    if convert_lognormal_params:
+        mode1_reff2d = mode1_rm2d * np.exp(2.5 * mode1_sig2d**2)
+        mode1_veff2d = np.exp(mode1_sig2d**2) - 1.0
+    else:
+        mode1_reff2d = mode1_rm2d
+        mode1_veff2d = mode1_sig2d
     base["lat"] = _flatten_xyz(lat3d)
     base["lon"] = _flatten_xyz(lon3d)
 
     for i_mode in range(mode_count):
         m = i_mode + 1
         frac2d = mode_fraction_2d[i_mode]
-        reff2d = _to_2d_field(ds[reff_vars[i_mode]].values, ny, nx, reff_vars[i_mode], wavelength_index) if i_mode < len(reff_vars) and reff_vars[i_mode] in ds else mode1_reff2d
-        veff2d = _to_2d_field(ds[veff_vars[i_mode]].values, ny, nx, veff_vars[i_mode], wavelength_index) if i_mode < len(veff_vars) and veff_vars[i_mode] in ds else np.full_like(cv2d, default_veff)
+        rm2d = _to_2d_field(ds[reff_vars[i_mode]].values, ny, nx, reff_vars[i_mode], wavelength_index) if i_mode < len(reff_vars) and reff_vars[i_mode] in ds else mode1_rm2d
+        sig2d = _to_2d_field(ds[veff_vars[i_mode]].values, ny, nx, veff_vars[i_mode], wavelength_index) if i_mode < len(veff_vars) and veff_vars[i_mode] in ds else mode1_sig2d
+        if convert_lognormal_params:
+            reff2d = rm2d * np.exp(2.5 * sig2d**2)
+            veff2d = np.exp(sig2d**2) - 1.0
+        else:
+            reff2d = rm2d
+            veff2d = sig2d
         mr2d = _to_2d_field(ds[mr_vars[i_mode]].values, ny, nx, mr_vars[i_mode], wavelength_index) if i_mode < len(mr_vars) and mr_vars[i_mode] in ds else np.full_like(cv2d, np.nan)
         mi2d = _to_2d_field(ds[mi_vars[i_mode]].values, ny, nx, mi_vars[i_mode], wavelength_index) if i_mode < len(mi_vars) and mi_vars[i_mode] in ds else np.full_like(cv2d, np.nan)
 
@@ -376,6 +453,10 @@ def run_retrieval_case(
     wavelength_index: int = 0,
     fallback_lat0: float = 35.0,
     fallback_lon0: float = -112.0,
+    vertical_distribution: str = "from_nc",
+    fixed_h_km: float = 2.0,
+    fixed_sigma_km: float = 0.5,
+    particle_density_g_cm3: float = 1.6,
 ) -> Path:
     """Spyder-friendly wrapper: one function call to build CSV from retrieval nc."""
     df, geom, options = build_from_retrieval_1d_netcdf(
@@ -387,6 +468,10 @@ def run_retrieval_case(
         wavelength_index=wavelength_index,
         fallback_lat0=fallback_lat0,
         fallback_lon0=fallback_lon0,
+        vertical_distribution=vertical_distribution,
+        fixed_h_km=fixed_h_km,
+        fixed_sigma_km=fixed_sigma_km,
+        particle_density_g_cm3=particle_density_g_cm3,
     )
     return write_extended_grid_csv(output_csv, df, geom, options)
 
@@ -405,6 +490,10 @@ if __name__ == "__main__":
     wavelength_index = 0  # 例如 AirMSPI: 0..6 -> [355,380,445,470,555,660,865]
     fallback_lat0 = 35.0
     fallback_lon0 = -112.0
+    vertical_distribution = "from_nc"  # from_nc | fixed | uniform
+    fixed_h_km = 2.0
+    fixed_sigma_km = 0.5
+    particle_density_g_cm3 = 1.6
 
     out = run_retrieval_case(
         input_nc=input_nc,
@@ -416,5 +505,9 @@ if __name__ == "__main__":
         wavelength_index=wavelength_index,
         fallback_lat0=fallback_lat0,
         fallback_lon0=fallback_lon0,
+        vertical_distribution=vertical_distribution,
+        fixed_h_km=fixed_h_km,
+        fixed_sigma_km=fixed_sigma_km,
+        particle_density_g_cm3=particle_density_g_cm3,
     )
     print(f"✅ wrote: {out}")
