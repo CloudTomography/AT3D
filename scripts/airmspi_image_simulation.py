@@ -1671,6 +1671,38 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         cloud_scatterer = cloud_scatterer.rename_vars({density_name: "density"})
         cloud_scatterer.attrs["density_name"] = density_name
 
+    # Build scalar reff/veff for AT3D from extended mode columns when available.
+    mode_reff_vars = sorted([v for v in cloud_scatterer.data_vars if v.startswith('mode') and v.endswith('_reff')])
+    mode_veff_vars = sorted([v for v in cloud_scatterer.data_vars if v.startswith('mode') and v.endswith('_veff')])
+
+    if ("reff" not in cloud_scatterer) and mode_reff_vars:
+        num = np.zeros(cloud_scatterer.density.shape, dtype=float)
+        den = np.zeros(cloud_scatterer.density.shape, dtype=float)
+        for v in mode_reff_vars:
+            mode_id = v.split('_')[0]  # mode1
+            frac_name = f"{mode_id}_fraction"
+            frac = np.asarray(cloud_scatterer[frac_name].data, dtype=float) if frac_name in cloud_scatterer else np.ones_like(num)
+            val = np.asarray(cloud_scatterer[v].data, dtype=float)
+            mask = np.isfinite(frac) & np.isfinite(val) & (frac > 0)
+            num[mask] += frac[mask] * val[mask]
+            den[mask] += frac[mask]
+        reff_eff = np.divide(num, den, out=np.full_like(num, np.nan), where=den > 0)
+        cloud_scatterer["reff"] = (['x', 'y', 'z'], reff_eff)
+
+    if ("veff" not in cloud_scatterer) and mode_veff_vars:
+        num = np.zeros(cloud_scatterer.density.shape, dtype=float)
+        den = np.zeros(cloud_scatterer.density.shape, dtype=float)
+        for v in mode_veff_vars:
+            mode_id = v.split('_')[0]
+            frac_name = f"{mode_id}_fraction"
+            frac = np.asarray(cloud_scatterer[frac_name].data, dtype=float) if frac_name in cloud_scatterer else np.ones_like(num)
+            val = np.asarray(cloud_scatterer[v].data, dtype=float)
+            mask = np.isfinite(frac) & np.isfinite(val) & (frac > 0)
+            num[mask] += frac[mask] * val[mask]
+            den[mask] += frac[mask]
+        veff_eff = np.divide(num, den, out=np.full_like(num, np.nan), where=den > 0)
+        cloud_scatterer["veff"] = (['x', 'y', 'z'], veff_eff)
+
     # Provide conservative defaults for legacy LES files.
     if "reff" not in cloud_scatterer:
         cloud_scatterer["reff"] = (['x', 'y', 'z'], np.full(cloud_scatterer.density.shape, 12.0, dtype=float))
@@ -1895,6 +1927,9 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     particle_density_gm3 = rho_p_gcm3 * 1e6  # g/cm^3 → g/m^3
     
     # === sanitize microphysics (avoid NaN/Inf/outliers causing interpolation range errors) ===
+    density_data = np.asarray(cloud_scatterer_on_rte_grid.density.data, dtype=float)
+    clear_air = (~np.isfinite(density_data)) | (density_data <= 0)
+
     reff_data = np.asarray(cloud_scatterer_on_rte_grid.reff.data, dtype=float)
     veff_data = np.asarray(cloud_scatterer_on_rte_grid.veff.data, dtype=float)
 
@@ -1904,6 +1939,10 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         reff_data[bad_reff] = float(aerosol_cfg.reff_default)
     if np.any(bad_veff):
         veff_data[bad_veff] = float(aerosol_cfg.veff_default)
+
+    # Avoid interpolation artifacts in clear-air cells.
+    reff_data[clear_air] = float(aerosol_cfg.reff_default)
+    veff_data[clear_air] = float(aerosol_cfg.veff_default)
 
     # Conservative clipping for aerosol retrieval products.
     reff_data = np.clip(reff_data, float(aerosol_cfg.reff_clip_min), float(aerosol_cfg.reff_clip_max))
@@ -1916,9 +1955,33 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         f"veff[{aerosol_cfg.veff_clip_min}, {aerosol_cfg.veff_clip_max}]"
     )
 
-    # === 从 scatterer 中动态获取范围（finite-only）===
-    reff_finite = reff_data[np.isfinite(reff_data)]
-    veff_finite = veff_data[np.isfinite(veff_data)]
+    # === 从 scatterer 中动态获取范围（finite-only, multi-mode aware）===
+    reff_candidates = [reff_data]
+    veff_candidates = [veff_data]
+    mode_reff_vars_rte = sorted([v for v in cloud_scatterer_on_rte_grid.data_vars if v.startswith('mode') and v.endswith('_reff')])
+    mode_veff_vars_rte = sorted([v for v in cloud_scatterer_on_rte_grid.data_vars if v.startswith('mode') and v.endswith('_veff')])
+
+    for v in mode_reff_vars_rte:
+        mode_id = v.split('_')[0]
+        frac_name = f"{mode_id}_fraction"
+        frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(reff_data)
+        arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
+        m = np.isfinite(arr) & np.isfinite(frac) & (frac > 0)
+        if np.any(m):
+            reff_candidates.append(arr[m])
+    for v in mode_veff_vars_rte:
+        mode_id = v.split('_')[0]
+        frac_name = f"{mode_id}_fraction"
+        frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(veff_data)
+        arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
+        m = np.isfinite(arr) & np.isfinite(frac) & (frac > 0)
+        if np.any(m):
+            veff_candidates.append(arr[m])
+
+    reff_all = np.concatenate([np.ravel(a) for a in reff_candidates])
+    veff_all = np.concatenate([np.ravel(a) for a in veff_candidates])
+    reff_finite = reff_all[np.isfinite(reff_all)]
+    veff_finite = veff_all[np.isfinite(veff_all)]
     reff_min = float(np.min(reff_finite))
     reff_max = float(np.max(reff_finite))
     veff_min = float(np.min(veff_finite))

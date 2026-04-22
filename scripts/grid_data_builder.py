@@ -20,7 +20,7 @@ import pandas as pd
 import xarray as xr
 
 
-BASE_COLUMNS = ["x", "y", "z", "cv", "reff", "veff", "lat", "lon"]
+BASE_COLUMNS = ["x", "y", "z", "cv", "lat", "lon"]
 SURFACE_COLUMNS = [
     "surface_model",  # lambertian | wave_fresnel | diner | ocean_unpolarized | rpv_unpolarized
     "surface_albedo",
@@ -148,6 +148,13 @@ def validate_extended_grid_data(df: pd.DataFrame, options: ExtendedGridOptions) 
     required.extend(_mode_columns(options.mode_count))
     _ensure_columns(df, required)
 
+    # Backward compatibility: either legacy scalar columns exist,
+    # or mode1 columns must be present (preferred extended schema).
+    has_scalar = ("reff" in df.columns) and ("veff" in df.columns)
+    has_mode1 = ("mode1_reff" in df.columns) and ("mode1_veff" in df.columns)
+    if not (has_scalar or has_mode1):
+        raise ValueError("Need either ('reff','veff') or ('mode1_reff','mode1_veff') columns")
+
     if options.include_surface:
         if "surface_model" in df.columns:
             valid_models = {
@@ -272,11 +279,9 @@ def build_from_retrieval_1d_netcdf(
     base["y"] = Y.reshape(-1)
     base["z"] = Z.reshape(-1)
     base["cv"] = _flatten_xyz(cv3d)
-    # Backward-compatible scalar reff/veff columns use mode1.
+    # Mode1 remains the canonical per-mode definition; scalar reff/veff are omitted to avoid duplicates.
     mode1_reff2d = _to_2d_field(ds[reff_vars[0]].values, ny, nx, reff_vars[0], wavelength_index) if reff_vars and reff_vars[0] in ds else np.full_like(cv2d, 0.2)
     mode1_veff2d = _to_2d_field(ds[veff_vars[0]].values, ny, nx, veff_vars[0], wavelength_index) if veff_vars and veff_vars[0] in ds else np.full_like(cv2d, default_veff)
-    base["reff"] = _flatten_xyz(_broadcast_2d_to_3d(mode1_reff2d, nz))
-    base["veff"] = _flatten_xyz(_broadcast_2d_to_3d(mode1_veff2d, nz))
     base["lat"] = _flatten_xyz(lat3d)
     base["lon"] = _flatten_xyz(lon3d)
 
@@ -328,8 +333,6 @@ def build_from_les_arrays(
         "y": Y.reshape(-1),
         "z": Z.reshape(-1),
         "cv": _flatten_xyz(lwc_gm3),
-        "reff": _flatten_xyz(np.full_like(lwc_gm3, default_reff, dtype=float)),
-        "veff": _flatten_xyz(np.full_like(lwc_gm3, default_veff, dtype=float)),
         "lat": _flatten_xyz(_broadcast_2d_to_3d(lat_c, nz)),
         "lon": _flatten_xyz(_broadcast_2d_to_3d(lon_c, nz)),
         "mode1_fraction": np.ones(nx * ny * nz),

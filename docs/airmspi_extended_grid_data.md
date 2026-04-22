@@ -121,3 +121,24 @@
 - `aerosol.veff_clip_max`
 
 建议直接在 `scripts/config_v5b.yaml` 的 `aerosol:` 段修改。
+
+
+## 关于 reff/veff 与 mode1_reff/mode1_veff 重复
+
+当前 builder 默认采用扩展列（`mode1_reff`, `mode1_veff`）作为主定义，不再强制写重复的标量列。
+在仿真读取阶段，如果没有标量 `reff/veff`，会自动根据 `mode*_fraction` 对 `mode*_reff/veff` 做加权合成，生成 AT3D 所需的标量 `reff/veff`。
+
+## resample 后异常值处理
+
+`build_scene_and_sensors_single_band` 在 `resample_onto_grid` 之后会：
+
+- 对 `reff/veff` 的 NaN/Inf/<=0 做替换；
+- 对清空气柱（`density<=0`）回填默认 `reff/veff`，避免插值伪负值影响；
+- clip 到配置区间后再用于光学插值。
+
+## 多 mode 下的 reff/veff 范围
+
+`reff_min/max` 与 `veff_min/max` 现在会同时考虑：
+
+- 标量 `reff/veff`；
+- 所有存在且 `mode*_fraction>0` 的 `mode*_reff/veff`。
