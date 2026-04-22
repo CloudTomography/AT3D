@@ -1837,10 +1837,19 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                 arr3d = np.repeat(arr_xy[..., None], nz_target, axis=2)
                 cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
             else:
-                # Fallback: try aligning to x/y order then broadcast.
-                arr_xy = np.asarray(da.transpose('x', 'y').data)
-                arr3d = np.repeat(arr_xy[..., None], nz_target, axis=2)
-                cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+                # Generic fallback for non-standard dims.
+                if da.ndim == 0:
+                    arr3d = np.full((cloud_scatterer_on_rte_grid.sizes['x'],
+                                     cloud_scatterer_on_rte_grid.sizes['y'],
+                                     nz_target), float(arr))
+                    cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+                elif {'x', 'y'}.issubset(set(da.dims)):
+                    arr_xy = np.asarray(da.transpose('x', 'y').data)
+                    arr3d = np.repeat(arr_xy[..., None], nz_target, axis=2)
+                    cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+                else:
+                    # Skip unsupported auxiliary variable dimensions.
+                    print(f"⚠️ Skip static var '{name}' with dims={da.dims} (unsupported for z-broadcast)")
     size_distribution_function = at3d.size_distribution.gamma
     size_distribution_function = at3d.size_distribution.lognormal
     # cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.reff.dims,
