@@ -198,7 +198,14 @@ def _estimate_dxdy_from_latlon(lat2d: np.ndarray, lon2d: np.ndarray) -> Tuple[fl
     lat = np.asarray(lat2d, dtype=float)
     lon = np.asarray(lon2d, dtype=float)
 
-    valid = np.isfinite(lat) & np.isfinite(lon) & (np.abs(lat) > 1e-12) & (np.abs(lon) > 1e-12)
+    valid = (
+        np.isfinite(lat)
+        & np.isfinite(lon)
+        & (np.abs(lat) > 1e-12)
+        & (np.abs(lon) > 1e-12)
+        & (np.abs(lat) <= 90.0)
+        & (np.abs(lon) <= 180.0)
+    )
 
     # North-direction neighbors (row-to-row): map to x in NEU.
     valid_n = valid[1:, :] & valid[:-1, :]
@@ -352,7 +359,14 @@ def build_from_retrieval_1d_netcdf(
     if lat_name is not None and lon_name is not None:
         lat2d = _to_2d_field(ds[lat_name].values, ny, nx, lat_name, wavelength_index)
         lon2d = _to_2d_field(ds[lon_name].values, ny, nx, lon_name, wavelength_index)
-        invalid_geo = (~np.isfinite(lat2d)) | (~np.isfinite(lon2d)) | (np.abs(lat2d) < 1e-12) | (np.abs(lon2d) < 1e-12)
+        invalid_geo = (
+            (~np.isfinite(lat2d))
+            | (~np.isfinite(lon2d))
+            | (np.abs(lat2d) < 1e-12)
+            | (np.abs(lon2d) < 1e-12)
+            | (np.abs(lat2d) > 90.0)
+            | (np.abs(lon2d) > 180.0)
+        )
         lat2d = lat2d.astype(float)
         lon2d = lon2d.astype(float)
         lat2d[invalid_geo] = np.nan
