@@ -1672,10 +1672,12 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                 raise
             with open(csv_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
-            if len(lines) < 4:
+            if len(lines) < 5:
                 raise
-            header_lines = lines[:3]
-            df = pd.read_csv(csv_path, skiprows=3)
+            # Keep AT3D CSV preamble exactly as expected by at3d.util.load_from_csv:
+            # line1 comment, line2 nx/ny/nz, line3 dx/dy, line4 z-levels.
+            header_lines = lines[:4]
+            df = pd.read_csv(csv_path, skiprows=4)
             df_num = df.apply(pd.to_numeric, errors="coerce")
             # drop columns that are effectively non-numeric (e.g. surface_model='diner')
             bad_cols = [c for c in df.columns if df_num[c].isna().all() and not df[c].isna().all()]
