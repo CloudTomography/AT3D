@@ -223,18 +223,24 @@ def _estimate_dxdy_from_latlon(lat2d: np.ndarray, lon2d: np.ndarray) -> Tuple[fl
     de_km = np.sqrt((dlat_e * 111.32) ** 2 + (dlon_e * 111.32 * np.cos(np.deg2rad(lat_mid_e))) ** 2)
     de_km = de_km[valid_e]
 
-    # Robust median after removing extreme outliers from invalid edges.
-    dn_km = dn_km[np.isfinite(dn_km)]
-    de_km = de_km[np.isfinite(de_km)]
-    if dn_km.size > 10:
-        lo, hi = np.nanpercentile(dn_km, [5, 95])
-        dn_km = dn_km[(dn_km >= lo) & (dn_km <= hi)]
-    if de_km.size > 10:
-        lo, hi = np.nanpercentile(de_km, [5, 95])
-        de_km = de_km[(de_km >= lo) & (de_km <= hi)]
+    def _robust_spacing(vals: np.ndarray) -> float:
+        vals = np.asarray(vals, dtype=float)
+        vals = vals[np.isfinite(vals) & (vals > 0.0)]
+        if vals.size == 0:
+            return np.nan
+        if vals.size > 10:
+            lo, hi = np.nanpercentile(vals, [5, 95])
+            vals = vals[(vals >= lo) & (vals <= hi)]
+        if vals.size > 20:
+            p25, p50 = np.nanpercentile(vals, [25, 50])
+            # If mixed scales exist (e.g., valid cell size + sparse large jumps),
+            # prefer the finer-scale cluster for grid spacing.
+            if np.isfinite(p25) and np.isfinite(p50) and p25 > 0 and (p50 / p25) > 1.8:
+                vals = vals[vals <= (1.5 * p25)]
+        return float(np.nanmedian(vals)) if vals.size else np.nan
 
-    dx_km = float(np.nanmedian(dn_km)) if dn_km.size else np.nan
-    dy_km = float(np.nanmedian(de_km)) if de_km.size else np.nan
+    dx_km = _robust_spacing(dn_km)
+    dy_km = _robust_spacing(de_km)
     if not np.isfinite(dx_km) or dx_km <= 0:
         dx_km = 0.25
     if not np.isfinite(dy_km) or dy_km <= 0:
