@@ -19,12 +19,14 @@ Author: Benting Chen
 import os
 import sys
 import time
+import tempfile
 import yaml
 import argparse
 import json
 import hashlib
 import subprocess
 import numpy as np
+import pandas as pd
 import xarray as xr
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -1661,8 +1663,39 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     t0_all = time.perf_counter()
     input_path = scene_cfg.input_path
     t0 = time.perf_counter()
+
+    def _load_csv_numeric_only(csv_path: str):
+        try:
+            return at3d.util.load_from_csv(csv_path, density=None, origin=(0.0, 0.0))
+        except ValueError as e:
+            if "could not convert string to float" not in str(e):
+                raise
+            with open(csv_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            if len(lines) < 4:
+                raise
+            header_lines = lines[:3]
+            df = pd.read_csv(csv_path, skiprows=3)
+            df_num = df.apply(pd.to_numeric, errors="coerce")
+            # drop columns that are effectively non-numeric (e.g. surface_model='diner')
+            bad_cols = [c for c in df.columns if df_num[c].isna().all() and not df[c].isna().all()]
+            if bad_cols:
+                print(f"⚠️ Dropping non-numeric CSV columns for at3d.load_from_csv: {bad_cols}")
+            keep_cols = [c for c in df.columns if c not in bad_cols]
+            with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8") as tf:
+                tmp_path = tf.name
+                tf.writelines(header_lines)
+                df_num[keep_cols].to_csv(tf, index=False)
+            try:
+                return at3d.util.load_from_csv(tmp_path, density=None, origin=(0.0, 0.0))
+            finally:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
     # Compatible with both retrieval-style CSV (cv) and LES-style CSV (lwc/density).
-    cloud_scatterer = at3d.util.load_from_csv(input_path, density=None, origin=(0.0, 0.0))
+    cloud_scatterer = _load_csv_numeric_only(input_path)
     density_candidates = ["cv", "lwc", "density"]
     density_name = next((name for name in density_candidates if name in cloud_scatterer.data_vars), None)
     if density_name is None:

@@ -500,8 +500,6 @@ def build_from_retrieval_1d_netcdf(
     # NOTE: user-provided kernels are closest to an RPV-like BRDF with hotspot;
     # at3d currently exposes `diner` (modified RPV + hotspot-like term), so we
     # store these fields and let simulation map them to the selected model.
-    base["surface_model"] = np.full(base["x"].shape, str(surface_model), dtype=object)
-
     def _surface_field_or_nan(var_name: str, is_spectral: bool) -> np.ndarray:
         if var_name in ds:
             arr2d = _to_2d_field(ds[var_name].values, ny, nx, var_name, wavelength_index if is_spectral else 0)
