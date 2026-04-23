@@ -64,6 +64,18 @@ scene:
   # AT3D/SHDOM world coordinates: [x, y, z] = [North, East, Up] (NEU, left-handed).
   input_path: "../data/synthetic_cloud_fields/jpl_les/retrieval_2019_0806_1839_extended.csv"
   lookat_center_km: [4.5, 3.8, 0.0]  # 关键参数：平移VZA“最低点”在图上的位置（不必在区域几何中心）
+  # surface toggles
+  enable_brdf: false
+  enable_bpdf: false
+  brdf_model: "diner"         # currently supported: diner; fallback to lambertian when disabled/unsupported
+  lambertian_albedo: 0.0
+  # fallback values used when CSV lacks corresponding surface fields
+  brdf_default_a: 0.0
+  brdf_default_k: 1.0
+  brdf_default_b: 0.0
+  bpdf_default_e: 0.0
+  bpdf_default_wind_vv: 5.0
+  bpdf_default_wind_wd: 0.0
 
 # solar geometry in geophysical convention
 solar:
@@ -97,6 +109,7 @@ aerosol:
   veff_clip_min: 0.01
   veff_clip_max: 1.0
   density_floor: 0.0
+  mode_selection: "both"   # both | mode1 | mode2
 
 bands:
   wavelength_nm: [470]

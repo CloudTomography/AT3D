@@ -98,6 +98,16 @@ class GroundCropConfig:
 class SceneConfig:
     input_path: str
     lookat_center_km: List[float]
+    enable_brdf: bool = False
+    enable_bpdf: bool = False
+    brdf_model: str = "diner"
+    lambertian_albedo: float = 0.0
+    brdf_default_a: float = 0.0
+    brdf_default_k: float = 1.0
+    brdf_default_b: float = 0.0
+    bpdf_default_e: float = 0.0
+    bpdf_default_wind_vv: float = 5.0
+    bpdf_default_wind_wd: float = 0.0
 
 @dataclass
 class CameraConfig:
@@ -133,3 +143,4 @@ class AerosolConfig:
     veff_clip_min: float = 0.01
     veff_clip_max: float = 1.0
     density_floor: float = 0.0
+    mode_selection: str = "both"  # both | mode1 | mode2

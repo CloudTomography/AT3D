@@ -338,6 +338,13 @@ def build_from_retrieval_1d_netcdf(
     fixed_sigma_km: float = 0.5,
     particle_density_g_cm3: float = 1.6,
     convert_lognormal_params: bool = True,
+    a0_surf_var: str = "a0_surf",
+    k0_surf_var: str = "k0_surf",
+    b0_surf_var: str = "b0_surf",
+    e0_surface_var: str = "e0_surface",
+    wind_vv_var: str = "wind_vv",
+    wind_wd_var: str = "wind_wd",
+    surface_model: str = "diner",
 ) -> Tuple[pd.DataFrame, GridGeometry, ExtendedGridOptions]:
     """Convert a retrieval-1D netCDF (2D fields) into extended 3D grid dataframe.
 
@@ -488,6 +495,27 @@ def build_from_retrieval_1d_netcdf(
         base[f"mode{m}_veff"] = _flatten_xyz(_broadcast_2d_to_3d(veff2d, nz))
         base[f"mode{m}_mr"] = _flatten_xyz(_broadcast_2d_to_3d(mr2d, nz))
         base[f"mode{m}_mi"] = _flatten_xyz(_broadcast_2d_to_3d(mi2d, nz))
+
+    # Optional surface BRDF/BPDF parameters from retrieval nc.
+    # NOTE: user-provided kernels are closest to an RPV-like BRDF with hotspot;
+    # at3d currently exposes `diner` (modified RPV + hotspot-like term), so we
+    # store these fields and let simulation map them to the selected model.
+    base["surface_model"] = np.full(base["x"].shape, str(surface_model), dtype=object)
+
+    def _surface_field_or_nan(var_name: str, is_spectral: bool) -> np.ndarray:
+        if var_name in ds:
+            arr2d = _to_2d_field(ds[var_name].values, ny, nx, var_name, wavelength_index if is_spectral else 0)
+            arr2d = _flip_north(arr2d)
+        else:
+            arr2d = np.full((ny, nx), np.nan, dtype=float)
+        return _flatten_xyz(_broadcast_2d_to_3d(arr2d, nz))
+
+    base["a0_surf"] = _surface_field_or_nan(a0_surf_var, is_spectral=True)
+    base["k0_surf"] = _surface_field_or_nan(k0_surf_var, is_spectral=True)
+    base["b0_surf"] = _surface_field_or_nan(b0_surf_var, is_spectral=True)
+    base["e0_surface"] = _surface_field_or_nan(e0_surface_var, is_spectral=True)
+    base["wind_vv"] = _surface_field_or_nan(wind_vv_var, is_spectral=False)
+    base["wind_wd"] = _surface_field_or_nan(wind_wd_var, is_spectral=False)
 
     options = ExtendedGridOptions(mode_count=mode_count, include_surface=True, include_per_grid_refractive_index=True)
     df = build_extended_grid_dataframe(base, options)

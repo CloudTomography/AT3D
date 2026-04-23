@@ -1671,6 +1671,15 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         cloud_scatterer = cloud_scatterer.rename_vars({density_name: "density"})
         cloud_scatterer.attrs["density_name"] = density_name
 
+    mode_selection = str(getattr(aerosol_cfg, "mode_selection", "both")).lower()
+    if mode_selection not in {"both", "mode1", "mode2"}:
+        raise ValueError(f"aerosol.mode_selection must be one of ['both','mode1','mode2'], got: {mode_selection}")
+
+    def _mode_selected(mode_id: str) -> bool:
+        if mode_selection == "both":
+            return True
+        return mode_id == mode_selection
+
     # Build scalar reff/veff for AT3D from extended mode columns when available.
     mode_reff_vars = sorted([v for v in cloud_scatterer.data_vars if v.startswith('mode') and v.endswith('_reff')])
     mode_veff_vars = sorted([v for v in cloud_scatterer.data_vars if v.startswith('mode') and v.endswith('_veff')])
@@ -1680,6 +1689,8 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         den = np.zeros(cloud_scatterer.density.shape, dtype=float)
         for v in mode_reff_vars:
             mode_id = v.split('_')[0]  # mode1
+            if not _mode_selected(mode_id):
+                continue
             frac_name = f"{mode_id}_fraction"
             frac = np.asarray(cloud_scatterer[frac_name].data, dtype=float) if frac_name in cloud_scatterer else np.ones_like(num)
             val = np.asarray(cloud_scatterer[v].data, dtype=float)
@@ -1694,6 +1705,8 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         den = np.zeros(cloud_scatterer.density.shape, dtype=float)
         for v in mode_veff_vars:
             mode_id = v.split('_')[0]
+            if not _mode_selected(mode_id):
+                continue
             frac_name = f"{mode_id}_fraction"
             frac = np.asarray(cloud_scatterer[frac_name].data, dtype=float) if frac_name in cloud_scatterer else np.ones_like(num)
             val = np.asarray(cloud_scatterer[v].data, dtype=float)
@@ -1856,6 +1869,54 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     cloud_scatterer_on_rte_grid['delx'] = xr.DataArray(float(np.asarray(rte_grid.delx).reshape(-1)[0]))
     cloud_scatterer_on_rte_grid['dely'] = xr.DataArray(float(np.asarray(rte_grid.dely).reshape(-1)[0]))
 
+    # Optional single-mode selection: scale total density by selected mode fraction.
+    if mode_selection in {"mode1", "mode2"}:
+        frac_name = f"{mode_selection}_fraction"
+        if frac_name in cloud_scatterer_on_rte_grid:
+            frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float)
+            frac = np.clip(np.nan_to_num(frac, nan=0.0, posinf=0.0, neginf=0.0), 0.0, 1.0)
+            dens = np.asarray(cloud_scatterer_on_rte_grid["density"].data, dtype=float)
+            cloud_scatterer_on_rte_grid["density"] = (
+                cloud_scatterer_on_rte_grid["density"].dims,
+                dens * frac
+            )
+        else:
+            print(f"⚠️ mode_selection={mode_selection} but '{frac_name}' not found; density unchanged.")
+
+    # Recompute scalar reff/veff from selected mode(s) on RTE grid when mode fields exist.
+    mode_reff_vars_rte_all = sorted([v for v in cloud_scatterer_on_rte_grid.data_vars if v.startswith('mode') and v.endswith('_reff')])
+    mode_veff_vars_rte_all = sorted([v for v in cloud_scatterer_on_rte_grid.data_vars if v.startswith('mode') and v.endswith('_veff')])
+    if mode_reff_vars_rte_all:
+        num = np.zeros(cloud_scatterer_on_rte_grid["density"].shape, dtype=float)
+        den = np.zeros(cloud_scatterer_on_rte_grid["density"].shape, dtype=float)
+        for v in mode_reff_vars_rte_all:
+            mode_id = v.split('_')[0]
+            if not _mode_selected(mode_id):
+                continue
+            frac_name = f"{mode_id}_fraction"
+            frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(num)
+            arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
+            m = np.isfinite(arr) & np.isfinite(frac) & (frac > 0)
+            num[m] += frac[m] * arr[m]
+            den[m] += frac[m]
+        reff_eff = np.divide(num, den, out=np.full_like(num, np.nan), where=den > 0)
+        cloud_scatterer_on_rte_grid["reff"] = (('x', 'y', 'z'), reff_eff)
+    if mode_veff_vars_rte_all:
+        num = np.zeros(cloud_scatterer_on_rte_grid["density"].shape, dtype=float)
+        den = np.zeros(cloud_scatterer_on_rte_grid["density"].shape, dtype=float)
+        for v in mode_veff_vars_rte_all:
+            mode_id = v.split('_')[0]
+            if not _mode_selected(mode_id):
+                continue
+            frac_name = f"{mode_id}_fraction"
+            frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(num)
+            arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
+            m = np.isfinite(arr) & np.isfinite(frac) & (frac > 0)
+            num[m] += frac[m] * arr[m]
+            den[m] += frac[m]
+        veff_eff = np.divide(num, den, out=np.full_like(num, np.nan), where=den > 0)
+        cloud_scatterer_on_rte_grid["veff"] = (('x', 'y', 'z'), veff_eff)
+
     size_distribution_function = at3d.size_distribution.gamma
     size_distribution_function = at3d.size_distribution.lognormal
     # cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.reff.dims,
@@ -2013,6 +2074,8 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
 
     for v in mode_reff_vars_rte:
         mode_id = v.split('_')[0]
+        if not _mode_selected(mode_id):
+            continue
         frac_name = f"{mode_id}_fraction"
         frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(reff_data)
         arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
@@ -2021,6 +2084,8 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             reff_candidates.append(arr[m])
     for v in mode_veff_vars_rte:
         mode_id = v.split('_')[0]
+        if not _mode_selected(mode_id):
+            continue
         frac_name = f"{mode_id}_fraction"
         frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(veff_data)
         arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
@@ -2158,12 +2223,55 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                         medium=medium)
     
     num_stokes = 3 if is_polarized else 1
+
+    def _surface_param_2d(name: str, default_value: float) -> np.ndarray:
+        if name in cloud_scatterer_on_rte_grid:
+            arr = np.asarray(cloud_scatterer_on_rte_grid[name].data, dtype=float)
+            if arr.ndim == 3:
+                arr2d = arr[:, :, 0]
+            elif arr.ndim == 2:
+                arr2d = arr
+            else:
+                arr2d = np.full((rte_grid.x.size, rte_grid.y.size), float(default_value), dtype=float)
+        else:
+            arr2d = np.full((rte_grid.x.size, rte_grid.y.size), float(default_value), dtype=float)
+        arr2d = np.nan_to_num(arr2d, nan=float(default_value), posinf=float(default_value), neginf=float(default_value))
+        return arr2d
+
+    enable_brdf = bool(getattr(scene_cfg, "enable_brdf", False))
+    enable_bpdf = bool(getattr(scene_cfg, "enable_bpdf", False))
+    brdf_model = str(getattr(scene_cfg, "brdf_model", "diner")).lower()
+    delx_km = float(np.asarray(rte_grid.delx).reshape(-1)[0])
+    dely_km = float(np.asarray(rte_grid.dely).reshape(-1)[0])
+
+    if enable_brdf and brdf_model == "diner":
+        A = _surface_param_2d("a0_surf", float(getattr(scene_cfg, "brdf_default_a", 0.0)))
+        K = _surface_param_2d("k0_surf", float(getattr(scene_cfg, "brdf_default_k", 1.0)))
+        B = _surface_param_2d("b0_surf", float(getattr(scene_cfg, "brdf_default_b", 0.0)))
+        if enable_bpdf:
+            E = _surface_param_2d("e0_surface", float(getattr(scene_cfg, "bpdf_default_e", 0.0)))
+            wind_vv = _surface_param_2d("wind_vv", float(getattr(scene_cfg, "bpdf_default_wind_vv", 5.0)))
+            wind_wd = _surface_param_2d("wind_wd", float(getattr(scene_cfg, "bpdf_default_wind_wd", 0.0)))
+            if np.any(np.abs(wind_wd) > 1e-9):
+                print("⚠️ wind_wd is currently not used by at3d.surface.diner and will be ignored.")
+            zeta = E
+            sigma = np.sqrt(np.maximum(0.003 + 0.00512 * np.maximum(wind_vv, 0.0), 1e-6) / 2.0)
+        else:
+            zeta = np.zeros_like(A)
+            sigma = np.zeros_like(A)
+        surface_ds = at3d.surface.diner(A=A, K=K, B=B, ZETA=zeta, SIGMA=sigma, delx=delx_km, dely=dely_km)
+    else:
+        if enable_brdf and brdf_model != "diner":
+            print(f"⚠️ Unsupported brdf_model='{brdf_model}', fallback to lambertian.")
+        lambert_alb = float(getattr(scene_cfg, "lambertian_albedo", 0.0))
+        surface_ds = at3d.surface.lambertian(lambert_alb)
+
     t0 = time.perf_counter()
     solvers_dict.add_solver(
         w,
         at3d.solver.RTE(
             numerical_params=config,
-            surface=at3d.surface.lambertian(0.0),
+            surface=surface_ds,
             source=at3d.source.solar(w, solarmu, solar_azimuth),
             medium=medium,
             num_stokes=num_stokes
