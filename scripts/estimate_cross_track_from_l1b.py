@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Estimate cross-track configuration fields for config_v5b.yaml from AirMSPI L1B + MetNav.
+"""
+from __future__ import annotations
+
+import argparse
+import re
+import glob
+from pathlib import Path
+from typing import Dict, List, Tuple
+
+import h5py
+import numpy as np
+import pandas as pd
+import xarray as xr
+
+
+TIME_RE = re.compile(r"_(\d{8})_(\d{6})Z")
+
+
+def _parse_base_time_from_name(path: Path) -> pd.Timestamp:
+    m = TIME_RE.search(path.name)
+    if not m:
+        raise ValueError(f"Cannot parse base time from filename: {path.name}")
+    return pd.to_datetime(f"{m.group(1)} {m.group(2)}", format="%Y%m%d %H%M%S", utc=True)
+
+
+def _read_h5_array(f: h5py.File, dataset_path: str) -> np.ndarray:
+    if dataset_path not in f:
+        raise KeyError(f"Dataset not found: {dataset_path}")
+    arr = np.asarray(f[dataset_path][...], dtype=float)
+    fill = f[dataset_path].attrs.get("_FillValue", None)
+    if fill is not None:
+        arr = np.where(arr == float(fill), np.nan, arr)
+    return arr
+
+
+def _find_first_existing(f: h5py.File, candidates: List[str]) -> str:
+    for c in candidates:
+        if c in f:
+            return c
+    raise KeyError(f"None of datasets exist: {candidates}")
+
+
+def _scan_time_window(l1b_path: Path, time_dataset: str) -> Tuple[pd.Timestamp, pd.Timestamp]:
+    with h5py.File(l1b_path, "r") as f:
+        t = _read_h5_array(f, time_dataset)
+    valid = np.isfinite(t)
+    if not np.any(valid):
+        raise ValueError(f"No valid time values in {l1b_path}")
+    tmin = float(np.nanmin(t[valid]))
+    tmax = float(np.nanmax(t[valid]))
+    return pd.to_datetime(tmin, unit="s", utc=True), pd.to_datetime(tmax, unit="s", utc=True)
+
+
+def _latlon_to_xy_km(lat: np.ndarray, lon: np.ndarray, lat0: float, lon0: float) -> Tuple[np.ndarray, np.ndarray]:
+    km_per_deg_lat = 111.32
+    km_per_deg_lon = 111.32 * np.cos(np.deg2rad(lat0))
+    x_north = (lat - lat0) * km_per_deg_lat
+    y_east = (lon - lon0) * km_per_deg_lon
+    return x_north, y_east
+
+
+def _load_retrieval_sw_corner_latlon(retrieval_nc: Path) -> Tuple[float, float]:
+    ds = xr.open_dataset(retrieval_nc)
+    lat_name = "latitude" if "latitude" in ds else ("lat" if "lat" in ds else None)
+    lon_name = "longitude" if "longitude" in ds else ("lon" if "lon" in ds else None)
+    if lat_name is None or lon_name is None:
+        raise ValueError("retrieval nc must contain latitude/longitude (or lat/lon)")
+    lat = np.asarray(ds[lat_name].values, dtype=float)
+    lon = np.asarray(ds[lon_name].values, dtype=float)
+    mask = np.isfinite(lat) & np.isfinite(lon) & (np.abs(lat) <= 90) & (np.abs(lon) <= 180)
+    if not np.any(mask):
+        raise ValueError("No valid lat/lon in retrieval nc")
+    return float(np.nanmin(lat[mask])), float(np.nanmin(lon[mask]))
+
+
+def _load_metnav_table(path: Path) -> pd.DataFrame:
+    if path.suffix.lower() in {".nc", ".nc4"}:
+        ds = xr.open_dataset(path)
+        df = ds.to_dataframe().reset_index()
+    else:
+        df = pd.read_csv(path)
+    cols = {c.lower(): c for c in df.columns}
+    time_col = cols.get("time_in_seconds_from_epoch") or cols.get("time") or cols.get("timestamp")
+    if time_col is None:
+        raise ValueError("MetNav file needs time column (Time_in_seconds_from_epoch / time / timestamp)")
+    if np.issubdtype(df[time_col].dtype, np.number):
+        t = pd.to_datetime(df[time_col].astype(float), unit="s", utc=True)
+    else:
+        t = pd.to_datetime(df[time_col], utc=True)
+    df = df.copy()
+    df["time_utc"] = t
+    return df.sort_values("time_utc")
+
+
+def _interp_metnav(df: pd.DataFrame, t_utc: pd.Timestamp, col_candidates: List[str]) -> float:
+    cols = {c.lower(): c for c in df.columns}
+    src = None
+    for c in col_candidates:
+        if c.lower() in cols:
+            src = cols[c.lower()]
+            break
+    if src is None:
+        raise ValueError(f"Missing MetNav column, tried: {col_candidates}")
+    x = df["time_utc"].astype("int64").values.astype(float) / 1e9
+    y = pd.to_numeric(df[src], errors="coerce").values.astype(float)
+    m = np.isfinite(x) & np.isfinite(y)
+    return float(np.interp(t_utc.value / 1e9, x[m], y[m]))
+
+
+def estimate_cross_track(l1b_files: List[Path], metnav_path: Path, retrieval_nc: Path, time_dataset: str) -> Dict[str, float]:
+    windows = [_scan_time_window(p, time_dataset) for p in sorted(l1b_files)]
+    t_start = min(w[0] for w in windows)
+    t_end = max(w[1] for w in windows)
+
+    met = _load_metnav_table(metnav_path)
+    lat0, lon0 = _load_retrieval_sw_corner_latlon(retrieval_nc)
+
+    lat1 = _interp_metnav(met, t_start, ["Latitude"])
+    lon1 = _interp_metnav(met, t_start, ["Longitude"])
+    alt1_m = _interp_metnav(met, t_start, ["Altitude"])
+    pitch1 = _interp_metnav(met, t_start, ["Pitch"])
+
+    lat2 = _interp_metnav(met, t_end, ["Latitude"])
+    lon2 = _interp_metnav(met, t_end, ["Longitude"])
+    alt2_m = _interp_metnav(met, t_end, ["Altitude"])
+    pitch2 = _interp_metnav(met, t_end, ["Pitch"])
+
+    x1, y1 = _latlon_to_xy_km(np.array([lat1]), np.array([lon1]), lat0, lon0)
+    x2, y2 = _latlon_to_xy_km(np.array([lat2]), np.array([lon2]), lat0, lon0)
+
+    return {
+        "cross_track_x1": float(x1[0]),
+        "cross_track_y1": float(y1[0]),
+        "cross_track_z1": float(alt1_m / 1000.0),
+        "cross_track_x2": float(x2[0]),
+        "cross_track_y2": float(y2[0]),
+        "cross_track_z2": float(alt2_m / 1000.0),
+        "cross_track_pitch_start_deg": float(pitch1),
+        "cross_track_pitch_end_deg": float(pitch2),
+        "scan_start_utc": t_start.isoformat(),
+        "scan_end_utc": t_end.isoformat(),
+        "reference_sw_lat": lat0,
+        "reference_sw_lon": lon0,
+    }
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--l1b_glob", required=True, help="e.g. 'data/l1b/Case_21_*_V006.hdf'")
+    ap.add_argument("--metnav", required=True, help="MetNav file (.csv/.nc)")
+    ap.add_argument("--retrieval_nc", required=True, help="retrieval nc for SW corner reference")
+    ap.add_argument("--time_dataset", default="/HDFEOS/GRIDS/935nm_band/Data_Fields/Time_in_seconds_from_epoch")
+    args = ap.parse_args()
+
+    l1b_files = [Path(p) for p in sorted(glob.glob(args.l1b_glob))]
+    if not l1b_files:
+        raise FileNotFoundError(f"No files matched --l1b_glob: {args.l1b_glob}")
+
+    est = estimate_cross_track(
+        l1b_files=l1b_files,
+        metnav_path=Path(args.metnav),
+        retrieval_nc=Path(args.retrieval_nc),
+        time_dataset=args.time_dataset,
+    )
+    print("trajectory:")
+    for k in [
+        "cross_track_x1", "cross_track_y1", "cross_track_z1",
+        "cross_track_x2", "cross_track_y2", "cross_track_z2",
+        "cross_track_pitch_start_deg", "cross_track_pitch_end_deg",
+    ]:
+        print(f"  {k}: {est[k]:.6f}")
+    print(f"# scan_start_utc: {est['scan_start_utc']}")
+    print(f"# scan_end_utc:   {est['scan_end_utc']}")
+    print(f"# reference_sw_latlon: ({est['reference_sw_lat']:.6f}, {est['reference_sw_lon']:.6f})")
+
+
+if __name__ == "__main__":
+    main()

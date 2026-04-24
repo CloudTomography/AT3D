@@ -28,6 +28,7 @@ import subprocess
 import numpy as np
 import pandas as pd
 import xarray as xr
+from pathlib import Path
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Optional
@@ -1561,6 +1562,58 @@ def replot_simulation_results_with_config(result_path: str, cfg_path: str = "con
         rebuild_if_missing=rebuild_if_missing,
         overwrite_npz=overwrite_npz,
     )
+
+
+def plot_all_wavelength_results(root_dir: str,
+                                cfg_path: str = "config_v5b.yaml",
+                                level: str = "registered",
+                                view_name: Optional[str] = None,
+                                show: bool = False,
+                                rebuild_if_missing: bool = True,
+                                overwrite_npz: bool = False) -> List[str]:
+    """
+    Replot every wavelength configured in YAML from existing NPZ products.
+
+    Returns
+    -------
+    list[str]
+        List of NPZ file paths that were replotted successfully.
+    """
+    (cfg, out_cfg, sen_cfg, bnd_cfg, dsm_cfg, svr_cfg, plt_cfg, grd_cfg, comp_cfg, crop_cfg,
+     scene_cfg, cam_cfg, solar_cfg, solver_cfg, aerosol_cfg) = utils.load_config(cfg_path)
+
+    level = str(level).lower()
+    root = Path(root_dir)
+    if not root.exists():
+        raise FileNotFoundError(f"root_dir not found: {root_dir}")
+    npz_dir = root / level
+    if not npz_dir.exists():
+        raise FileNotFoundError(f"Level folder not found: {npz_dir}")
+
+    replotted: List[str] = []
+    for w in bnd_cfg.wavelength_nm:
+        if view_name:
+            cand = npz_dir / f"{int(w)}nm_{view_name}.npz"
+            candidates = [cand] if cand.exists() else []
+        else:
+            candidates = sorted(npz_dir.glob(f"{int(w)}nm_*.npz"))
+
+        if not candidates:
+            print(f"⚠️ No NPZ found for wavelength {w} nm in {npz_dir}")
+            continue
+
+        for npz_path in candidates:
+            outp = npz_path.parent / f"plots_{npz_path.stem}"
+            plot_simulation_results(
+                result_path=str(npz_path),
+                output_dir=str(outp),
+                option=getattr(plt_cfg, "replot_layout", "panel"),
+                show=show,
+                rebuild_if_missing=rebuild_if_missing,
+                overwrite_npz=overwrite_npz,
+            )
+            replotted.append(str(npz_path))
+    return replotted
 
 # =============================
 #%% Section 4: Scene/Sensors (single band) with lat/lon ingestion
