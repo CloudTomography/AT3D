@@ -50,9 +50,14 @@ def _find_first_existing(f: h5py.File, candidates: List[str]) -> str:
     raise KeyError(f"None of datasets exist: {candidates}")
 
 
-def _scan_time_window(l1b_path: Path, time_dataset: str) -> Tuple[pd.Timestamp, pd.Timestamp]:
+def _scan_time_window(l1b_path: Path, time_dataset: str) -> Tuple[pd.Timestamp, pd.Timestamp, Tuple[float, float], Tuple[float, float]]:
+    def _infer_geo_path(base_path: str, field_name: str) -> str:
+        return base_path.replace("Time_in_seconds_from_epoch", field_name)
+
     with h5py.File(l1b_path, "r") as f:
         t = _read_h5_array(f, time_dataset)
+        lat = _read_h5_array(f, _infer_geo_path(time_dataset, "Latitude"))
+        lon = _read_h5_array(f, _infer_geo_path(time_dataset, "Longitude"))
     valid = np.isfinite(t)
     if not np.any(valid):
         raise ValueError(f"No valid time values in {l1b_path}")
@@ -64,11 +69,35 @@ def _scan_time_window(l1b_path: Path, time_dataset: str) -> Tuple[pd.Timestamp, 
     # - small values (e.g., 0~86400) => relative seconds
     # - very large values (>=1e8) => epoch seconds
     if np.nanmax(np.abs([tmin, tmax])) < 1e8:
-        return (
+        t_start_utc, t_end_utc = (
             base_time + pd.to_timedelta(tmin, unit="s"),
             base_time + pd.to_timedelta(tmax, unit="s"),
         )
-    return pd.to_datetime(tmin, unit="s", utc=True), pd.to_datetime(tmax, unit="s", utc=True)
+    else:
+        t_start_utc, t_end_utc = pd.to_datetime(tmin, unit="s", utc=True), pd.to_datetime(tmax, unit="s", utc=True)
+
+    geo_valid = (
+        np.isfinite(lat) & np.isfinite(lon) & np.isfinite(t)
+        & (np.abs(lat) <= 90) & (np.abs(lon) <= 180)
+        & (lat != 0) & (lon != 0)
+    )
+    if not np.any(geo_valid):
+        raise ValueError(f"No valid geo pixels for boundary midpoint in {l1b_path}")
+    t_geo = np.where(geo_valid, t, np.nan)
+
+    # Boundary near scan start/end: use lowest/highest 1% time among valid pixels.
+    q_lo = np.nanpercentile(t_geo, 1.0)
+    q_hi = np.nanpercentile(t_geo, 99.0)
+    start_mask = geo_valid & (t_geo <= q_lo)
+    end_mask = geo_valid & (t_geo >= q_hi)
+    if not np.any(start_mask):
+        start_mask = geo_valid & np.isclose(t_geo, tmin, atol=1e-6)
+    if not np.any(end_mask):
+        end_mask = geo_valid & np.isclose(t_geo, tmax, atol=1e-6)
+
+    start_latlon = (float(np.nanmedian(lat[start_mask])), float(np.nanmedian(lon[start_mask])))
+    end_latlon = (float(np.nanmedian(lat[end_mask])), float(np.nanmedian(lon[end_mask])))
+    return t_start_utc, t_end_utc, start_latlon, end_latlon
 
 
 def _latlon_to_xy_km(lat: np.ndarray, lon: np.ndarray, lat0: float, lon0: float) -> Tuple[np.ndarray, np.ndarray]:
@@ -192,20 +221,30 @@ def estimate_cross_track(l1b_files: List[Path], metnav_path: Path, retrieval_nc:
     lat0, lon0 = _load_retrieval_sw_corner_latlon(retrieval_nc)
     per_view: List[Dict[str, Any]] = []
     for idx, p in enumerate(sorted(l1b_files), start=1):
-        t_start, t_end = _scan_time_window(p, time_dataset)
+        t_start, t_end, start_ground_latlon, end_ground_latlon = _scan_time_window(p, time_dataset)
 
         lat1 = _interp_metnav(met, t_start, ["Latitude"])
         lon1 = _interp_metnav(met, t_start, ["Longitude"])
         alt1_m = _interp_metnav(met, t_start, ["Altitude", "MSL_GPS_Altitude", "HAE_GPS_Altitude"])
-        pitch1 = _interp_metnav(met, t_start, ["Pitch", "Pitch_Angle"])
 
         lat2 = _interp_metnav(met, t_end, ["Latitude"])
         lon2 = _interp_metnav(met, t_end, ["Longitude"])
         alt2_m = _interp_metnav(met, t_end, ["Altitude", "MSL_GPS_Altitude", "HAE_GPS_Altitude"])
-        pitch2 = _interp_metnav(met, t_end, ["Pitch", "Pitch_Angle"])
 
         x1, y1 = _latlon_to_xy_km(np.array([lat1]), np.array([lon1]), lat0, lon0)
         x2, y2 = _latlon_to_xy_km(np.array([lat2]), np.array([lon2]), lat0, lon0)
+
+        # Pitch from L1B scan boundary ground midpoint and aircraft position (not from MetNav pitch variable).
+        sg_lat, sg_lon = start_ground_latlon
+        eg_lat, eg_lon = end_ground_latlon
+        dnx1, dey1 = _latlon_to_xy_km(np.array([lat1]), np.array([lon1]), sg_lat, sg_lon)
+        dnx2, dey2 = _latlon_to_xy_km(np.array([lat2]), np.array([lon2]), eg_lat, eg_lon)
+        hdist1_km = float(np.hypot(dnx1[0], dey1[0]))
+        hdist2_km = float(np.hypot(dnx2[0], dey2[0]))
+        alt1_km = float(alt1_m / 1000.0)
+        alt2_km = float(alt2_m / 1000.0)
+        pitch1 = float(np.degrees(np.arctan2(max(alt1_km, 0.0), max(hdist1_km, 1e-6))))
+        pitch2 = float(np.degrees(np.arctan2(max(alt2_km, 0.0), max(hdist2_km, 1e-6))))
 
         per_view.append({
             "view_index": idx,
