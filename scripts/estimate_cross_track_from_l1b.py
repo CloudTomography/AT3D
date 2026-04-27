@@ -58,6 +58,16 @@ def _scan_time_window(l1b_path: Path, time_dataset: str) -> Tuple[pd.Timestamp, 
         raise ValueError(f"No valid time values in {l1b_path}")
     tmin = float(np.nanmin(t[valid]))
     tmax = float(np.nanmax(t[valid]))
+    base_time = _parse_base_time_from_name(l1b_path)
+    # Some AirMSPI products store seconds relative to scene base time in filename,
+    # while others may already be epoch seconds. Heuristic:
+    # - small values (e.g., 0~86400) => relative seconds
+    # - very large values (>=1e8) => epoch seconds
+    if np.nanmax(np.abs([tmin, tmax])) < 1e8:
+        return (
+            base_time + pd.to_timedelta(tmin, unit="s"),
+            base_time + pd.to_timedelta(tmax, unit="s"),
+        )
     return pd.to_datetime(tmin, unit="s", utc=True), pd.to_datetime(tmax, unit="s", utc=True)
 
 
@@ -77,7 +87,16 @@ def _load_retrieval_sw_corner_latlon(retrieval_nc: Path) -> Tuple[float, float]:
         raise ValueError("retrieval nc must contain latitude/longitude (or lat/lon)")
     lat = np.asarray(ds[lat_name].values, dtype=float)
     lon = np.asarray(ds[lon_name].values, dtype=float)
-    mask = np.isfinite(lat) & np.isfinite(lon) & (np.abs(lat) <= 90) & (np.abs(lon) <= 180)
+    # TODO: remove `(lat != 0) & (lon != 0)` once upstream retrieval nc data no longer
+    # contains zero-valued invalid geolocation placeholders.
+    mask = (
+        np.isfinite(lat)
+        & np.isfinite(lon)
+        & (np.abs(lat) <= 90)
+        & (np.abs(lon) <= 180)
+        & (lat != 0)
+        & (lon != 0)
+    )
     if not np.any(mask):
         raise ValueError("No valid lat/lon in retrieval nc")
     return float(np.nanmin(lat[mask])), float(np.nanmin(lon[mask]))
