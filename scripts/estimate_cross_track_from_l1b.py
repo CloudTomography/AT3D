@@ -102,7 +102,7 @@ def _load_retrieval_sw_corner_latlon(retrieval_nc: Path) -> Tuple[float, float]:
     return float(np.nanmin(lat[mask])), float(np.nanmin(lon[mask]))
 
 
-def _load_metnav_table(path: Path) -> pd.DataFrame:
+def _load_metnav_table(path: Path, reference_date_utc: pd.Timestamp | None = None) -> pd.DataFrame:
     def _read_ict(p: Path) -> pd.DataFrame:
         with open(p, "r", encoding="utf-8", errors="ignore") as f:
             lines = f.readlines()
@@ -152,7 +152,18 @@ def _load_metnav_table(path: Path) -> pd.DataFrame:
     if time_col is None:
         raise ValueError("MetNav file needs time column (Time_in_seconds_from_epoch / time / timestamp)")
     if np.issubdtype(df[time_col].dtype, np.number):
-        t = pd.to_datetime(df[time_col].astype(float), unit="s", utc=True)
+        t_num = df[time_col].astype(float)
+        # MetNav daily products often store Time_Start as seconds from 00:00:00 (UTC)
+        # instead of epoch seconds.
+        if str(time_col).lower() in {"time_start", "utc"}:
+            if reference_date_utc is None:
+                raise ValueError(
+                    "Numeric Time_Start/UTC detected in MetNav, but reference_date_utc is None."
+                )
+            day0 = pd.Timestamp(reference_date_utc).tz_convert("UTC").normalize()
+            t = day0 + pd.to_timedelta(t_num, unit="s")
+        else:
+            t = pd.to_datetime(t_num, unit="s", utc=True)
     else:
         t = pd.to_datetime(df[time_col], utc=True)
     df = df.copy()
@@ -176,7 +187,8 @@ def _interp_metnav(df: pd.DataFrame, t_utc: pd.Timestamp, col_candidates: List[s
 
 
 def estimate_cross_track(l1b_files: List[Path], metnav_path: Path, retrieval_nc: Path, time_dataset: str) -> List[Dict[str, Any]]:
-    met = _load_metnav_table(metnav_path)
+    first_base_time = _parse_base_time_from_name(sorted(l1b_files)[0])
+    met = _load_metnav_table(metnav_path, reference_date_utc=first_base_time)
     lat0, lon0 = _load_retrieval_sw_corner_latlon(retrieval_nc)
     per_view: List[Dict[str, Any]] = []
     for idx, p in enumerate(sorted(l1b_files), start=1):
