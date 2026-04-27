@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import re
 import glob
+import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -192,4 +193,24 @@ def main(argv: List[str] | None = None):
 
 
 if __name__ == "__main__":
-    main()
+    # =========================
+    # Spyder editable run block
+    # =========================
+    # 在 Spyder 里直接 Run File 时可修改下面路径，无需手输 CLI。
+    l1b_glob = "data/l1b/Case_21_AirMSPI_ER2_GRP_TERRAIN_20190806_*.hdf"
+    metnav = "data/metnav/MetNav_AircraftInSitu_ER2_Data_1.csv"
+    retrieval_nc = "data/retrieval_1d/2019_0806_1839_N_Pxl25_3_3.nc"
+    time_dataset = "/HDFEOS/GRIDS/935nm_band/Data_Fields/Time_in_seconds_from_epoch"
+
+    if len(sys.argv) > 1:
+        main()
+    else:
+        if not l1b_glob or not metnav or not retrieval_nc:
+            print("⚠️ 请在脚本底部 Spyder run block 中填写 l1b_glob / metnav / retrieval_nc。")
+        else:
+            main([
+                "--l1b_glob", l1b_glob,
+                "--metnav", metnav,
+                "--retrieval_nc", retrieval_nc,
+                "--time_dataset", time_dataset,
+            ])
