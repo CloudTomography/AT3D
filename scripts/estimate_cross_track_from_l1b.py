@@ -260,10 +260,10 @@ if __name__ == "__main__":
     # Spyder editable run block
     # =========================
     # 在 Spyder 里直接 Run File 时可修改下面路径，无需手输 CLI。
-    l1b_glob = "data/l1b/Case_21_AirMSPI_ER2_GRP_TERRAIN_20190806_*.hdf"
-    metnav = "data/metnav/MetNav_AircraftInSitu_ER2_Data_1.csv"
-    retrieval_nc = "data/retrieval_1d/2019_0806_1839_N_Pxl25_3_3.nc"
-    time_dataset = "/HDFEOS/GRIDS/935nm_band/Data_Fields/Time_in_seconds_from_epoch"
+    l1b_glob = "K:/AirMSPI_FIREX-AQ_Terrain-projected_Georegistered_Radiance_Data_6-20241212_232427/Case_21_AirMSPI_ER2_GRP_TERRAIN_20190806_*.hdf"
+    metnav = "../data/FIREXAQ_MetNav_AircraftInSitu_ER2_Data_1-20260427_163432/FIREXAQ-METNAV_ER2_20190806_R0.ict"
+    retrieval_nc = "../results/ncFile/test143/Case_21_2019_0806_1839/2019_0806_1839_N_Pxl25_3_3.nc"
+    time_dataset = "/HDFEOS/GRIDS/935nm_band/Data Fields/Time_in_seconds_from_epoch"
 
     if len(sys.argv) > 1:
         main()
