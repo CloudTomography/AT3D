@@ -34,7 +34,11 @@ def _read_h5_array(f: h5py.File, dataset_path: str) -> np.ndarray:
     arr = np.asarray(f[dataset_path][...], dtype=float)
     fill = f[dataset_path].attrs.get("_FillValue", None)
     if fill is not None:
-        arr = np.where(arr == float(fill), np.nan, arr)
+        if isinstance(fill, np.ndarray):
+            fill = float(np.ravel(fill)[0])
+        else:
+            fill = float(fill)
+        arr = np.where(arr == fill, np.nan, arr)
     return arr
 
 
@@ -79,13 +83,39 @@ def _load_retrieval_sw_corner_latlon(retrieval_nc: Path) -> Tuple[float, float]:
 
 
 def _load_metnav_table(path: Path) -> pd.DataFrame:
+    def _read_ict(p: Path) -> pd.DataFrame:
+        with open(p, "r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()
+        if not lines:
+            raise ValueError(f"Empty ICT file: {p}")
+        first = lines[0].strip().split(",")[0].strip()
+        n_header = int(float(first))
+        # ICARTT convention: variable names are usually on header line (n_header-1).
+        df_try = pd.read_csv(p, skiprows=max(n_header - 1, 0))
+        if df_try.shape[1] <= 1:
+            df_try = pd.read_csv(p, skiprows=max(n_header - 1, 0), delim_whitespace=True)
+        df_try.columns = [str(c).strip() for c in df_try.columns]
+        return df_try
+
     if path.suffix.lower() in {".nc", ".nc4"}:
         ds = xr.open_dataset(path)
         df = ds.to_dataframe().reset_index()
+    elif path.suffix.lower() == ".ict":
+        df = _read_ict(path)
     else:
-        df = pd.read_csv(path)
+        try:
+            df = pd.read_csv(path)
+        except pd.errors.ParserError:
+            # Some MetNav text products are ICARTT-like.
+            df = _read_ict(path)
     cols = {c.lower(): c for c in df.columns}
-    time_col = cols.get("time_in_seconds_from_epoch") or cols.get("time") or cols.get("timestamp")
+    time_col = (
+        cols.get("time_in_seconds_from_epoch")
+        or cols.get("time")
+        or cols.get("timestamp")
+        or cols.get("time_start")
+        or cols.get("utc")
+    )
     if time_col is None:
         raise ValueError("MetNav file needs time column (Time_in_seconds_from_epoch / time / timestamp)")
     if np.issubdtype(df[time_col].dtype, np.number):
