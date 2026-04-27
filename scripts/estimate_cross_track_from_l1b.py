@@ -148,13 +148,26 @@ def estimate_cross_track(l1b_files: List[Path], metnav_path: Path, retrieval_nc:
     }
 
 
-def main():
+def main(argv: List[str] | None = None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--l1b_glob", required=True, help="e.g. 'data/l1b/Case_21_*_V006.hdf'")
-    ap.add_argument("--metnav", required=True, help="MetNav file (.csv/.nc)")
-    ap.add_argument("--retrieval_nc", required=True, help="retrieval nc for SW corner reference")
+    ap.add_argument("--l1b_glob", default=None, help="e.g. 'data/l1b/Case_21_*_V006.hdf'")
+    ap.add_argument("--metnav", default=None, help="MetNav file (.csv/.nc)")
+    ap.add_argument("--retrieval_nc", default=None, help="retrieval nc for SW corner reference")
     ap.add_argument("--time_dataset", default="/HDFEOS/GRIDS/935nm_band/Data_Fields/Time_in_seconds_from_epoch")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
+
+    # Spyder / notebook friendly defaults (avoid SystemExit when no CLI args are passed).
+    if not args.l1b_glob and not args.metnav and not args.retrieval_nc:
+        print("⚠️ No CLI arguments provided. Please pass --l1b_glob/--metnav/--retrieval_nc, or edit defaults in this file.")
+        print("Example:")
+        print("  python scripts/estimate_cross_track_from_l1b.py \\")
+        print("    --l1b_glob 'data/l1b/Case_21_*.hdf' \\")
+        print("    --metnav 'data/metnav/MetNav_AircraftInSitu_ER2_Data_1.csv' \\")
+        print("    --retrieval_nc 'data/retrieval_1d/2019_0806_1839_N_Pxl25_3_3.nc'")
+        return
+    missing = [name for name in ["l1b_glob", "metnav", "retrieval_nc"] if getattr(args, name) in (None, "")]
+    if missing:
+        raise ValueError(f"Missing required arguments: {missing}")
 
     l1b_files = [Path(p) for p in sorted(glob.glob(args.l1b_glob))]
     if not l1b_files:
