@@ -51,13 +51,26 @@ def _find_first_existing(f: h5py.File, candidates: List[str]) -> str:
 
 
 def _scan_time_window(l1b_path: Path, time_dataset: str) -> Tuple[pd.Timestamp, pd.Timestamp, Tuple[float, float], Tuple[float, float]]:
-    def _infer_geo_path(base_path: str, field_name: str) -> str:
-        return base_path.replace("Time_in_seconds_from_epoch", field_name)
+    def _read_ancillary_latlon(f: h5py.File) -> Tuple[np.ndarray, np.ndarray]:
+        grp_path = "/HDFEOS/GRIDS/Ancillary/Data Fields"
+        if grp_path not in f:
+            raise KeyError(f"Missing group: {grp_path}")
+        df = f[grp_path]
+        lat = None
+        lon = None
+        for k in df.keys():
+            kl = str(k).lower()
+            if "latitude" in kl:
+                lat = np.asarray(df[k][:], dtype=float)
+            if "longitude" in kl:
+                lon = np.asarray(df[k][:], dtype=float)
+        if lat is None or lon is None:
+            raise KeyError(f"Cannot find Latitude/Longitude datasets under {grp_path}")
+        return lat, lon
 
     with h5py.File(l1b_path, "r") as f:
         t = _read_h5_array(f, time_dataset)
-        lat = _read_h5_array(f, _infer_geo_path(time_dataset, "Latitude"))
-        lon = _read_h5_array(f, _infer_geo_path(time_dataset, "Longitude"))
+        lat, lon = _read_ancillary_latlon(f)
     valid = np.isfinite(t)
     if not np.any(valid):
         raise ValueError(f"No valid time values in {l1b_path}")
