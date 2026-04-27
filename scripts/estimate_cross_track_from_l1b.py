@@ -11,7 +11,7 @@ import glob
 import sys
 import io
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 
 import h5py
 import numpy as np
@@ -175,41 +175,43 @@ def _interp_metnav(df: pd.DataFrame, t_utc: pd.Timestamp, col_candidates: List[s
     return float(np.interp(t_utc.value / 1e9, x[m], y[m]))
 
 
-def estimate_cross_track(l1b_files: List[Path], metnav_path: Path, retrieval_nc: Path, time_dataset: str) -> Dict[str, float]:
-    windows = [_scan_time_window(p, time_dataset) for p in sorted(l1b_files)]
-    t_start = min(w[0] for w in windows)
-    t_end = max(w[1] for w in windows)
-
+def estimate_cross_track(l1b_files: List[Path], metnav_path: Path, retrieval_nc: Path, time_dataset: str) -> List[Dict[str, Any]]:
     met = _load_metnav_table(metnav_path)
     lat0, lon0 = _load_retrieval_sw_corner_latlon(retrieval_nc)
+    per_view: List[Dict[str, Any]] = []
+    for idx, p in enumerate(sorted(l1b_files), start=1):
+        t_start, t_end = _scan_time_window(p, time_dataset)
 
-    lat1 = _interp_metnav(met, t_start, ["Latitude"])
-    lon1 = _interp_metnav(met, t_start, ["Longitude"])
-    alt1_m = _interp_metnav(met, t_start, ["Altitude", "MSL_GPS_Altitude", "HAE_GPS_Altitude"])
-    pitch1 = _interp_metnav(met, t_start, ["Pitch", "Pitch_Angle"])
+        lat1 = _interp_metnav(met, t_start, ["Latitude"])
+        lon1 = _interp_metnav(met, t_start, ["Longitude"])
+        alt1_m = _interp_metnav(met, t_start, ["Altitude", "MSL_GPS_Altitude", "HAE_GPS_Altitude"])
+        pitch1 = _interp_metnav(met, t_start, ["Pitch", "Pitch_Angle"])
 
-    lat2 = _interp_metnav(met, t_end, ["Latitude"])
-    lon2 = _interp_metnav(met, t_end, ["Longitude"])
-    alt2_m = _interp_metnav(met, t_end, ["Altitude", "MSL_GPS_Altitude", "HAE_GPS_Altitude"])
-    pitch2 = _interp_metnav(met, t_end, ["Pitch", "Pitch_Angle"])
+        lat2 = _interp_metnav(met, t_end, ["Latitude"])
+        lon2 = _interp_metnav(met, t_end, ["Longitude"])
+        alt2_m = _interp_metnav(met, t_end, ["Altitude", "MSL_GPS_Altitude", "HAE_GPS_Altitude"])
+        pitch2 = _interp_metnav(met, t_end, ["Pitch", "Pitch_Angle"])
 
-    x1, y1 = _latlon_to_xy_km(np.array([lat1]), np.array([lon1]), lat0, lon0)
-    x2, y2 = _latlon_to_xy_km(np.array([lat2]), np.array([lon2]), lat0, lon0)
+        x1, y1 = _latlon_to_xy_km(np.array([lat1]), np.array([lon1]), lat0, lon0)
+        x2, y2 = _latlon_to_xy_km(np.array([lat2]), np.array([lon2]), lat0, lon0)
 
-    return {
-        "cross_track_x1": float(x1[0]),
-        "cross_track_y1": float(y1[0]),
-        "cross_track_z1": float(alt1_m / 1000.0),
-        "cross_track_x2": float(x2[0]),
-        "cross_track_y2": float(y2[0]),
-        "cross_track_z2": float(alt2_m / 1000.0),
-        "cross_track_pitch_start_deg": float(pitch1),
-        "cross_track_pitch_end_deg": float(pitch2),
-        "scan_start_utc": t_start.isoformat(),
-        "scan_end_utc": t_end.isoformat(),
-        "reference_sw_lat": lat0,
-        "reference_sw_lon": lon0,
-    }
+        per_view.append({
+            "view_index": idx,
+            "l1b_file": str(p),
+            "cross_track_x1": float(x1[0]),
+            "cross_track_y1": float(y1[0]),
+            "cross_track_z1": float(alt1_m / 1000.0),
+            "cross_track_x2": float(x2[0]),
+            "cross_track_y2": float(y2[0]),
+            "cross_track_z2": float(alt2_m / 1000.0),
+            "cross_track_pitch_start_deg": float(pitch1),
+            "cross_track_pitch_end_deg": float(pitch2),
+            "scan_start_utc": t_start.isoformat(),
+            "scan_end_utc": t_end.isoformat(),
+            "reference_sw_lat": lat0,
+            "reference_sw_lon": lon0,
+        })
+    return per_view
 
 
 def main(argv: List[str] | None = None):
@@ -237,22 +239,25 @@ def main(argv: List[str] | None = None):
     if not l1b_files:
         raise FileNotFoundError(f"No files matched --l1b_glob: {args.l1b_glob}")
 
-    est = estimate_cross_track(
+    est_list = estimate_cross_track(
         l1b_files=l1b_files,
         metnav_path=Path(args.metnav),
         retrieval_nc=Path(args.retrieval_nc),
         time_dataset=args.time_dataset,
     )
-    print("trajectory:")
-    for k in [
-        "cross_track_x1", "cross_track_y1", "cross_track_z1",
-        "cross_track_x2", "cross_track_y2", "cross_track_z2",
-        "cross_track_pitch_start_deg", "cross_track_pitch_end_deg",
-    ]:
-        print(f"  {k}: {est[k]:.6f}")
-    print(f"# scan_start_utc: {est['scan_start_utc']}")
-    print(f"# scan_end_utc:   {est['scan_end_utc']}")
-    print(f"# reference_sw_latlon: ({est['reference_sw_lat']:.6f}, {est['reference_sw_lon']:.6f})")
+    for est in est_list:
+        print(f"\n# view_index: {est['view_index']}")
+        print(f"# l1b_file: {est['l1b_file']}")
+        print("trajectory:")
+        for k in [
+            "cross_track_x1", "cross_track_y1", "cross_track_z1",
+            "cross_track_x2", "cross_track_y2", "cross_track_z2",
+            "cross_track_pitch_start_deg", "cross_track_pitch_end_deg",
+        ]:
+            print(f"  {k}: {est[k]:.6f}")
+        print(f"# scan_start_utc: {est['scan_start_utc']}")
+        print(f"# scan_end_utc:   {est['scan_end_utc']}")
+        print(f"# reference_sw_latlon: ({est['reference_sw_lat']:.6f}, {est['reference_sw_lon']:.6f})")
 
 
 if __name__ == "__main__":
