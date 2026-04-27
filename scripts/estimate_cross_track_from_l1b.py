@@ -9,6 +9,7 @@ import argparse
 import re
 import glob
 import sys
+import io
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -88,13 +89,26 @@ def _load_metnav_table(path: Path) -> pd.DataFrame:
             lines = f.readlines()
         if not lines:
             raise ValueError(f"Empty ICT file: {p}")
-        first = lines[0].strip().split(",")[0].strip()
-        n_header = int(float(first))
-        # ICARTT convention: variable names are usually on header line (n_header-1).
-        df_try = pd.read_csv(p, skiprows=max(n_header - 1, 0))
-        if df_try.shape[1] <= 1:
-            df_try = pd.read_csv(p, skiprows=max(n_header - 1, 0), delim_whitespace=True)
+        # Prefer explicit header row detection (works better for FIREX-AQ ICT variants).
+        header_idx = None
+        for i, ln in enumerate(lines):
+            ls = ln.strip()
+            if not ls:
+                continue
+            if ls.lower().startswith("time_start,") or ls.lower().startswith("time,"):
+                header_idx = i
+        if header_idx is not None:
+            payload = "".join(lines[header_idx:])
+            df_try = pd.read_csv(io.StringIO(payload))
+        else:
+            first = lines[0].strip().split(",")[0].strip()
+            n_header = int(float(first))
+            # ICARTT convention: variable names are usually on header line (n_header-1).
+            df_try = pd.read_csv(p, skiprows=max(n_header - 1, 0))
+            if df_try.shape[1] <= 1:
+                df_try = pd.read_csv(p, skiprows=max(n_header - 1, 0), delim_whitespace=True)
         df_try.columns = [str(c).strip() for c in df_try.columns]
+        df_try = df_try.replace([-9999, -8888, -7777], np.nan)
         return df_try
 
     if path.suffix.lower() in {".nc", ".nc4"}:
@@ -152,13 +166,13 @@ def estimate_cross_track(l1b_files: List[Path], metnav_path: Path, retrieval_nc:
 
     lat1 = _interp_metnav(met, t_start, ["Latitude"])
     lon1 = _interp_metnav(met, t_start, ["Longitude"])
-    alt1_m = _interp_metnav(met, t_start, ["Altitude"])
-    pitch1 = _interp_metnav(met, t_start, ["Pitch"])
+    alt1_m = _interp_metnav(met, t_start, ["Altitude", "MSL_GPS_Altitude", "HAE_GPS_Altitude"])
+    pitch1 = _interp_metnav(met, t_start, ["Pitch", "Pitch_Angle"])
 
     lat2 = _interp_metnav(met, t_end, ["Latitude"])
     lon2 = _interp_metnav(met, t_end, ["Longitude"])
-    alt2_m = _interp_metnav(met, t_end, ["Altitude"])
-    pitch2 = _interp_metnav(met, t_end, ["Pitch"])
+    alt2_m = _interp_metnav(met, t_end, ["Altitude", "MSL_GPS_Altitude", "HAE_GPS_Altitude"])
+    pitch2 = _interp_metnav(met, t_end, ["Pitch", "Pitch_Angle"])
 
     x1, y1 = _latlon_to_xy_km(np.array([lat1]), np.array([lon1]), lat0, lon0)
     x2, y2 = _latlon_to_xy_km(np.array([lat2]), np.array([lon2]), lat0, lon0)
