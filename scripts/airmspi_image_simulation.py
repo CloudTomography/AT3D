@@ -28,6 +28,7 @@ import subprocess
 import numpy as np
 import pandas as pd
 import xarray as xr
+import json
 from pathlib import Path
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -2028,6 +2029,19 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     mode_lc = str(sen.trajectory_mode).lower()
     view_names = list(sen.views_names)
     if mode_lc == "cross_track":
+        if sen.cross_track_cache_file and sen.cross_track_case_id:
+            try:
+                cache_db = json.loads(Path(sen.cross_track_cache_file).read_text(encoding="utf-8"))
+                cached = cache_db.get(sen.cross_track_case_id)
+                if cached and len(cached) > 0:
+                    c0 = cached[0]
+                    for k in ["cross_track_x1", "cross_track_y1", "cross_track_z1",
+                              "cross_track_x2", "cross_track_y2", "cross_track_z2",
+                              "cross_track_pitch_start_deg", "cross_track_pitch_end_deg"]:
+                        if getattr(sen, k) is None:
+                            setattr(sen, k, float(c0[k]))
+            except Exception:
+                pass
         required = [
             sen.cross_track_x1, sen.cross_track_y1, sen.cross_track_z1,
             sen.cross_track_x2, sen.cross_track_y2, sen.cross_track_z2

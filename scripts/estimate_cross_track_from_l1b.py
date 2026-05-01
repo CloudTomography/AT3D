@@ -10,6 +10,7 @@ import re
 import glob
 import sys
 import io
+import json
 from pathlib import Path
 from typing import Dict, List, Tuple, Any
 
@@ -289,12 +290,30 @@ def estimate_cross_track(l1b_files: List[Path], metnav_path: Path, retrieval_nc:
     return per_view
 
 
+def load_cached_case(cache_file: Path, case_id: str) -> List[Dict[str, Any]] | None:
+    if (not cache_file.exists()) or (not case_id):
+        return None
+    db = json.loads(cache_file.read_text(encoding="utf-8"))
+    return db.get(case_id)
+
+
+def save_cached_case(cache_file: Path, case_id: str, est_list: List[Dict[str, Any]]) -> None:
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    db = {}
+    if cache_file.exists():
+        db = json.loads(cache_file.read_text(encoding="utf-8"))
+    db[case_id] = est_list
+    cache_file.write_text(json.dumps(db, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def main(argv: List[str] | None = None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--l1b_glob", default=None, help="e.g. 'data/l1b/Case_21_*_V006.hdf'")
     ap.add_argument("--metnav", default=None, help="MetNav file (.csv/.nc)")
     ap.add_argument("--retrieval_nc", default=None, help="retrieval nc for SW corner reference")
     ap.add_argument("--time_dataset", default="/HDFEOS/GRIDS/935nm_band/Data_Fields/Time_in_seconds_from_epoch")
+    ap.add_argument("--case_id", default=None, help="Case key for cache, e.g. Case_21_2019_0806_1839")
+    ap.add_argument("--cache_file", default=None, help="JSON cache file path for cross-track results")
     args = ap.parse_args(argv)
 
     # Spyder / notebook friendly defaults (avoid SystemExit when no CLI args are passed).
@@ -314,12 +333,21 @@ def main(argv: List[str] | None = None):
     if not l1b_files:
         raise FileNotFoundError(f"No files matched --l1b_glob: {args.l1b_glob}")
 
-    est_list = estimate_cross_track(
-        l1b_files=l1b_files,
-        metnav_path=Path(args.metnav),
-        retrieval_nc=Path(args.retrieval_nc),
-        time_dataset=args.time_dataset,
-    )
+    est_list = None
+    if args.case_id and args.cache_file:
+        est_list = load_cached_case(Path(args.cache_file), args.case_id)
+        if est_list is not None:
+            print(f"✅ Loaded cached cross-track parameters for case_id={args.case_id}")
+    if est_list is None:
+        est_list = estimate_cross_track(
+            l1b_files=l1b_files,
+            metnav_path=Path(args.metnav),
+            retrieval_nc=Path(args.retrieval_nc),
+            time_dataset=args.time_dataset,
+        )
+        if args.case_id and args.cache_file:
+            save_cached_case(Path(args.cache_file), args.case_id, est_list)
+            print(f"💾 Saved cross-track cache for case_id={args.case_id} -> {args.cache_file}")
     for est in est_list:
         print(f"\n# view_index: {est['view_index']}")
         print(f"# l1b_file: {est['l1b_file']}")
