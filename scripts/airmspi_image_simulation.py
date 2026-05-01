@@ -1557,7 +1557,7 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
                 plt.close(fig)
 
 
-def replot_simulation_results_with_config(result_path: str, cfg_path: str = "config_v5b.yaml",
+def replot_simulation_results_with_config(result_path: str, cfg_path: str = "config_v6a.yaml",
                                           output_dir: Optional[str] = None, show: bool = False,
                                           rebuild_if_missing: bool = True, overwrite_npz: bool = False):
     """
@@ -1576,7 +1576,7 @@ def replot_simulation_results_with_config(result_path: str, cfg_path: str = "con
 
 
 def plot_all_wavelength_results(root_dir: str,
-                                cfg_path: str = "config_v5b.yaml",
+                                cfg_path: str = "config_v6a.yaml",
                                 level: str = "registered",
                                 view_name: Optional[str] = None,
                                 show: bool = False,
@@ -3083,7 +3083,7 @@ def _record_experiment_snapshot(cfg_path: str, cfg: Dict[str, Any], out_root: st
 #%% Section 6: Main (per-wavelength)
 # =============================
 
-def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
+def main(cfg_path: str = "config_v6a.yaml", only_band: Optional[int] = None,
          n_jobs: Optional[int] = None, overwrite: bool = False, clean_after_band: bool = True,
          precheck_only: bool = False):
     (cfg, out_cfg, sen_cfg, bnd_cfg, dsm_cfg, svr_cfg, plt_cfg, grd_cfg, comp_cfg, crop_cfg,
@@ -3318,8 +3318,8 @@ __all__ = [
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Per-wavelength AT3D simulation pipeline (v5b)")
-    parser.add_argument("--config", type=str, default="config_v5b.yaml", help="Path to config file")
+    parser = argparse.ArgumentParser(description="Per-wavelength AT3D simulation pipeline (v6a)")
+    parser.add_argument("--config", type=str, default="config_v6a.yaml", help="Path to config file")
     parser.add_argument("--band", type=int, default=None, help="Run only this wavelength (nm)")
     parser.add_argument("--n_jobs", type=int, default=None, help="Number of parallel jobs (overrides config)")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing NetCDF files")
