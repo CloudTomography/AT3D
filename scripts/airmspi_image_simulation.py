@@ -760,6 +760,10 @@ def _compute_angle_maps_from_sensor(
     vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
     vza_map = np.degrees(np.arccos(vz))
 
+    # VAA convention (unified):
+    # - 0 deg points to geographic North (+x in NEU)
+    # - increases clockwise (toward +y/East)
+    # - direction is photon propagation scene -> sensor (v_out)
     vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
     # Camera-image convention: enforce 0° from image center toward "up" (not down).
     # vaa_map = (360 - vaa_map) % 360
@@ -1009,8 +1013,8 @@ def _build_level_npz_from_original(target_npz_path: str, overwrite: bool = False
                 y0 = _apply_image_orientation(ground.y_ground.values, transpose, flip_lr)
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
+                # Keep same VAA convention as _compute_angle_maps_from_sensor (no +180 flip).
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-                vaa0 = (vaa0 + 180.0) % 360.0
                 vaa0 = ((vaa0 - _get_flight_azimuth_offset_deg_from_context(context_cfg) + 360.0) % 360.0)
                 saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0 if isinstance(context_cfg, dict) else 0.0
                 sza = context_cfg.get("theta_0", np.nan) if isinstance(context_cfg, dict) else np.nan
@@ -1235,8 +1239,8 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
                 v_out_map = _apply_image_orientation(compute_vout_map_from_sensor(sensor_ds), transpose, flip_lr)
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
+                # Keep same VAA convention as _compute_angle_maps_from_sensor (no +180 flip).
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-                vaa0 = (vaa0 + 180.0) % 360.0
                 vaa0 = ((vaa0 - _get_flight_azimuth_offset_deg_from_context(context_cfg) + 360.0) % 360.0)
 
                 saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0
