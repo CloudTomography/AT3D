@@ -98,6 +98,16 @@ class GroundCropConfig:
 class SceneConfig:
     input_path: str
     lookat_center_km: List[float]
+    enable_brdf: bool = False
+    enable_bpdf: bool = False
+    brdf_model: str = "diner"
+    lambertian_albedo: float = 0.0
+    brdf_default_a: float = 0.0
+    brdf_default_k: float = 1.0
+    brdf_default_b: float = 0.0
+    bpdf_default_e: float = 0.0
+    bpdf_default_wind_vv: float = 5.0
+    bpdf_default_wind_wd: float = 0.0
 
 @dataclass
 class CameraConfig:
@@ -117,9 +127,20 @@ class SolverConfig:
     num_phi_bins: int = 96
     split_accuracy: float = 0.01
     deltam: bool = True
+    adapt_grid_factor: Optional[float] = None
+    cell_to_point_ratio: Optional[float] = None
+    max_total_mb: Optional[float] = None
 
 @dataclass
 class AerosolConfig:
     refractive_index_real: float = 1.4
     refractive_index_imag: float = 0.001
     particle_density: float = 1.6
+    reff_default: float = 0.2
+    veff_default: float = 0.10
+    reff_clip_min: float = 0.05
+    reff_clip_max: float = 30.0
+    veff_clip_min: float = 0.01
+    veff_clip_max: float = 1.0
+    density_floor: float = 0.0
+    mode_selection: str = "both"  # both | mode1 | mode2

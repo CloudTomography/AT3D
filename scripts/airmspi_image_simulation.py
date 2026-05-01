@@ -19,13 +19,16 @@ Author: Benting Chen
 import os
 import sys
 import time
+import tempfile
 import yaml
 import argparse
 import json
 import hashlib
 import subprocess
 import numpy as np
+import pandas as pd
 import xarray as xr
+from pathlib import Path
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Optional
@@ -757,6 +760,10 @@ def _compute_angle_maps_from_sensor(
     vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
     vza_map = np.degrees(np.arccos(vz))
 
+    # VAA convention (unified):
+    # - 0 deg points to geographic North (+x in NEU)
+    # - increases clockwise (toward +y/East)
+    # - direction is photon propagation scene -> sensor (v_out)
     vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
     # Camera-image convention: enforce 0° from image center toward "up" (not down).
     # vaa_map = (360 - vaa_map) % 360
@@ -1006,8 +1013,8 @@ def _build_level_npz_from_original(target_npz_path: str, overwrite: bool = False
                 y0 = _apply_image_orientation(ground.y_ground.values, transpose, flip_lr)
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
+                # Keep same VAA convention as _compute_angle_maps_from_sensor (no +180 flip).
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-                vaa0 = (vaa0 + 180.0) % 360.0
                 vaa0 = ((vaa0 - _get_flight_azimuth_offset_deg_from_context(context_cfg) + 360.0) % 360.0)
                 saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0 if isinstance(context_cfg, dict) else 0.0
                 sza = context_cfg.get("theta_0", np.nan) if isinstance(context_cfg, dict) else np.nan
@@ -1232,8 +1239,8 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
                 v_out_map = _apply_image_orientation(compute_vout_map_from_sensor(sensor_ds), transpose, flip_lr)
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
+                # Keep same VAA convention as _compute_angle_maps_from_sensor (no +180 flip).
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-                vaa0 = (vaa0 + 180.0) % 360.0
                 vaa0 = ((vaa0 - _get_flight_azimuth_offset_deg_from_context(context_cfg) + 360.0) % 360.0)
 
                 saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0
@@ -1560,6 +1567,58 @@ def replot_simulation_results_with_config(result_path: str, cfg_path: str = "con
         overwrite_npz=overwrite_npz,
     )
 
+
+def plot_all_wavelength_results(root_dir: str,
+                                cfg_path: str = "config_v5b.yaml",
+                                level: str = "registered",
+                                view_name: Optional[str] = None,
+                                show: bool = False,
+                                rebuild_if_missing: bool = True,
+                                overwrite_npz: bool = False) -> List[str]:
+    """
+    Replot every wavelength configured in YAML from existing NPZ products.
+
+    Returns
+    -------
+    list[str]
+        List of NPZ file paths that were replotted successfully.
+    """
+    (cfg, out_cfg, sen_cfg, bnd_cfg, dsm_cfg, svr_cfg, plt_cfg, grd_cfg, comp_cfg, crop_cfg,
+     scene_cfg, cam_cfg, solar_cfg, solver_cfg, aerosol_cfg) = utils.load_config(cfg_path)
+
+    level = str(level).lower()
+    root = Path(root_dir)
+    if not root.exists():
+        raise FileNotFoundError(f"root_dir not found: {root_dir}")
+    npz_dir = root / level
+    if not npz_dir.exists():
+        raise FileNotFoundError(f"Level folder not found: {npz_dir}")
+
+    replotted: List[str] = []
+    for w in bnd_cfg.wavelength_nm:
+        if view_name:
+            cand = npz_dir / f"{int(w)}nm_{view_name}.npz"
+            candidates = [cand] if cand.exists() else []
+        else:
+            candidates = sorted(npz_dir.glob(f"{int(w)}nm_*.npz"))
+
+        if not candidates:
+            print(f"⚠️ No NPZ found for wavelength {w} nm in {npz_dir}")
+            continue
+
+        for npz_path in candidates:
+            outp = npz_path.parent / f"plots_{npz_path.stem}"
+            plot_simulation_results(
+                result_path=str(npz_path),
+                output_dir=str(outp),
+                option=getattr(plt_cfg, "replot_layout", "panel"),
+                show=show,
+                rebuild_if_missing=rebuild_if_missing,
+                overwrite_npz=overwrite_npz,
+            )
+            replotted.append(str(npz_path))
+    return replotted
+
 # =============================
 #%% Section 4: Scene/Sensors (single band) with lat/lon ingestion
 # =============================
@@ -1661,8 +1720,108 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     t0_all = time.perf_counter()
     input_path = scene_cfg.input_path
     t0 = time.perf_counter()
-    cloud_scatterer = at3d.util.load_from_csv(input_path, density='cv', origin=(0.0, 0.0))
+
+    def _load_csv_numeric_only(csv_path: str):
+        try:
+            return at3d.util.load_from_csv(csv_path, density=None, origin=(0.0, 0.0))
+        except ValueError as e:
+            if "could not convert string to float" not in str(e):
+                raise
+            with open(csv_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            if len(lines) < 5:
+                raise
+            # Keep AT3D CSV preamble exactly as expected by at3d.util.load_from_csv:
+            # line1 comment, line2 nx/ny/nz, line3 dx/dy, line4 z-levels.
+            header_lines = lines[:4]
+            df = pd.read_csv(csv_path, skiprows=4)
+            df_num = df.apply(pd.to_numeric, errors="coerce")
+            # drop columns that are effectively non-numeric (e.g. surface_model='diner')
+            bad_cols = [c for c in df.columns if df_num[c].isna().all() and not df[c].isna().all()]
+            if bad_cols:
+                print(f"⚠️ Dropping non-numeric CSV columns for at3d.load_from_csv: {bad_cols}")
+            keep_cols = [c for c in df.columns if c not in bad_cols]
+            with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8") as tf:
+                tmp_path = tf.name
+                tf.writelines(header_lines)
+                df_num[keep_cols].to_csv(tf, index=False)
+            try:
+                return at3d.util.load_from_csv(tmp_path, density=None, origin=(0.0, 0.0))
+            finally:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+    # Compatible with both retrieval-style CSV (cv) and LES-style CSV (lwc/density).
+    cloud_scatterer = _load_csv_numeric_only(input_path)
+    density_candidates = ["cv", "lwc", "density"]
+    density_name = next((name for name in density_candidates if name in cloud_scatterer.data_vars), None)
+    if density_name is None:
+        raise ValueError(f"No density variable found in {input_path}. Tried {density_candidates}")
+    if density_name != "density":
+        cloud_scatterer = cloud_scatterer.rename_vars({density_name: "density"})
+        cloud_scatterer.attrs["density_name"] = density_name
+
+    mode_selection = str(getattr(aerosol_cfg, "mode_selection", "both")).lower()
+    if mode_selection not in {"both", "mode1", "mode2"}:
+        raise ValueError(f"aerosol.mode_selection must be one of ['both','mode1','mode2'], got: {mode_selection}")
+
+    def _mode_selected(mode_id: str) -> bool:
+        if mode_selection == "both":
+            return True
+        return mode_id == mode_selection
+
+    # Build scalar reff/veff for AT3D from extended mode columns when available.
+    mode_reff_vars = sorted([v for v in cloud_scatterer.data_vars if v.startswith('mode') and v.endswith('_reff')])
+    mode_veff_vars = sorted([v for v in cloud_scatterer.data_vars if v.startswith('mode') and v.endswith('_veff')])
+
+    if ("reff" not in cloud_scatterer) and mode_reff_vars:
+        num = np.zeros(cloud_scatterer.density.shape, dtype=float)
+        den = np.zeros(cloud_scatterer.density.shape, dtype=float)
+        for v in mode_reff_vars:
+            mode_id = v.split('_')[0]  # mode1
+            if not _mode_selected(mode_id):
+                continue
+            frac_name = f"{mode_id}_fraction"
+            frac = np.asarray(cloud_scatterer[frac_name].data, dtype=float) if frac_name in cloud_scatterer else np.ones_like(num)
+            val = np.asarray(cloud_scatterer[v].data, dtype=float)
+            mask = np.isfinite(frac) & np.isfinite(val) & (frac > 0)
+            num[mask] += frac[mask] * val[mask]
+            den[mask] += frac[mask]
+        reff_eff = np.divide(num, den, out=np.full_like(num, np.nan), where=den > 0)
+        cloud_scatterer["reff"] = (['x', 'y', 'z'], reff_eff)
+
+    if ("veff" not in cloud_scatterer) and mode_veff_vars:
+        num = np.zeros(cloud_scatterer.density.shape, dtype=float)
+        den = np.zeros(cloud_scatterer.density.shape, dtype=float)
+        for v in mode_veff_vars:
+            mode_id = v.split('_')[0]
+            if not _mode_selected(mode_id):
+                continue
+            frac_name = f"{mode_id}_fraction"
+            frac = np.asarray(cloud_scatterer[frac_name].data, dtype=float) if frac_name in cloud_scatterer else np.ones_like(num)
+            val = np.asarray(cloud_scatterer[v].data, dtype=float)
+            mask = np.isfinite(frac) & np.isfinite(val) & (frac > 0)
+            num[mask] += frac[mask] * val[mask]
+            den[mask] += frac[mask]
+        veff_eff = np.divide(num, den, out=np.full_like(num, np.nan), where=den > 0)
+        cloud_scatterer["veff"] = (['x', 'y', 'z'], veff_eff)
+
+    # Provide conservative defaults for legacy LES files.
+    if "reff" not in cloud_scatterer:
+        cloud_scatterer["reff"] = (['x', 'y', 'z'], np.full(cloud_scatterer.density.shape, 12.0, dtype=float))
+    if "veff" not in cloud_scatterer:
+        cloud_scatterer["veff"] = (['x', 'y', 'z'], np.full(cloud_scatterer.density.shape, 0.10, dtype=float))
+
     cloud_scatterer["density"] *= 1
+
+    # Guard for extended CSV optional fields (e.g., mode2_mr/mode2_mi) that may be all-NaN.
+    # at3d.grid.resample_onto_grid asserts each variable is not entirely NaN.
+    for _name in list(cloud_scatterer.data_vars):
+        _arr = np.asarray(cloud_scatterer[_name].data)
+        if np.issubdtype(_arr.dtype, np.number) and np.all(np.isnan(_arr)):
+            cloud_scatterer[_name] = (cloud_scatterer[_name].dims, np.zeros_like(_arr, dtype=float))
     t_stage["load_cloud_csv"] = time.perf_counter() - t0
     latlon_source = "text"
     try:
@@ -1687,7 +1846,14 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     ny_cloud = cloud_y.size
     nx_cloud = cloud_x.size
 
-    if lat_2d.shape == (ny_cloud, nx_cloud) and lon_2d.shape == (ny_cloud, nx_cloud):
+    latlon_is_valid = (
+        lat_2d.shape == (ny_cloud, nx_cloud)
+        and lon_2d.shape == (ny_cloud, nx_cloud)
+        and np.isfinite(lat_2d).any()
+        and np.isfinite(lon_2d).any()
+        and not (np.nanmax(np.abs(lat_2d)) == 0 and np.nanmax(np.abs(lon_2d)) == 0)
+    )
+    if latlon_is_valid:
         xlats, xlons = lat_2d, lon_2d
     else:
         latlon_source = "synthetic_regular_grid_fallback"
@@ -1747,7 +1913,102 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     rte_grid = at3d.grid.make_grid(cloud_scatterer.x.diff('x')[0], cloud_scatterer.x.data.size,
                                    cloud_scatterer.y.diff('y')[0], cloud_scatterer.y.data.size,
                                    np.append(0, cloud_scatterer.z.data))
-    cloud_scatterer_on_rte_grid = at3d.grid.resample_onto_grid(rte_grid, cloud_scatterer)
+
+    # Only resample density in z; keep geophysical/microphysical descriptor fields
+    # (lat/lon, mode fractions, mode reff/veff, refractive indices, etc.) vertically invariant.
+    cloud_scatterer_on_rte_grid = at3d.grid.resample_onto_grid(rte_grid, cloud_scatterer[['density']])
+
+    reserved_grid_vars = {'density', 'delx', 'dely', 'nx', 'ny', 'nz'}
+    static_like_vars = [
+        name for name in cloud_scatterer.data_vars
+        if name not in reserved_grid_vars
+    ]
+    nz_target = cloud_scatterer_on_rte_grid.sizes['z']
+    for name in static_like_vars:
+        da = cloud_scatterer[name]
+        arr = np.asarray(da.data)
+        if 'z' in da.dims:
+            # Keep original vertical-invariant intent: use first z slice and broadcast.
+            z_axis = da.dims.index('z')
+            arr2d = np.take(arr, indices=0, axis=z_axis)
+            arr3d = np.repeat(arr2d[..., None], nz_target, axis=2)
+            cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+        else:
+            # 2D field, broadcast over z.
+            if da.dims == ('x', 'y'):
+                arr3d = np.repeat(arr[..., None], nz_target, axis=2)
+                cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+            elif da.dims == ('y', 'x'):
+                arr_xy = np.transpose(arr, (1, 0))
+                arr3d = np.repeat(arr_xy[..., None], nz_target, axis=2)
+                cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+            else:
+                # Generic fallback for non-standard dims.
+                if da.ndim == 0:
+                    arr3d = np.full((cloud_scatterer_on_rte_grid.sizes['x'],
+                                     cloud_scatterer_on_rte_grid.sizes['y'],
+                                     nz_target), float(arr))
+                    cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+                elif {'x', 'y'}.issubset(set(da.dims)):
+                    arr_xy = np.asarray(da.transpose('x', 'y').data)
+                    arr3d = np.repeat(arr_xy[..., None], nz_target, axis=2)
+                    cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+                else:
+                    # Skip unsupported auxiliary variable dimensions.
+                    print(f"⚠️ Skip static var '{name}' with dims={da.dims} (unsupported for z-broadcast)")
+
+    # Ensure grid spacing variables remain scalar for at3d.checks.check_grid.
+    cloud_scatterer_on_rte_grid['delx'] = xr.DataArray(float(np.asarray(rte_grid.delx).reshape(-1)[0]))
+    cloud_scatterer_on_rte_grid['dely'] = xr.DataArray(float(np.asarray(rte_grid.dely).reshape(-1)[0]))
+
+    # Optional single-mode selection: scale total density by selected mode fraction.
+    if mode_selection in {"mode1", "mode2"}:
+        frac_name = f"{mode_selection}_fraction"
+        if frac_name in cloud_scatterer_on_rte_grid:
+            frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float)
+            frac = np.clip(np.nan_to_num(frac, nan=0.0, posinf=0.0, neginf=0.0), 0.0, 1.0)
+            dens = np.asarray(cloud_scatterer_on_rte_grid["density"].data, dtype=float)
+            cloud_scatterer_on_rte_grid["density"] = (
+                cloud_scatterer_on_rte_grid["density"].dims,
+                dens * frac
+            )
+        else:
+            print(f"⚠️ mode_selection={mode_selection} but '{frac_name}' not found; density unchanged.")
+
+    # Recompute scalar reff/veff from selected mode(s) on RTE grid when mode fields exist.
+    mode_reff_vars_rte_all = sorted([v for v in cloud_scatterer_on_rte_grid.data_vars if v.startswith('mode') and v.endswith('_reff')])
+    mode_veff_vars_rte_all = sorted([v for v in cloud_scatterer_on_rte_grid.data_vars if v.startswith('mode') and v.endswith('_veff')])
+    if mode_reff_vars_rte_all:
+        num = np.zeros(cloud_scatterer_on_rte_grid["density"].shape, dtype=float)
+        den = np.zeros(cloud_scatterer_on_rte_grid["density"].shape, dtype=float)
+        for v in mode_reff_vars_rte_all:
+            mode_id = v.split('_')[0]
+            if not _mode_selected(mode_id):
+                continue
+            frac_name = f"{mode_id}_fraction"
+            frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(num)
+            arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
+            m = np.isfinite(arr) & np.isfinite(frac) & (frac > 0)
+            num[m] += frac[m] * arr[m]
+            den[m] += frac[m]
+        reff_eff = np.divide(num, den, out=np.full_like(num, np.nan), where=den > 0)
+        cloud_scatterer_on_rte_grid["reff"] = (('x', 'y', 'z'), reff_eff)
+    if mode_veff_vars_rte_all:
+        num = np.zeros(cloud_scatterer_on_rte_grid["density"].shape, dtype=float)
+        den = np.zeros(cloud_scatterer_on_rte_grid["density"].shape, dtype=float)
+        for v in mode_veff_vars_rte_all:
+            mode_id = v.split('_')[0]
+            if not _mode_selected(mode_id):
+                continue
+            frac_name = f"{mode_id}_fraction"
+            frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(num)
+            arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
+            m = np.isfinite(arr) & np.isfinite(frac) & (frac > 0)
+            num[m] += frac[m] * arr[m]
+            den[m] += frac[m]
+        veff_eff = np.divide(num, den, out=np.full_like(num, np.nan), where=den > 0)
+        cloud_scatterer_on_rte_grid["veff"] = (('x', 'y', 'z'), veff_eff)
+
     size_distribution_function = at3d.size_distribution.gamma
     size_distribution_function = at3d.size_distribution.lognormal
     # cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.reff.dims,
@@ -1865,26 +2126,98 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     ho_p_kgm3 = rho_p_gcm3 * 1000.0 # kg/m^3    
     particle_density_gm3 = rho_p_gcm3 * 1e6  # g/cm^3 → g/m^3
     
-    # === 从 scatterer 中动态获取范围 ===
-    reff_min = float(cloud_scatterer_on_rte_grid.reff.min())
-    reff_max = float(cloud_scatterer_on_rte_grid.reff.max())
-    veff_min = float(cloud_scatterer_on_rte_grid.veff.min())
-    veff_max = float(cloud_scatterer_on_rte_grid.veff.max())
-    
+    # === sanitize microphysics (avoid NaN/Inf/outliers causing interpolation range errors) ===
+    density_data = np.asarray(cloud_scatterer_on_rte_grid.density.data, dtype=float)
+    if float(aerosol_cfg.density_floor) > 0:
+        density_data[density_data < float(aerosol_cfg.density_floor)] = 0.0
+        cloud_scatterer_on_rte_grid['density'] = (cloud_scatterer_on_rte_grid.density.dims, density_data)
+    clear_air = (~np.isfinite(density_data)) | (density_data <= 0)
+
+    reff_data = np.asarray(cloud_scatterer_on_rte_grid.reff.data, dtype=float)
+    veff_data = np.asarray(cloud_scatterer_on_rte_grid.veff.data, dtype=float)
+
+    bad_reff = (~np.isfinite(reff_data)) | (reff_data <= 0)
+    bad_veff = (~np.isfinite(veff_data)) | (veff_data <= 0)
+    if np.any(bad_reff):
+        reff_data[bad_reff] = float(aerosol_cfg.reff_default)
+    if np.any(bad_veff):
+        veff_data[bad_veff] = float(aerosol_cfg.veff_default)
+
+    # Avoid interpolation artifacts in clear-air cells.
+    reff_data[clear_air] = float(aerosol_cfg.reff_default)
+    veff_data[clear_air] = float(aerosol_cfg.veff_default)
+
+    # Conservative clipping for aerosol retrieval products.
+    reff_data = np.clip(reff_data, float(aerosol_cfg.reff_clip_min), float(aerosol_cfg.reff_clip_max))
+    veff_data = np.clip(veff_data, float(aerosol_cfg.veff_clip_min), float(aerosol_cfg.veff_clip_max))
+
+    cloud_scatterer_on_rte_grid['reff'] = (cloud_scatterer_on_rte_grid.reff.dims, reff_data)
+    cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.veff.dims, veff_data)
+    print(
+        f"🧪 microphysics clip range: reff[{aerosol_cfg.reff_clip_min}, {aerosol_cfg.reff_clip_max}], "
+        f"veff[{aerosol_cfg.veff_clip_min}, {aerosol_cfg.veff_clip_max}]"
+    )
+
+    # === 从 scatterer 中动态获取范围（finite-only, multi-mode aware）===
+    reff_candidates = [reff_data]
+    veff_candidates = [veff_data]
+    mode_reff_vars_rte = sorted([v for v in cloud_scatterer_on_rte_grid.data_vars if v.startswith('mode') and v.endswith('_reff')])
+    mode_veff_vars_rte = sorted([v for v in cloud_scatterer_on_rte_grid.data_vars if v.startswith('mode') and v.endswith('_veff')])
+
+    for v in mode_reff_vars_rte:
+        mode_id = v.split('_')[0]
+        if not _mode_selected(mode_id):
+            continue
+        frac_name = f"{mode_id}_fraction"
+        frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(reff_data)
+        arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
+        m = np.isfinite(arr) & np.isfinite(frac) & (frac > 0)
+        if np.any(m):
+            reff_candidates.append(arr[m])
+    for v in mode_veff_vars_rte:
+        mode_id = v.split('_')[0]
+        if not _mode_selected(mode_id):
+            continue
+        frac_name = f"{mode_id}_fraction"
+        frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(veff_data)
+        arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
+        m = np.isfinite(arr) & np.isfinite(frac) & (frac > 0)
+        if np.any(m):
+            veff_candidates.append(arr[m])
+
+    reff_all = np.concatenate([np.ravel(a) for a in reff_candidates])
+    veff_all = np.concatenate([np.ravel(a) for a in veff_candidates])
+    reff_finite = reff_all[np.isfinite(reff_all)]
+    veff_finite = veff_all[np.isfinite(veff_all)]
+    reff_min = float(np.min(reff_finite))
+    reff_max = float(np.max(reff_finite))
+    veff_min = float(np.min(veff_finite))
+    veff_max = float(np.max(veff_finite))
+
     # === 留 margin（非常重要）===
     margin_reff = 0.1   # μm
     margin_veff = 0.01
-    
+
     reff_grid = np.linspace(
         max(0.05, reff_min - margin_reff),
         reff_max + margin_reff,
         40
     )
-    
+
     veff_grid = np.linspace(
         max(0.01, veff_min - margin_veff),
         veff_max + margin_veff,
         10    # ⚠️ 如果 veff 几乎不变，直接用 1
+    )
+
+    # Ensure microphysics coordinates lie inside interpolation grid (numerical safety).
+    cloud_scatterer_on_rte_grid['reff'] = (
+        cloud_scatterer_on_rte_grid.reff.dims,
+        np.clip(cloud_scatterer_on_rte_grid.reff.data, reff_grid.min(), reff_grid.max())
+    )
+    cloud_scatterer_on_rte_grid['veff'] = (
+        cloud_scatterer_on_rte_grid.veff.dims,
+        np.clip(cloud_scatterer_on_rte_grid.veff.data, veff_grid.min(), veff_grid.max())
     )
 
 
@@ -1924,6 +2257,12 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     config["num_phi_bins"] = int(solver_cfg.num_phi_bins)
     config["split_accuracy"] = float(solver_cfg.split_accuracy)
     config["deltam"] = bool(solver_cfg.deltam)
+    if solver_cfg.adapt_grid_factor is not None:
+        config["adapt_grid_factor"] = float(solver_cfg.adapt_grid_factor)
+    if solver_cfg.cell_to_point_ratio is not None:
+        config["cell_to_point_ratio"] = float(solver_cfg.cell_to_point_ratio)
+    if solver_cfg.max_total_mb is not None:
+        config["max_total_mb"] = float(solver_cfg.max_total_mb)
     
     
     w = wavelength_nm/1000
@@ -1976,12 +2315,55 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                         medium=medium)
     
     num_stokes = 3 if is_polarized else 1
+
+    def _surface_param_2d(name: str, default_value: float) -> np.ndarray:
+        if name in cloud_scatterer_on_rte_grid:
+            arr = np.asarray(cloud_scatterer_on_rte_grid[name].data, dtype=float)
+            if arr.ndim == 3:
+                arr2d = arr[:, :, 0]
+            elif arr.ndim == 2:
+                arr2d = arr
+            else:
+                arr2d = np.full((rte_grid.x.size, rte_grid.y.size), float(default_value), dtype=float)
+        else:
+            arr2d = np.full((rte_grid.x.size, rte_grid.y.size), float(default_value), dtype=float)
+        arr2d = np.nan_to_num(arr2d, nan=float(default_value), posinf=float(default_value), neginf=float(default_value))
+        return arr2d
+
+    enable_brdf = bool(getattr(scene_cfg, "enable_brdf", False))
+    enable_bpdf = bool(getattr(scene_cfg, "enable_bpdf", False))
+    brdf_model = str(getattr(scene_cfg, "brdf_model", "diner")).lower()
+    delx_km = float(np.asarray(rte_grid.delx).reshape(-1)[0])
+    dely_km = float(np.asarray(rte_grid.dely).reshape(-1)[0])
+
+    if enable_brdf and brdf_model == "diner":
+        A = _surface_param_2d("a0_surf", float(getattr(scene_cfg, "brdf_default_a", 0.0)))
+        K = _surface_param_2d("k0_surf", float(getattr(scene_cfg, "brdf_default_k", 1.0)))
+        B = _surface_param_2d("b0_surf", float(getattr(scene_cfg, "brdf_default_b", 0.0)))
+        if enable_bpdf:
+            E = _surface_param_2d("e0_surface", float(getattr(scene_cfg, "bpdf_default_e", 0.0)))
+            wind_vv = _surface_param_2d("wind_vv", float(getattr(scene_cfg, "bpdf_default_wind_vv", 5.0)))
+            wind_wd = _surface_param_2d("wind_wd", float(getattr(scene_cfg, "bpdf_default_wind_wd", 0.0)))
+            if np.any(np.abs(wind_wd) > 1e-9):
+                print("⚠️ wind_wd is currently not used by at3d.surface.diner and will be ignored.")
+            zeta = E
+            sigma = np.sqrt(np.maximum(0.003 + 0.00512 * np.maximum(wind_vv, 0.0), 1e-6) / 2.0)
+        else:
+            zeta = np.zeros_like(A)
+            sigma = np.zeros_like(A)
+        surface_ds = at3d.surface.diner(A=A, K=K, B=B, ZETA=zeta, SIGMA=sigma, delx=delx_km, dely=dely_km)
+    else:
+        if enable_brdf and brdf_model != "diner":
+            print(f"⚠️ Unsupported brdf_model='{brdf_model}', fallback to lambertian.")
+        lambert_alb = float(getattr(scene_cfg, "lambertian_albedo", 0.0))
+        surface_ds = at3d.surface.lambertian(lambert_alb)
+
     t0 = time.perf_counter()
     solvers_dict.add_solver(
         w,
         at3d.solver.RTE(
             numerical_params=config,
-            surface=at3d.surface.lambertian(0.0),
+            surface=surface_ds,
             source=at3d.source.solar(w, solarmu, solar_azimuth),
             medium=medium,
             num_stokes=num_stokes
