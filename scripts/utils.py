@@ -100,6 +100,10 @@ def load_config(cfg_path: str):
             None if trajectory_cfg.get("cross_track_pitch_list_deg", None) is None
             else [float(v) for v in trajectory_cfg.get("cross_track_pitch_list_deg")]
         ),
+        cross_track_selected_view_indices=(
+            None if trajectory_cfg.get("cross_track_selected_view_indices", None) is None
+            else [int(v) for v in trajectory_cfg.get("cross_track_selected_view_indices")]
+        ),
     )
     bnd = BandsConfig(
         wavelength_nm=[int(w) for w in cfg["bands"]["wavelength_nm"]],

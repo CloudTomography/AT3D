@@ -356,7 +356,8 @@ def calculate_sensor_trajectory_cross_track(
         spacing,
         scan1_deg,
         scan2_deg,
-        delscan_deg):
+        delscan_deg,
+        selected_view_indices=None):
     """
     SHDOM-like cross track geometry sampler.
     A sequence of camera positions is generated from (x1,y1,z1) to (x2,y2,z2),
@@ -394,7 +395,12 @@ def calculate_sensor_trajectory_cross_track(
     samples = [(pos, ang) for pos in scan_positions for ang in scan_angles]
     if len(samples) == 0:
         raise ValueError("No valid cross track samples were generated.")
-    if n_views is None:
+    if selected_view_indices is not None:
+        idx = [int(v) - 1 for v in selected_view_indices]
+        selected_samples = [samples[i] for i in idx if 0 <= i < len(samples)]
+        if len(selected_samples) == 0:
+            raise ValueError("cross_track_selected_view_indices produced empty selection.")
+    elif n_views is None:
         selected_samples = samples
     else:
         if len(samples) < n_views:
@@ -427,7 +433,7 @@ def calculate_sensor_trajectory_cross_track(
         positions.append(np.asarray(pos, dtype=float))
         lookat_vectors.append(np.asarray(lookat, dtype=float))
         up_vectors.append(np.asarray(up_vec, dtype=float))
-    return np.asarray(positions), np.asarray(lookat_vectors), np.asarray(up_vectors)
+    return np.asarray(positions), np.asarray(lookat_vectors), np.asarray(up_vectors), scan_positions, scan_angles
 
 
 def cross_track_scan_projection(
@@ -2030,28 +2036,22 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             raise ValueError(
                 "cross_track mode requires trajectory.cross_track_x1/y1/z1 and x2/y2/z2 in config."
             )
-        stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
-        base_name = str(view_names[0]) if len(view_names) > 0 else "cross_track"
-        cross_sensor, scan_positions, scan_angles, scan_pitch_deg = cross_track_scan_projection(
-            wavelength=wavelength_nm/1000,
-            stokes=stokes,
+        position_vectors, lookat_vectors, up_vectors, scan_positions, scan_angles = calculate_sensor_trajectory_cross_track(
+            n_views=len(view_names) if sen.cross_track_selected_view_indices is None else None,
             x1=sen.cross_track_x1, y1=sen.cross_track_y1, z1=sen.cross_track_z1,
             x2=sen.cross_track_x2, y2=sen.cross_track_y2, z2=sen.cross_track_z2,
             spacing=sen.cross_track_spacing,
             scan1_deg=sen.cross_track_scan1_deg,
             scan2_deg=sen.cross_track_scan2_deg,
             delscan_deg=sen.cross_track_delscan_deg,
-            pitch_start_deg=sen.cross_track_pitch_start_deg,
-            pitch_end_deg=sen.cross_track_pitch_end_deg,
-            pitch_list_deg=sen.cross_track_pitch_list_deg,
+            selected_view_indices=sen.cross_track_selected_view_indices,
         )
-        key = f"{base_name}_{int(wavelength_nm)}nm"
-        sensor_dict.add_sensor(key, cross_sensor)
-        view_names = [base_name]
+        if sen.cross_track_selected_view_indices is not None:
+            view_names = [f"view_{i}" for i in sen.cross_track_selected_view_indices]
+        elif len(view_names) != len(position_vectors):
+            view_names = [f"view_{i+1}" for i in range(len(position_vectors))]
         sen.views_names = view_names
-        position_vectors = np.array([scan_positions[0]], dtype=float)
-        lookat_vectors = np.full((1, 3), np.nan, dtype=float)
-        up_vectors = np.full((1, 3), np.nan, dtype=float)
+        scan_pitch_deg = None
     else:
         position_vectors, up_vectors = calculate_sensor_trajectory(
             sensor_zenith_list=sen.views_zenith_deg,
@@ -2076,27 +2076,26 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             )
         lookat_vectors = [center for _ in view_names]
         scan_pitch_deg = None
-    if mode_lc != "cross_track":
-        for name, pos, look, up in zip(view_names, position_vectors, lookat_vectors, up_vectors):
-            stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
-            if sen.type == "perspective_projection":
-                sensor = at3d.sensor.perspective_projection(
-                    wavelength=wavelength_nm/1000,
-                    fov=sen.fov_deg,
-                    x_resolution=int(cam_cfg.x_resolution),
-                    y_resolution=int(cam_cfg.y_resolution),
-                    position_vector=pos,
-                    lookat_vector=look,
-                    up_vector=up,
-                    stokes=stokes
-                )
-            else:
-                raise NotImplementedError(
-                    f"sensor.type={sen.type} is not implemented in v5b; "
-                    "currently only perspective_projection is supported."
-                )
-            key = f"{name}_{int(wavelength_nm)}nm"
-            sensor_dict.add_sensor(key, sensor)
+    for name, pos, look, up in zip(view_names, position_vectors, lookat_vectors, up_vectors):
+        stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
+        if sen.type == "perspective_projection":
+            sensor = at3d.sensor.perspective_projection(
+                wavelength=wavelength_nm/1000,
+                fov=sen.fov_deg,
+                x_resolution=int(cam_cfg.x_resolution),
+                y_resolution=int(cam_cfg.y_resolution),
+                position_vector=pos,
+                lookat_vector=look,
+                up_vector=up,
+                stokes=stokes
+            )
+        else:
+            raise NotImplementedError(
+                f"sensor.type={sen.type} is not implemented in v5b; "
+                "currently only perspective_projection is supported."
+            )
+        key = f"{name}_{int(wavelength_nm)}nm"
+        sensor_dict.add_sensor(key, sensor)
     t_stage["build_sensors"] = time.perf_counter() - t0
     wavelengths = sensor_dict.get_unique_solvers()
     mie_mono_tables = OrderedDict()
@@ -3240,6 +3239,43 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
         dur = time.time() - start_t
         print(f"⏱️  {int(w)} nm done in {dur/60:.2f} min")
     print("\n✅ All requested wavelengths processed.")
+    if out_cfg.save_nc and not precheck_only:
+        try:
+            band_list = [int(w) for w, _ in bands]
+            ds_first = xr.open_dataset(os.path.join(out_cfg.root_dir, f"AirMSPI_{band_list[0]}nm.nc"))
+            V = int(ds_first.sizes["view"]); Y = int(ds_first.sizes["y_gds"]); X = int(ds_first.sizes["x_gds"]); B = len(band_list)
+            shp = (Y, X, V, B)
+            I = np.full(shp, np.nan); Q = np.full(shp, np.nan); U = np.full(shp, np.nan)
+            DoLP = np.full(shp, np.nan); thetav = np.full(shp, np.nan); theta0 = np.full(shp, np.nan); faipfai0 = np.full(shp, np.nan)
+            for ib, w in enumerate(band_list):
+                d = xr.open_dataset(os.path.join(out_cfg.root_dir, f"AirMSPI_{w}nm.nc"))
+                I[..., ib] = np.transpose(d["I_downsampled_registered"].values, (1, 2, 0))
+                Q[..., ib] = np.transpose(d["Q_downsampled_registered"].values, (1, 2, 0))
+                U[..., ib] = np.transpose(d["U_downsampled_registered"].values, (1, 2, 0))
+                DoLP[..., ib] = np.transpose(d["DoLP_downsampled_registered"].values, (1, 2, 0))
+                thetav[..., ib] = np.transpose(d["VZA_downsampled_registered"].values, (1, 2, 0))
+                theta0[..., ib] = np.transpose(np.broadcast_to(float(d["theta_0"].values), (V, Y, X)), (1, 2, 0))
+                faipfai0[..., ib] = np.transpose(d["RAA_downsampled_registered"].values, (1, 2, 0))
+            out = xr.Dataset(
+                data_vars=dict(
+                    I=(["x", "y", "view", "band"], I), Q=(["x", "y", "view", "band"], Q), U=(["x", "y", "view", "band"], U),
+                    DoLP=(["x", "y", "view", "band"], DoLP), thetav=(["x", "y", "view", "band"], thetav),
+                    theta0=(["x", "y", "view", "band"], theta0), faipfai0=(["x", "y", "view", "band"], faipfai0),
+                    ErrI=(["x", "y", "view", "band"], np.full(shp, np.nan)), ErrQ=(["x", "y", "view", "band"], np.full(shp, np.nan)),
+                    ErrU=(["x", "y", "view", "band"], np.full(shp, np.nan)), ErrDoLP=(["x", "y", "view", "band"], np.full(shp, np.nan)),
+                    lat=(["x", "y"], ds_first["lat"].values), lon=(["x", "y"], ds_first["lon"].values),
+                    elevation=(["x", "y"], ds_first["elevation"].values), Land_water_mask=(["x", "y"], ds_first["Land_water_mask"].values),
+                    datalat=(["x_full", "y_full"], ds_first["datalat"].values), datalon=(["x_full", "y_full"], ds_first["datalon"].values),
+                    dataElevation=(["x_full", "y_full"], ds_first["dataElevation"].values),
+                    dataLand_water_mask=(["x_full", "y_full"], ds_first["dataLand_water_mask"].values),
+                    Band_AirMSPI=(["band", "one"], np.asarray(band_list, dtype=float).reshape(-1, 1)),
+                    Height_AirMSPI=(["one", "one2"], np.array([[float(sen_cfg.altitude_km)]], dtype=float)),
+                )
+            )
+            out.to_netcdf(os.path.join(out_cfg.root_dir, "AirMSPI_multiview_multiband.nc"))
+            print("📦 Saved AirMSPI_multiview_multiband.nc")
+        except Exception as e:
+            print(f"⚠️ Failed to merge multiview/multiband nc: {e}")
     if out_cfg.save_nc:
         if len(spectral_AOD_all) == 0:
             print("⚠️ Skip spectral_AOD_SSA.nc: no AOD/SSA data collected (all bands skipped or precheck_only mode).")

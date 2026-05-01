@@ -54,6 +54,7 @@ class SensorConfig:
     cross_track_pitch_start_deg: Optional[float] = None
     cross_track_pitch_end_deg: Optional[float] = None
     cross_track_pitch_list_deg: Optional[List[float]] = None
+    cross_track_selected_view_indices: Optional[List[int]] = None
 
 @dataclass
 class BandsConfig:

@@ -256,8 +256,19 @@ def estimate_cross_track(l1b_files: List[Path], metnav_path: Path, retrieval_nc:
         hdist2_km = float(np.hypot(dnx2[0], dey2[0]))
         alt1_km = float(alt1_m / 1000.0)
         alt2_km = float(alt2_m / 1000.0)
-        pitch1 = float(np.degrees(np.arctan2(max(alt1_km, 0.0), max(hdist1_km, 1e-6))))
-        pitch2 = float(np.degrees(np.arctan2(max(alt2_km, 0.0), max(hdist2_km, 1e-6))))
+        pitch1_abs = float(np.degrees(np.arctan2(max(alt1_km, 0.0), max(hdist1_km, 1e-6))))
+        pitch2_abs = float(np.degrees(np.arctan2(max(alt2_km, 0.0), max(hdist2_km, 1e-6))))
+        track_h = np.array([x2[0] - x1[0], y2[0] - y1[0]], dtype=float)
+        if np.linalg.norm(track_h) < 1e-9:
+            track_h = np.array([1.0, 0.0], dtype=float)
+        g1x, g1y = _latlon_to_xy_km(np.array([sg_lat]), np.array([sg_lon]), lat0, lon0)
+        g2x, g2y = _latlon_to_xy_km(np.array([eg_lat]), np.array([eg_lon]), lat0, lon0)
+        look1_h = np.array([g1x[0] - x1[0], g1y[0] - y1[0]], dtype=float)
+        look2_h = np.array([g2x[0] - x2[0], g2y[0] - y2[0]], dtype=float)
+        s1 = 1.0 if np.dot(look1_h, track_h) >= 0 else -1.0
+        s2 = 1.0 if np.dot(look2_h, track_h) >= 0 else -1.0
+        pitch1 = s1 * pitch1_abs
+        pitch2 = s2 * pitch2_abs
 
         per_view.append({
             "view_index": idx,
