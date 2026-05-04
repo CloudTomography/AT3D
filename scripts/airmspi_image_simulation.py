@@ -2064,22 +2064,26 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                 cache_db = json.loads(cache_path.read_text(encoding="utf-8"))
                 cached = cache_db.get(sen.cross_track_case_id)
                 if cached and len(cached) > 0:
-                    c_start = cached[0]
-                    c_end = cached[-1]
+                    selected_idx = 0
+                    if sen.cross_track_selected_view_indices:
+                        # 1-based view index in config
+                        selected_idx = max(0, int(sen.cross_track_selected_view_indices[0]) - 1)
+                    selected_idx = min(selected_idx, len(cached) - 1)
+                    c_view = cached[selected_idx]
                     fallback_map = {
-                        "cross_track_x1": c_start["cross_track_x1"],
-                        "cross_track_y1": c_start["cross_track_y1"],
-                        "cross_track_z1": c_start["cross_track_z1"],
-                        "cross_track_x2": c_end["cross_track_x2"],
-                        "cross_track_y2": c_end["cross_track_y2"],
-                        "cross_track_z2": c_end["cross_track_z2"],
-                        "cross_track_pitch_start_deg": c_start.get("cross_track_pitch_start_deg", 0.0),
-                        "cross_track_pitch_end_deg": c_end.get("cross_track_pitch_end_deg", 0.0),
+                        "cross_track_x1": c_view["cross_track_x1"],
+                        "cross_track_y1": c_view["cross_track_y1"],
+                        "cross_track_z1": c_view["cross_track_z1"],
+                        "cross_track_x2": c_view["cross_track_x2"],
+                        "cross_track_y2": c_view["cross_track_y2"],
+                        "cross_track_z2": c_view["cross_track_z2"],
+                        "cross_track_pitch_start_deg": c_view.get("cross_track_pitch_start_deg", 0.0),
+                        "cross_track_pitch_end_deg": c_view.get("cross_track_pitch_end_deg", 0.0),
                     }
                     for k, v in fallback_map.items():
                         if getattr(sen, k) is None:
                             setattr(sen, k, float(v))
-                    print(f"📥 Loaded cross-track cache: case={sen.cross_track_case_id}, file={cache_path}")
+                    print(f"📥 Loaded cross-track cache: case={sen.cross_track_case_id}, file={cache_path}, view_index={selected_idx+1}")
             except Exception as e:
                 print(f"⚠️ Failed to load cross-track cache ({sen.cross_track_case_id}): {e}")
         required = [
