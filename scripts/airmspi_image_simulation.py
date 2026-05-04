@@ -358,7 +358,8 @@ def calculate_sensor_trajectory_cross_track(
         scan1_deg,
         scan2_deg,
         delscan_deg,
-        selected_view_indices=None):
+        selected_view_indices=None,
+        lookat_ground_point=None):
     """
     SHDOM-like cross track geometry sampler.
     A sequence of camera positions is generated from (x1,y1,z1) to (x2,y2,z2),
@@ -421,18 +422,13 @@ def calculate_sensor_trajectory_cross_track(
         look_dir = _rotate_vector_about_axis(base_look, along_track, -float(ang))
         look_dir = look_dir / np.linalg.norm(look_dir)
         pos_arr = np.asarray(pos, dtype=float)
-        # Force look-at point on ground plane z=0 for ground-projection consistency.
-        # Solve pos + t*look_dir with z=0.
-        if abs(float(look_dir[2])) > 1e-12:
-            t_ground = -pos_arr[2] / float(look_dir[2])
-            if t_ground > 0:
-                lookat = pos_arr + t_ground * look_dir
-            else:
-                lookat = pos_arr + look_dir
-                lookat[2] = 0.0
+        if lookat_ground_point is not None:
+            lookat = np.asarray(lookat_ground_point, dtype=float).copy()
+            lookat[2] = 0.0
+            look_dir = lookat - pos_arr
+            look_dir = look_dir / max(np.linalg.norm(look_dir), 1e-12)
         else:
             lookat = pos_arr + look_dir
-            lookat[2] = 0.0
 
         right = np.cross(look_dir, along_track)
         if np.linalg.norm(right) < 1e-12:
@@ -2103,6 +2099,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             scan2_deg=sen.cross_track_scan2_deg,
             delscan_deg=sen.cross_track_delscan_deg,
             selected_view_indices=sen.cross_track_selected_view_indices,
+            lookat_ground_point=np.array([center_NEU[0], center_NEU[1], 0.0], dtype=float),
         )
         if sen.cross_track_selected_view_indices is not None:
             view_names = [f"view_{i}" for i in sen.cross_track_selected_view_indices]
