@@ -2032,13 +2032,23 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
         if sen.cross_track_cache_file and sen.cross_track_case_id:
             try:
                 cache_path = Path(sen.cross_track_cache_file)
-                if not cache_path.is_absolute() and (not cache_path.exists()):
-                    alt1 = Path.cwd() / cache_path
-                    alt2 = Path(__file__).resolve().parent / cache_path
-                    if alt1.exists():
-                        cache_path = alt1
-                    elif alt2.exists():
-                        cache_path = alt2
+                if not cache_path.is_absolute():
+                    candidates = [
+                        cache_path,
+                        Path.cwd() / cache_path,
+                        Path(__file__).resolve().parent / cache_path,
+                        Path(__file__).resolve().parent.parent / cache_path,
+                    ]
+                    resolved = None
+                    for c in candidates:
+                        if c.exists():
+                            resolved = c
+                            break
+                    if resolved is None:
+                        raise FileNotFoundError(
+                            f"cross-track cache not found. tried: {[str(c) for c in candidates]}"
+                        )
+                    cache_path = resolved
                 cache_db = json.loads(cache_path.read_text(encoding="utf-8"))
                 cached = cache_db.get(sen.cross_track_case_id)
                 if cached and len(cached) > 0:
