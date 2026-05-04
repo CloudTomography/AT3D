@@ -2443,7 +2443,11 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    cross_track_pitch_list_deg=sen.cross_track_pitch_list_deg,
                    cross_track_scan_positions=(scan_positions.tolist() if mode_lc == "cross_track" else None),
                    cross_track_scan_angles_deg=(scan_angles.tolist() if mode_lc == "cross_track" else None),
-                   cross_track_scan_pitch_deg=(scan_pitch_deg.tolist() if mode_lc == "cross_track" else None),
+                   cross_track_scan_pitch_deg=(
+                       scan_pitch_deg.tolist()
+                       if (mode_lc == "cross_track" and scan_pitch_deg is not None)
+                       else None
+                   ),
                    lat=lat_2d,
                    lon=lon_2d,
                    latlon_source=latlon_source,
