@@ -2031,17 +2031,35 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     if mode_lc == "cross_track":
         if sen.cross_track_cache_file and sen.cross_track_case_id:
             try:
-                cache_db = json.loads(Path(sen.cross_track_cache_file).read_text(encoding="utf-8"))
+                cache_path = Path(sen.cross_track_cache_file)
+                if not cache_path.is_absolute() and (not cache_path.exists()):
+                    alt1 = Path.cwd() / cache_path
+                    alt2 = Path(__file__).resolve().parent / cache_path
+                    if alt1.exists():
+                        cache_path = alt1
+                    elif alt2.exists():
+                        cache_path = alt2
+                cache_db = json.loads(cache_path.read_text(encoding="utf-8"))
                 cached = cache_db.get(sen.cross_track_case_id)
                 if cached and len(cached) > 0:
-                    c0 = cached[0]
-                    for k in ["cross_track_x1", "cross_track_y1", "cross_track_z1",
-                              "cross_track_x2", "cross_track_y2", "cross_track_z2",
-                              "cross_track_pitch_start_deg", "cross_track_pitch_end_deg"]:
+                    c_start = cached[0]
+                    c_end = cached[-1]
+                    fallback_map = {
+                        "cross_track_x1": c_start["cross_track_x1"],
+                        "cross_track_y1": c_start["cross_track_y1"],
+                        "cross_track_z1": c_start["cross_track_z1"],
+                        "cross_track_x2": c_end["cross_track_x2"],
+                        "cross_track_y2": c_end["cross_track_y2"],
+                        "cross_track_z2": c_end["cross_track_z2"],
+                        "cross_track_pitch_start_deg": c_start.get("cross_track_pitch_start_deg", 0.0),
+                        "cross_track_pitch_end_deg": c_end.get("cross_track_pitch_end_deg", 0.0),
+                    }
+                    for k, v in fallback_map.items():
                         if getattr(sen, k) is None:
-                            setattr(sen, k, float(c0[k]))
-            except Exception:
-                pass
+                            setattr(sen, k, float(v))
+                    print(f"📥 Loaded cross-track cache: case={sen.cross_track_case_id}, file={cache_path}")
+            except Exception as e:
+                print(f"⚠️ Failed to load cross-track cache ({sen.cross_track_case_id}): {e}")
         required = [
             sen.cross_track_x1, sen.cross_track_y1, sen.cross_track_z1,
             sen.cross_track_x2, sen.cross_track_y2, sen.cross_track_z2
