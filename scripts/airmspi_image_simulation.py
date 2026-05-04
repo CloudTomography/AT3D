@@ -420,18 +420,30 @@ def calculate_sensor_trajectory_cross_track(
         # need the opposite rotation sign to keep left/right VAA ordering consistent.
         look_dir = _rotate_vector_about_axis(base_look, along_track, -float(ang))
         look_dir = look_dir / np.linalg.norm(look_dir)
-        lookat = np.asarray(pos, dtype=float) + look_dir
+        pos_arr = np.asarray(pos, dtype=float)
+        # Force look-at point on ground plane z=0 for ground-projection consistency.
+        # Solve pos + t*look_dir with z=0.
+        if abs(float(look_dir[2])) > 1e-12:
+            t_ground = -pos_arr[2] / float(look_dir[2])
+            if t_ground > 0:
+                lookat = pos_arr + t_ground * look_dir
+            else:
+                lookat = pos_arr + look_dir
+                lookat[2] = 0.0
+        else:
+            lookat = pos_arr + look_dir
+            lookat[2] = 0.0
 
         right = np.cross(look_dir, along_track)
         if np.linalg.norm(right) < 1e-12:
             right = np.cross(look_dir, world_up)
         up_vec = np.cross(right, look_dir)
         if np.linalg.norm(up_vec) < 1e-12:
-            up_vec = calculate_up_vector(np.asarray(pos, dtype=float), lookat)
+            up_vec = calculate_up_vector(pos_arr, lookat)
         else:
             up_vec = up_vec / np.linalg.norm(up_vec)
 
-        positions.append(np.asarray(pos, dtype=float))
+        positions.append(pos_arr)
         lookat_vectors.append(np.asarray(lookat, dtype=float))
         up_vectors.append(np.asarray(up_vec, dtype=float))
     return np.asarray(positions), np.asarray(lookat_vectors), np.asarray(up_vectors), scan_positions, scan_angles
