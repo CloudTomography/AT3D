@@ -2046,6 +2046,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     mode_lc = str(sen.trajectory_mode).lower()
     view_names = list(sen.views_names)
     cached_entries = None
+    cross_track_sensor_prebuilt = False
     if mode_lc == "cross_track":
         if sen.cross_track_cache_file and sen.cross_track_case_id:
             try:
@@ -2105,23 +2106,30 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             sel = [max(1, int(i)) for i in sen.cross_track_selected_view_indices]
             per_view = [cached_entries[i - 1] for i in sel if 1 <= i <= len(cached_entries)]
             position_vectors, lookat_vectors, up_vectors = [], [], []
+            stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
             for e in per_view:
-                pvec, lvec, uvec, scan_positions, scan_angles = calculate_sensor_trajectory_cross_track(
-                    n_views=1,
+                name = f"view_{int(e['view_index'])}"
+                csensor, scan_positions, scan_angles, scan_pitch_deg = cross_track_scan_projection(
+                    wavelength=wavelength_nm/1000,
+                    stokes=stokes,
                     x1=float(e["cross_track_x1"]), y1=float(e["cross_track_y1"]), z1=float(e["cross_track_z1"]),
                     x2=float(e["cross_track_x2"]), y2=float(e["cross_track_y2"]), z2=float(e["cross_track_z2"]),
                     spacing=sen.cross_track_spacing,
                     scan1_deg=sen.cross_track_scan1_deg,
                     scan2_deg=sen.cross_track_scan2_deg,
                     delscan_deg=sen.cross_track_delscan_deg,
-                    selected_view_indices=None,
-                    lookat_ground_point=np.array([center_NEU[0], center_NEU[1], 0.0], dtype=float),
                     pitch_start_deg=float(e.get("cross_track_pitch_start_deg", 0.0)),
                     pitch_end_deg=float(e.get("cross_track_pitch_end_deg", 0.0)),
                 )
-                position_vectors.append(pvec[0]); lookat_vectors.append(lvec[0]); up_vectors.append(uvec[0])
+                key = f"{name}_{int(wavelength_nm)}nm"
+                sensor_dict.add_sensor(key, csensor)
+                # metadata-only placeholders
+                position_vectors.append(np.array([float(e["cross_track_x1"]), float(e["cross_track_y1"]), float(e["cross_track_z1"])]))
+                lookat_vectors.append(np.array([center_NEU[0], center_NEU[1], 0.0]))
+                up_vectors.append(np.array([0.0, 1.0, 0.0]))
             position_vectors = np.asarray(position_vectors); lookat_vectors = np.asarray(lookat_vectors); up_vectors = np.asarray(up_vectors)
             view_names = [f"view_{i}" for i in sel]
+            cross_track_sensor_prebuilt = True
         else:
             position_vectors, lookat_vectors, up_vectors, scan_positions, scan_angles = calculate_sensor_trajectory_cross_track(
                 n_views=len(view_names) if sen.cross_track_selected_view_indices is None else None,
@@ -2166,26 +2174,27 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             )
         lookat_vectors = [center for _ in view_names]
         scan_pitch_deg = None
-    for name, pos, look, up in zip(view_names, position_vectors, lookat_vectors, up_vectors):
-        stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
-        if sen.type == "perspective_projection":
-            sensor = at3d.sensor.perspective_projection(
-                wavelength=wavelength_nm/1000,
-                fov=sen.fov_deg,
-                x_resolution=int(cam_cfg.x_resolution),
-                y_resolution=int(cam_cfg.y_resolution),
-                position_vector=pos,
-                lookat_vector=look,
-                up_vector=up,
-                stokes=stokes
-            )
-        else:
-            raise NotImplementedError(
-                f"sensor.type={sen.type} is not implemented in v5b; "
-                "currently only perspective_projection is supported."
-            )
-        key = f"{name}_{int(wavelength_nm)}nm"
-        sensor_dict.add_sensor(key, sensor)
+    if not cross_track_sensor_prebuilt:
+        for name, pos, look, up in zip(view_names, position_vectors, lookat_vectors, up_vectors):
+            stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
+            if sen.type == "perspective_projection":
+                sensor = at3d.sensor.perspective_projection(
+                    wavelength=wavelength_nm/1000,
+                    fov=sen.fov_deg,
+                    x_resolution=int(cam_cfg.x_resolution),
+                    y_resolution=int(cam_cfg.y_resolution),
+                    position_vector=pos,
+                    lookat_vector=look,
+                    up_vector=up,
+                    stokes=stokes
+                )
+            else:
+                raise NotImplementedError(
+                    f"sensor.type={sen.type} is not implemented in v5b; "
+                    "currently only perspective_projection is supported."
+                )
+            key = f"{name}_{int(wavelength_nm)}nm"
+            sensor_dict.add_sensor(key, sensor)
     t_stage["build_sensors"] = time.perf_counter() - t0
     wavelengths = sensor_dict.get_unique_solvers()
     mie_mono_tables = OrderedDict()
