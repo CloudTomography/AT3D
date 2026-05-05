@@ -359,7 +359,9 @@ def calculate_sensor_trajectory_cross_track(
         scan2_deg,
         delscan_deg,
         selected_view_indices=None,
-        lookat_ground_point=None):
+        lookat_ground_point=None,
+        pitch_start_deg=None,
+        pitch_end_deg=None):
     """
     SHDOM-like cross track geometry sampler.
     A sequence of camera positions is generated from (x1,y1,z1) to (x2,y2,z2),
@@ -394,34 +396,42 @@ def calculate_sensor_trajectory_cross_track(
     else:
         scan_angles = np.array([scan1_deg], dtype=float)
 
-    samples = [(pos, ang) for pos in scan_positions for ang in scan_angles]
-    if len(samples) == 0:
+    if len(scan_positions) == 0:
         raise ValueError("No valid cross track samples were generated.")
     if selected_view_indices is not None:
         idx = [int(v) - 1 for v in selected_view_indices]
-        selected_samples = [samples[i] for i in idx if 0 <= i < len(samples)]
+        selected_samples = [scan_positions[i] for i in idx if 0 <= i < len(scan_positions)]
         if len(selected_samples) == 0:
             raise ValueError("cross_track_selected_view_indices produced empty selection.")
     elif n_views is None:
-        selected_samples = samples
+        selected_samples = list(scan_positions)
     else:
-        if len(samples) < n_views:
-            reps = int(np.ceil(n_views / len(samples)))
-            samples = samples * reps
-        selected_samples = samples[:n_views]
+        selected_samples = list(scan_positions[:int(n_views)])
+    pitch_all = _resolve_cross_track_scan_pitch_angles(
+        n_scans=len(scan_positions),
+        pitch_start_deg=pitch_start_deg,
+        pitch_end_deg=pitch_end_deg,
+        pitch_list_deg=None,
+    )
 
     positions = []
     lookat_vectors = []
     up_vectors = []
     base_look = np.array([0.0, 0.0, -1.0], dtype=float)
     world_up = np.array([0.0, 0.0, 1.0], dtype=float)
-    for pos, ang in selected_samples:
+    for pos in selected_samples:
         # SHDOM cross-track convention:
         # scan angle sign is defined in scanner coordinates; in this NEU setup we
         # need the opposite rotation sign to keep left/right VAA ordering consistent.
-        look_dir = _rotate_vector_about_axis(base_look, along_track, -float(ang))
-        look_dir = look_dir / np.linalg.norm(look_dir)
         pos_arr = np.asarray(pos, dtype=float)
+        iscan = int(np.argmin(np.linalg.norm(scan_positions - pos_arr, axis=1)))
+        pitch_deg = float(pitch_all[iscan])
+        right_ref = np.cross(base_look, along_track)
+        right_ref = right_ref / max(np.linalg.norm(right_ref), 1e-12)
+        look_dir = _rotate_vector_about_axis(base_look, right_ref, pitch_deg)
+        center_ang = 0.5 * (float(scan1_deg) + float(scan2_deg))
+        look_dir = _rotate_vector_about_axis(look_dir, along_track, -center_ang)
+        look_dir = look_dir / max(np.linalg.norm(look_dir), 1e-12)
         if lookat_ground_point is not None:
             lookat = np.asarray(lookat_ground_point, dtype=float).copy()
             lookat[2] = 0.0
@@ -2100,6 +2110,8 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
             delscan_deg=sen.cross_track_delscan_deg,
             selected_view_indices=sen.cross_track_selected_view_indices,
             lookat_ground_point=np.array([center_NEU[0], center_NEU[1], 0.0], dtype=float),
+            pitch_start_deg=sen.cross_track_pitch_start_deg,
+            pitch_end_deg=sen.cross_track_pitch_end_deg,
         )
         if sen.cross_track_selected_view_indices is not None:
             view_names = [f"view_{i}" for i in sen.cross_track_selected_view_indices]
