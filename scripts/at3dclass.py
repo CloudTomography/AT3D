@@ -26,7 +26,7 @@ class SensorConfig:
     views_names: List[str]
     views_zenith_deg: List[float]
     views_azimuth_deg: List[float]
-    trajectory_mode: str = "auto"  # "auto" | "manual_azimuth"
+    trajectory_mode: str = "auto"  # "auto" | "manual_azimuth" | "cross_track"
     fallback_heading_deg: float = 0.0
     manual_flight_azimuth_deg: Optional[float] = None
     camera_relative_roll_deg: float = 0.0
@@ -39,6 +39,24 @@ class SensorConfig:
     aircraft_roll_deg: float = 0.0
     camera_pitch_relative_deg: float = 0.0
     camera_roll_relative_deg: float = 0.0
+    cross_track_nbytes: int = 2
+    cross_track_scale: float = 1.0
+    cross_track_x1: Optional[float] = None
+    cross_track_y1: Optional[float] = None
+    cross_track_z1: Optional[float] = None
+    cross_track_x2: Optional[float] = None
+    cross_track_y2: Optional[float] = None
+    cross_track_z2: Optional[float] = None
+    cross_track_spacing: float = 0.0
+    cross_track_scan1_deg: float = -30.0
+    cross_track_scan2_deg: float = 30.0
+    cross_track_delscan_deg: float = 1.0
+    cross_track_pitch_start_deg: Optional[float] = None
+    cross_track_pitch_end_deg: Optional[float] = None
+    cross_track_pitch_list_deg: Optional[List[float]] = None
+    cross_track_selected_view_indices: Optional[List[int]] = None
+    cross_track_case_id: Optional[str] = None
+    cross_track_cache_file: Optional[str] = None
 
 @dataclass
 class BandsConfig:
@@ -83,6 +101,16 @@ class GroundCropConfig:
 class SceneConfig:
     input_path: str
     lookat_center_km: List[float]
+    enable_brdf: bool = False
+    enable_bpdf: bool = False
+    brdf_model: str = "diner"
+    lambertian_albedo: float = 0.0
+    brdf_default_a: float = 0.0
+    brdf_default_k: float = 1.0
+    brdf_default_b: float = 0.0
+    bpdf_default_e: float = 0.0
+    bpdf_default_wind_vv: float = 5.0
+    bpdf_default_wind_wd: float = 0.0
 
 @dataclass
 class CameraConfig:
@@ -102,9 +130,20 @@ class SolverConfig:
     num_phi_bins: int = 96
     split_accuracy: float = 0.01
     deltam: bool = True
+    adapt_grid_factor: Optional[float] = None
+    cell_to_point_ratio: Optional[float] = None
+    max_total_mb: Optional[float] = None
 
 @dataclass
 class AerosolConfig:
     refractive_index_real: float = 1.4
     refractive_index_imag: float = 0.001
     particle_density: float = 1.6
+    reff_default: float = 0.2
+    veff_default: float = 0.10
+    reff_clip_min: float = 0.05
+    reff_clip_max: float = 30.0
+    veff_clip_min: float = 0.01
+    veff_clip_max: float = 1.0
+    density_floor: float = 0.0
+    mode_selection: str = "both"  # both | mode1 | mode2

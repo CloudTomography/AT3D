@@ -1,0 +1,96 @@
+# =============================
+# Simulation Configuration File (v5b)
+# =============================
+
+output:
+  root_dir: "output/airmspi_sim_5_24"
+  save_png: false
+  save_nc: true
+  plot_mode: "overwrite"   # "skip" | "if_missing" | "overwrite"
+  png_dpi: 300
+
+sensor:
+  type: "perspective_projection"
+  altitude_km: 20.0
+  fov_deg: 30
+  resolution_km: 0.010
+  views:
+    names: ["nadir"]
+    zenith_deg: [0]      # 先调这个：控制VZA整体大小（越大，边缘VZA越大）
+    azimuth_deg: [153]     # 先调这个：控制视线主方向（会影响VAA/RAA的整体朝向）
+
+  trajectory:
+    mode: "sensor_azimuth"                 # "adjacent_views"(相邻视角推断) | "sensor_azimuth"(按每个视角方位角)
+    fallback_heading_deg: 0.0     # 单视角或几何退化时的默认飞行方向角(度)
+    manual_flight_azimuth_deg: 0.0  # 兼容旧字段（trajectory.mode=sensor_azimuth时不再作为主开关）
+    camera_relative_roll_deg: 0.6   # 相机相对飞机的滚转角(度)，默认0表示相机x/y轴与飞机参考方向对齐
+    camera_align_with_flight_heading: false  # false: 相机坐标与世界上方向对齐(默认，分界线更稳定竖直/水平)
+    apply_flight_azimuth_offset_to_vaa: false  # 默认关闭：VAA直接来自几何；若需额外航向偏置再开启
+    camera_image_transpose: false   # 是否对模拟图像做转置（仅用于对齐历史AirMSPI观测像元方向）
+    camera_image_flip_lr: false     # 是否做左右翻转（仅用于复现实测图像方向）
+
+# camera pixel grid for perspective_projection
+camera:
+  x_resolution: 2000
+  y_resolution: 2000
+
+# scene source and camera look-at point (km)
+scene:
+  input_path: "../data/synthetic_cloud_fields/jpl_les/firex_case21_test143_multiview-single-layer_coarse_NEU_coordinate.txt"
+  lookat_center_km: [3.8, 4.5, 0.0]  # 关键参数：平移VZA“最低点”在图上的位置（不必在区域几何中心）
+
+# solar geometry in geophysical convention
+solar:
+  sza_deg: 35.5    # 主要影响散射角绝对值范围（与VZA共同决定）
+  saa_deg: -55.0   # 主要影响RAA和散射角的方向梯度
+
+# radiative transfer solver parameters
+solver:
+  x_boundary_condition: "open"
+  y_boundary_condition: "open"
+  num_mu_bins: 24
+  num_phi_bins: 24
+  split_accuracy: 0.05
+  deltam: true
+
+# aerosol optical setup
+# complex refractive index = n - i*k
+aerosol:
+  refractive_index_real: 1.4
+  refractive_index_imag: 0.001
+  particle_density: 1.6
+
+bands:
+  wavelength_nm: [470]
+  is_polarized: [true]
+
+downsample:
+  factor: 12
+  method: "mean"
+
+save_versions:
+  - "original"
+  - "registered"
+  - "downsampled"
+  - "downsampled_registered"
+
+plot:
+  enable_3d_geometry: true
+  enable_ground_image: true
+  colormap: "viridis"
+  replot_layout: "panel"   # "panel": IQU一张+角度一张；"separate": 每个变量单独绘图
+
+ground_grid:
+  x_min: 0.0
+  x_max: 10.0
+  nx: 600
+  y_min: 0.0
+  y_max: 7.0
+  ny: 240
+
+compute:
+  n_jobs: 8
+
+ground_crop:
+  x_range: [0.0, 10.0]
+  y_range: [0.0, 7.0]

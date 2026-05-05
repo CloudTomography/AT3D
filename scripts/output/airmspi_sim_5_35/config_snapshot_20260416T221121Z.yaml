@@ -3,7 +3,7 @@
 # =============================
 
 output:
-  root_dir: "output/airmspi_sim_6_002"
+  root_dir: "output/airmspi_sim_5_35"
   save_png: false
   save_nc: true
   plot_mode: "overwrite"   # "skip" | "if_missing" | "overwrite"
@@ -38,7 +38,7 @@ sensor:
     cross_track_nbytes: 2            # 兼容SHDOM参数，当前用于元数据记录 number of bytes per pixel in PGM output images
     cross_track_scale: 1.0           # 兼容SHDOM参数，当前用于元数据记录 the scaling from radiance to pixel value in image
     cross_track_x1: 3.2               # the starting camera location
-    cross_track_y1: 0
+    cross_track_y1: 0.0
     cross_track_z1: 20.0
     cross_track_x2: 2.8
     cross_track_y2: 9.2
@@ -51,11 +51,8 @@ sensor:
     # 1) start/end -> 按扫描线数线性插值
     # 2) list -> 手动逐线给定（长度必须等于扫描线数）
     cross_track_pitch_start_deg: 0 # null # 
-    cross_track_pitch_end_deg: 5.14 # null # 
+    cross_track_pitch_end_deg: -2.7595 # null # 
     cross_track_pitch_list_deg: null
-    cross_track_selected_view_indices: [1]  # 可选：1-based视角序号，如[1,3,4,5,6,8,9]
-    cross_track_case_id: "Case_21_2019_0806_1839"   # 缓存几何参数用
-    cross_track_cache_file: "output/cross_track_cache.json"  # 结果缓存文件
 
 # camera pixel grid for perspective_projection
 camera:
@@ -65,25 +62,13 @@ camera:
 # scene source and camera look-at point (km)
 scene:
   # AT3D/SHDOM world coordinates: [x, y, z] = [North, East, Up] (NEU, left-handed).
-  input_path: "../data/synthetic_cloud_fields/jpl_les/retrieval_2019_0806_1839_extended.csv"
+  input_path: "../data/synthetic_cloud_fields/jpl_les/firex_case21_test143_multiview-single-layer_coarse_NEU_coordinate.txt"
   lookat_center_km: [4.5, 3.8, 0.0]  # 关键参数：平移VZA“最低点”在图上的位置（不必在区域几何中心）
-  # surface toggles
-  enable_brdf: false
-  enable_bpdf: false
-  brdf_model: "diner"         # currently supported: diner; fallback to lambertian when disabled/unsupported
-  lambertian_albedo: 0.0
-  # fallback values used when CSV lacks corresponding surface fields
-  brdf_default_a: 0.0
-  brdf_default_k: 1.0
-  brdf_default_b: 0.0
-  bpdf_default_e: 0.0
-  bpdf_default_wind_vv: 5.0
-  bpdf_default_wind_wd: 0.0
 
 # solar geometry in geophysical convention
 solar:
   sza_deg: 35.5    # 主要影响散射角绝对值范围（与VZA共同决定）
-  saa_deg: -35.0   # 主要影响RAA和散射角的方向梯度
+  saa_deg: 325.0   # 主要影响RAA和散射角的方向梯度
 
 # radiative transfer solver parameters
 solver:
@@ -93,10 +78,6 @@ solver:
   num_phi_bins: 12
   split_accuracy: 0.1
   deltam: true
-  # optional memory/adaptive-grid controls (for MAXNBC / memory pressure)
-  adapt_grid_factor: null
-  cell_to_point_ratio: null
-  max_total_mb: null
 
 # aerosol optical setup
 # complex refractive index = n - i*k
@@ -104,15 +85,6 @@ aerosol:
   refractive_index_real: 1.4
   refractive_index_imag: 0.001
   particle_density: 1.6
-  # microphysics sanitize/clipping controls (used before OpticalPropertyGenerator)
-  reff_default: 0.2
-  veff_default: 0.10
-  reff_clip_min: 0.05
-  reff_clip_max: 30.0
-  veff_clip_min: 0.01
-  veff_clip_max: 1.0
-  density_floor: 0.0
-  mode_selection: "both"   # both | mode1 | mode2
 
 bands:
   wavelength_nm: [470]

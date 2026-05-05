@@ -19,13 +19,17 @@ Author: Benting Chen
 import os
 import sys
 import time
+import tempfile
 import yaml
 import argparse
 import json
 import hashlib
 import subprocess
 import numpy as np
+import pandas as pd
 import xarray as xr
+import json
+from pathlib import Path
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, Optional
@@ -344,6 +348,248 @@ def calculate_sensor_trajectory_from_aircraft(
         up_vectors.append(up_vec_world.copy())
 
     return np.array(positions), np.array(up_vectors)
+
+
+def calculate_sensor_trajectory_cross_track(
+        n_views,
+        x1, y1, z1,
+        x2, y2, z2,
+        spacing,
+        scan1_deg,
+        scan2_deg,
+        delscan_deg,
+        selected_view_indices=None,
+        lookat_ground_point=None,
+        pitch_start_deg=None,
+        pitch_end_deg=None):
+    """
+    SHDOM-like cross track geometry sampler.
+    A sequence of camera positions is generated from (x1,y1,z1) to (x2,y2,z2),
+    and each scan applies a cross-track rotation around the along-track axis.
+    If `n_views` is None all generated (scan_position, scan_angle) samples are returned.
+    """
+    if n_views is not None and n_views <= 0:
+        raise ValueError("n_views must be > 0 for cross track mode.")
+    if abs(float(delscan_deg)) < 1e-12:
+        raise ValueError("cross_track_delscan_deg cannot be 0.")
+
+    p1 = np.array([x1, y1, z1], dtype=float)
+    p2 = np.array([x2, y2, z2], dtype=float)
+    track_vec = p2 - p1
+    track_len = np.linalg.norm(track_vec)
+    if track_len < 1e-12:
+        raise ValueError("cross track start/end positions are identical.")
+    along_track = track_vec / track_len
+
+    if spacing <= 0.0:
+        scan_positions = np.array([p1], dtype=float)
+    else:
+        n_scans = int(np.floor(track_len / spacing)) + 1
+        dists = np.arange(n_scans, dtype=float) * spacing
+        dists = np.clip(dists, 0.0, track_len)
+        scan_positions = p1[None, :] + dists[:, None] * along_track[None, :]
+        if np.linalg.norm(scan_positions[-1] - p2) > 1e-8:
+            scan_positions = np.vstack([scan_positions, p2[None, :]])
+
+    if np.sign(scan2_deg - scan1_deg) == np.sign(delscan_deg):
+        scan_angles = np.arange(scan1_deg, scan2_deg + 0.5 * delscan_deg, delscan_deg, dtype=float)
+    else:
+        scan_angles = np.array([scan1_deg], dtype=float)
+
+    if len(scan_positions) == 0:
+        raise ValueError("No valid cross track samples were generated.")
+    # NOTE:
+    # selected_view_indices should NOT subset scan_positions here.
+    # It is a higher-level "which AirMSPI views to simulate" selector and is handled
+    # in build_scene_and_sensors_single_band (cache-entry selection).
+    if n_views is None:
+        selected_samples = list(scan_positions)
+    else:
+        selected_samples = list(scan_positions[:int(n_views)])
+    pitch_all = _resolve_cross_track_scan_pitch_angles(
+        n_scans=len(scan_positions),
+        pitch_start_deg=pitch_start_deg,
+        pitch_end_deg=pitch_end_deg,
+        pitch_list_deg=None,
+    )
+
+    positions = []
+    lookat_vectors = []
+    up_vectors = []
+    base_look = np.array([0.0, 0.0, -1.0], dtype=float)
+    world_up = np.array([0.0, 0.0, 1.0], dtype=float)
+    for pos in selected_samples:
+        # SHDOM cross-track convention:
+        # scan angle sign is defined in scanner coordinates; in this NEU setup we
+        # need the opposite rotation sign to keep left/right VAA ordering consistent.
+        pos_arr = np.asarray(pos, dtype=float)
+        iscan = int(np.argmin(np.linalg.norm(scan_positions - pos_arr, axis=1)))
+        pitch_deg = float(pitch_all[iscan])
+        right_ref = np.cross(base_look, along_track)
+        right_ref = right_ref / max(np.linalg.norm(right_ref), 1e-12)
+        look_dir = _rotate_vector_about_axis(base_look, right_ref, pitch_deg)
+        center_ang = 0.5 * (float(scan1_deg) + float(scan2_deg))
+        look_dir = _rotate_vector_about_axis(look_dir, along_track, -center_ang)
+        look_dir = look_dir / max(np.linalg.norm(look_dir), 1e-12)
+        if lookat_ground_point is not None:
+            lookat = np.asarray(lookat_ground_point, dtype=float).copy()
+            lookat[2] = 0.0
+            look_dir = lookat - pos_arr
+            look_dir = look_dir / max(np.linalg.norm(look_dir), 1e-12)
+        else:
+            lookat = pos_arr + look_dir
+
+        right = np.cross(look_dir, along_track)
+        if np.linalg.norm(right) < 1e-12:
+            right = np.cross(look_dir, world_up)
+        up_vec = np.cross(right, look_dir)
+        if np.linalg.norm(up_vec) < 1e-12:
+            up_vec = calculate_up_vector(pos_arr, lookat)
+        else:
+            up_vec = up_vec / np.linalg.norm(up_vec)
+
+        positions.append(pos_arr)
+        lookat_vectors.append(np.asarray(lookat, dtype=float))
+        up_vectors.append(np.asarray(up_vec, dtype=float))
+    return np.asarray(positions), np.asarray(lookat_vectors), np.asarray(up_vectors), scan_positions, scan_angles
+
+
+def cross_track_scan_projection(
+        wavelength,
+        stokes,
+        x1, y1, z1,
+        x2, y2, z2,
+        spacing,
+        scan1_deg,
+        scan2_deg,
+        delscan_deg,
+        pitch_start_deg=None,
+        pitch_end_deg=None,
+        pitch_list_deg=None):
+    """
+    Build a single cross-track scan sensor without perspective projection.
+    Pixels are organized as [scan_index, cross_track_angle_index].
+    """
+    if abs(float(delscan_deg)) < 1e-12:
+        raise ValueError("cross_track_delscan_deg cannot be 0.")
+    p1 = np.array([x1, y1, z1], dtype=float)
+    p2 = np.array([x2, y2, z2], dtype=float)
+    track_vec = p2 - p1
+    track_len = np.linalg.norm(track_vec)
+    if track_len < 1e-12:
+        raise ValueError("cross track start/end positions are identical.")
+    along_track = track_vec / track_len
+
+    if spacing <= 0.0:
+        scan_positions = np.array([p1], dtype=float)
+    else:
+        n_scans = int(np.floor(track_len / spacing)) + 1
+        dists = np.arange(n_scans, dtype=float) * spacing
+        dists = np.clip(dists, 0.0, track_len)
+        scan_positions = p1[None, :] + dists[:, None] * along_track[None, :]
+        if np.linalg.norm(scan_positions[-1] - p2) > 1e-8:
+            scan_positions = np.vstack([scan_positions, p2[None, :]])
+
+    if np.sign(scan2_deg - scan1_deg) == np.sign(delscan_deg):
+        scan_angles = np.arange(scan1_deg, scan2_deg + 0.5 * delscan_deg, delscan_deg, dtype=float)
+    else:
+        scan_angles = np.array([scan1_deg], dtype=float)
+    if scan_angles.size == 0:
+        raise ValueError("No cross-track scan angles generated.")
+
+    base_look = np.array([0.0, 0.0, -1.0], dtype=float)
+    world_up = np.array([0.0, 0.0, 1.0], dtype=float)
+    scan_pitch_deg = _resolve_cross_track_scan_pitch_angles(
+        n_scans=scan_positions.shape[0],
+        pitch_start_deg=pitch_start_deg,
+        pitch_end_deg=pitch_end_deg,
+        pitch_list_deg=pitch_list_deg,
+    )
+    x, y, z, mu, phi = [], [], [], [], []
+    for iscan, pos in enumerate(scan_positions):
+        pitch_deg = float(scan_pitch_deg[iscan])
+        for ang in scan_angles:
+            # Keep sign convention consistent with calculate_sensor_trajectory_cross_track.
+            look_dir = _rotate_vector_about_axis(base_look, along_track, -float(ang))
+            right = np.cross(look_dir, along_track)
+            if np.linalg.norm(right) < 1e-12:
+                right = np.cross(look_dir, world_up)
+            right = right / max(np.linalg.norm(right), 1e-12)
+            if abs(pitch_deg) > 1e-12:
+                look_dir = _rotate_vector_about_axis(look_dir, right, pitch_deg)
+            look_dir = look_dir / max(np.linalg.norm(look_dir), 1e-12)  # sensor->scene
+            v_out = -look_dir  # scene->sensor
+            x.append(pos[0]); y.append(pos[1]); z.append(pos[2])
+            mu.append(v_out[2])
+            phi.append((np.arctan2(v_out[1], v_out[0]) + 2*np.pi) % (2*np.pi))
+
+    sensor = shdom_cross_track_sensor_wrapper(
+        x=np.asarray(x, dtype=float),
+        y=np.asarray(y, dtype=float),
+        z=np.asarray(z, dtype=float),
+        mu=np.asarray(mu, dtype=float),
+        phi=np.asarray(phi, dtype=float),
+        stokes=stokes,
+        wavelength=wavelength,
+        fill_ray_variables=True,
+        image_shape=(int(scan_angles.size), int(scan_positions.shape[0]))
+    )
+    sensor.attrs.update({
+        'projection': 'CrossTrackScan',
+        'x_resolution': int(scan_angles.size),
+        'y_resolution': int(scan_positions.shape[0]),
+        'cross_track_scan_angles_deg': scan_angles.astype(float).tolist(),
+        'cross_track_scan_positions': scan_positions.astype(float).tolist(),
+        'cross_track_scan_pitch_deg': scan_pitch_deg.astype(float).tolist(),
+    })
+    return sensor, scan_positions, scan_angles, scan_pitch_deg
+
+
+def shdom_cross_track_sensor_wrapper(
+        x, y, z, mu, phi, stokes, wavelength, fill_ray_variables=True, image_shape=None):
+    """
+    Wrapper-style sensor builder that directly constructs a SHDOM/AT3D sensor dataset.
+    """
+    sensor = at3d.sensor.make_sensor_dataset(
+        x=np.asarray(x, dtype=float),
+        y=np.asarray(y, dtype=float),
+        z=np.asarray(z, dtype=float),
+        mu=np.asarray(mu, dtype=float),
+        phi=np.asarray(phi, dtype=float),
+        stokes=stokes,
+        wavelength=wavelength,
+        fill_ray_variables=bool(fill_ray_variables)
+    )
+    if image_shape is not None:
+        nx, ny = int(image_shape[0]), int(image_shape[1])
+        sensor['image_shape'] = xr.DataArray(
+            [nx, ny],
+            coords={'image_dims': ['nx', 'ny']},
+            dims='image_dims'
+        )
+    return sensor
+
+
+def _resolve_cross_track_scan_pitch_angles(n_scans, pitch_start_deg=None, pitch_end_deg=None, pitch_list_deg=None):
+    """
+    Resolve along-track per-scan pitch angles (deg).
+    Priority:
+      1) pitch_list_deg (manual list, length must equal n_scans),
+      2) pitch_start_deg + pitch_end_deg (linear interpolation),
+      3) zeros.
+    """
+    if pitch_list_deg is not None:
+        pitch_arr = np.asarray(pitch_list_deg, dtype=float).reshape(-1)
+        if pitch_arr.size != int(n_scans):
+            raise ValueError(
+                f"cross_track_pitch_list_deg length {pitch_arr.size} != n_scans {int(n_scans)}."
+            )
+        return pitch_arr
+    if (pitch_start_deg is None) ^ (pitch_end_deg is None):
+        raise ValueError("cross_track_pitch_start_deg and cross_track_pitch_end_deg must be both set.")
+    if pitch_start_deg is not None and pitch_end_deg is not None:
+        return np.linspace(float(pitch_start_deg), float(pitch_end_deg), int(n_scans), dtype=float)
+    return np.zeros(int(n_scans), dtype=float)
 def project_to_ground_lookat(img, pos, look_at_point, up_vector, fov_diag_deg, Xg, Yg):
     ny, nx = img.shape
     img_ground = np.full(Xg.shape, np.nan, dtype=np.float32)
@@ -399,39 +645,17 @@ def reproject_to_ground(sensor, ground_z=0.0):
         corresponding to each image pixel.
     """
 
-    # ---- 从 sensor.attrs 中恢复几何信息 ----
+    # ---- 从 sensor 中恢复几何信息 ----
     nx = int(sensor.attrs['x_resolution'])
     ny = int(sensor.attrs['y_resolution'])
-    position = np.array(sensor.attrs['position'])
-    rotation_matrix = np.array(sensor.attrs['rotation_matrix']).reshape(3, 3)
-    k = np.array(sensor.attrs['sensor_to_camera_transform_matrix']).reshape(3, 3)
-    fov = sensor.attrs['fov_deg']
+    v_out_map = compute_vout_map_from_sensor(sensor)
+    rays_world = -v_out_map.reshape(-1, 3).T  # sensor -> scene
 
-    # ---- 相机坐标网格 ----
-    M = max(nx, ny)
-    R = np.array([nx, ny]) / M
-    dy = 2 * R[1] / ny
-    dx = 2 * R[0] / nx
-    x_s, y_s = np.meshgrid(
-        np.linspace(-R[0] + dx / 2, R[0] - dx / 2, nx),
-        np.linspace(-R[1] + dy / 2, R[1] - dy / 2, ny)
-    )
-
-    # ---- 相机焦距（归一化单位）----
-    focal = 1.0 / np.tan(np.deg2rad(fov) / 2.0)
-
-    # ---- 像素坐标转射线方向（在相机坐标系中）----
-    inv_k = np.linalg.inv(k)
-    homogeneous_coords = np.stack([x_s.ravel(), y_s.ravel(), np.ones_like(x_s).ravel()])
-    rays_cam = inv_k @ homogeneous_coords
-    rays_cam = rays_cam / np.linalg.norm(rays_cam, axis=0)
-
-    # ---- 转换到世界坐标系 ----
-    rays_world = rotation_matrix @ rays_cam
-    rays_world = rays_world / np.linalg.norm(rays_world, axis=0)
+    cam_x = np.asarray(sensor.cam_x.data, dtype=float).reshape(-1)
+    cam_y = np.asarray(sensor.cam_y.data, dtype=float).reshape(-1)
+    cam_z = np.asarray(sensor.cam_z.data, dtype=float).reshape(-1)
 
     # ---- 计算与地面 (z=ground_z) 的交点 ----
-    cam_z = position[2]
     dir_z = rays_world[2, :]
     t = (ground_z - cam_z) / dir_z  # 每个射线到地面的比例因子
 
@@ -444,8 +668,8 @@ def reproject_to_ground(sensor, ground_z=0.0):
     y_ground = np.full_like(t, np.nan, dtype=float)
     z_ground = np.full_like(t, np.nan, dtype=float)
 
-    x_ground[valid] = position[0] + t[valid] * rays_world[0, valid]
-    y_ground[valid] = position[1] + t[valid] * rays_world[1, valid]
+    x_ground[valid] = cam_x[valid] + t[valid] * rays_world[0, valid]
+    y_ground[valid] = cam_y[valid] + t[valid] * rays_world[1, valid]
     z_ground[valid] = ground_z
 
     # ---- 整理为 DataArray ----
@@ -462,7 +686,7 @@ def reproject_to_ground(sensor, ground_z=0.0):
     ground_coords.attrs = {
         "description": "Ground-projected coordinates from camera pixels",
         "ground_z": ground_z,
-        "camera_position": position.tolist()
+        "camera_position": [float(np.nanmean(cam_x)), float(np.nanmean(cam_y)), float(np.nanmean(cam_z))]
     }
 
     return ground_coords
@@ -474,30 +698,14 @@ def compute_vout_map_from_sensor(sensor_ds):
     """
     nx = int(sensor_ds.attrs['x_resolution'])
     ny = int(sensor_ds.attrs['y_resolution'])
-    rotation_matrix = np.array(sensor_ds.attrs['rotation_matrix']).reshape(3, 3)
-    k = np.array(sensor_ds.attrs['sensor_to_camera_transform_matrix']).reshape(3, 3)
-
-    # camera grid (same as your reproject_to_ground)
-    M = max(nx, ny)
-    R = np.array([nx, ny]) / M
-    dy = 2 * R[1] / ny
-    dx = 2 * R[0] / nx
-    x_s, y_s = np.meshgrid(
-        np.linspace(-R[0] + dx / 2, R[0] - dx / 2, nx),
-        np.linspace(-R[1] + dy / 2, R[1] - dy / 2, ny)
-    )
-
-    inv_k = np.linalg.inv(k)
-    homogeneous = np.stack([x_s.ravel(), y_s.ravel(), np.ones_like(x_s).ravel()])
-    rays_cam = inv_k @ homogeneous
-    rays_cam /= np.linalg.norm(rays_cam, axis=0, keepdims=True)
-
-    # camera -> world
-    rays_world = rotation_matrix @ rays_cam
-    rays_world /= np.linalg.norm(rays_world, axis=0, keepdims=True)
-
-    # outgoing propagation direction: scene -> sensor
-    v_out = -rays_world.T.reshape(ny, nx, 3)
+    mu = np.asarray(sensor_ds.cam_mu.data, dtype=float).reshape(ny, nx)
+    phi = np.asarray(sensor_ds.cam_phi.data, dtype=float).reshape(ny, nx)
+    sin_theta = np.sqrt(np.clip(1.0 - mu**2, 0.0, 1.0))
+    v_out = np.stack([
+        sin_theta * np.cos(phi),
+        sin_theta * np.sin(phi),
+        mu
+    ], axis=-1)
     return v_out
 
 
@@ -532,15 +740,19 @@ def _apply_image_orientation(arr: np.ndarray, transpose: bool, flip_lr: bool) ->
     return out
 
 
-def _to_aircraft_eye_view(arr: np.ndarray) -> np.ndarray:
+def _to_aircraft_eye_view(arr: np.ndarray, flip_vertical: bool = True) -> np.ndarray:
     """
     Convert raw camera image to a WYSIWYG view (as seen from aircraft cockpit).
-    For pinhole-style camera geometry this corresponds to a 180° image rotation.
+    By default this is a 180° image rotation; for cross-track mode users may
+    request keeping the vertical direction unchanged.
     """
     out = np.asarray(arr)
     if out.ndim < 2:
         return out
-    return np.flipud(np.fliplr(out))
+    out = np.fliplr(out)
+    if flip_vertical:
+        out = np.flipud(out)
+    return out
 
 
 def _ensure_2d_shape(arr: np.ndarray, target_shape: Tuple[int, int]) -> np.ndarray:
@@ -558,6 +770,7 @@ def _compute_angle_maps_from_sensor(
     solar_azimuth_deg: float,
     solar_zenith_deg: float,
     heading_angle_deg: float = 0.0,
+    apply_heading_offset: bool = False,
     transpose: bool = False,
     flip_lr: bool = False,
 ):
@@ -571,14 +784,20 @@ def _compute_angle_maps_from_sensor(
     vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
     vza_map = np.degrees(np.arccos(vz))
 
+    # VAA convention (unified):
+    # - 0 deg points to geographic North (+x in NEU)
+    # - increases clockwise (toward +y/East)
+    # - direction is photon propagation scene -> sensor (v_out)
     vaa_map = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
     # Camera-image convention: enforce 0° from image center toward "up" (not down).
-    vaa_map = (vaa_map + 180.0) % 360.0
-    # vaa_map = ((vaa_map - float(heading_angle_deg) + 360.0) % 360.0)
+    # vaa_map = (360 - vaa_map) % 360
+    # vaa_map = (vaa_map + 180.0) % 360.0
+    if apply_heading_offset:
+        vaa_map = ((vaa_map - float(heading_angle_deg) + 360.0) % 360.0)
 
     saa = (float(solar_azimuth_deg) + 360.0) % 360.0
     sza = float(solar_zenith_deg)
-    raa_map = ((vaa_map - saa) % 360.0)
+    raa_map = ((vaa_map - saa))
 
     mu0 = np.cos(np.radians(sza))
     mu = np.cos(np.radians(vza_map))
@@ -818,8 +1037,8 @@ def _build_level_npz_from_original(target_npz_path: str, overwrite: bool = False
                 y0 = _apply_image_orientation(ground.y_ground.values, transpose, flip_lr)
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
+                # Keep same VAA convention as _compute_angle_maps_from_sensor (no +180 flip).
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-                vaa0 = (vaa0 + 180.0) % 360.0
                 vaa0 = ((vaa0 - _get_flight_azimuth_offset_deg_from_context(context_cfg) + 360.0) % 360.0)
                 saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0 if isinstance(context_cfg, dict) else 0.0
                 sza = context_cfg.get("theta_0", np.nan) if isinstance(context_cfg, dict) else np.nan
@@ -1044,8 +1263,8 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
                 v_out_map = _apply_image_orientation(compute_vout_map_from_sensor(sensor_ds), transpose, flip_lr)
                 vz = np.clip(v_out_map[..., 2], -1.0, 1.0)
                 vza0 = np.degrees(np.arccos(vz))
+                # Keep same VAA convention as _compute_angle_maps_from_sensor (no +180 flip).
                 vaa0 = (np.degrees(np.arctan2(v_out_map[..., 1], v_out_map[..., 0])) + 360.0) % 360.0
-                vaa0 = (vaa0 + 180.0) % 360.0
                 vaa0 = ((vaa0 - _get_flight_azimuth_offset_deg_from_context(context_cfg) + 360.0) % 360.0)
 
                 saa = (context_cfg.get("solar_azimuth", 0.0) + 360.0) % 360.0
@@ -1122,6 +1341,23 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
             npz.close()
             return None, None
 
+
+        def _infer_is_cross_track(npz_path):
+            try:
+                npz = np.load(npz_path, allow_pickle=True)
+                mode = None
+                if "context" in npz.files:
+                    ctx = npz["context"].item()
+                    if isinstance(ctx, dict):
+                        mode = str(ctx.get("trajectory_mode", "")).lower()
+                if (not mode) and ("sen" in npz.files):
+                    sen_obj = npz["sen"].item()
+                    mode = str(getattr(sen_obj, "trajectory_mode", "")).lower()
+                npz.close()
+                return mode == "cross_track"
+            except Exception:
+                return False
+
         def _try_load_cloud_box(npz_path):
             """Load cloud_x/y ranges (input txt box) from context if present."""
             try:
@@ -1145,6 +1381,7 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
 
         arr, used_path = _open_npz_with_iqu(result_path, allow_sensor_fallback=False)
         cloud_box = _try_load_cloud_box(result_path)
+        is_cross_track_camera = _infer_is_cross_track(result_path)
         if arr is None and requested_level == "original":
             # 对 original 路径优先尝试其自身 metadata 回退，避免误跳转到 registered 层级。
             arr, used_path = _open_npz_with_iqu(result_path, allow_sensor_fallback=True)
@@ -1175,6 +1412,9 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
             # 最后兜底：仍允许直接从 metadata-only NPZ(sensor_dict) 读取，
             # 但这通常是相机投影图，不一定等同于 registered/downsampled_registered。
             arr, used_path = _open_npz_with_iqu(result_path, allow_sensor_fallback=True)
+
+        if used_path is not None:
+            is_cross_track_camera = _infer_is_cross_track(used_path)
 
         if arr is None:
             arr_dbg = np.load(result_path, allow_pickle=True)
@@ -1258,7 +1498,7 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
         )
         if use_ground:
             xv, yv = centers_to_edges_2d(x_plot, y_plot)
-            im = ax.pcolormesh(xv, yv, data, shading="flat", cmap=cmap, vmin=vmin, vmax=vmax)
+            im = ax.pcolormesh(yv, xv, data, shading="flat", cmap=cmap, vmin=vmin, vmax=vmax)
             ax.set_aspect('equal', adjustable='box')
             ax.set_xlabel("x_ground [km]")
             ax.set_ylabel("y_ground [km]")
@@ -1267,8 +1507,8 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
                 ax.set_xlim(*x_range)
                 ax.set_ylim(*y_range)
         else:
-            data_show = _to_aircraft_eye_view(data)
-            im = ax.imshow(data_show, origin="upper", cmap=cmap, vmin=vmin, vmax=vmax)
+            data_show = _to_aircraft_eye_view(data, flip_vertical=(not is_cross_track_camera))
+            im = ax.imshow(data_show, origin="lower", cmap=cmap, vmin=vmin, vmax=vmax)
         ax.set_title(title)
         return im
 
@@ -1334,7 +1574,7 @@ def plot_simulation_results(result_path, output_dir=None, option="panel", show=F
                 plt.close(fig)
 
 
-def replot_simulation_results_with_config(result_path: str, cfg_path: str = "config_v5b.yaml",
+def replot_simulation_results_with_config(result_path: str, cfg_path: str = "config_v6a.yaml",
                                           output_dir: Optional[str] = None, show: bool = False,
                                           rebuild_if_missing: bool = True, overwrite_npz: bool = False):
     """
@@ -1350,6 +1590,58 @@ def replot_simulation_results_with_config(result_path: str, cfg_path: str = "con
         rebuild_if_missing=rebuild_if_missing,
         overwrite_npz=overwrite_npz,
     )
+
+
+def plot_all_wavelength_results(root_dir: str,
+                                cfg_path: str = "config_v6a.yaml",
+                                level: str = "registered",
+                                view_name: Optional[str] = None,
+                                show: bool = False,
+                                rebuild_if_missing: bool = True,
+                                overwrite_npz: bool = False) -> List[str]:
+    """
+    Replot every wavelength configured in YAML from existing NPZ products.
+
+    Returns
+    -------
+    list[str]
+        List of NPZ file paths that were replotted successfully.
+    """
+    (cfg, out_cfg, sen_cfg, bnd_cfg, dsm_cfg, svr_cfg, plt_cfg, grd_cfg, comp_cfg, crop_cfg,
+     scene_cfg, cam_cfg, solar_cfg, solver_cfg, aerosol_cfg) = utils.load_config(cfg_path)
+
+    level = str(level).lower()
+    root = Path(root_dir)
+    if not root.exists():
+        raise FileNotFoundError(f"root_dir not found: {root_dir}")
+    npz_dir = root / level
+    if not npz_dir.exists():
+        raise FileNotFoundError(f"Level folder not found: {npz_dir}")
+
+    replotted: List[str] = []
+    for w in bnd_cfg.wavelength_nm:
+        if view_name:
+            cand = npz_dir / f"{int(w)}nm_{view_name}.npz"
+            candidates = [cand] if cand.exists() else []
+        else:
+            candidates = sorted(npz_dir.glob(f"{int(w)}nm_*.npz"))
+
+        if not candidates:
+            print(f"⚠️ No NPZ found for wavelength {w} nm in {npz_dir}")
+            continue
+
+        for npz_path in candidates:
+            outp = npz_path.parent / f"plots_{npz_path.stem}"
+            plot_simulation_results(
+                result_path=str(npz_path),
+                output_dir=str(outp),
+                option=getattr(plt_cfg, "replot_layout", "panel"),
+                show=show,
+                rebuild_if_missing=rebuild_if_missing,
+                overwrite_npz=overwrite_npz,
+            )
+            replotted.append(str(npz_path))
+    return replotted
 
 # =============================
 #%% Section 4: Scene/Sensors (single band) with lat/lon ingestion
@@ -1452,8 +1744,108 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     t0_all = time.perf_counter()
     input_path = scene_cfg.input_path
     t0 = time.perf_counter()
-    cloud_scatterer = at3d.util.load_from_csv(input_path, density='cv', origin=(0.0, 0.0))
+
+    def _load_csv_numeric_only(csv_path: str):
+        try:
+            return at3d.util.load_from_csv(csv_path, density=None, origin=(0.0, 0.0))
+        except ValueError as e:
+            if "could not convert string to float" not in str(e):
+                raise
+            with open(csv_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            if len(lines) < 5:
+                raise
+            # Keep AT3D CSV preamble exactly as expected by at3d.util.load_from_csv:
+            # line1 comment, line2 nx/ny/nz, line3 dx/dy, line4 z-levels.
+            header_lines = lines[:4]
+            df = pd.read_csv(csv_path, skiprows=4)
+            df_num = df.apply(pd.to_numeric, errors="coerce")
+            # drop columns that are effectively non-numeric (e.g. surface_model='diner')
+            bad_cols = [c for c in df.columns if df_num[c].isna().all() and not df[c].isna().all()]
+            if bad_cols:
+                print(f"⚠️ Dropping non-numeric CSV columns for at3d.load_from_csv: {bad_cols}")
+            keep_cols = [c for c in df.columns if c not in bad_cols]
+            with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, encoding="utf-8") as tf:
+                tmp_path = tf.name
+                tf.writelines(header_lines)
+                df_num[keep_cols].to_csv(tf, index=False)
+            try:
+                return at3d.util.load_from_csv(tmp_path, density=None, origin=(0.0, 0.0))
+            finally:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+    # Compatible with both retrieval-style CSV (cv) and LES-style CSV (lwc/density).
+    cloud_scatterer = _load_csv_numeric_only(input_path)
+    density_candidates = ["cv", "lwc", "density"]
+    density_name = next((name for name in density_candidates if name in cloud_scatterer.data_vars), None)
+    if density_name is None:
+        raise ValueError(f"No density variable found in {input_path}. Tried {density_candidates}")
+    if density_name != "density":
+        cloud_scatterer = cloud_scatterer.rename_vars({density_name: "density"})
+        cloud_scatterer.attrs["density_name"] = density_name
+
+    mode_selection = str(getattr(aerosol_cfg, "mode_selection", "both")).lower()
+    if mode_selection not in {"both", "mode1", "mode2"}:
+        raise ValueError(f"aerosol.mode_selection must be one of ['both','mode1','mode2'], got: {mode_selection}")
+
+    def _mode_selected(mode_id: str) -> bool:
+        if mode_selection == "both":
+            return True
+        return mode_id == mode_selection
+
+    # Build scalar reff/veff for AT3D from extended mode columns when available.
+    mode_reff_vars = sorted([v for v in cloud_scatterer.data_vars if v.startswith('mode') and v.endswith('_reff')])
+    mode_veff_vars = sorted([v for v in cloud_scatterer.data_vars if v.startswith('mode') and v.endswith('_veff')])
+
+    if ("reff" not in cloud_scatterer) and mode_reff_vars:
+        num = np.zeros(cloud_scatterer.density.shape, dtype=float)
+        den = np.zeros(cloud_scatterer.density.shape, dtype=float)
+        for v in mode_reff_vars:
+            mode_id = v.split('_')[0]  # mode1
+            if not _mode_selected(mode_id):
+                continue
+            frac_name = f"{mode_id}_fraction"
+            frac = np.asarray(cloud_scatterer[frac_name].data, dtype=float) if frac_name in cloud_scatterer else np.ones_like(num)
+            val = np.asarray(cloud_scatterer[v].data, dtype=float)
+            mask = np.isfinite(frac) & np.isfinite(val) & (frac > 0)
+            num[mask] += frac[mask] * val[mask]
+            den[mask] += frac[mask]
+        reff_eff = np.divide(num, den, out=np.full_like(num, np.nan), where=den > 0)
+        cloud_scatterer["reff"] = (['x', 'y', 'z'], reff_eff)
+
+    if ("veff" not in cloud_scatterer) and mode_veff_vars:
+        num = np.zeros(cloud_scatterer.density.shape, dtype=float)
+        den = np.zeros(cloud_scatterer.density.shape, dtype=float)
+        for v in mode_veff_vars:
+            mode_id = v.split('_')[0]
+            if not _mode_selected(mode_id):
+                continue
+            frac_name = f"{mode_id}_fraction"
+            frac = np.asarray(cloud_scatterer[frac_name].data, dtype=float) if frac_name in cloud_scatterer else np.ones_like(num)
+            val = np.asarray(cloud_scatterer[v].data, dtype=float)
+            mask = np.isfinite(frac) & np.isfinite(val) & (frac > 0)
+            num[mask] += frac[mask] * val[mask]
+            den[mask] += frac[mask]
+        veff_eff = np.divide(num, den, out=np.full_like(num, np.nan), where=den > 0)
+        cloud_scatterer["veff"] = (['x', 'y', 'z'], veff_eff)
+
+    # Provide conservative defaults for legacy LES files.
+    if "reff" not in cloud_scatterer:
+        cloud_scatterer["reff"] = (['x', 'y', 'z'], np.full(cloud_scatterer.density.shape, 12.0, dtype=float))
+    if "veff" not in cloud_scatterer:
+        cloud_scatterer["veff"] = (['x', 'y', 'z'], np.full(cloud_scatterer.density.shape, 0.10, dtype=float))
+
     cloud_scatterer["density"] *= 1
+
+    # Guard for extended CSV optional fields (e.g., mode2_mr/mode2_mi) that may be all-NaN.
+    # at3d.grid.resample_onto_grid asserts each variable is not entirely NaN.
+    for _name in list(cloud_scatterer.data_vars):
+        _arr = np.asarray(cloud_scatterer[_name].data)
+        if np.issubdtype(_arr.dtype, np.number) and np.all(np.isnan(_arr)):
+            cloud_scatterer[_name] = (cloud_scatterer[_name].dims, np.zeros_like(_arr, dtype=float))
     t_stage["load_cloud_csv"] = time.perf_counter() - t0
     latlon_source = "text"
     try:
@@ -1478,7 +1870,14 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     ny_cloud = cloud_y.size
     nx_cloud = cloud_x.size
 
-    if lat_2d.shape == (ny_cloud, nx_cloud) and lon_2d.shape == (ny_cloud, nx_cloud):
+    latlon_is_valid = (
+        lat_2d.shape == (ny_cloud, nx_cloud)
+        and lon_2d.shape == (ny_cloud, nx_cloud)
+        and np.isfinite(lat_2d).any()
+        and np.isfinite(lon_2d).any()
+        and not (np.nanmax(np.abs(lat_2d)) == 0 and np.nanmax(np.abs(lon_2d)) == 0)
+    )
+    if latlon_is_valid:
         xlats, xlons = lat_2d, lon_2d
     else:
         latlon_source = "synthetic_regular_grid_fallback"
@@ -1538,7 +1937,102 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     rte_grid = at3d.grid.make_grid(cloud_scatterer.x.diff('x')[0], cloud_scatterer.x.data.size,
                                    cloud_scatterer.y.diff('y')[0], cloud_scatterer.y.data.size,
                                    np.append(0, cloud_scatterer.z.data))
-    cloud_scatterer_on_rte_grid = at3d.grid.resample_onto_grid(rte_grid, cloud_scatterer)
+
+    # Only resample density in z; keep geophysical/microphysical descriptor fields
+    # (lat/lon, mode fractions, mode reff/veff, refractive indices, etc.) vertically invariant.
+    cloud_scatterer_on_rte_grid = at3d.grid.resample_onto_grid(rte_grid, cloud_scatterer[['density']])
+
+    reserved_grid_vars = {'density', 'delx', 'dely', 'nx', 'ny', 'nz'}
+    static_like_vars = [
+        name for name in cloud_scatterer.data_vars
+        if name not in reserved_grid_vars
+    ]
+    nz_target = cloud_scatterer_on_rte_grid.sizes['z']
+    for name in static_like_vars:
+        da = cloud_scatterer[name]
+        arr = np.asarray(da.data)
+        if 'z' in da.dims:
+            # Keep original vertical-invariant intent: use first z slice and broadcast.
+            z_axis = da.dims.index('z')
+            arr2d = np.take(arr, indices=0, axis=z_axis)
+            arr3d = np.repeat(arr2d[..., None], nz_target, axis=2)
+            cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+        else:
+            # 2D field, broadcast over z.
+            if da.dims == ('x', 'y'):
+                arr3d = np.repeat(arr[..., None], nz_target, axis=2)
+                cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+            elif da.dims == ('y', 'x'):
+                arr_xy = np.transpose(arr, (1, 0))
+                arr3d = np.repeat(arr_xy[..., None], nz_target, axis=2)
+                cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+            else:
+                # Generic fallback for non-standard dims.
+                if da.ndim == 0:
+                    arr3d = np.full((cloud_scatterer_on_rte_grid.sizes['x'],
+                                     cloud_scatterer_on_rte_grid.sizes['y'],
+                                     nz_target), float(arr))
+                    cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+                elif {'x', 'y'}.issubset(set(da.dims)):
+                    arr_xy = np.asarray(da.transpose('x', 'y').data)
+                    arr3d = np.repeat(arr_xy[..., None], nz_target, axis=2)
+                    cloud_scatterer_on_rte_grid[name] = (('x', 'y', 'z'), arr3d)
+                else:
+                    # Skip unsupported auxiliary variable dimensions.
+                    print(f"⚠️ Skip static var '{name}' with dims={da.dims} (unsupported for z-broadcast)")
+
+    # Ensure grid spacing variables remain scalar for at3d.checks.check_grid.
+    cloud_scatterer_on_rte_grid['delx'] = xr.DataArray(float(np.asarray(rte_grid.delx).reshape(-1)[0]))
+    cloud_scatterer_on_rte_grid['dely'] = xr.DataArray(float(np.asarray(rte_grid.dely).reshape(-1)[0]))
+
+    # Optional single-mode selection: scale total density by selected mode fraction.
+    if mode_selection in {"mode1", "mode2"}:
+        frac_name = f"{mode_selection}_fraction"
+        if frac_name in cloud_scatterer_on_rte_grid:
+            frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float)
+            frac = np.clip(np.nan_to_num(frac, nan=0.0, posinf=0.0, neginf=0.0), 0.0, 1.0)
+            dens = np.asarray(cloud_scatterer_on_rte_grid["density"].data, dtype=float)
+            cloud_scatterer_on_rte_grid["density"] = (
+                cloud_scatterer_on_rte_grid["density"].dims,
+                dens * frac
+            )
+        else:
+            print(f"⚠️ mode_selection={mode_selection} but '{frac_name}' not found; density unchanged.")
+
+    # Recompute scalar reff/veff from selected mode(s) on RTE grid when mode fields exist.
+    mode_reff_vars_rte_all = sorted([v for v in cloud_scatterer_on_rte_grid.data_vars if v.startswith('mode') and v.endswith('_reff')])
+    mode_veff_vars_rte_all = sorted([v for v in cloud_scatterer_on_rte_grid.data_vars if v.startswith('mode') and v.endswith('_veff')])
+    if mode_reff_vars_rte_all:
+        num = np.zeros(cloud_scatterer_on_rte_grid["density"].shape, dtype=float)
+        den = np.zeros(cloud_scatterer_on_rte_grid["density"].shape, dtype=float)
+        for v in mode_reff_vars_rte_all:
+            mode_id = v.split('_')[0]
+            if not _mode_selected(mode_id):
+                continue
+            frac_name = f"{mode_id}_fraction"
+            frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(num)
+            arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
+            m = np.isfinite(arr) & np.isfinite(frac) & (frac > 0)
+            num[m] += frac[m] * arr[m]
+            den[m] += frac[m]
+        reff_eff = np.divide(num, den, out=np.full_like(num, np.nan), where=den > 0)
+        cloud_scatterer_on_rte_grid["reff"] = (('x', 'y', 'z'), reff_eff)
+    if mode_veff_vars_rte_all:
+        num = np.zeros(cloud_scatterer_on_rte_grid["density"].shape, dtype=float)
+        den = np.zeros(cloud_scatterer_on_rte_grid["density"].shape, dtype=float)
+        for v in mode_veff_vars_rte_all:
+            mode_id = v.split('_')[0]
+            if not _mode_selected(mode_id):
+                continue
+            frac_name = f"{mode_id}_fraction"
+            frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(num)
+            arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
+            m = np.isfinite(arr) & np.isfinite(frac) & (frac > 0)
+            num[m] += frac[m] * arr[m]
+            den[m] += frac[m]
+        veff_eff = np.divide(num, den, out=np.full_like(num, np.nan), where=den > 0)
+        cloud_scatterer_on_rte_grid["veff"] = (('x', 'y', 'z'), veff_eff)
+
     size_distribution_function = at3d.size_distribution.gamma
     size_distribution_function = at3d.size_distribution.lognormal
     # cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.reff.dims,
@@ -1546,55 +2040,161 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     sensor_dict = at3d.containers.SensorsDict()
     center = np.array(scene_cfg.lookat_center_km, dtype=float)
     t0 = time.perf_counter()
-    position_vectors, up_vectors = calculate_sensor_trajectory(
-        sensor_zenith_list=sen.views_zenith_deg,
-        sensor_azimuth_list=sen.views_azimuth_deg,
-        look_at_point=center,
-        sensor_altitude=sen.altitude_km,
-        trajectory_mode=sen.trajectory_mode,
-        fallback_heading_deg=sen.fallback_heading_deg,
-        manual_flight_azimuth_deg=sen.manual_flight_azimuth_deg,
-        camera_relative_roll_deg=sen.camera_relative_roll_deg,
-        camera_align_with_flight_heading=sen.camera_align_with_flight_heading,
-    )
     # AT3D/SHDOM world coordinates follow x=North, y=East, z=Up (NEU).
     # This axis ordering is left-handed (x × y = -z), so avoid accidental x/y swaps.
     center_NEU = center.copy()
-    # center_NEU[0], center_NEU[1] = center_NEU[1], center_NEU[0]
-    
-    position_vectors, up_vectors = calculate_sensor_trajectory_from_aircraft(
-        look_at_point=center_NEU,
-        sensor_altitude=sen.altitude_km,
-        heading_angle_deg=sen.aircraft_heading_deg,
-        pitch_angle_deg=sen.aircraft_pitch_deg,
-        roll_angle_deg=sen.aircraft_roll_deg,
-        camera_pitch_relative_deg=sen.camera_pitch_relative_deg,
-        camera_roll_relative_deg=sen.camera_roll_relative_deg,
-        n_views = 1
-        )
-    
-    # center_NEU[0], center_NEU[1] = center_NEU[1], center_NEU[0]
-    lookat_vectors = [center for _ in sen.views_names]
-    for name, pos, look, up in zip(sen.views_names, position_vectors, lookat_vectors, up_vectors):
-        stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
-        if sen.type == "perspective_projection":
-            sensor = at3d.sensor.perspective_projection(
-                wavelength=wavelength_nm/1000,
-                fov=sen.fov_deg,
-                x_resolution=int(cam_cfg.x_resolution),
-                y_resolution=int(cam_cfg.y_resolution),
-                position_vector=pos,
-                lookat_vector=look,
-                up_vector=up,
-                stokes=stokes
+    mode_lc = str(sen.trajectory_mode).lower()
+    view_names = list(sen.views_names)
+    cached_entries = None
+    cross_track_sensor_prebuilt = False
+    if mode_lc == "cross_track":
+        if sen.cross_track_cache_file and sen.cross_track_case_id:
+            try:
+                cache_path = Path(sen.cross_track_cache_file)
+                if not cache_path.is_absolute():
+                    candidates = [
+                        cache_path,
+                        Path.cwd() / cache_path,
+                        Path(__file__).resolve().parent / cache_path,
+                        Path(__file__).resolve().parent.parent / cache_path,
+                    ]
+                    resolved = None
+                    for c in candidates:
+                        if c.exists():
+                            resolved = c
+                            break
+                    if resolved is None:
+                        raise FileNotFoundError(
+                            f"cross-track cache not found. tried: {[str(c) for c in candidates]}"
+                        )
+                    cache_path = resolved
+                cache_db = json.loads(cache_path.read_text(encoding="utf-8"))
+                cached = cache_db.get(sen.cross_track_case_id)
+                if cached and len(cached) > 0:
+                    cached_entries = list(cached)
+                    selected_idx = 0
+                    if sen.cross_track_selected_view_indices:
+                        # 1-based view index in config
+                        selected_idx = max(0, int(sen.cross_track_selected_view_indices[0]) - 1)
+                    selected_idx = min(selected_idx, len(cached) - 1)
+                    c_view = cached[selected_idx]
+                    fallback_map = {
+                        "cross_track_x1": c_view["cross_track_x1"],
+                        "cross_track_y1": c_view["cross_track_y1"],
+                        "cross_track_z1": c_view["cross_track_z1"],
+                        "cross_track_x2": c_view["cross_track_x2"],
+                        "cross_track_y2": c_view["cross_track_y2"],
+                        "cross_track_z2": c_view["cross_track_z2"],
+                        "cross_track_pitch_start_deg": c_view.get("cross_track_pitch_start_deg", 0.0),
+                        "cross_track_pitch_end_deg": c_view.get("cross_track_pitch_end_deg", 0.0),
+                    }
+                    for k, v in fallback_map.items():
+                        if getattr(sen, k) is None:
+                            setattr(sen, k, float(v))
+                    print(f"📥 Loaded cross-track cache: case={sen.cross_track_case_id}, file={cache_path}, view_index={selected_idx+1}")
+            except Exception as e:
+                print(f"⚠️ Failed to load cross-track cache ({sen.cross_track_case_id}): {e}")
+        required = [
+            sen.cross_track_x1, sen.cross_track_y1, sen.cross_track_z1,
+            sen.cross_track_x2, sen.cross_track_y2, sen.cross_track_z2
+        ]
+        if any(v is None for v in required):
+            raise ValueError(
+                "cross_track mode requires trajectory.cross_track_x1/y1/z1 and x2/y2/z2 in config."
             )
+        if cached_entries is not None and sen.cross_track_selected_view_indices is not None:
+            sel = [max(1, int(i)) for i in sen.cross_track_selected_view_indices]
+            per_view = [cached_entries[i - 1] for i in sel if 1 <= i <= len(cached_entries)]
+            position_vectors, lookat_vectors, up_vectors = [], [], []
+            stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
+            for e in per_view:
+                name = f"view_{int(e['view_index'])}"
+                csensor, scan_positions, scan_angles, scan_pitch_deg = cross_track_scan_projection(
+                    wavelength=wavelength_nm/1000,
+                    stokes=stokes,
+                    x1=float(e["cross_track_x1"]), y1=float(e["cross_track_y1"]), z1=float(e["cross_track_z1"]),
+                    x2=float(e["cross_track_x2"]), y2=float(e["cross_track_y2"]), z2=float(e["cross_track_z2"]),
+                    spacing=sen.cross_track_spacing,
+                    scan1_deg=sen.cross_track_scan1_deg,
+                    scan2_deg=sen.cross_track_scan2_deg,
+                    delscan_deg=sen.cross_track_delscan_deg,
+                    pitch_start_deg=float(e.get("cross_track_pitch_start_deg", 0.0)),
+                    pitch_end_deg=float(e.get("cross_track_pitch_end_deg", 0.0)),
+                )
+                key = f"{name}_{int(wavelength_nm)}nm"
+                sensor_dict.add_sensor(key, csensor)
+                # metadata-only placeholders
+                position_vectors.append(np.array([float(e["cross_track_x1"]), float(e["cross_track_y1"]), float(e["cross_track_z1"])]))
+                lookat_vectors.append(np.array([center_NEU[0], center_NEU[1], 0.0]))
+                up_vectors.append(np.array([0.0, 1.0, 0.0]))
+            position_vectors = np.asarray(position_vectors); lookat_vectors = np.asarray(lookat_vectors); up_vectors = np.asarray(up_vectors)
+            view_names = [f"view_{i}" for i in sel]
+            cross_track_sensor_prebuilt = True
         else:
-            raise NotImplementedError(
-                f"sensor.type={sen.type} is not implemented in v5b; "
-                "currently only perspective_projection is supported."
+            position_vectors, lookat_vectors, up_vectors, scan_positions, scan_angles = calculate_sensor_trajectory_cross_track(
+                n_views=len(view_names) if sen.cross_track_selected_view_indices is None else None,
+                x1=sen.cross_track_x1, y1=sen.cross_track_y1, z1=sen.cross_track_z1,
+                x2=sen.cross_track_x2, y2=sen.cross_track_y2, z2=sen.cross_track_z2,
+                spacing=sen.cross_track_spacing,
+                scan1_deg=sen.cross_track_scan1_deg,
+                scan2_deg=sen.cross_track_scan2_deg,
+                delscan_deg=sen.cross_track_delscan_deg,
+                selected_view_indices=sen.cross_track_selected_view_indices,
+                lookat_ground_point=np.array([center_NEU[0], center_NEU[1], 0.0], dtype=float),
+                pitch_start_deg=sen.cross_track_pitch_start_deg,
+                pitch_end_deg=sen.cross_track_pitch_end_deg,
             )
-        key = f"{name}_{int(wavelength_nm)}nm"
-        sensor_dict.add_sensor(key, sensor)
+            if sen.cross_track_selected_view_indices is not None:
+                view_names = [f"view_{i}" for i in sen.cross_track_selected_view_indices]
+            elif len(view_names) != len(position_vectors):
+                view_names = [f"view_{i+1}" for i in range(len(position_vectors))]
+        sen.views_names = view_names
+        scan_pitch_deg = None
+    else:
+        position_vectors, up_vectors = calculate_sensor_trajectory(
+            sensor_zenith_list=sen.views_zenith_deg,
+            sensor_azimuth_list=sen.views_azimuth_deg,
+            look_at_point=center,
+            sensor_altitude=sen.altitude_km,
+            trajectory_mode=sen.trajectory_mode,
+            fallback_heading_deg=sen.fallback_heading_deg,
+            manual_flight_azimuth_deg=sen.manual_flight_azimuth_deg,
+            camera_relative_roll_deg=sen.camera_relative_roll_deg,
+            camera_align_with_flight_heading=sen.camera_align_with_flight_heading,
+        )
+        position_vectors, up_vectors = calculate_sensor_trajectory_from_aircraft(
+            look_at_point=center_NEU,
+            sensor_altitude=sen.altitude_km,
+            heading_angle_deg=sen.aircraft_heading_deg,
+            pitch_angle_deg=sen.aircraft_pitch_deg,
+            roll_angle_deg=sen.aircraft_roll_deg,
+            camera_pitch_relative_deg=sen.camera_pitch_relative_deg,
+            camera_roll_relative_deg=sen.camera_roll_relative_deg,
+            n_views=1
+            )
+        lookat_vectors = [center for _ in view_names]
+        scan_pitch_deg = None
+    if not cross_track_sensor_prebuilt:
+        for name, pos, look, up in zip(view_names, position_vectors, lookat_vectors, up_vectors):
+            stokes = ['I', 'Q', 'U'] if is_polarized else ['I']
+            if sen.type == "perspective_projection":
+                sensor = at3d.sensor.perspective_projection(
+                    wavelength=wavelength_nm/1000,
+                    fov=sen.fov_deg,
+                    x_resolution=int(cam_cfg.x_resolution),
+                    y_resolution=int(cam_cfg.y_resolution),
+                    position_vector=pos,
+                    lookat_vector=look,
+                    up_vector=up,
+                    stokes=stokes
+                )
+            else:
+                raise NotImplementedError(
+                    f"sensor.type={sen.type} is not implemented in v5b; "
+                    "currently only perspective_projection is supported."
+                )
+            key = f"{name}_{int(wavelength_nm)}nm"
+            sensor_dict.add_sensor(key, sensor)
     t_stage["build_sensors"] = time.perf_counter() - t0
     wavelengths = sensor_dict.get_unique_solvers()
     mie_mono_tables = OrderedDict()
@@ -1624,26 +2224,98 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     ho_p_kgm3 = rho_p_gcm3 * 1000.0 # kg/m^3    
     particle_density_gm3 = rho_p_gcm3 * 1e6  # g/cm^3 → g/m^3
     
-    # === 从 scatterer 中动态获取范围 ===
-    reff_min = float(cloud_scatterer_on_rte_grid.reff.min())
-    reff_max = float(cloud_scatterer_on_rte_grid.reff.max())
-    veff_min = float(cloud_scatterer_on_rte_grid.veff.min())
-    veff_max = float(cloud_scatterer_on_rte_grid.veff.max())
-    
+    # === sanitize microphysics (avoid NaN/Inf/outliers causing interpolation range errors) ===
+    density_data = np.asarray(cloud_scatterer_on_rte_grid.density.data, dtype=float)
+    if float(aerosol_cfg.density_floor) > 0:
+        density_data[density_data < float(aerosol_cfg.density_floor)] = 0.0
+        cloud_scatterer_on_rte_grid['density'] = (cloud_scatterer_on_rte_grid.density.dims, density_data)
+    clear_air = (~np.isfinite(density_data)) | (density_data <= 0)
+
+    reff_data = np.asarray(cloud_scatterer_on_rte_grid.reff.data, dtype=float)
+    veff_data = np.asarray(cloud_scatterer_on_rte_grid.veff.data, dtype=float)
+
+    bad_reff = (~np.isfinite(reff_data)) | (reff_data <= 0)
+    bad_veff = (~np.isfinite(veff_data)) | (veff_data <= 0)
+    if np.any(bad_reff):
+        reff_data[bad_reff] = float(aerosol_cfg.reff_default)
+    if np.any(bad_veff):
+        veff_data[bad_veff] = float(aerosol_cfg.veff_default)
+
+    # Avoid interpolation artifacts in clear-air cells.
+    reff_data[clear_air] = float(aerosol_cfg.reff_default)
+    veff_data[clear_air] = float(aerosol_cfg.veff_default)
+
+    # Conservative clipping for aerosol retrieval products.
+    reff_data = np.clip(reff_data, float(aerosol_cfg.reff_clip_min), float(aerosol_cfg.reff_clip_max))
+    veff_data = np.clip(veff_data, float(aerosol_cfg.veff_clip_min), float(aerosol_cfg.veff_clip_max))
+
+    cloud_scatterer_on_rte_grid['reff'] = (cloud_scatterer_on_rte_grid.reff.dims, reff_data)
+    cloud_scatterer_on_rte_grid['veff'] = (cloud_scatterer_on_rte_grid.veff.dims, veff_data)
+    print(
+        f"🧪 microphysics clip range: reff[{aerosol_cfg.reff_clip_min}, {aerosol_cfg.reff_clip_max}], "
+        f"veff[{aerosol_cfg.veff_clip_min}, {aerosol_cfg.veff_clip_max}]"
+    )
+
+    # === 从 scatterer 中动态获取范围（finite-only, multi-mode aware）===
+    reff_candidates = [reff_data]
+    veff_candidates = [veff_data]
+    mode_reff_vars_rte = sorted([v for v in cloud_scatterer_on_rte_grid.data_vars if v.startswith('mode') and v.endswith('_reff')])
+    mode_veff_vars_rte = sorted([v for v in cloud_scatterer_on_rte_grid.data_vars if v.startswith('mode') and v.endswith('_veff')])
+
+    for v in mode_reff_vars_rte:
+        mode_id = v.split('_')[0]
+        if not _mode_selected(mode_id):
+            continue
+        frac_name = f"{mode_id}_fraction"
+        frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(reff_data)
+        arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
+        m = np.isfinite(arr) & np.isfinite(frac) & (frac > 0)
+        if np.any(m):
+            reff_candidates.append(arr[m])
+    for v in mode_veff_vars_rte:
+        mode_id = v.split('_')[0]
+        if not _mode_selected(mode_id):
+            continue
+        frac_name = f"{mode_id}_fraction"
+        frac = np.asarray(cloud_scatterer_on_rte_grid[frac_name].data, dtype=float) if frac_name in cloud_scatterer_on_rte_grid else np.ones_like(veff_data)
+        arr = np.asarray(cloud_scatterer_on_rte_grid[v].data, dtype=float)
+        m = np.isfinite(arr) & np.isfinite(frac) & (frac > 0)
+        if np.any(m):
+            veff_candidates.append(arr[m])
+
+    reff_all = np.concatenate([np.ravel(a) for a in reff_candidates])
+    veff_all = np.concatenate([np.ravel(a) for a in veff_candidates])
+    reff_finite = reff_all[np.isfinite(reff_all)]
+    veff_finite = veff_all[np.isfinite(veff_all)]
+    reff_min = float(np.min(reff_finite))
+    reff_max = float(np.max(reff_finite))
+    veff_min = float(np.min(veff_finite))
+    veff_max = float(np.max(veff_finite))
+
     # === 留 margin（非常重要）===
     margin_reff = 0.1   # μm
     margin_veff = 0.01
-    
+
     reff_grid = np.linspace(
         max(0.05, reff_min - margin_reff),
         reff_max + margin_reff,
         40
     )
-    
+
     veff_grid = np.linspace(
         max(0.01, veff_min - margin_veff),
         veff_max + margin_veff,
         10    # ⚠️ 如果 veff 几乎不变，直接用 1
+    )
+
+    # Ensure microphysics coordinates lie inside interpolation grid (numerical safety).
+    cloud_scatterer_on_rte_grid['reff'] = (
+        cloud_scatterer_on_rte_grid.reff.dims,
+        np.clip(cloud_scatterer_on_rte_grid.reff.data, reff_grid.min(), reff_grid.max())
+    )
+    cloud_scatterer_on_rte_grid['veff'] = (
+        cloud_scatterer_on_rte_grid.veff.dims,
+        np.clip(cloud_scatterer_on_rte_grid.veff.data, veff_grid.min(), veff_grid.max())
     )
 
 
@@ -1683,6 +2355,12 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     config["num_phi_bins"] = int(solver_cfg.num_phi_bins)
     config["split_accuracy"] = float(solver_cfg.split_accuracy)
     config["deltam"] = bool(solver_cfg.deltam)
+    if solver_cfg.adapt_grid_factor is not None:
+        config["adapt_grid_factor"] = float(solver_cfg.adapt_grid_factor)
+    if solver_cfg.cell_to_point_ratio is not None:
+        config["cell_to_point_ratio"] = float(solver_cfg.cell_to_point_ratio)
+    if solver_cfg.max_total_mb is not None:
+        config["max_total_mb"] = float(solver_cfg.max_total_mb)
     
     
     w = wavelength_nm/1000
@@ -1735,12 +2413,55 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                         medium=medium)
     
     num_stokes = 3 if is_polarized else 1
+
+    def _surface_param_2d(name: str, default_value: float) -> np.ndarray:
+        if name in cloud_scatterer_on_rte_grid:
+            arr = np.asarray(cloud_scatterer_on_rte_grid[name].data, dtype=float)
+            if arr.ndim == 3:
+                arr2d = arr[:, :, 0]
+            elif arr.ndim == 2:
+                arr2d = arr
+            else:
+                arr2d = np.full((rte_grid.x.size, rte_grid.y.size), float(default_value), dtype=float)
+        else:
+            arr2d = np.full((rte_grid.x.size, rte_grid.y.size), float(default_value), dtype=float)
+        arr2d = np.nan_to_num(arr2d, nan=float(default_value), posinf=float(default_value), neginf=float(default_value))
+        return arr2d
+
+    enable_brdf = bool(getattr(scene_cfg, "enable_brdf", False))
+    enable_bpdf = bool(getattr(scene_cfg, "enable_bpdf", False))
+    brdf_model = str(getattr(scene_cfg, "brdf_model", "diner")).lower()
+    delx_km = float(np.asarray(rte_grid.delx).reshape(-1)[0])
+    dely_km = float(np.asarray(rte_grid.dely).reshape(-1)[0])
+
+    if enable_brdf and brdf_model == "diner":
+        A = _surface_param_2d("a0_surf", float(getattr(scene_cfg, "brdf_default_a", 0.0)))
+        K = _surface_param_2d("k0_surf", float(getattr(scene_cfg, "brdf_default_k", 1.0)))
+        B = _surface_param_2d("b0_surf", float(getattr(scene_cfg, "brdf_default_b", 0.0)))
+        if enable_bpdf:
+            E = _surface_param_2d("e0_surface", float(getattr(scene_cfg, "bpdf_default_e", 0.0)))
+            wind_vv = _surface_param_2d("wind_vv", float(getattr(scene_cfg, "bpdf_default_wind_vv", 5.0)))
+            wind_wd = _surface_param_2d("wind_wd", float(getattr(scene_cfg, "bpdf_default_wind_wd", 0.0)))
+            if np.any(np.abs(wind_wd) > 1e-9):
+                print("⚠️ wind_wd is currently not used by at3d.surface.diner and will be ignored.")
+            zeta = E
+            sigma = np.sqrt(np.maximum(0.003 + 0.00512 * np.maximum(wind_vv, 0.0), 1e-6) / 2.0)
+        else:
+            zeta = np.zeros_like(A)
+            sigma = np.zeros_like(A)
+        surface_ds = at3d.surface.diner(A=A, K=K, B=B, ZETA=zeta, SIGMA=sigma, delx=delx_km, dely=dely_km)
+    else:
+        if enable_brdf and brdf_model != "diner":
+            print(f"⚠️ Unsupported brdf_model='{brdf_model}', fallback to lambertian.")
+        lambert_alb = float(getattr(scene_cfg, "lambertian_albedo", 0.0))
+        surface_ds = at3d.surface.lambertian(lambert_alb)
+
     t0 = time.perf_counter()
     solvers_dict.add_solver(
         w,
         at3d.solver.RTE(
             numerical_params=config,
-            surface=at3d.surface.lambertian(0.0),
+            surface=surface_ds,
             source=at3d.source.solar(w, solarmu, solar_azimuth),
             medium=medium,
             num_stokes=num_stokes
@@ -1748,6 +2469,7 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
     )
     t_stage["build_rte_solver"] = time.perf_counter() - t0
     context = dict(center=center,
+                   view_names=view_names,
                    position_vectors=position_vectors,
                    lookat_vectors=lookat_vectors,
                    up_vectors=up_vectors,
@@ -1761,6 +2483,28 @@ def build_scene_and_sensors_single_band(sen: SensorConfig,
                    camera_image_transpose=sen.camera_image_transpose,
                    camera_image_flip_lr=sen.camera_image_flip_lr,
                    heading_angle_deg=sen.aircraft_heading_deg,
+                   cross_track_nbytes=sen.cross_track_nbytes,
+                   cross_track_scale=sen.cross_track_scale,
+                   cross_track_x1=sen.cross_track_x1,
+                   cross_track_y1=sen.cross_track_y1,
+                   cross_track_z1=sen.cross_track_z1,
+                   cross_track_x2=sen.cross_track_x2,
+                   cross_track_y2=sen.cross_track_y2,
+                   cross_track_z2=sen.cross_track_z2,
+                   cross_track_spacing=sen.cross_track_spacing,
+                   cross_track_scan1_deg=sen.cross_track_scan1_deg,
+                   cross_track_scan2_deg=sen.cross_track_scan2_deg,
+                   cross_track_delscan_deg=sen.cross_track_delscan_deg,
+                   cross_track_pitch_start_deg=sen.cross_track_pitch_start_deg,
+                   cross_track_pitch_end_deg=sen.cross_track_pitch_end_deg,
+                   cross_track_pitch_list_deg=sen.cross_track_pitch_list_deg,
+                   cross_track_scan_positions=(scan_positions.tolist() if mode_lc == "cross_track" else None),
+                   cross_track_scan_angles_deg=(scan_angles.tolist() if mode_lc == "cross_track" else None),
+                   cross_track_scan_pitch_deg=(
+                       scan_pitch_deg.tolist()
+                       if (mode_lc == "cross_track" and scan_pitch_deg is not None)
+                       else None
+                   ),
                    lat=lat_2d,
                    lon=lon_2d,
                    latlon_source=latlon_source,
@@ -1794,9 +2538,17 @@ def build_versions_single_band(sensor_dict,
     
     
     
-    first_key = list(sensor_dict.keys())[0]
-    first_image = sensor_dict.get_images(first_key)[0]
-    cam_ny, cam_nx = first_image.I.T.shape
+    cam_shapes = []
+    for _vn in sen.views_names:
+        _k = f"{_vn}_{int(wavelength_nm)}nm"
+        if _k not in sensor_dict:
+            continue
+        _img = sensor_dict.get_images(_k)[0]
+        cam_shapes.append(_img.I.T.shape)
+    if len(cam_shapes) == 0:
+        raise ValueError("No camera images found for current wavelength/views.")
+    cam_ny = int(max(s[0] for s in cam_shapes))
+    cam_nx = int(max(s[1] for s in cam_shapes))
     V = len(sen.views_names)
     I_orig = np.full((V, cam_ny, cam_nx), np.nan, dtype=np.float32)
     Q_orig = np.full_like(I_orig, np.nan); U_orig = np.full_like(I_orig, np.nan)
@@ -2010,9 +2762,12 @@ def build_versions_single_band(sensor_dict,
             solar_azimuth_deg=context.get("solar_azimuth", 0.0),
             solar_zenith_deg=context.get("theta_0", np.nan),
             heading_angle_deg=_get_flight_azimuth_offset_deg_from_context(context),
+            apply_heading_offset=bool(getattr(sen, "apply_flight_azimuth_offset_to_vaa", False)),
             transpose=transpose,
             flip_lr=flip_lr,
         )
+
+        is_cross_track_mode = str(sensor_ds.attrs.get("projection", "")).lower() == "crosstrackscan"
 
         if out_cfg.save_png and (out_cfg.plot_mode != "skip"):
             angle_products = {
@@ -2028,7 +2783,7 @@ def build_versions_single_band(sensor_dict,
                 )
                 if out_cfg.plot_mode == "overwrite" or not os.path.exists(angle_png):
                     plot_image(
-                        _to_aircraft_eye_view(angle_map),
+                        _to_aircraft_eye_view(angle_map, flip_vertical=not is_cross_track_mode),
                         np.arange(1, angle_map.shape[1] + 2),
                         np.arange(1, angle_map.shape[0] + 2),
                         title=f"{name} {angle_name} {int(wavelength_nm)} nm",
@@ -2045,6 +2800,9 @@ def build_versions_single_band(sensor_dict,
         #     solar_azimuth_deg=phi0
         # )
         
+        I = _fit_to_shape(I, (cam_ny, cam_nx))
+        Q = _fit_to_shape(Q, (cam_ny, cam_nx))
+        U = _fit_to_shape(U, (cam_ny, cam_nx))
         DoLP = np.sqrt(Q**2 + U**2) / np.maximum(I, 1e-12)
         I_orig[iv] = I; Q_orig[iv] = Q; U_orig[iv] = U; DoLP_orig[iv] = DoLP
         
@@ -2061,7 +2819,7 @@ def build_versions_single_band(sensor_dict,
             cam_png_DoLP = os.path.join(out_subdirs["original"], f"DoLP_{int(wavelength_nm)}nm_{name}_camera.png")
             if out_cfg.plot_mode == "overwrite" or not os.path.exists(cam_png_I):
 
-                plot_image(_to_aircraft_eye_view(I_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2), 
+                plot_image(_to_aircraft_eye_view(I_brf, flip_vertical=not is_cross_track_mode), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2), 
                            title=f"{name} I {int(wavelength_nm)} nm",
                            cmap=plot_cfg.colormap, 
                            save_path=cam_png_I, show=False)
@@ -2074,17 +2832,17 @@ def build_versions_single_band(sensor_dict,
                         q_lim = 1.0
                     if (not np.isfinite(u_lim)) or u_lim <= 0:
                         u_lim = 1.0
-                    plot_image(_to_aircraft_eye_view(Q_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                    plot_image(_to_aircraft_eye_view(Q_brf, flip_vertical=not is_cross_track_mode), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} Q {int(wavelength_nm)} nm",
                                cmap="RdBu_r",
                                vmin=-q_lim, vmax=q_lim,
                                save_path=cam_png_Q, show=False)
-                    plot_image(_to_aircraft_eye_view(U_brf), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                    plot_image(_to_aircraft_eye_view(U_brf, flip_vertical=not is_cross_track_mode), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} U {int(wavelength_nm)} nm",
                                cmap="RdBu_r",
                                vmin=-u_lim, vmax=u_lim,
                                save_path=cam_png_U, show=False)
-                    plot_image(_to_aircraft_eye_view(DoLP), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
+                    plot_image(_to_aircraft_eye_view(DoLP, flip_vertical=not is_cross_track_mode), np.arange(1,I.shape[1]+2), np.arange(1,I.shape[0]+2),
                                title=f"{name} DoLP {int(wavelength_nm)} nm",
                                cmap=plot_cfg.colormap,
                                save_path=cam_png_DoLP, show=False)
@@ -2238,12 +2996,14 @@ def build_versions_single_band(sensor_dict,
         # U_gd   = utils.downsample_block(U_g, dsm.factor, dsm.method)
         # DoLP_gd = np.sqrt(Q_gd**2 + U_gd**2) / np.maximum(I_gd, 1e-12)
         # I_reg_ds[iv] = I_gd; Q_reg_ds[iv] = Q_gd; U_reg_ds[iv] = U_gd; DoLP_reg_ds[iv] = DoLP_gd
-        thetav_o[iv][:] = sen.views_zenith_deg[iv]
+        vz_scalar = float(sen.views_zenith_deg[iv]) if iv < len(sen.views_zenith_deg) else float(sen.views_zenith_deg[0] if len(sen.views_zenith_deg) > 0 else np.nan)
+        va_scalar = float(sen.views_azimuth_deg[iv]) if iv < len(sen.views_azimuth_deg) else float(sen.views_azimuth_deg[0] if len(sen.views_azimuth_deg) > 0 else np.nan)
+        thetav_o[iv][:] = vz_scalar
         theta0_o[iv][:] = context.get("theta_0", 180 - 35)
-        faipfai0_o[iv][:] = sen.views_azimuth_deg[iv] - (context.get("solar_azimuth", 325.0 - 360))
-        thetav_r[iv][:] = sen.views_zenith_deg[iv]
+        faipfai0_o[iv][:] = va_scalar - (context.get("solar_azimuth", 325.0 - 360))
+        thetav_r[iv][:] = vz_scalar
         theta0_r[iv][:] = context.get("theta_0", 180 - 35)
-        faipfai0_r[iv][:] = sen.views_azimuth_deg[iv] - (context.get("solar_azimuth", 325.0 - 360))
+        faipfai0_r[iv][:] = va_scalar - (context.get("solar_azimuth", 325.0 - 360))
         elevation_o = np.full_like(I_brf, 0, dtype=np.float32)
         Land_water_mask_o = np.full_like(I_brf, 1, dtype=np.float32)
         elevation_r = np.full_like(I_brf_g, 0, dtype=np.float32)
@@ -2425,7 +3185,7 @@ def _record_experiment_snapshot(cfg_path: str, cfg: Dict[str, Any], out_root: st
 #%% Section 6: Main (per-wavelength)
 # =============================
 
-def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
+def main(cfg_path: str = "config_v6a.yaml", only_band: Optional[int] = None,
          n_jobs: Optional[int] = None, overwrite: bool = False, clean_after_band: bool = True,
          precheck_only: bool = False):
     (cfg, out_cfg, sen_cfg, bnd_cfg, dsm_cfg, svr_cfg, plt_cfg, grd_cfg, comp_cfg, crop_cfg,
@@ -2499,6 +3259,7 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
                 solar_azimuth_deg=context.get("solar_azimuth", 0.0),
                 solar_zenith_deg=context.get("theta_0", np.nan),
                 heading_angle_deg=_get_flight_azimuth_offset_deg_from_context(sen_cfg),
+                apply_heading_offset=bool(getattr(sen_cfg, "apply_flight_azimuth_offset_to_vaa", False)),
                 transpose=transpose,
                 flip_lr=flip_lr,
             )
@@ -2594,6 +3355,43 @@ def main(cfg_path: str = "config_v5b.yaml", only_band: Optional[int] = None,
         dur = time.time() - start_t
         print(f"⏱️  {int(w)} nm done in {dur/60:.2f} min")
     print("\n✅ All requested wavelengths processed.")
+    if out_cfg.save_nc and not precheck_only:
+        try:
+            band_list = [int(w) for w, _ in bands]
+            ds_first = xr.open_dataset(os.path.join(out_cfg.root_dir, f"AirMSPI_{band_list[0]}nm.nc"))
+            V = int(ds_first.sizes["view"]); Y = int(ds_first.sizes["y_gds"]); X = int(ds_first.sizes["x_gds"]); B = len(band_list)
+            shp = (Y, X, V, B)
+            I = np.full(shp, np.nan); Q = np.full(shp, np.nan); U = np.full(shp, np.nan)
+            DoLP = np.full(shp, np.nan); thetav = np.full(shp, np.nan); theta0 = np.full(shp, np.nan); faipfai0 = np.full(shp, np.nan)
+            for ib, w in enumerate(band_list):
+                d = xr.open_dataset(os.path.join(out_cfg.root_dir, f"AirMSPI_{w}nm.nc"))
+                I[..., ib] = np.transpose(d["I_downsampled_registered"].values, (1, 2, 0))
+                Q[..., ib] = np.transpose(d["Q_downsampled_registered"].values, (1, 2, 0))
+                U[..., ib] = np.transpose(d["U_downsampled_registered"].values, (1, 2, 0))
+                DoLP[..., ib] = np.transpose(d["DoLP_downsampled_registered"].values, (1, 2, 0))
+                thetav[..., ib] = np.transpose(d["VZA_downsampled_registered"].values, (1, 2, 0))
+                theta0[..., ib] = np.transpose(np.broadcast_to(float(d["theta_0"].values), (V, Y, X)), (1, 2, 0))
+                faipfai0[..., ib] = np.transpose(d["RAA_downsampled_registered"].values, (1, 2, 0))
+            out = xr.Dataset(
+                data_vars=dict(
+                    I=(["x", "y", "view", "band"], I), Q=(["x", "y", "view", "band"], Q), U=(["x", "y", "view", "band"], U),
+                    DoLP=(["x", "y", "view", "band"], DoLP), thetav=(["x", "y", "view", "band"], thetav),
+                    theta0=(["x", "y", "view", "band"], theta0), faipfai0=(["x", "y", "view", "band"], faipfai0),
+                    ErrI=(["x", "y", "view", "band"], np.full(shp, np.nan)), ErrQ=(["x", "y", "view", "band"], np.full(shp, np.nan)),
+                    ErrU=(["x", "y", "view", "band"], np.full(shp, np.nan)), ErrDoLP=(["x", "y", "view", "band"], np.full(shp, np.nan)),
+                    lat=(["x", "y"], ds_first["lat"].values), lon=(["x", "y"], ds_first["lon"].values),
+                    elevation=(["x", "y"], ds_first["elevation"].values), Land_water_mask=(["x", "y"], ds_first["Land_water_mask"].values),
+                    datalat=(["x_full", "y_full"], ds_first["datalat"].values), datalon=(["x_full", "y_full"], ds_first["datalon"].values),
+                    dataElevation=(["x_full", "y_full"], ds_first["dataElevation"].values),
+                    dataLand_water_mask=(["x_full", "y_full"], ds_first["dataLand_water_mask"].values),
+                    Band_AirMSPI=(["band", "one"], np.asarray(band_list, dtype=float).reshape(-1, 1)),
+                    Height_AirMSPI=(["one", "one2"], np.array([[float(sen_cfg.altitude_km)]], dtype=float)),
+                )
+            )
+            out.to_netcdf(os.path.join(out_cfg.root_dir, "AirMSPI_multiview_multiband.nc"))
+            print("📦 Saved AirMSPI_multiview_multiband.nc")
+        except Exception as e:
+            print(f"⚠️ Failed to merge multiview/multiband nc: {e}")
     if out_cfg.save_nc:
         if len(spectral_AOD_all) == 0:
             print("⚠️ Skip spectral_AOD_SSA.nc: no AOD/SSA data collected (all bands skipped or precheck_only mode).")
@@ -2622,8 +3420,8 @@ __all__ = [
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Per-wavelength AT3D simulation pipeline (v5b)")
-    parser.add_argument("--config", type=str, default="config_v5b.yaml", help="Path to config file")
+    parser = argparse.ArgumentParser(description="Per-wavelength AT3D simulation pipeline (v6a)")
+    parser.add_argument("--config", type=str, default="config_v6a.yaml", help="Path to config file")
     parser.add_argument("--band", type=int, default=None, help="Run only this wavelength (nm)")
     parser.add_argument("--n_jobs", type=int, default=None, help="Number of parallel jobs (overrides config)")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing NetCDF files")

@@ -1,5 +1,5 @@
 # =============================
-# Simulation Configuration File (v5b)
+# Simulation Configuration File (v6a)
 # =============================
 
 output:
@@ -37,22 +37,10 @@ sensor:
     # mode="cross_track" 时启用以下参数；单位为 km，角度为 deg。
     cross_track_nbytes: 2            # 兼容SHDOM参数，当前用于元数据记录 number of bytes per pixel in PGM output images
     cross_track_scale: 1.0           # 兼容SHDOM参数，当前用于元数据记录 the scaling from radiance to pixel value in image
-    cross_track_x1: 3.2               # the starting camera location
-    cross_track_y1: 0
-    cross_track_z1: 20.0
-    cross_track_x2: 2.8
-    cross_track_y2: 9.2
-    cross_track_z2: 20.0
     cross_track_spacing: 0.010        # along track distance between scans (along-track 相邻扫描位置间距)
     cross_track_scan1_deg: -15.0     # 左侧最小cross-track扫描角
     cross_track_scan2_deg: 15.0      # 右侧最大cross-track扫描角
     cross_track_delscan_deg: 0.02     # the angle [degl between pixels in the scan 像元间扫描角步长
-    # along-track每条扫描线可设置独立pitch（2种输入二选一）：
-    # 1) start/end -> 按扫描线数线性插值
-    # 2) list -> 手动逐线给定（长度必须等于扫描线数）
-    cross_track_pitch_start_deg: 0 # null # 
-    cross_track_pitch_end_deg: 5.14 # null # 
-    cross_track_pitch_list_deg: null
     cross_track_selected_view_indices: [1]  # 可选：1-based视角序号，如[1,3,4,5,6,8,9]
     cross_track_case_id: "Case_21_2019_0806_1839"   # 缓存几何参数用
     cross_track_cache_file: "output/cross_track_cache.json"  # 结果缓存文件
