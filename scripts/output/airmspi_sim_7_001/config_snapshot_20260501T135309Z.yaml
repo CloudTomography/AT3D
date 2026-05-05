@@ -1,9 +1,9 @@
 # =============================
-# Simulation Configuration File (v6a)
+# Simulation Configuration File (v5b)
 # =============================
 
 output:
-  root_dir: "output/airmspi_sim_8_002"
+  root_dir: "output/airmspi_sim_7_001"
   save_png: false
   save_nc: true
   plot_mode: "overwrite"   # "skip" | "if_missing" | "overwrite"
@@ -30,20 +30,35 @@ sensor:
     camera_roll_relative_deg: 0.0  # 相机相对飞机绕LOS滚转
     camera_relative_roll_deg: 0.6   # 相机相对飞机的滚转角(度)，默认0表示相机x/y轴与飞机参考方向对齐
     camera_align_with_flight_heading: false  # false: 相机坐标与世界上方向对齐(默认，分界线更稳定竖直/水平)
-    apply_flight_azimuth_offset_to_vaa: true  # 开启：VAA/RAA按飞机航向角做偏置（当前参数飞机沿+Y飞行）
+    apply_flight_azimuth_offset_to_vaa: false  # 开启：VAA/RAA按飞机航向角做偏置（当前参数飞机沿+Y飞行）
     camera_image_transpose: false   # 是否对模拟图像做转置（仅用于对齐历史AirMSPI观测像元方向）
     camera_image_flip_lr: false     # 是否做左右翻转（仅用于复现实测图像方向）
     # --- SHDOM-style cross track mode parameters ---
     # mode="cross_track" 时启用以下参数；单位为 km，角度为 deg。
     cross_track_nbytes: 2            # 兼容SHDOM参数，当前用于元数据记录 number of bytes per pixel in PGM output images
     cross_track_scale: 1.0           # 兼容SHDOM参数，当前用于元数据记录 the scaling from radiance to pixel value in image
+    cross_track_x1: 3.347198
+    cross_track_y1: -34.837584
+    cross_track_z1: 20.364889
+    cross_track_x2: 3.348168
+    cross_track_y2: -24.647483
+    cross_track_z2: 20.353500
     cross_track_spacing: 0.010        # along track distance between scans (along-track 相邻扫描位置间距)
     cross_track_scan1_deg: -15.0     # 左侧最小cross-track扫描角
     cross_track_scan2_deg: 15.0      # 右侧最大cross-track扫描角
     cross_track_delscan_deg: 0.02     # the angle [degl between pixels in the scan 像元间扫描角步长
-    cross_track_selected_view_indices: [1,3,5]  # 可选：1-based视角序号，如[1,3,4,5,6,8,9]
-    cross_track_case_id: "Case_21_2019_0806_1839"   # 缓存几何参数用
-    cross_track_cache_file: "../output/cross_track_cache.json"  # 结果缓存文件
+    # along-track每条扫描线可设置独立pitch（2种输入二选一）：
+    # 1) start/end -> 按扫描线数线性插值
+    # 2) list -> 手动逐线给定（长度必须等于扫描线数）
+    cross_track_x1: 3.336352
+    cross_track_y1: -46.544294
+    cross_track_z1: 20.357834
+    cross_track_x2: 3.346920
+    cross_track_y2: -35.310060
+    cross_track_z2: 20.366611
+    cross_track_pitch_start_deg: 64.576824
+    cross_track_pitch_end_deg: 65.020189
+    cross_track_pitch_list_deg: null
 
 # camera pixel grid for perspective_projection
 camera:
@@ -102,12 +117,9 @@ aerosol:
   density_floor: 0.0
   mode_selection: "both"   # both | mode1 | mode2
 
-# bands:
-#   wavelength_nm: [470]
-#   is_polarized: [true]
 bands:
-  wavelength_nm: [355, 470, 555, 865]
-  is_polarized: [false, true, false, true]
+  wavelength_nm: [470]
+  is_polarized: [true]
 
 downsample:
   factor: 12

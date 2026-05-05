@@ -3,7 +3,7 @@
 # =============================
 
 output:
-  root_dir: "output/airmspi_sim_8_002"
+  root_dir: "output/airmspi_sim_6_002"
   save_png: false
   save_nc: true
   plot_mode: "overwrite"   # "skip" | "if_missing" | "overwrite"
@@ -41,9 +41,9 @@ sensor:
     cross_track_scan1_deg: -15.0     # 左侧最小cross-track扫描角
     cross_track_scan2_deg: 15.0      # 右侧最大cross-track扫描角
     cross_track_delscan_deg: 0.02     # the angle [degl between pixels in the scan 像元间扫描角步长
-    cross_track_selected_view_indices: [1,3,5]  # 可选：1-based视角序号，如[1,3,4,5,6,8,9]
+    cross_track_selected_view_indices: [1]  # 可选：1-based视角序号，如[1,3,4,5,6,8,9]
     cross_track_case_id: "Case_21_2019_0806_1839"   # 缓存几何参数用
-    cross_track_cache_file: "../output/cross_track_cache.json"  # 结果缓存文件
+    cross_track_cache_file: "output/cross_track_cache.json"  # 结果缓存文件
 
 # camera pixel grid for perspective_projection
 camera:
@@ -102,12 +102,9 @@ aerosol:
   density_floor: 0.0
   mode_selection: "both"   # both | mode1 | mode2
 
-# bands:
-#   wavelength_nm: [470]
-#   is_polarized: [true]
 bands:
-  wavelength_nm: [355, 470, 555, 865]
-  is_polarized: [false, true, false, true]
+  wavelength_nm: [470]
+  is_polarized: [true]
 
 downsample:
   factor: 12
