@@ -2792,6 +2792,9 @@ def build_versions_single_band(sensor_dict,
         #     solar_azimuth_deg=phi0
         # )
         
+        I = _fit_to_shape(I, (cam_ny, cam_nx))
+        Q = _fit_to_shape(Q, (cam_ny, cam_nx))
+        U = _fit_to_shape(U, (cam_ny, cam_nx))
         DoLP = np.sqrt(Q**2 + U**2) / np.maximum(I, 1e-12)
         I_orig[iv] = I; Q_orig[iv] = Q; U_orig[iv] = U; DoLP_orig[iv] = DoLP
         
