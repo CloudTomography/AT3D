@@ -398,12 +398,11 @@ def calculate_sensor_trajectory_cross_track(
 
     if len(scan_positions) == 0:
         raise ValueError("No valid cross track samples were generated.")
-    if selected_view_indices is not None:
-        idx = [int(v) - 1 for v in selected_view_indices]
-        selected_samples = [scan_positions[i] for i in idx if 0 <= i < len(scan_positions)]
-        if len(selected_samples) == 0:
-            raise ValueError("cross_track_selected_view_indices produced empty selection.")
-    elif n_views is None:
+    # NOTE:
+    # selected_view_indices should NOT subset scan_positions here.
+    # It is a higher-level "which AirMSPI views to simulate" selector and is handled
+    # in build_scene_and_sensors_single_band (cache-entry selection).
+    if n_views is None:
         selected_samples = list(scan_positions)
     else:
         selected_samples = list(scan_positions[:int(n_views)])
