@@ -2538,9 +2538,17 @@ def build_versions_single_band(sensor_dict,
     
     
     
-    first_key = list(sensor_dict.keys())[0]
-    first_image = sensor_dict.get_images(first_key)[0]
-    cam_ny, cam_nx = first_image.I.T.shape
+    cam_shapes = []
+    for _vn in sen.views_names:
+        _k = f"{_vn}_{int(wavelength_nm)}nm"
+        if _k not in sensor_dict:
+            continue
+        _img = sensor_dict.get_images(_k)[0]
+        cam_shapes.append(_img.I.T.shape)
+    if len(cam_shapes) == 0:
+        raise ValueError("No camera images found for current wavelength/views.")
+    cam_ny = int(max(s[0] for s in cam_shapes))
+    cam_nx = int(max(s[1] for s in cam_shapes))
     V = len(sen.views_names)
     I_orig = np.full((V, cam_ny, cam_nx), np.nan, dtype=np.float32)
     Q_orig = np.full_like(I_orig, np.nan); U_orig = np.full_like(I_orig, np.nan)
