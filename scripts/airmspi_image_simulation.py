@@ -2996,12 +2996,14 @@ def build_versions_single_band(sensor_dict,
         # U_gd   = utils.downsample_block(U_g, dsm.factor, dsm.method)
         # DoLP_gd = np.sqrt(Q_gd**2 + U_gd**2) / np.maximum(I_gd, 1e-12)
         # I_reg_ds[iv] = I_gd; Q_reg_ds[iv] = Q_gd; U_reg_ds[iv] = U_gd; DoLP_reg_ds[iv] = DoLP_gd
-        thetav_o[iv][:] = sen.views_zenith_deg[iv]
+        vz_scalar = float(sen.views_zenith_deg[iv]) if iv < len(sen.views_zenith_deg) else float(sen.views_zenith_deg[0] if len(sen.views_zenith_deg) > 0 else np.nan)
+        va_scalar = float(sen.views_azimuth_deg[iv]) if iv < len(sen.views_azimuth_deg) else float(sen.views_azimuth_deg[0] if len(sen.views_azimuth_deg) > 0 else np.nan)
+        thetav_o[iv][:] = vz_scalar
         theta0_o[iv][:] = context.get("theta_0", 180 - 35)
-        faipfai0_o[iv][:] = sen.views_azimuth_deg[iv] - (context.get("solar_azimuth", 325.0 - 360))
-        thetav_r[iv][:] = sen.views_zenith_deg[iv]
+        faipfai0_o[iv][:] = va_scalar - (context.get("solar_azimuth", 325.0 - 360))
+        thetav_r[iv][:] = vz_scalar
         theta0_r[iv][:] = context.get("theta_0", 180 - 35)
-        faipfai0_r[iv][:] = sen.views_azimuth_deg[iv] - (context.get("solar_azimuth", 325.0 - 360))
+        faipfai0_r[iv][:] = va_scalar - (context.get("solar_azimuth", 325.0 - 360))
         elevation_o = np.full_like(I_brf, 0, dtype=np.float32)
         Land_water_mask_o = np.full_like(I_brf, 1, dtype=np.float32)
         elevation_r = np.full_like(I_brf_g, 0, dtype=np.float32)
