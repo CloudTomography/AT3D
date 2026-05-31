@@ -43,6 +43,7 @@ F2PY_SHDOM_FILES = [
     "polarized/make_mie_table.f90",
     "polarized/miewig.f",
     "polarized/indexwatice.f",
+    "polarized/adjoint.f",
 ]
 
 # ---------------------------------------------------------------------------
@@ -92,6 +93,10 @@ F2PY_CORE_API = [
     # Phase functions
     "precompute_phase_check",
     "precompute_phase_check_grad",
+    # Adjoint inner product
+    "compute_grad_inner_product",
+    "eval_field_at_dir",
+    "build_trilin_mass_matrix",
     # Miscellaneous
     "optical_depth",
     "prep_surface",

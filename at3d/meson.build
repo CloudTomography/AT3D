@@ -55,6 +55,7 @@ fortran_sources = files(
   '../src/polarized/make_mie_table.f90',
   '../src/polarized/miewig.f',
   '../src/polarized/indexwatice.f',
+  '../src/polarized/adjoint.f',
 )
 
 # --- f2py wrapper generation ---
