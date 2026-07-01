@@ -29,6 +29,7 @@ C     -JRLoveridge / derived from plan 2026
      .           SOLARMU, SOLARAZ, YLMSUN,
      .           DET_STOKES, CELLWISE_DET,
      .           MU_PF_CELL, PHI_PF_CELL,
+     .           USE_LOGLINEAR_DIRFLUX,
      .           POINT_SENS, IERR, ERRMSG)
 C     Computes the per-grid-point sensitivity POINT_SENS(1:NPTS) such
 C     that for any extinction parameter x_p:
@@ -85,6 +86,8 @@ Cf2py intent(in) :: DET_STOKES
 Cf2py intent(in) :: CELLWISE_DET
       REAL    MU_PF_CELL(NCELLS), PHI_PF_CELL(NCELLS)
 Cf2py intent(in) :: MU_PF_CELL, PHI_PF_CELL
+      LOGICAL USE_LOGLINEAR_DIRFLUX
+Cf2py intent(in) :: USE_LOGLINEAR_DIRFLUX
       REAL    POINT_SENS(NPTS)
 Cf2py intent(out) :: POINT_SENS
       INTEGER IERR
@@ -95,11 +98,13 @@ C     --- Local variables ---
       INTEGER IC, I, K, J, L, S, IP(8)
       INTEGER NR_FWD, NR_PF, NS_FWD, NMIN
       REAL    DX, DY, DZ, VOL
-      REAL    M(8,8)
-      REAL    P_AA(8), P_JA(8,8)
+      REAL    M3(8,8,8)
+      REAL    MEXP(8,8), MEXP_PF(8,8)
+      REAL    F0_CORNERS(8)
+      REAL    P_AA(8,8), P_JA(8,8)
       REAL    IADJ_SOL(8), IFWD_DET(8), JFWD_DET(8)
       REAL    A_IC(8), B_IC(8), C_IC(8), D_IC(8), E_IC(8)
-      REAL    SUMC, SUMD, SUME, ACC
+      REAL    ACC
       REAL    YLM_DET(NSTLEG,NLM)
       REAL    SIGN_ADJ(NLM)
       INTEGER LOFJ(NLM)
@@ -162,8 +167,8 @@ C       so point 1 is (xmin,ymin,zmin), point 8 is (xmax,ymax,zmax)
 C       Skip degenerate cells (zero-volume, e.g. open BC placeholders)
         IF (VOL .LE. 0.0) CYCLE
 
-C       Build the 8x8 trilinear mass matrix M(i,k) = integral(Li*Lk*dV)
-        CALL BUILD_TRILIN_MASS_MATRIX(DX, DY, DZ, M)
+C       Build the 8x8x8 trilinear mass matrix M3(i,j,k) = integral(Li*Lj*Lk*dV)
+        CALL BUILD_TRILIN_MASS_MATRIX_3(DX, DY, DZ, M3)
 
 C       Compute YLM at detector direction (per-cell if cellwise)
         IF (CELLWISE_DET) THEN
@@ -173,54 +178,57 @@ C       Compute YLM at detector direction (per-cell if cellwise)
         ENDIF
 
 C       ============================================================
-C       Term A: diffuse-diffuse Parseval (inline sign flip)
-C       Parseval: integral_S2 sum_s I_d(s) * I_adj(s) dOmega
-C         = sum_J sum_s RAD(s,J) * SIGN_ADJ(J) * RSTOKES(s) * RAD_PF(s,J)
+C       Term A: diffuse-diffuse Parseval with cross-node products
+C       P_AA(j,k) = integral_S2 I_d(j) * I_adj(k) dOmega
+C         = sum_J sum_s RAD(s,J@j) * SIGN_ADJ(J) * RAD_PF(s,J@k)
 C       For s=1,2,3: RSTOKES=+1; for s=4: RSTOKES=-1 (Stokes V flip)
+C       A_i = -sum_j sum_k M3(i,j,k) * P_AA(j,k)
 C       ============================================================
-        DO K = 1, 8
-          NR_FWD = RSHPTR(IP(K)+1) - RSHPTR(IP(K))
-          NR_PF  = RSHPTR_PF(IP(K)+1) - RSHPTR_PF(IP(K))
-          NMIN   = MIN(NR_FWD, NR_PF)
-          ACC = 0.0
-          IF (NSTOKES .LT. 4) THEN
-C           No Stokes V: simple dot product with sign flip
-            DO J = 1, NMIN
-              DO S = 1, NSTOKES
-                ACC = ACC + RADIANCE(S, RSHPTR(IP(K))+J)
-     .                    * SIGN_ADJ(J)
-     .                    * RADIANCE_PF(S, RSHPTR_PF(IP(K))+J)
+        DO I = 1, 8
+          DO K = 1, 8
+            NR_FWD = RSHPTR(IP(I)+1) - RSHPTR(IP(I))
+            NR_PF  = RSHPTR_PF(IP(K)+1) - RSHPTR_PF(IP(K))
+            NMIN   = MIN(NR_FWD, NR_PF)
+            ACC = 0.0
+            IF (NSTOKES .LT. 4) THEN
+              DO J = 1, NMIN
+                DO S = 1, NSTOKES
+                  ACC = ACC + RADIANCE(S, RSHPTR(IP(I))+J)
+     .                      * SIGN_ADJ(J)
+     .                      * RADIANCE_PF(S, RSHPTR_PF(IP(K))+J)
+                ENDDO
               ENDDO
-            ENDDO
-          ELSE
-C           NSTOKES=4: s=4 gets extra -1 for Stokes V direction reversal
-            DO J = 1, NMIN
-              DO S = 1, 3
-                ACC = ACC + RADIANCE(S, RSHPTR(IP(K))+J)
+            ELSE
+              DO J = 1, NMIN
+                DO S = 1, 3
+                  ACC = ACC + RADIANCE(S, RSHPTR(IP(I))+J)
+     .                      * SIGN_ADJ(J)
+     .                      * RADIANCE_PF(S, RSHPTR_PF(IP(K))+J)
+                ENDDO
+                ACC = ACC - RADIANCE(4, RSHPTR(IP(I))+J)
      .                    * SIGN_ADJ(J)
-     .                    * RADIANCE_PF(S, RSHPTR_PF(IP(K))+J)
+     .                    * RADIANCE_PF(4, RSHPTR_PF(IP(K))+J)
               ENDDO
-              ACC = ACC - RADIANCE(4, RSHPTR(IP(K))+J)
-     .                  * SIGN_ADJ(J)
-     .                  * RADIANCE_PF(4, RSHPTR_PF(IP(K))+J)
-            ENDDO
-          ENDIF
-          P_AA(K) = ACC
+            ENDIF
+            P_AA(I,K) = ACC
+          ENDDO
         ENDDO
 
-C       A_ic(i) = sum_k M(i,k) * P_AA(k)
+C       A_ic(i) = -sum_j sum_k M3(i,j,k) * P_AA(j,k)
         DO I = 1, 8
           ACC = 0.0
-          DO K = 1, 8
-            ACC = ACC + M(I,K) * P_AA(K)
+          DO J = 1, 8
+            DO K = 1, 8
+              ACC = ACC + M3(I,J,K) * P_AA(J,K)
+            ENDDO
           ENDDO
-          A_IC(I) = ACC
+          A_IC(I) = -ACC
         ENDDO
 
 C       ============================================================
-C       Term B: cross-Parseval (forward SOURCE at node i,
-C               adjoint radiance at corner k)
-C       Same Parseval identity applies for the angular integral.
+C       Term B: cross-Parseval with cross-node products
+C       P_JA(j,k) = integral_S2 J_fwd(j) * I_adj(k) dOmega
+C       B_i = +sum_j sum_k M3(i,j,k) * P_JA(j,k)
 C       ============================================================
         DO I = 1, 8
           DO K = 1, 8
@@ -250,12 +258,17 @@ C       ============================================================
             ENDIF
             P_JA(I,K) = ACC
           ENDDO
-C         B_ic(i) = - sum_k M(i,k) * P_JA(i,k)
+        ENDDO
+
+C       B_ic(i) = +sum_j sum_k M3(i,j,k) * P_JA(j,k)
+        DO I = 1, 8
           ACC = 0.0
-          DO K = 1, 8
-            ACC = ACC + M(I,K) * P_JA(I,K)
+          DO J = 1, 8
+            DO K = 1, 8
+              ACC = ACC + M3(I,J,K) * P_JA(J,K)
+            ENDDO
           ENDDO
-          B_IC(I) = -ACC
+          B_IC(I) = ACC
         ENDDO
 
 C       ============================================================
@@ -277,7 +290,7 @@ C         Only Stokes-I needed; YLMSUN(1,J) unaffected by TRANSPOSE.
             ACC = ACC + SIGN_ADJ(J) * YLMSUN(1,J)
      .                * RADIANCE_PF(1, RSHPTR_PF(IP(K))+J)
           ENDDO
-          IADJ_SOL(K) = ACC
+          IADJ_SOL(K) = -ACC
 
 C         ---- Term D: forward diffuse at detector direction ----
 C         Evaluate Stokes component DET_STOKES of forward radiance
@@ -294,29 +307,130 @@ C         ---- Term E: forward source at detector direction ----
      .         DET_STOKES, JFWD_DET(K))
         ENDDO
 
-C       Combine C, D, E with mass matrix and direct beams
-        DO I = 1, 8
-          SUMC = 0.0
-          SUMD = 0.0
-          SUME = 0.0
+
+C       Build exponentially-weighted mass matrices for direct beams.
+C       Three modes: USE_LOGLINEAR_DIRFLUX selects beam-traced analytical
+C       (exact for any tau) vs Gauss-based log-linear vs trilinear M3.
+C       C_i = sum_j MEXP(i,j) * IADJ_SOL(j)
+C       D_i = sum_j MEXP_PF(i,j) * IFWD_DET(j)
+C       E_i = -sum_j MEXP_PF(i,j) * JFWD_DET(j)
+        IF (USE_LOGLINEAR_DIRFLUX) THEN
+C         Beam-traced analytical exponential mass matrix
           DO K = 1, 8
-            SUMC = SUMC + M(I,K) * IADJ_SOL(K) * DIRFLUX(IP(K))
-            SUMD = SUMD + M(I,K) * DIRFLUX_PF(IP(K)) * IFWD_DET(K)
-            SUME = SUME + M(I,K) * DIRFLUX_PF(IP(K)) * JFWD_DET(K)
+            F0_CORNERS(K) = DIRFLUX(IP(K)) / ABS(SOLARMU)
           ENDDO
-          C_IC(I) = SUMC
-          D_IC(I) = SUMD
-          E_IC(I) = -SUME
-        ENDDO
+          CALL BUILD_EXP_MASS_MATRIX_BEAM(DX, DY, DZ, F0_CORNERS,
+     .         SOLARMU, SOLARAZ, MEXP)
+          DO K = 1, 8
+            F0_CORNERS(K) = DIRFLUX_PF(IP(K)) / ABS(MU_PF_CELL(IC))
+          ENDDO
+          CALL BUILD_EXP_MASS_MATRIX_BEAM(DX, DY, DZ, F0_CORNERS,
+     .         MU_PF_CELL(IC), PHI_PF_CELL(IC), MEXP_PF)
+
+          DO I = 1, 8
+            C_IC(I) = 0.0
+            D_IC(I) = 0.0
+            E_IC(I) = 0.0
+            DO J = 1, 8
+              C_IC(I) = C_IC(I) + MEXP(I,J) * IADJ_SOL(J)
+              D_IC(I) = D_IC(I) + MEXP_PF(I,J) * IFWD_DET(J)
+              E_IC(I) = E_IC(I) - MEXP_PF(I,J) * JFWD_DET(J)
+            ENDDO
+          ENDDO
+        ELSE
+C         Trilinear (M3-based) direct beam: sum_j sum_k M3(i,j,k)*f(k)*field(j)
+          DO I = 1, 8
+            C_IC(I) = 0.0
+            D_IC(I) = 0.0
+            E_IC(I) = 0.0
+            DO J = 1, 8
+              DO K = 1, 8
+                ACC = M3(I,J,K) * DIRFLUX(IP(K)) / ABS(SOLARMU)
+                C_IC(I) = C_IC(I) + ACC * IADJ_SOL(J)
+                ACC = M3(I,J,K) * DIRFLUX_PF(IP(K))
+     .                           / ABS(MU_PF_CELL(IC))
+                D_IC(I) = D_IC(I) + ACC * IFWD_DET(J)
+                E_IC(I) = E_IC(I) - ACC * JFWD_DET(J)
+              ENDDO
+            ENDDO
+          ENDDO
+        ENDIF
 
 C       Scatter per-corner contributions to global point sensitivity
         DO I = 1, 8
           POINT_SENS(IP(I)) = POINT_SENS(IP(I))
-     .        + A_IC(I) + B_IC(I) + C_IC(I) + D_IC(I) + E_IC(I)
+     .        + A_IC(I) + B_IC(I)
+     .        + C_IC(I)
+C     .        + D_IC(I) + E_IC(I)
         ENDDO
 
       ENDDO
 C     End of leaf cell loop
+
+      RETURN
+      END
+
+
+C     ================================================================
+      SUBROUTINE BUILD_TRILIN_MASS_MATRIX_3 (DX, DY, DZ, M3)
+C     Builds the 8x8x8 rank-3 trilinear mass matrix for a rectangular
+C     cell.  M3(i,j,k) = integral over cell of L_i(r)*L_j(r)*L_k(r) dV
+C     where L_i are trilinear basis functions.
+C
+C     This is the tensor product of three 1D cubic integrals:
+C       integral_0^h phi_a*phi_b*phi_c dx
+C     where phi_0(x)=1-x/h, phi_1(x)=x/h.  The values are:
+C       (0,0,0) -> h/4,  (1,1,1) -> h/4
+C       all other combinations -> h/12
+C
+C     Node ordering follows SHDOM convention:
+C       IOCT = 1 + BITX + 2*BITY + 4*BITZ
+C
+      IMPLICIT NONE
+      REAL DX, DY, DZ, M3(8,8,8)
+Cf2py intent(in) :: DX, DY, DZ
+Cf2py intent(out) :: M3
+      REAL W3X(2,2,2), W3Y(2,2,2), W3Z(2,2,2)
+      INTEGER I, J, K, IX, IY, IZ, JX, JY, JZ, KX, KY, KZ
+      INTEGER A, B, C
+
+C     Fill 1D cubic mass weights (unit interval values * 12)
+C     w(a,b,c): all-same = 3, otherwise = 1
+      DO A = 1, 2
+        DO B = 1, 2
+          DO C = 1, 2
+            IF (A.EQ.B .AND. B.EQ.C) THEN
+              W3X(A,B,C) = 3.0
+              W3Y(A,B,C) = 3.0
+              W3Z(A,B,C) = 3.0
+            ELSE
+              W3X(A,B,C) = 1.0
+              W3Y(A,B,C) = 1.0
+              W3Z(A,B,C) = 1.0
+            ENDIF
+          ENDDO
+        ENDDO
+      ENDDO
+
+C     M3(i,j,k) = (DX*DY*DZ)/(12^3) * Wx(ix,jx,kx)*Wy(iy,jy,ky)*Wz(iz,jz,kz)
+      DO I = 1, 8
+        IX = MOD(I-1, 2) + 1
+        IY = MOD((I-1)/2, 2) + 1
+        IZ = (I-1)/4 + 1
+        DO J = 1, 8
+          JX = MOD(J-1, 2) + 1
+          JY = MOD((J-1)/2, 2) + 1
+          JZ = (J-1)/4 + 1
+          DO K = 1, 8
+            KX = MOD(K-1, 2) + 1
+            KY = MOD((K-1)/2, 2) + 1
+            KZ = (K-1)/4 + 1
+            M3(I,J,K) = (DX * DY * DZ) / 1728.0
+     .                * W3X(IX,JX,KX) * W3Y(IY,JY,KY)
+     .                * W3Z(IZ,JZ,KZ)
+          ENDDO
+        ENDDO
+      ENDDO
 
       RETURN
       END
@@ -384,6 +498,525 @@ C       Stokes V: only NSTLEG component 4
       ENDIF
 
       RESULT = ACC
+      RETURN
+      END
+
+
+C     ================================================================
+      SUBROUTINE BUILD_EXP_MASS_MATRIX (DX, DY, DZ, F0, MEXP)
+C     Builds the 8x8 exponentially-weighted mass matrix:
+C       MEXP(i,j) = integral over cell of L_i(r)*L_j(r)*F0_loglin(r) dV
+C     where F0_loglin(r) = exp(sum_k L_k(r)*ln(F0(k))) is the log-linear
+C     interpolation of the direct flux. This avoids the Jensen inequality
+C     bias from trilinear interpolation of exponentially-varying fields.
+C
+C     Evaluated via 2x2x2 Gauss-Legendre quadrature on the unit cube.
+C     Gauss points: g = (1 +/- 1/sqrt(3))/2
+C     Basis function values at Gauss points are precomputed constants.
+C
+C     When any F0(k) <= 0, that corner's log is clamped to -50
+C     (exp(-50) ~ 2e-22, effectively zero contribution).
+C
+      IMPLICIT NONE
+      REAL DX, DY, DZ, F0(8), MEXP(8,8)
+Cf2py intent(in) :: DX, DY, DZ, F0
+Cf2py intent(out) :: MEXP
+
+C     Gauss-Legendre points on [0,1]: (1 +/- 1/sqrt(3))/2
+      REAL    GP(2)
+      REAL    VOL, LOGF0(8), CVAL, FQ
+      REAL    PHI_X(2,2), PHI_Y(2,2), PHI_Z(2,2)
+      REAL    BF(8)
+      INTEGER I, J, K, QX, QY, QZ, IX, IY, IZ
+      REAL    CLAMP
+      PARAMETER (CLAMP = -50.0)
+
+C     Gauss points on [0,1]
+      GP(1) = 0.5 - 0.5/SQRT(3.0)
+      GP(2) = 0.5 + 0.5/SQRT(3.0)
+
+      VOL = DX * DY * DZ
+
+C     Compute log of corner fluxes with clamping
+      DO K = 1, 8
+        IF (F0(K) .GT. 0.0) THEN
+          LOGF0(K) = LOG(F0(K))
+        ELSE
+          LOGF0(K) = CLAMP
+        ENDIF
+      ENDDO
+
+C     Precompute 1D basis function values at the 2 Gauss points
+C     phi_0(g) = 1-g,  phi_1(g) = g
+      DO I = 1, 2
+        PHI_X(1,I) = 1.0 - GP(I)
+        PHI_X(2,I) = GP(I)
+        PHI_Y(1,I) = 1.0 - GP(I)
+        PHI_Y(2,I) = GP(I)
+        PHI_Z(1,I) = 1.0 - GP(I)
+        PHI_Z(2,I) = GP(I)
+      ENDDO
+
+C     Initialize
+      DO I = 1, 8
+        DO J = 1, 8
+          MEXP(I,J) = 0.0
+        ENDDO
+      ENDDO
+
+C     2x2x2 Gauss quadrature
+      DO QZ = 1, 2
+        DO QY = 1, 2
+          DO QX = 1, 2
+C           Compute 8 basis function values at this Gauss point
+C           Node K: ix=MOD(K-1,2)+1, iy=MOD((K-1)/2,2)+1, iz=(K-1)/4+1
+            DO K = 1, 8
+              IX = MOD(K-1, 2) + 1
+              IY = MOD((K-1)/2, 2) + 1
+              IZ = (K-1)/4 + 1
+              BF(K) = PHI_X(IX,QX) * PHI_Y(IY,QY) * PHI_Z(IZ,QZ)
+            ENDDO
+
+C           Log-linear interpolation: F0(r_q) = exp(sum_k BF(k)*logF0(k))
+            CVAL = 0.0
+            DO K = 1, 8
+              CVAL = CVAL + BF(K) * LOGF0(K)
+            ENDDO
+            FQ = EXP(CVAL)
+
+C           Accumulate: MEXP(i,j) += w_q * BF(i) * BF(j) * FQ * VOL
+C           Weight w_q = 1/8 for each of 8 Gauss points on unit cube
+            DO I = 1, 8
+              DO J = 1, 8
+                MEXP(I,J) = MEXP(I,J)
+     .                    + BF(I) * BF(J) * FQ
+              ENDDO
+            ENDDO
+          ENDDO
+        ENDDO
+      ENDDO
+
+C     Multiply by VOL * w_q = VOL/8
+      DO I = 1, 8
+        DO J = 1, 8
+          MEXP(I,J) = MEXP(I,J) * VOL / 8.0
+        ENDDO
+      ENDDO
+
+      RETURN
+      END
+
+
+C     ================================================================
+      SUBROUTINE BUILD_EXP_MASS_MATRIX_BEAM (DX, DY, DZ, F0,
+     .                                       BEAMMU, BEAMAZ, MEXP)
+C     Builds the 8x8 exponentially-weighted mass matrix using analytical
+C     integration along the beam direction with 2D Gauss quadrature on
+C     the beam entry face. Exact for any cell optical depth.
+C
+C     The direct flux is modeled as F0(r) decaying exponentially along
+C     the beam propagation direction. The effective tau along each ray
+C     is computed from the corner F0 values (bilinear interpolation of
+C     ln(F0) on entry and exit faces).
+C
+C     Method:
+C       1. Determine entry face from beam direction
+C       2. For each 2x2 Gauss point on entry face, trace ray across cell
+C       3. Along each ray, L_i(t)*L_j(t) is degree-6 polynomial in t
+C       4. Integrate L_i*L_j*exp(-tau*t) analytically using In(tau)
+C       5. Sum over entry-face quadrature points
+C
+C     BEAMMU: cosine of beam zenith angle (negative = downward)
+C     BEAMAZ: beam azimuth angle in radians
+C
+      IMPLICIT NONE
+      REAL DX, DY, DZ, F0(8), MEXP(8,8)
+      REAL BEAMMU, BEAMAZ
+Cf2py intent(in) :: DX, DY, DZ, F0, BEAMMU, BEAMAZ
+Cf2py intent(out) :: MEXP
+
+C     Local variables
+      REAL    SX, SY, SZ, SINTH
+      REAL    GP(2), WGP
+      REAL    ENTRY_U, ENTRY_V
+      REAL    X0, Y0, Z0, SMAX
+      REAL    TX, TY, TZ, TMIN
+      REAL    LOGF0(8), LF_ENTRY, LF_EXIT
+      REAL    TAU, ETAU, F0_ENTRY
+      REAL    EIN(0:6)
+      REAL    AX(8), BX(8), AY(8), BY(8), AZ(8), BZ(8)
+      REAL    LI_A, LI_B, LJ_A, LJ_B
+      REAL    POLY_I(0:3), POLY_J(0:3), POLY_IJ(0:6)
+      REAL    CONTRIB
+      INTEGER I, J, K, Q1, Q2, IX, IY, IZ
+      INTEGER ENTRY_FACE
+      REAL    CLAMP, PI_VAL
+      PARAMETER (CLAMP = -50.0, PI_VAL = 3.14159265358979)
+      REAL    FACE_AREA
+      REAL    UQ, VQ
+      REAL    XE, YE, ZE
+
+C     Gauss points on [0,1]
+      GP(1) = 0.5 - 0.5/SQRT(3.0)
+      GP(2) = 0.5 + 0.5/SQRT(3.0)
+      WGP = 0.25
+
+C     Beam direction vector (unit vector, pointing in propagation dir)
+      SINTH = SQRT(1.0 - BEAMMU*BEAMMU)
+      SX = SINTH * COS(BEAMAZ)
+      SY = SINTH * SIN(BEAMAZ)
+      SZ = BEAMMU
+
+C     Determine entry face: face with largest |s_d/d_d|
+C     Entry face codes: 1=x0, 2=x1, 3=y0, 4=y1, 5=z0, 6=z1
+C     Beam enters the face it hits FIRST traveling in +s direction
+      TX = 1.0E30
+      TY = 1.0E30
+      TZ = 1.0E30
+      IF (ABS(SX) .GT. 1.0E-10) THEN
+        IF (SX .GT. 0.0) THEN
+          TX = 0.0
+        ELSE
+          TX = DX / ABS(SX)
+        ENDIF
+        TX = DX / ABS(SX)
+      ENDIF
+      IF (ABS(SY) .GT. 1.0E-10) THEN
+        IF (SY .GT. 0.0) THEN
+          TY = 0.0
+        ELSE
+          TY = DY / ABS(SY)
+        ENDIF
+        TY = DY / ABS(SY)
+      ENDIF
+      IF (ABS(SZ) .GT. 1.0E-10) THEN
+        IF (SZ .GT. 0.0) THEN
+          TZ = 0.0
+        ELSE
+          TZ = DZ / ABS(SZ)
+        ENDIF
+        TZ = DZ / ABS(SZ)
+      ENDIF
+
+C     Entry face is the one the beam crosses in minimum time
+C     For a downward beam (SZ<0), it enters through z=DZ (top face)
+C     Determine by comparing traversal times for each axis
+      IF (ABS(SX)/DX .GE. ABS(SY)/DY .AND.
+     .    ABS(SX)/DX .GE. ABS(SZ)/DZ) THEN
+        IF (SX .GT. 0.0) THEN
+          ENTRY_FACE = 1
+        ELSE
+          ENTRY_FACE = 2
+        ENDIF
+      ELSEIF (ABS(SY)/DY .GE. ABS(SX)/DX .AND.
+     .        ABS(SY)/DY .GE. ABS(SZ)/DZ) THEN
+        IF (SY .GT. 0.0) THEN
+          ENTRY_FACE = 3
+        ELSE
+          ENTRY_FACE = 4
+        ENDIF
+      ELSE
+        IF (SZ .GT. 0.0) THEN
+          ENTRY_FACE = 5
+        ELSE
+          ENTRY_FACE = 6
+        ENDIF
+      ENDIF
+
+C     Compute log of corner fluxes
+      DO K = 1, 8
+        IF (F0(K) .GT. 0.0) THEN
+          LOGF0(K) = LOG(F0(K))
+        ELSE
+          LOGF0(K) = CLAMP
+        ENDIF
+      ENDDO
+
+C     Path length for a ray fully traversing the cell along beam dir
+C     SMAX = min time to exit any face (from entry face)
+      TMIN = 1.0E30
+      IF (ABS(SX) .GT. 1.0E-10) TMIN = MIN(TMIN, DX/ABS(SX))
+      IF (ABS(SY) .GT. 1.0E-10) TMIN = MIN(TMIN, DY/ABS(SY))
+      IF (ABS(SZ) .GT. 1.0E-10) TMIN = MIN(TMIN, DZ/ABS(SZ))
+      SMAX = TMIN
+
+C     Initialize output
+      DO I = 1, 8
+        DO J = 1, 8
+          MEXP(I,J) = 0.0
+        ENDDO
+      ENDDO
+
+C     2x2 Gauss quadrature on entry face
+      DO Q1 = 1, 2
+        DO Q2 = 1, 2
+          UQ = GP(Q1)
+          VQ = GP(Q2)
+
+C         Compute entry point (x0,y0,z0) and face area based on entry face
+          IF (ENTRY_FACE .EQ. 1) THEN
+C           x=0 face, u=y, v=z
+            X0 = 0.0
+            Y0 = UQ * DY
+            Z0 = VQ * DZ
+            FACE_AREA = DY * DZ
+          ELSEIF (ENTRY_FACE .EQ. 2) THEN
+C           x=DX face, u=y, v=z
+            X0 = DX
+            Y0 = UQ * DY
+            Z0 = VQ * DZ
+            FACE_AREA = DY * DZ
+          ELSEIF (ENTRY_FACE .EQ. 3) THEN
+C           y=0 face, u=x, v=z
+            X0 = UQ * DX
+            Y0 = 0.0
+            Z0 = VQ * DZ
+            FACE_AREA = DX * DZ
+          ELSEIF (ENTRY_FACE .EQ. 4) THEN
+C           y=DY face, u=x, v=z
+            X0 = UQ * DX
+            Y0 = DY
+            Z0 = VQ * DZ
+            FACE_AREA = DX * DZ
+          ELSEIF (ENTRY_FACE .EQ. 5) THEN
+C           z=0 face, u=x, v=y
+            X0 = UQ * DX
+            Y0 = VQ * DY
+            Z0 = 0.0
+            FACE_AREA = DX * DY
+          ELSE
+C           z=DZ face (top), u=x, v=y
+            X0 = UQ * DX
+            Y0 = VQ * DY
+            Z0 = DZ
+            FACE_AREA = DX * DY
+          ENDIF
+
+C         Compute actual path length for this ray (may exit through
+C         a different face than the opposite one)
+          TMIN = 1.0E30
+          IF (ABS(SX) .GT. 1.0E-10) THEN
+            IF (SX .GT. 0.0) THEN
+              TMIN = MIN(TMIN, (DX - X0)/SX)
+            ELSE
+              TMIN = MIN(TMIN, -X0/SX)
+            ENDIF
+          ENDIF
+          IF (ABS(SY) .GT. 1.0E-10) THEN
+            IF (SY .GT. 0.0) THEN
+              TMIN = MIN(TMIN, (DY - Y0)/SY)
+            ELSE
+              TMIN = MIN(TMIN, -Y0/SY)
+            ENDIF
+          ENDIF
+          IF (ABS(SZ) .GT. 1.0E-10) THEN
+            IF (SZ .GT. 0.0) THEN
+              TMIN = MIN(TMIN, (DZ - Z0)/SZ)
+            ELSE
+              TMIN = MIN(TMIN, -Z0/SZ)
+            ENDIF
+          ENDIF
+          SMAX = TMIN
+          IF (SMAX .LE. 0.0) CYCLE
+
+C         Compute F0 at entry point (bilinear on entry face from logF0)
+C         and tau along this ray from corner values
+          XE = X0 + SMAX*SX
+          YE = Y0 + SMAX*SY
+          ZE = Z0 + SMAX*SZ
+C         Bilinear interp of logF0 at entry and exit points
+          CALL TRILIN_INTERP_SCALAR(X0/DX, Y0/DY, Z0/DZ,
+     .                              LOGF0, LF_ENTRY)
+          CALL TRILIN_INTERP_SCALAR(XE/DX, YE/DY, ZE/DZ,
+     .                              LOGF0, LF_EXIT)
+          F0_ENTRY = EXP(LF_ENTRY)
+          TAU = LF_ENTRY - LF_EXIT
+          IF (TAU .LT. 0.0) TAU = 0.0
+
+C         Compute In(tau) for n=0..6
+          CALL COMPUTE_EIN(TAU, EIN)
+
+C         For each basis function, compute linear coefficients along ray
+C         L_k(r(t)) = phi_kx(x0+sx*t) * phi_ky(y0+sy*t) * phi_kz(z0+sz*t)
+C         phi_0(x) = 1-x/dx, phi_1(x) = x/dx
+C         Along ray: phi_kx(x0+sx*t) = a_kx + b_kx*(t/smax)
+          DO K = 1, 8
+            IX = MOD(K-1, 2)
+            IY = MOD((K-1)/2, 2)
+            IZ = (K-1)/4
+C           x-component: ix=0 -> phi=1-x/dx, ix=1 -> phi=x/dx
+            IF (IX .EQ. 0) THEN
+              AX(K) = 1.0 - X0/DX
+              BX(K) = -SX*SMAX/DX
+            ELSE
+              AX(K) = X0/DX
+              BX(K) = SX*SMAX/DX
+            ENDIF
+C           y-component
+            IF (IY .EQ. 0) THEN
+              AY(K) = 1.0 - Y0/DY
+              BY(K) = -SY*SMAX/DY
+            ELSE
+              AY(K) = Y0/DY
+              BY(K) = SY*SMAX/DY
+            ENDIF
+C           z-component
+            IF (IZ .EQ. 0) THEN
+              AZ(K) = 1.0 - Z0/DZ
+              BZ(K) = -SZ*SMAX/DZ
+            ELSE
+              AZ(K) = Z0/DZ
+              BZ(K) = SZ*SMAX/DZ
+            ENDIF
+          ENDDO
+
+C         For each (i,j) pair, compute polynomial L_i(u)*L_j(u) and
+C         integrate against exp(-tau*u) using EIN
+          DO I = 1, 8
+C           L_i(u) = (ai_x + bi_x*u)(ai_y + bi_y*u)(ai_z + bi_z*u)
+C           = cubic polynomial. Compute coefficients.
+            CALL CUBIC_FROM_LINEAR3(AX(I), BX(I), AY(I), BY(I),
+     .                              AZ(I), BZ(I), POLY_I)
+            DO J = 1, 8
+              CALL CUBIC_FROM_LINEAR3(AX(J), BX(J), AY(J), BY(J),
+     .                                AZ(J), BZ(J), POLY_J)
+C             Multiply two cubics -> degree 6
+              CALL POLY_MULT_3_3(POLY_I, POLY_J, POLY_IJ)
+C             Integrate: sum_n POLY_IJ(n) * EIN(n) * F0_entry * smax * facearea * wgp
+              CONTRIB = 0.0
+              DO K = 0, 6
+                CONTRIB = CONTRIB + POLY_IJ(K) * EIN(K)
+              ENDDO
+              MEXP(I,J) = MEXP(I,J)
+     .          + WGP * FACE_AREA * SMAX * F0_ENTRY * CONTRIB
+            ENDDO
+          ENDDO
+
+        ENDDO
+      ENDDO
+
+      RETURN
+      END
+
+
+C     ================================================================
+      SUBROUTINE COMPUTE_EIN (TAU, EIN)
+C     Computes the exponential integrals In(tau) = int_0^1 u^n e^{-tau*u} du
+C     for n = 0, 1, ..., 6.
+C     Uses Taylor expansion for small tau, recurrence for moderate/large tau.
+C
+      IMPLICIT NONE
+      REAL TAU, EIN(0:6)
+Cf2py intent(in) :: TAU
+Cf2py intent(out) :: EIN
+      INTEGER N
+      REAL ETAU, TAU2, TAU3, TAU4
+
+      IF (TAU .LT. 1.0E-4) THEN
+C       Taylor expansion: In ≈ 1/(n+1) - tau/(n+2) + tau^2/(2(n+3))
+C                                - tau^3/(6(n+4)) + tau^4/(24(n+5))
+        TAU2 = TAU*TAU
+        TAU3 = TAU2*TAU
+        TAU4 = TAU3*TAU
+        DO N = 0, 6
+          EIN(N) = 1.0/REAL(N+1)
+     .           - TAU/REAL(N+2)
+     .           + TAU2/(2.0*REAL(N+3))
+     .           - TAU3/(6.0*REAL(N+4))
+     .           + TAU4/(24.0*REAL(N+5))
+        ENDDO
+      ELSEIF (TAU .GT. 500.0) THEN
+C       Asymptotic: In ≈ n!/tau^(n+1) for large tau
+        EIN(0) = 1.0/TAU
+        DO N = 1, 6
+          EIN(N) = REAL(N)*EIN(N-1)/TAU
+        ENDDO
+      ELSE
+C       Direct computation with recurrence
+C       I0 = (1 - e^{-tau})/tau
+C       In = (n*I_{n-1} - e^{-tau})/tau
+        ETAU = EXP(-TAU)
+        EIN(0) = (1.0 - ETAU)/TAU
+        DO N = 1, 6
+          EIN(N) = (REAL(N)*EIN(N-1) - ETAU)/TAU
+        ENDDO
+      ENDIF
+
+      RETURN
+      END
+
+
+C     ================================================================
+      SUBROUTINE CUBIC_FROM_LINEAR3 (A1, B1, A2, B2, A3, B3, POLY)
+C     Computes the cubic polynomial coefficients of:
+C       (a1 + b1*u) * (a2 + b2*u) * (a3 + b3*u)
+C     Result: POLY(0) + POLY(1)*u + POLY(2)*u^2 + POLY(3)*u^3
+C
+      IMPLICIT NONE
+      REAL A1, B1, A2, B2, A3, B3, POLY(0:3)
+Cf2py intent(in) :: A1, B1, A2, B2, A3, B3
+Cf2py intent(out) :: POLY
+      REAL P12_0, P12_1, P12_2
+
+C     First multiply (a1+b1*u)*(a2+b2*u) -> quadratic
+      P12_0 = A1*A2
+      P12_1 = A1*B2 + B1*A2
+      P12_2 = B1*B2
+
+C     Then multiply by (a3+b3*u) -> cubic
+      POLY(0) = P12_0*A3
+      POLY(1) = P12_0*B3 + P12_1*A3
+      POLY(2) = P12_1*B3 + P12_2*A3
+      POLY(3) = P12_2*B3
+
+      RETURN
+      END
+
+
+C     ================================================================
+      SUBROUTINE POLY_MULT_3_3 (P, Q, R)
+C     Multiplies two cubic polynomials P(0:3) and Q(0:3) to produce
+C     a degree-6 polynomial R(0:6).
+C
+      IMPLICIT NONE
+      REAL P(0:3), Q(0:3), R(0:6)
+Cf2py intent(in) :: P, Q
+Cf2py intent(out) :: R
+      INTEGER I, J
+
+      DO I = 0, 6
+        R(I) = 0.0
+      ENDDO
+      DO I = 0, 3
+        DO J = 0, 3
+          R(I+J) = R(I+J) + P(I)*Q(J)
+        ENDDO
+      ENDDO
+
+      RETURN
+      END
+
+
+C     ================================================================
+      SUBROUTINE TRILIN_INTERP_SCALAR (U, V, W, VALS, RESULT)
+C     Trilinear interpolation of 8 corner values at normalized
+C     coordinates (u,v,w) in [0,1]^3.
+C     Corner ordering: IOCT = 1 + BITX + 2*BITY + 4*BITZ
+C
+      IMPLICIT NONE
+      REAL U, V, W, VALS(8), RESULT
+Cf2py intent(in) :: U, V, W, VALS
+Cf2py intent(out) :: RESULT
+
+      RESULT = (1.0-U)*(1.0-V)*(1.0-W)*VALS(1)
+     .       + U*(1.0-V)*(1.0-W)*VALS(2)
+     .       + (1.0-U)*V*(1.0-W)*VALS(3)
+     .       + U*V*(1.0-W)*VALS(4)
+     .       + (1.0-U)*(1.0-V)*W*VALS(5)
+     .       + U*(1.0-V)*W*VALS(6)
+     .       + (1.0-U)*V*W*VALS(7)
+     .       + U*V*W*VALS(8)
+
       RETURN
       END
 
