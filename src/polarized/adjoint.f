@@ -24,13 +24,15 @@ C     -JRLoveridge / derived from plan 2026
      .           NX, NY, NZ, ML, MM, NLM, NPTS, NCELLS,
      .           GRIDPTR, TREEPTR, GRIDPOS, CELLFLAGS,
      .           RSHPTR, SHPTR, RADIANCE, SOURCE, DIRFLUX,
-     .           RSHPTR_PF, SHPTR_PF, RADIANCE_PF, SOURCE_PF,
-     .           DIRFLUX_PF,
+     .           RSHPTR_PF, RADIANCE_PF,
+     .           DIRFLUX_PF, RADSOLAR_PF,
      .           SOLARMU, SOLARAZ, YLMSUN,
      .           DET_STOKES, CELLWISE_DET,
      .           MU_PF_CELL, PHI_PF_CELL,
      .           USE_LOGLINEAR_DIRFLUX,
-     .           POINT_SENS, IERR, ERRMSG)
+     .           MAXPG,NUMDER, INTERPPTR,OPTINTERPWT, DEXTM,
+     .           POINT_SENS_EXT, IERR, ERRMSG,
+     .           POINT_SENS_RTGRID)
 C     Computes the per-grid-point sensitivity POINT_SENS(1:NPTS) such
 C     that for any extinction parameter x_p:
 C       dI/dx_p = sum_g POINT_SENS(g) * d_sigma_ext(g)/dx_p
@@ -70,10 +72,10 @@ Cf2py intent(in) :: RSHPTR, SHPTR
 Cf2py intent(in) :: RADIANCE, SOURCE
       REAL    DIRFLUX(NPTS)
 Cf2py intent(in) :: DIRFLUX
-      INTEGER RSHPTR_PF(NPTS+1), SHPTR_PF(NPTS+1)
-Cf2py intent(in) :: RSHPTR_PF, SHPTR_PF
-      REAL    RADIANCE_PF(NSTOKES,*), SOURCE_PF(NSTOKES,*)
-Cf2py intent(in) :: RADIANCE_PF, SOURCE_PF
+      INTEGER RSHPTR_PF(NPTS+1)
+Cf2py intent(in) :: RSHPTR_PF
+      REAL    RADIANCE_PF(NSTOKES,*), RADSOLAR_PF(NPTS)
+Cf2py intent(in) :: RADIANCE_PF, RADSOLAR_PF
       REAL    DIRFLUX_PF(NPTS)
 Cf2py intent(in) :: DIRFLUX_PF
       REAL    SOLARMU, SOLARAZ
@@ -88,14 +90,27 @@ Cf2py intent(in) :: CELLWISE_DET
 Cf2py intent(in) :: MU_PF_CELL, PHI_PF_CELL
       LOGICAL USE_LOGLINEAR_DIRFLUX
 Cf2py intent(in) :: USE_LOGLINEAR_DIRFLUX
-      REAL    POINT_SENS(NPTS)
-Cf2py intent(out) :: POINT_SENS
+      INTEGER INTERPPTR(8,NPTS)
+Cf2py intent(in) :: INTERPPTR
+      REAL    OPTINTERPWT(8,NPTS)
+Cf2py intent(in) :: OPTINTERPWT
+      INTEGER NUMDER
+Cf2py intent(in) :: NUMDER
+      INTEGER MAXPG
+Cf2py intent(in) :: MAXPG
+      REAL    DEXTM(MAXPG,NUMDER)
+Cf2py intent(in) :: DEXTM
+      REAL    POINT_SENS_EXT(MAXPG,NUMDER)
+Cf2py intent(out) :: POINT_SENS_EXT
+      REAL    POINT_SENS_RTGRID(NPTS)
+Cf2py intent(out) :: POINT_SENS_RTGRID
+
       INTEGER IERR
       CHARACTER ERRMSG*600
 Cf2py intent(out) :: IERR, ERRMSG
 
 C     --- Local variables ---
-      INTEGER IC, I, K, J, L, S, IP(8)
+      INTEGER IC, I, K, J, L, S, IP(8), IDR, IB
       INTEGER NR_FWD, NR_PF, NS_FWD, NMIN
       REAL    DX, DY, DZ, VOL
       REAL    M3(8,8,8)
@@ -103,8 +118,11 @@ C     --- Local variables ---
       REAL    F0_CORNERS(8)
       REAL    P_AA(8,8), P_JA(8,8)
       REAL    IADJ_SOL(8), IFWD_DET(8), JFWD_DET(8)
+      REAL    IADJ_SOL_FILT(8)
       REAL    A_IC(8), B_IC(8), C_IC(8), D_IC(8), E_IC(8)
-      REAL    ACC
+      REAL    TA_IC(8), TB_IC(8)
+      REAL    P_AA_FILT(8,8)
+      REAL    ACC, ACC_FILT
       REAL    YLM_DET(NSTLEG,NLM)
       REAL    SIGN_ADJ(NLM)
       INTEGER LOFJ(NLM)
@@ -140,8 +158,14 @@ C     mu -> -mu, phi -> phi + pi
       ENDIF
 
 C     --- Initialize output ---
+      DO I = 1, MAXPG
+        DO J = 1, NUMDER
+          POINT_SENS_EXT(I,J) = 0.0
+        ENDDO
+      ENDDO
+
       DO I = 1, NPTS
-        POINT_SENS(I) = 0.0
+        POINT_SENS_RTGRID(I) = 0.0
       ENDDO
 
 C     ================================================================
@@ -183,6 +207,8 @@ C       P_AA(j,k) = integral_S2 I_d(j) * I_adj(k) dOmega
 C         = sum_J sum_s RAD(s,J@j) * SIGN_ADJ(J) * RAD_PF(s,J@k)
 C       For s=1,2,3: RSTOKES=+1; for s=4: RSTOKES=-1 (Stokes V flip)
 C       A_i = -sum_j sum_k M3(i,j,k) * P_AA(j,k)
+C       Also computes P_AA_FILT for albedo gradient (Term TA):
+C       P_AA_FILT(j,k) = sum_J CHI_NORM(J,j)*RAD(J@j)*SIGN_ADJ(J)*RAD_PF(J@k)
 C       ============================================================
         DO I = 1, 8
           DO K = 1, 8
@@ -230,12 +256,17 @@ C       Term B: cross-Parseval with cross-node products
 C       P_JA(j,k) = integral_S2 J_fwd(j) * I_adj(k) dOmega
 C       B_i = +sum_j sum_k M3(i,j,k) * P_JA(j,k)
 C       ============================================================
+C       TODO: Need to subtract filtered direct beam and evaluate
+C             Exact derivatives using exact phase function and
+C             solar transmission derivatives.
+C             Put this option under delta-M.
         DO I = 1, 8
           DO K = 1, 8
             NS_FWD = SHPTR(IP(I)+1) - SHPTR(IP(I))
             NR_PF  = RSHPTR_PF(IP(K)+1) - RSHPTR_PF(IP(K))
             NMIN   = MIN(NS_FWD, NR_PF)
             ACC = 0.0
+
             IF (NSTOKES .LT. 4) THEN
               DO J = 1, NMIN
                 DO S = 1, NSTOKES
@@ -284,13 +315,9 @@ C         ---- Term C: adjoint Stokes-I at solar direction ----
 C         hat_I_adj_1(Omega_0) = sum_J SIGN_ADJ(J)*RAD_PF(1,J)
 C                                      *YLMSUN(1,J)
 C         Only Stokes-I needed; YLMSUN(1,J) unaffected by TRANSPOSE.
-          NR_PF = RSHPTR_PF(IP(K)+1) - RSHPTR_PF(IP(K))
-          ACC = 0.0
-          DO J = 1, NR_PF
-            ACC = ACC + SIGN_ADJ(J) * YLMSUN(1,J)
-     .                * RADIANCE_PF(1, RSHPTR_PF(IP(K))+J)
-          ENDDO
-          IADJ_SOL(K) = -ACC
+C         Also compute filtered version for albedo gradient (Term TB).
+
+          IADJ_SOL(K) = -RADSOLAR_PF(IP(K))
 
 C         ---- Term D: forward diffuse at detector direction ----
 C         Evaluate Stokes component DET_STOKES of forward radiance
@@ -319,13 +346,13 @@ C         Beam-traced analytical exponential mass matrix
           DO K = 1, 8
             F0_CORNERS(K) = DIRFLUX(IP(K)) / ABS(SOLARMU)
           ENDDO
-          CALL BUILD_EXP_MASS_MATRIX_BEAM(DX, DY, DZ, F0_CORNERS,
-     .         SOLARMU, SOLARAZ, MEXP)
+          CALL BUILD_EXP_MASS_MATRIX(DX, DY, DZ, F0_CORNERS, MEXP)
+C     .         SOLARMU, SOLARAZ, MEXP)
           DO K = 1, 8
             F0_CORNERS(K) = DIRFLUX_PF(IP(K)) / ABS(MU_PF_CELL(IC))
           ENDDO
-          CALL BUILD_EXP_MASS_MATRIX_BEAM(DX, DY, DZ, F0_CORNERS,
-     .         MU_PF_CELL(IC), PHI_PF_CELL(IC), MEXP_PF)
+          CALL BUILD_EXP_MASS_MATRIX(DX, DY, DZ, F0_CORNERS, MEXP_PF)
+C     .         MU_PF_CELL(IC), PHI_PF_CELL(IC), MEXP_PF)
 
           DO I = 1, 8
             C_IC(I) = 0.0
@@ -356,12 +383,23 @@ C         Trilinear (M3-based) direct beam: sum_j sum_k M3(i,j,k)*f(k)*field(j)
           ENDDO
         ENDIF
 
-C       Scatter per-corner contributions to global point sensitivity
         DO I = 1, 8
-          POINT_SENS(IP(I)) = POINT_SENS(IP(I))
+          POINT_SENS_RTGRID(IP(I)) = POINT_SENS_RTGRID(IP(I)) 
+     .      + A_IC(I) + B_IC(I) + C_IC(I)
+        ENDDO
+
+C       Scatter per-corner contributions to global point sensitivity
+        DO IDR = 1, NUMDER
+          DO IB = 1, 8
+            DO I = 1, 8
+              POINT_SENS_EXT(INTERPPTR(IB,IP(I)),IDR) = 
+     .          POINT_SENS_EXT(INTERPPTR(IB,IP(I)),IDR)
+     .        + OPTINTERPWT(IB,IP(I))*DEXTM(IB,IDR)*(
      .        + A_IC(I) + B_IC(I)
-     .        + C_IC(I)
-C     .        + D_IC(I) + E_IC(I)
+     .        + C_IC(I))
+C .        + D_IC(I) + E_IC(I) )
+            ENDDO
+          ENDDO
         ENDDO
 
       ENDDO
