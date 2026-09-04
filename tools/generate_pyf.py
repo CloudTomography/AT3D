@@ -146,6 +146,7 @@ F2PY_CORE_API = [
     "calc_mw_gas_absorption",
     "integrate_thermal_source",
     "ckdfu",
+    "fqetd",
 ]
 
 MODULE_NAME = "core"

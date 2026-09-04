@@ -471,7 +471,8 @@ C           inequality holds.
      .               PHASEINTERPWT, PHASEMAX, NLEGP,
      .               MAXNMICRO, PHASEWTP, SOLVE, COMPTIME, NEWMETHOD,
      .               TRANSMIN, SPLITCRIT, SURFACE_RAD, SFCGRIDRAD, 
-     .               VOLSRC, VOLSRCGRIDPTR,VOLSRCSHPTR, NVOLSRC)
+     .               VOLSRC, VOLSRCGRIDPTR,VOLSRCSHPTR, NVOLSRC,
+     .               USE_ETD)
 Cf2py threadsafe
 C       Performs the SHDOM solution procedure.
 C       Output is returned in SOURCE, RADIANCE, FLUXES, DIRFLUX.
@@ -479,6 +480,8 @@ C       The adaptive grid stucture (NCELLS,GRIDPTR,NEIGHPTR,TREEPTR,
 C       CELLFLAGS,NPTS,GRIDPOS) is input and modified for new grid
 C       cells and points on output.
       IMPLICIT NONE
+      LOGICAL USE_ETD
+Cf2py intent(in) :: USE_ETD
       INTEGER NSTOKES, NX, NY, NZ, NX1, NY1, NXSFC, NYSFC, NSFCPAR
 Cf2py intent(in) :: NSTOKES, NX, NY, NX1, NY1, NZ, NXSFC, NYSFC, NSFCPAR
       INTEGER ML, MM, NCS, NLM, NMU, NPHI, NANG, NLEG, NSTLEG, NUMPHASE
@@ -750,7 +753,7 @@ C             discrete ordinates.
      .           WORK, WORK1, WORK2, OLDNPTS, SP, STACK, IX, IY,
      .           IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ,
      .           TRANSMIN, SURFACE_RAD, NX1, NY1, DELX, DELY,
-     .           SFCGRIDRAD)
+     .           SFCGRIDRAD, USE_ETD)
 
 C            Compute the source function from the radiance field,
 C              do the adaptive spherical harmonics truncation, compute
@@ -1849,7 +1852,8 @@ C     input acceleration parameter (ACCELPAR).
      .             SHPTR, SOURCE, RSHPTR, RADIANCE,
      .             WORK, SWEEPORD, GRIDRAD, OLDNPTS, SP, STACK,
      .        IX, IY, IZ, SIX, SIY, SIZ, EIX, EIY, EIZ, DIX, DIY, DIZ,
-     .        TRANSMIN, SURFACE_RAD, NX1, NY1, DELX, DELY, SFCGRIDRAD)
+     .        TRANSMIN, SURFACE_RAD, NX1, NY1, DELX, DELY, SFCGRIDRAD,
+     .        USE_ETD)
 C       Performs the path integrations through the medium specified by
 C     the extinction (EXTINCT) and source function (SOURCE) in
 C     spherical harmonic space.  The source function is transformed to
@@ -1874,6 +1878,8 @@ C     For the general BRDF, the BCRAD array in addition holds the
 C     downwelling radiances at all discrete ordinates for the bottom
 C     boundary points.
       IMPLICIT NONE
+      LOGICAL USE_ETD
+Cf2py intent(in) :: USE_ETD
       INTEGER NX, NY, NZ, NSTOKES, NSTLEG, ML, MM, NLM
 Cf2py intent(in) :: NX, NY, NZ, NSTOKES, NSTLEG, ML, MM, NLM
       INTEGER NMU, NPHI0MAX, NPHI0(NMU), NANG
@@ -2103,7 +2109,7 @@ C             Do backward path integration from each grid point not done yet
      .               GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .               GRIDPOS, XGRID, YGRID, ZGRID, SWEEPORD,
      .               MU(IMU),PHI(IMU,IPHI), TRANSMIN, BCFLAG, IPFLAG,
-     .               EXTINCT, WORK, IPHI, GRIDRAD)
+     .               EXTINCT, WORK, IPHI, GRIDRAD, USE_ETD)
             ELSE
              CALL BACK_INT_GRID3D (NX, NY, NZ, NPHI0MAX, NPTS, NCELLS,
      .               GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
@@ -3696,7 +3702,7 @@ C             to stop the tracing and add in the interpolated face radiance.
      .             GRIDPTR, NEIGHPTR, TREEPTR, CELLFLAGS,
      .             GRIDPOS, XGRID, YGRID, ZGRID, SWEEPORD,
      .             MU, PHI, TRANSMIN, BCFLAG, IPFLAG,
-     .             EXTINCT, SOURCE, KANG, GRIDRAD)
+     .             EXTINCT, SOURCE, KANG, GRIDRAD, USE_ETD)
 C       Sweeps through the spatial grid computing radiances for the
 C     discrete ordinate direction (MU,PHI) by integrating the source
 C     function and extinction backward from each point.  The sweeping
@@ -3709,6 +3715,7 @@ C     across the cell is done and added to the radiance.  The radiance
 C     at the end of the ray path is interpolated from the known grid point
 C     radiances on the face.  The resulting radiances are put in GRIDRAD.
       INTEGER NX, NY, NZ, NA, NPTS, NCELLS, KANG, BCFLAG, IPFLAG
+      LOGICAL USE_ETD
       INTEGER GRIDPTR(8,NCELLS), NEIGHPTR(6,NCELLS), TREEPTR(2,NCELLS)
       INTEGER SWEEPORD(NPTS,*)
       INTEGER*2 CELLFLAGS(NCELLS)
@@ -3728,6 +3735,7 @@ C     radiances on the face.  The resulting radiances are put in GRIDRAD.
       DOUBLE PRECISION EXT, EXT0, EXT1, SRC, SRCEXT0, SRCEXT1
       DOUBLE PRECISION EXT0P, SRCEXT0P
       DOUBLE PRECISION TAU, TRANSCELL, ABSCELL, RAD, RAD0, TRANSMIT
+
       DATA GRIDFACE/1,3,5,7, 2,4,6,8,  1,2,5,6, 3,4,7,8,
      .              1,2,3,4, 5,6,7,8/, OPPFACE/2,1,4,3,6,5/
       DATA JOCTORDER3/1,3,5,7,2,4,6,8/, JOCTORDER2/1,3,1,3,2,4,2,4/
@@ -3944,48 +3952,57 @@ C             Correctly interpolate source using extinction*source
      .             + F2*SOURCE(KANG,I2)*EXTINCT(I2)
      .             + F3*SOURCE(KANG,I3)*EXTINCT(I3)
      .             + F4*SOURCE(KANG,I4)*EXTINCT(I4))
+
 C             Compute the cell radiance: integration of the source function
-          EXT = 0.5*(EXT0+EXT1)
-          TAU=EXT*SO
-          IF (TAU .GE. 0.5) THEN
-            TRANSCELL = EXP(-TAU)
-            ABSCELL = 1.0 - TRANSCELL
+          IF (USE_ETD) THEN
+            CALL FQETD(EXT0, EXT1, SRCEXT0, 
+     .       SRCEXT1, 1,SO, SRC, TRANSCELL, ABSCELL)
+            SRC = MAX(SRC,0.0D0)
+            RAD = RAD + TRANSMIT*SRC
+            TRANSMIT = TRANSMIT*TRANSCELL
           ELSE
-            ABSCELL = TAU*(1.0-0.5*TAU*
-     .                 (1.0-0.33333333333*TAU*(1-0.25*TAU)))
-            TRANSCELL = 1.0 - ABSCELL
-          ENDIF
-          IF (TAU .LE. 2.0) THEN
-            IF (EXT .EQ. 0.0) THEN
-              SRC = 0.0
+            EXT = 0.5*(EXT0+EXT1)
+            TAU=EXT*SO
+            IF (TAU .GE. 0.5) THEN
+              TRANSCELL = EXP(-TAU)
+              ABSCELL = 1.0 - TRANSCELL
             ELSE
-C                 Linear extinction, linear source*extinction, to first order
-              SRC = ( 0.5*(SRCEXT0+SRCEXT1)
-     .             + 0.08333333333*(EXT0*SRCEXT1-EXT1*SRCEXT0)*SO )/EXT
+              ABSCELL = TAU*(1.0-0.5*TAU*
+     .                  (1.0-0.33333333333*TAU*(1-0.25*TAU)))
+              TRANSCELL = 1.0 - ABSCELL
             ENDIF
-          ELSE
+            IF (TAU .LE. 2.0) THEN
+              IF (EXT .EQ. 0.0) THEN
+                SRC = 0.0
+              ELSE
+C                 Linear extinction, linear source*extinction, to first order
+                SRC = ( 0.5*(SRCEXT0+SRCEXT1)
+     .             + 0.08333333333*(EXT0*SRCEXT1-EXT1*SRCEXT0)*SO )/EXT
+              ENDIF
+            ELSE
 C               Combined first order expansion and constant extinction formula
 c            SRC = 0.5/EXT *( SRCEXT0+SRCEXT1
 c     .             + (EXT0*SRCEXT1-EXT1*SRCEXT0)*SO
 c     .                 *(1-2/TAU+2*TRANSCELL/ABSCELL)/TAU )
-            EXT0P = EXT0
-            SRCEXT0P = SRCEXT0
-            IF (TAU .GT. 4.0) THEN
-              EXT0P = EXT1 + (EXT0-EXT1)*4.0/TAU
-              IF (EXT0 .GT. 0.0) SRCEXT0P = SRCEXT0*EXT0P/EXT0
-            ENDIF
-            SRC = 1.0/(EXT0P+EXT1) *( SRCEXT0P+SRCEXT1
+              EXT0P = EXT0
+              SRCEXT0P = SRCEXT0
+              IF (TAU .GT. 4.0) THEN
+                EXT0P = EXT1 + (EXT0-EXT1)*4.0/TAU
+                IF (EXT0 .GT. 0.0) SRCEXT0P = SRCEXT0*EXT0P/EXT0
+              ENDIF
+              SRC = 1.0/(EXT0P+EXT1) *( SRCEXT0P+SRCEXT1
      .             + (EXT0P*SRCEXT1-EXT1*SRCEXT0P)*2.0/(EXT0P+EXT1)
      .                 *(1-2/TAU+2*TRANSCELL/ABSCELL) )
-          ENDIF
-          SRC = MAX(SRC,0.0D0)
-
+            ENDIF
+            SRC = MAX(SRC,0.0D0)
 C             Add in the cell radiance and update the transmission.
 C             If this is a boundary or the transmission is below the
 C             cutoff and we have a valid radiance then set the flag
 C             to stop the tracing and add in the interpolated face radiance.
-          RAD = RAD + TRANSMIT*SRC*ABSCELL
-          TRANSMIT = TRANSMIT*TRANSCELL
+
+            RAD = RAD + TRANSMIT*SRC*ABSCELL
+            TRANSMIT = TRANSMIT*TRANSCELL
+          ENDIF
           if (RAD < -1.0E-5) then
             print '(A,3(1X,F6.4),8(1X,E12.5))',
      .         'BACK_INT_GRID3D: RAD<0 ',
@@ -4030,8 +4047,268 @@ C             to stop the tracing and add in the interpolated face radiance.
 
       RETURN
       END
+C ======================================================================
+C     FAST QUADRATIC ETD CELL INTEGRATOR (FQETD)
+C     Computes exact cell emission and transmission assuming linear
+C     extinction and source gradients.
+C
+C     Arguments:
+C       EXT0       : Extinction at upstream face (entry, s = 0)
+C       EXT1       : Extinction at grid point (exit, s = SO)
+C       SRCEXT0    : Source*Extinction array at upstream face (NSTOKES)
+C       SRCEXT1    : Source*Extinction array at grid point (NSTOKES)
+C       NSTOKES    : Number of Stokes components / channels
+C       SO         : Path length through the cell segment
+C       SRC        : Output integrated cell radiance array (NSTOKES)
+C       TRANSCELL  : Output transmission across the cell
+C ======================================================================
+      SUBROUTINE FQETD(EXT0, EXT1, SRCEXT0, SRCEXT1, NSTOKES, SO,
+     .                 SRC, TRANSCELL, ABSCELL)
+      IMPLICIT NONE
+      INTEGER NSTOKES
+      DOUBLE PRECISION EXT0, EXT1, SO, TRANSCELL, ABSCELL
+      DOUBLE PRECISION SRCEXT0(NSTOKES), SRCEXT1(NSTOKES)
+      DOUBLE PRECISION SRC(NSTOKES)
+
+Cf2py intent(in)  :: EXT0, EXT1, NSTOKES, SO
+Cf2py intent(in)  :: SRCEXT0, SRCEXT1
+Cf2py intent(out) :: SRC, TRANSCELL, ABSCELL
+Cf2py depend(NSTOKES) :: SRCEXT0, SRCEXT1, SRC
+
+      DOUBLE PRECISION EXT
+      DOUBLE PRECISION EXT_GRAD, TAU, Z_SCALED, ETA_SCALED
+      DOUBLE PRECISION ETA2, ETA3, ETA4, CQI
+      DOUBLE PRECISION SQRT_GRAD, U0, U1, INT_0, INT_1
+      DOUBLE PRECISION K_GRAD, SQRT_K, V0, V1, PI
+      DOUBLE PRECISION PHI(10)
+      INTEGER I
+      
+      DOUBLE PRECISION FAST_DAWSN, FAST_ERFCX
+      EXTERNAL FAST_DAWSN, FAST_ERFCX
+
+C     --- Edge Case Guard: Zero path length ---
+      IF (SO .LE. 1.0D-12) THEN
+          TRANSCELL = 1.0D0
+          ABSCELL = 0.0D0
+          DO I = 1, NSTOKES
+              SRC(I) = 0.0D0
+          END DO
+          RETURN
+      END IF
+
+      PI = 3.14159265358979323846D0
+      EXT_GRAD = (EXT1 - EXT0) / (2.0D0 * SO)
+      TAU = 0.5D0 * (EXT0 + EXT1) * SO
+      IF (TAU .GE. 0.5D0) THEN
+          TRANSCELL = DEXP(-TAU)
+          ABSCELL = 1.0D0 - TRANSCELL
+      ELSE
+          ! Stable series expansion for small optical paths to prevent cancellation
+          ABSCELL = TAU * (1.0D0 - 0.5D0 * TAU * 
+     .              (1.0D0 - 0.333333333333333D0 * TAU * 
+     .              (1.0D0 - 0.25D0 * TAU)))
+          TRANSCELL = 1.0D0 - ABSCELL
+      END IF
+      IF (TAU .EQ. 1.0D-12) THEN
+        SRC = 0.0D0
+      ELSE IF (TAU .LE. 5D-2) THEN
+        EXT = 0.5D0*(EXT0 + EXT1)
+        SRC = ABSCELL * ( 0.5D0*(SRCEXT0+SRCEXT1)
+     .     + 0.08333333333D0*(EXT0*SRCEXT1-EXT1*SRCEXT0)*SO )/(EXT)
+      ELSE
+
+C     Scaled variables mapped to start of ray (EXT0)
+      Z_SCALED = EXT0 * SO
+      ETA_SCALED = EXT_GRAD * SO * SO
+
+C     ==================================================================
+C     Branch A: Small extinction gradient (|eta| < 1e-3)
+C     ==================================================================
+      IF (DABS(ETA_SCALED) .LT. 5.0D-2) THEN
+          CALL COMPUTE_PHI_FAST(Z_SCALED, PHI)
+          ETA2 = ETA_SCALED * ETA_SCALED
+          ETA3 = ETA2 * ETA_SCALED
+          ETA4 = ETA3 * ETA_SCALED
+
+          INT_0 = SO * (PHI(1) - ETA_SCALED * PHI(3) 
+     .          + 0.5D0 * ETA2 * PHI(5) - (ETA3 / 6.0D0) * PHI(7) 
+     .          + (ETA4 / 24.0D0) * PHI(9))
+
+          INT_1 = (SO * SO) * (PHI(2) - ETA_SCALED * PHI(4) 
+     .          + 0.5D0 * ETA2 * PHI(6) - (ETA3 / 6.0D0) * PHI(8) 
+     .          + (ETA4 / 24.0D0) * PHI(10))
+          INT_1 = SO * INT_0 - INT_1
+C     ==================================================================
+C     Branch B: Extinction decreases along ray (EXT1 < EXT0)
+C     ==================================================================
+      ELSE IF (EXT_GRAD .LT. 0.0D0) THEN
+          K_GRAD = -EXT_GRAD
+          SQRT_K = DSQRT(K_GRAD)
+          U0 = EXT1 / (2.0D0 * SQRT_K)
+          U1 = EXT0 / (2.0D0 * SQRT_K)
+
+          INT_0 = (DSQRT(PI) / (2.0D0 * SQRT_K)) * 
+     .         (ERFC_SCALED(U0) - TRANSCELL * ERFC_SCALED(U1))          
+          
+          INT_1 = (1.0D0 - TRANSCELL - EXT0 * INT_0) / 
+     .            (2.0D0 * EXT_GRAD)
+
+C     ==================================================================
+C     Branch C: Extinction increases along ray (EXT1 > EXT0)
+C     ==================================================================
+      ELSE
+          SQRT_GRAD = DSQRT(EXT_GRAD)
+          V0 = EXT0 / (2.0D0 * SQRT_GRAD)
+          V1 = SQRT_GRAD * SO + V0
+
+          INT_0 = (1.0D0 / SQRT_GRAD) * (FAST_DAWSN(V1) 
+     .          - TRANSCELL * FAST_DAWSN(V0))
+          
+          INT_1 = (1.0D0 - TRANSCELL - EXT0 * INT_0) / 
+     .            (2.0D0 * EXT_GRAD)
+      END IF
+
+C     ==================================================================
+C     Vectorized Source Integration over NSTOKES
+C     ==================================================================
+      DO I = 1, NSTOKES
+          CQI = (SRCEXT1(I) - SRCEXT0(I)) / SO
+          SRC(I) = SRCEXT0(I) * INT_0 + CQI * INT_1
+      END DO
+      ENDIF
+      RETURN
+      END
+
+c C ======================================================================
+c C     HIGH-ACCURACY EXTENDED-TAIL DAWSON FUNCTION
+c C ======================================================================
+c       DOUBLE PRECISION FUNCTION FAST_DAWSN(X)
+c       IMPLICIT NONE
+c       DOUBLE PRECISION X, XABS, X2, X4, X6, NUM, DEN
+
+c       IF (X .EQ. 0.0D0) THEN
+c           FAST_DAWSN = 0.0D0
+c           RETURN
+c       END IF
+
+c       XABS = DABS(X)
+c       X2 = XABS * XABS
+
+c       IF (XABS .LT. 2.5D0) THEN
+c           ! Standard stable rational core for small-to-moderate x
+c           NUM = 1.0D0 + X2 * (0.1051564023405313D0 + X2 * 
+c      .          (0.0345759132104932D0 + X2 * (0.0036034120395301D0 + 
+c      .          X2 * 0.0001095209304910D0)))
+          
+c           DEN = 1.0D0 + X2 * (0.7718230690071980D0 + X2 * 
+c      .          (0.2844781031940930D0 + X2 * (0.0531536031201940D0 + 
+c      .          X2 * 0.0042456010034020D0)))
+          
+c           FAST_DAWSN = XABS * (NUM / DEN)
+c       ELSE
+c           ! Extended asymptotic series with higher-order terms for large x
+c           X4 = X2 * X2
+c           X6 = X4 * X2
+c           FAST_DAWSN = (0.5D0
+c      .                 + 0.5D0/ X2 
+c      .                 + 0.75D0/ X4 
+c      .                 + 1.875D0/ X6
+c      .                 + 5.46875D0/ (X4 * X4)) / XABS
+c       END IF
+
+c       IF (X .LT. 0.0D0) THEN
+c           FAST_DAWSN = -FAST_DAWSN
+c       END IF
+
+c       RETURN
+c       END
+
+C ======================================================================
+C     LOOP-FREE DAWSONS INTEGRAL
+C ======================================================================
+      DOUBLE PRECISION FUNCTION FAST_DAWSN(X)
+      IMPLICIT NONE
+      DOUBLE PRECISION X, XABS, X2, NUM, DEN
+
+      XABS = DABS(X)
+      X2 = XABS * XABS
+
+      IF (XABS .LT. 2.5D0) THEN
+          NUM = 1.0D0 + X2 * (0.1051564023405313D0 + X2 * 
+     .          (0.0345759132104932D0 + X2 * (0.0036034120395301D0 + 
+     .          X2 * 0.0001095209304910D0)))
+                  
+          DEN = 1.0D0 + X2 * (0.7718230690071980D0 + X2 * 
+     .          (0.2844781031940930D0 + X2 * (0.0531536031201940D0 + 
+     .          X2 * 0.0042456010034020D0)))
+                  
+          FAST_DAWSN = XABS * (NUM / DEN)
+      ELSE
+          FAST_DAWSN = (1.0D0 + 0.5D0/X2 + 0.75D0/(X2*X2)) / 
+     .                 (2.0D0 * XABS)
+      END IF
+
+      IF (X .LT. 0.0D0) FAST_DAWSN = -FAST_DAWSN
+
+      RETURN
+      END
 
 
+C ======================================================================
+C     LOOP-FREE SCALED ERROR FUNCTION
+C ======================================================================
+      DOUBLE PRECISION FUNCTION FAST_ERFCX(X)
+      IMPLICIT NONE
+      DOUBLE PRECISION X, T
+      DOUBLE PRECISION P, A1, A2, A3, A4, A5
+      PARAMETER (P  = 0.3275911D0)
+      PARAMETER (A1 = 0.254829592D0)
+      PARAMETER (A2 = -0.284496736D0)
+      PARAMETER (A3 = 1.421413741D0)
+      PARAMETER (A4 = -1.453152027D0)
+      PARAMETER (A5 = 1.061405429D0)
+
+      T = 1.0D0 / (1.0D0 + P * X)
+      FAST_ERFCX = T * (A1 + T * (A2 + T * (A3 + T * (A4 + T * A5))))
+
+      RETURN
+      END
+
+
+C ======================================================================
+C     LOOP-FREE PHI FUNCTION EVALUATOR
+C ======================================================================
+      SUBROUTINE COMPUTE_PHI_FAST(Z_SCALED, PHI)
+      IMPLICIT NONE
+      DOUBLE PRECISION Z_SCALED, PHI(10)
+      DOUBLE PRECISION EXP_Z, Z2, Z3, Z4, Z5, KREAL
+      INTEGER K
+
+      IF (Z_SCALED .LT. 0.5D0) THEN
+          Z2 = Z_SCALED * Z_SCALED
+          Z3 = Z2 * Z_SCALED
+          Z4 = Z3 * Z_SCALED
+          Z5 = Z4 * Z_SCALED
+          
+          DO K = 1, 10
+              KREAL = DBLE(K)
+              PHI(K) = (1.0D0 / KREAL)
+     .               - (Z_SCALED / (KREAL + 1.0D0))
+     .               + (Z2 / (2.0D0 * (KREAL + 2.0D0)))
+     .               - (Z3 / (6.0D0 * (KREAL + 3.0D0)))
+     .               + (Z4 / (24.0D0 * (KREAL + 4.0D0)))
+     .               - (Z5 / (120.0D0 * (KREAL + 5.0D0)))
+          END DO
+      ELSE
+          EXP_Z = DEXP(-Z_SCALED)
+          PHI(1) = (1.0D0 - EXP_Z) / Z_SCALED
+          DO K = 2, 10
+              PHI(K) = (1.0D0 - DBLE(K - 1) * PHI(K - 1)) / Z_SCALED
+          END DO
+      END IF
+
+      RETURN
+      END
 
 
 

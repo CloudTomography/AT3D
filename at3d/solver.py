@@ -163,6 +163,8 @@ class RTE:
         self._newmethod = True # Used for testing the fast multi-species source computation
         # vs the slow multi-species source computation.
 
+        self._use_etd = False # Used for exponential time differencing (ETD) for the short-characteristic path integration.
+
         self._longest_path_pts = 1
         # Set this to 1 by default as it is used for solar direct beam derivatives
         # and isn't necessarily needed for thermal.
@@ -455,6 +457,7 @@ class RTE:
         self._work2, ierr, errmsg, self._phaseinterpwt, self._cpu_time, \
         self._splitcrit, self._sfcgridrad \
          = at3d.core.solution_iterations(
+            use_etd=self._use_etd,
             volsrc=np.zeros((self._nstokes, 1),dtype=np.float32,order='F'),
             volsrcgridptr=np.zeros((2,self._maxig),dtype=np.int32,order='F'),
             volsrcshptr=np.zeros(2, dtype=np.int32),

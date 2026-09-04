@@ -8,6 +8,11 @@ project(
     'buildtype=release',
   ],
 )
+# add_project_arguments(
+#  '-O3', 
+#  '-funroll-loops', 
+#  language: 'fortran'
+# )
 
 # --- Fortran compiler flags ---
 # SHDOM's legacy F77 code passes arguments with mismatched types (e.g. REAL
